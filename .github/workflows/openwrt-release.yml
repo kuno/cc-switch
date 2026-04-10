@@ -1,0 +1,246 @@
+name: OpenWrt Release
+
+on:
+  push:
+    tags:
+      - 'openwrt-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version override (e.g. 0.1.0)'
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: openwrt-release-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build ${{ matrix.target.name }}
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - name: aarch64
+            rust_target: aarch64-unknown-linux-musl
+            opkg_arch: aarch64_generic
+          - name: x86_64
+            rust_target: x86_64-unknown-linux-musl
+            opkg_arch: x86_64
+          - name: arm_cortex-a7
+            rust_target: armv7-unknown-linux-musleabihf
+            opkg_arch: arm_cortex-a7_neon-vfpv4
+          - name: mipsel
+            rust_target: mipsel-unknown-linux-musl
+            opkg_arch: mipsel_24kc
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target.rust_target }}
+
+      - name: Install cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Cache Cargo registry and build
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            proxy-daemon/target
+          key: ${{ runner.os }}-cargo-${{ matrix.target.rust_target }}-${{ hashFiles('proxy-daemon/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ matrix.target.rust_target }}-
+
+      - name: Build cc-switch binary
+        working-directory: proxy-daemon
+        run: |
+          cross build --release --target ${{ matrix.target.rust_target }}
+
+      - name: Strip and compress binary
+        run: |
+          BINARY="proxy-daemon/target/${{ matrix.target.rust_target }}/release/cc-switch"
+          ls -lh "$BINARY"
+
+          # Try to strip (may fail for cross-compiled targets without strip tool)
+          strip "$BINARY" 2>/dev/null || true
+
+          # UPX compress if available (significant size reduction for embedded)
+          if command -v upx &>/dev/null; then
+            upx --best "$BINARY" || true
+          fi
+
+          ls -lh "$BINARY"
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            # Extract from tag: openwrt-v0.1.0 -> 0.1.0
+            echo "version=${GITHUB_REF_NAME#openwrt-v}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build ipk package
+        run: |
+          set -euo pipefail
+
+          VERSION="${{ steps.version.outputs.version }}"
+          PKG_RELEASE="1"
+          OPKG_ARCH="${{ matrix.target.opkg_arch }}"
+          BINARY="proxy-daemon/target/${{ matrix.target.rust_target }}/release/cc-switch"
+          LUCI_SRC="openwrt/luci-app-ccswitch"
+          PKG_NAME="luci-app-open-cc-switch"
+          WORK_DIR="$(mktemp -d)"
+          OUTPUT_DIR="dist"
+
+          mkdir -p "$OUTPUT_DIR"
+
+          # --- Build .ipk (gzipped tar with ustar format) ---
+
+          # Control
+          CONTROL="$WORK_DIR/control"
+          mkdir -p "$CONTROL"
+          cat > "$CONTROL/control" <<EOF
+          Package: ${PKG_NAME}
+          Version: ${VERSION}-${PKG_RELEASE}
+          Depends: libc, luci-base
+          Section: luci
+          Architecture: ${OPKG_ARCH}
+          Maintainer: kuno <noreply@github.com>
+          Description: Open CC Switch - AI API Proxy for OpenWrt
+           AI API proxy daemon with LuCI web interface. Provides provider routing,
+           failover, request optimization, and outbound proxy configuration.
+          EOF
+
+          cat > "$CONTROL/postinst" <<'SCRIPT'
+          #!/bin/sh
+          [ -n "${IPKG_INSTROOT}" ] || {
+              chmod +x /usr/bin/cc-switch 2>/dev/null
+              /etc/init.d/rpcd restart
+              /etc/init.d/uhttpd restart
+          }
+          exit 0
+          SCRIPT
+          chmod 755 "$CONTROL/postinst"
+
+          cat > "$CONTROL/prerm" <<'SCRIPT'
+          #!/bin/sh
+          [ -n "${IPKG_INSTROOT}" ] || {
+              /etc/init.d/ccswitch disable 2>/dev/null
+              /etc/init.d/ccswitch stop 2>/dev/null
+          }
+          exit 0
+          SCRIPT
+          chmod 755 "$CONTROL/prerm"
+
+          cat > "$CONTROL/conffiles" <<EOF
+          /etc/config/ccswitch
+          EOF
+
+          # Data
+          DATA="$WORK_DIR/data"
+          mkdir -p "$DATA/usr/bin"
+          mkdir -p "$DATA/etc/config"
+          mkdir -p "$DATA/etc/init.d"
+          mkdir -p "$DATA/usr/share/rpcd/acl.d"
+          mkdir -p "$DATA/usr/share/luci/menu.d"
+          mkdir -p "$DATA/www/luci-static/resources/view/ccswitch"
+
+          cp "$BINARY" "$DATA/usr/bin/cc-switch"
+          chmod 755 "$DATA/usr/bin/cc-switch"
+
+          cp "$LUCI_SRC/root/etc/config/ccswitch"                          "$DATA/etc/config/"
+          cp "$LUCI_SRC/root/etc/init.d/ccswitch"                          "$DATA/etc/init.d/"
+          chmod 755                                                         "$DATA/etc/init.d/ccswitch"
+          cp "$LUCI_SRC/root/usr/share/rpcd/acl.d/luci-app-ccswitch.json"  "$DATA/usr/share/rpcd/acl.d/"
+          cp "$LUCI_SRC/root/usr/share/luci/menu.d/luci-app-ccswitch.json" "$DATA/usr/share/luci/menu.d/"
+          cp "$LUCI_SRC/htdocs/luci-static/resources/view/ccswitch/settings.js" \
+              "$DATA/www/luci-static/resources/view/ccswitch/"
+
+          # Assemble .ipk
+          PKG_DIR="$WORK_DIR/ipk"
+          mkdir -p "$PKG_DIR"
+
+          echo "2.0" > "$PKG_DIR/debian-binary"
+          (cd "$CONTROL" && tar --format=gnu -czf "$PKG_DIR/control.tar.gz" ./)
+          (cd "$DATA" && tar --format=gnu -czf "$PKG_DIR/data.tar.gz" ./)
+          (cd "$PKG_DIR" && tar --format=gnu -czf \
+              "$GITHUB_WORKSPACE/$OUTPUT_DIR/${PKG_NAME}_${VERSION}-${PKG_RELEASE}_${OPKG_ARCH}.ipk" \
+              debian-binary control.tar.gz data.tar.gz)
+
+          ls -lh "$OUTPUT_DIR/"
+          rm -rf "$WORK_DIR"
+
+      - name: Upload ipk artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ipk-${{ matrix.target.name }}
+          path: dist/*.ipk
+
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-22.04
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+      - name: Download all ipk artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ipk-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate checksums
+        working-directory: release-assets
+        run: |
+          sha256sum *.ipk > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Open CC Switch ${{ github.ref_name }}
+          prerelease: false
+          body: |
+            ## Open CC Switch for OpenWrt
+
+            AI API proxy daemon with LuCI web interface.
+
+            ### Install
+
+            ```bash
+            # Download the ipk for your architecture
+            scp luci-app-open-cc-switch_*_<arch>.ipk root@<router-ip>:/tmp/
+            ssh root@<router-ip>
+            opkg install /tmp/luci-app-open-cc-switch_*.ipk
+            ```
+
+            ### Architectures
+
+            | Package | Target |
+            |---|---|
+            | `*_aarch64_generic.ipk` | ARM64 (most modern routers) |
+            | `*_x86_64.ipk` | x86_64 (VM, soft router) |
+            | `*_arm_cortex-a7_neon-vfpv4.ipk` | ARM Cortex-A7 (MT7621 etc.) |
+            | `*_mipsel_24kc.ipk` | MIPS Little-Endian (older MediaTek/Ralink) |
+
+            After install, open LuCI at **Services > Open CC Switch**.
+          files: |
+            release-assets/*.ipk
+            release-assets/SHA256SUMS.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,14 @@
+{
+	"luci-app-ccswitch": {
+		"description": "Grant access to CC Switch Proxy configuration",
+		"read": {
+			"uci": ["ccswitch"],
+			"ubus": {
+				"service": ["list"]
+			}
+		},
+		"write": {
+			"uci": ["ccswitch"]
+		}
+	}
+}
