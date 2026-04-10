@@ -95,6 +95,31 @@ async fn main() -> anyhow::Result<()> {
     );
     log::info!("Database initialized");
 
+    // Apply env var overrides for listen address/port
+    {
+        let mut cfg = db
+            .get_proxy_config()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to get proxy config: {e}"))?;
+        let mut changed = false;
+        if let Ok(addr) = std::env::var("PROXY_LISTEN_ADDR") {
+            log::info!("Overriding listen address from env: {}", addr);
+            cfg.listen_address = addr;
+            changed = true;
+        }
+        if let Ok(port) = std::env::var("PROXY_LISTEN_PORT") {
+            let port: u16 = port.parse().map_err(|e| anyhow::anyhow!("Invalid PROXY_LISTEN_PORT: {e}"))?;
+            log::info!("Overriding listen port from env: {}", port);
+            cfg.listen_port = port;
+            changed = true;
+        }
+        if changed {
+            db.update_proxy_config(cfg)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to update proxy config: {e}"))?;
+        }
+    }
+
     // Config dir for auth managers
     let config_dir = config::get_app_config_dir();
 
