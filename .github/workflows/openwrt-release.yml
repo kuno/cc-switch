@@ -100,7 +100,7 @@ jobs:
           OPKG_ARCH="${{ matrix.target.opkg_arch }}"
           BINARY="proxy-daemon/target/${{ matrix.target.rust_target }}/release/cc-switch"
           LUCI_SRC="openwrt/luci-app-ccswitch"
-          PKG_NAME="luci-app-open-cc-switch"
+          PKG_NAME="luci-app-cc-switch"
           WORK_DIR="$(mktemp -d)"
           OUTPUT_DIR="dist"
 
@@ -118,7 +118,7 @@ jobs:
           Section: luci
           Architecture: ${OPKG_ARCH}
           Maintainer: kuno <noreply@github.com>
-          Description: Open CC Switch - AI API Proxy for OpenWrt
+          Description: CC Switch - AI API Proxy for OpenWrt
            AI API proxy daemon with LuCI web interface. Provides provider routing,
            failover, request optimization, and outbound proxy configuration.
           EOF
@@ -213,10 +213,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Open CC Switch ${{ github.ref_name }}
+          name: CC Switch ${{ github.ref_name }}
           prerelease: false
           body: |
-            ## Open CC Switch for OpenWrt
+            ## CC Switch for OpenWrt
 
             AI API proxy daemon with LuCI web interface.
 
@@ -224,9 +224,9 @@ jobs:
 
             ```bash
             # Download the ipk for your architecture
-            scp luci-app-open-cc-switch_*_<arch>.ipk root@<router-ip>:/tmp/
+            scp luci-app-cc-switch_*_<arch>.ipk root@<router-ip>:/tmp/
             ssh root@<router-ip>
-            opkg install /tmp/luci-app-open-cc-switch_*.ipk
+            opkg install /tmp/luci-app-cc-switch_*.ipk
             ```
 
             ### Architectures

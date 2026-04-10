@@ -8,7 +8,7 @@
 #     proxy-daemon/target/<target>/release/cc-switch
 #
 # Output:
-#   openwrt/dist/luci-app-open-cc-switch_0.1.0-1_<arch>.ipk
+#   openwrt/dist/luci-app-cc-switch_0.1.0-1_<arch>.ipk
 
 set -euo pipefail
 
@@ -38,7 +38,7 @@ DIST_DIR="$SCRIPT_DIR/dist"
 WORK_DIR="$SCRIPT_DIR/.build-tmp"
 BINARY="$PROJECT_DIR/proxy-daemon/target/$RUST_TARGET/release/cc-switch"
 LUCI_SRC="$SCRIPT_DIR/luci-app-ccswitch"
-PKG_NAME="luci-app-open-cc-switch"
+PKG_NAME="luci-app-cc-switch"
 
 # Clean
 rm -rf "$WORK_DIR" "$DIST_DIR"
@@ -67,7 +67,7 @@ build_ipk() {
 }
 
 # ============================================================
-# Single package: luci-app-open-cc-switch (binary + LuCI)
+# Single package: luci-app-cc-switch (binary + LuCI)
 # ============================================================
 echo "=== Building ${PKG_NAME}_${VERSION}-${PKG_RELEASE}_${OPKG_ARCH}.ipk ==="
 
