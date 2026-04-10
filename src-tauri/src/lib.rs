@@ -36,8 +36,10 @@ pub use app_config::{AppType, InstalledSkill, McpApps, McpServer, MultiAppConfig
 pub use codex_config::{get_codex_auth_path, get_codex_config_path, write_codex_live_atomic};
 pub use commands::open_provider_terminal;
 pub use commands::*;
-pub use config::{get_claude_mcp_path, get_claude_settings_path, read_json_file};
+pub use config::{get_app_config_dir, get_claude_mcp_path, get_claude_settings_path, read_json_file};
 pub use database::Database;
+pub use proxy::providers::codex_oauth_auth::CodexOAuthManager;
+pub use proxy::providers::copilot_auth::CopilotAuthManager;
 pub use deeplink::{import_provider_from_deeplink, parse_deeplink_url, DeepLinkImportRequest};
 pub use error::AppError;
 pub use mcp::{
@@ -795,7 +797,12 @@ pub fn run() {
 
                 let app_config_dir = crate::config::get_app_config_dir();
                 let copilot_auth_manager = CopilotAuthManager::new(app_config_dir);
-                app.manage(CopilotAuthState(Arc::new(RwLock::new(copilot_auth_manager))));
+                let copilot_auth_arc = Arc::new(RwLock::new(copilot_auth_manager));
+                // Pass to proxy service
+                app.state::<AppState>()
+                    .proxy_service
+                    .set_copilot_auth(copilot_auth_arc.clone());
+                app.manage(CopilotAuthState(copilot_auth_arc));
                 log::info!("✓ CopilotAuthManager initialized");
             }
 
@@ -807,7 +814,12 @@ pub fn run() {
 
                 let app_config_dir = crate::config::get_app_config_dir();
                 let codex_oauth_manager = CodexOAuthManager::new(app_config_dir);
-                app.manage(CodexOAuthState(Arc::new(RwLock::new(codex_oauth_manager))));
+                let codex_oauth_arc = Arc::new(RwLock::new(codex_oauth_manager));
+                // Pass to proxy service
+                app.state::<AppState>()
+                    .proxy_service
+                    .set_codex_oauth_auth(codex_oauth_arc.clone());
+                app.manage(CodexOAuthState(codex_oauth_arc));
                 log::info!("✓ CodexOAuthManager initialized");
             }
 
