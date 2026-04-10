@@ -1034,9 +1034,7 @@ impl RequestForwarder {
                     }
                 } else {
                     log::error!("[CodexOAuth] CodexOAuthManager 不可用");
-                    return Err(ProxyError::AuthError(
-                        "Codex OAuth 认证不可用".to_string(),
-                    ));
+                    return Err(ProxyError::AuthError("Codex OAuth 认证不可用".to_string()));
                 }
             }
 
