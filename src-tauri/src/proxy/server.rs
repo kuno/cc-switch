@@ -13,6 +13,8 @@ use super::{
     provider_router::ProviderRouter, types::*, ProxyError,
 };
 use crate::database::Database;
+use crate::proxy::providers::codex_oauth_auth::CodexOAuthManager;
+use crate::proxy::providers::copilot_auth::CopilotAuthManager;
 use axum::{
     extract::DefaultBodyLimit,
     routing::{get, post},
@@ -36,7 +38,12 @@ pub struct ProxyState {
     pub current_providers: Arc<RwLock<std::collections::HashMap<String, (String, String)>>>,
     /// 共享的 ProviderRouter（持有熔断器状态，跨请求保持）
     pub provider_router: Arc<ProviderRouter>,
-    /// AppHandle，用于发射事件和更新托盘菜单
+    /// Copilot auth manager — injected directly, no Tauri needed
+    pub copilot_auth: Option<Arc<RwLock<CopilotAuthManager>>>,
+    /// Codex OAuth auth manager — injected directly, no Tauri needed
+    pub codex_oauth_auth: Option<Arc<RwLock<CodexOAuthManager>>>,
+    /// AppHandle for UI notifications (desktop only)
+    #[cfg(feature = "tauri-desktop")]
     pub app_handle: Option<tauri::AppHandle>,
     /// 故障转移切换管理器
     pub failover_manager: Arc<FailoverSwitchManager>,
@@ -55,20 +62,30 @@ impl ProxyServer {
     pub fn new(
         config: ProxyConfig,
         db: Arc<Database>,
-        app_handle: Option<tauri::AppHandle>,
+        copilot_auth: Option<Arc<RwLock<CopilotAuthManager>>>,
+        codex_oauth_auth: Option<Arc<RwLock<CodexOAuthManager>>>,
+        #[cfg(feature = "tauri-desktop")] app_handle: Option<tauri::AppHandle>,
     ) -> Self {
         // 创建共享的 ProviderRouter（熔断器状态将跨所有请求保持）
         let provider_router = Arc::new(ProviderRouter::new(db.clone()));
+        // 创建共享的 current_providers map
+        let current_providers = Arc::new(RwLock::new(std::collections::HashMap::new()));
         // 创建故障转移切换管理器
-        let failover_manager = Arc::new(FailoverSwitchManager::new(db.clone()));
+        let failover_manager = Arc::new(FailoverSwitchManager::new(
+            db.clone(),
+            current_providers.clone(),
+        ));
 
         let state = ProxyState {
             db,
             config: Arc::new(RwLock::new(config.clone())),
             status: Arc::new(RwLock::new(ProxyStatus::default())),
             start_time: Arc::new(RwLock::new(None)),
-            current_providers: Arc::new(RwLock::new(std::collections::HashMap::new())),
+            current_providers,
             provider_router,
+            copilot_auth,
+            codex_oauth_auth,
+            #[cfg(feature = "tauri-desktop")]
             app_handle,
             failover_manager,
         };
@@ -262,9 +279,9 @@ impl ProxyServer {
         status
     }
 
-    /// 更新某个应用类型当前“目标供应商”（用于 UI 展示 active_targets）
+    /// 更新某个应用类型当前"目标供应商"（用于 UI 展示 active_targets）
     ///
-    /// 注意：这不代表该供应商一定已经处理过请求，而是用于“热切换/启用故障转移立即切 P1”
+    /// 注意：这不代表该供应商一定已经处理过请求，而是用于"热切换/启用故障转移立即切 P1"
     /// 等场景下，让 UI 能立刻反映最新目标。
     pub async fn set_active_target(&self, app_type: &str, provider_id: &str, provider_name: &str) {
         let mut current_providers = self.state.current_providers.write().await;

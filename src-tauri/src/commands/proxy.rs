@@ -346,10 +346,22 @@ pub async fn reset_circuit_breaker(
                         .unwrap_or_else(|| provider_id.clone());
 
                     // 创建故障转移切换管理器并执行切换
+                    let current_providers = std::sync::Arc::new(tokio::sync::RwLock::new(
+                        std::collections::HashMap::<String, (String, String)>::new(),
+                    ));
                     let switch_manager =
-                        crate::proxy::failover_switch::FailoverSwitchManager::new(db.clone());
+                        crate::proxy::failover_switch::FailoverSwitchManager::new(
+                            db.clone(),
+                            current_providers,
+                        );
                     if let Err(e) = switch_manager
-                        .try_switch(Some(&app_handle), &app_type, &provider_id, &provider_name)
+                        .try_switch(
+                            #[cfg(feature = "tauri-desktop")]
+                            Some(&app_handle),
+                            &app_type,
+                            &provider_id,
+                            &provider_name,
+                        )
                         .await
                     {
                         log::error!("[Recovery] 自动切换失败: {e}");
