@@ -418,6 +418,26 @@ impl Database {
         }
     }
 
+    /// 仅更新监听地址和端口（不影响其他配置字段）
+    pub async fn update_listen_config(
+        &self,
+        listen_address: &str,
+        listen_port: u16,
+    ) -> Result<(), AppError> {
+        let conn = lock_conn!(self.conn);
+
+        conn.execute(
+            "UPDATE proxy_config SET
+                listen_address = ?1,
+                listen_port = ?2,
+                updated_at = datetime('now')",
+            rusqlite::params![listen_address, listen_port as i32,],
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+        Ok(())
+    }
+
     /// 更新代理配置（兼容旧接口，更新所有三行的公共字段）
     pub async fn update_proxy_config(&self, config: ProxyConfig) -> Result<(), AppError> {
         let conn = lock_conn!(self.conn);

@@ -25,5 +25,5 @@ pub mod usage_stats;
 // Stub: webdav_auto_sync needs a Tauri AppHandle; provide a no-op version
 pub mod webdav_auto_sync;
 
-pub use proxy::ProxyService;
 pub use omo::OmoService;
+pub use proxy::ProxyService;
