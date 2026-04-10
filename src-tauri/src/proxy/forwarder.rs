@@ -57,6 +57,9 @@ pub struct RequestForwarder {
     copilot_optimizer_config: CopilotOptimizerConfig,
     /// 非流式请求超时（秒）
     non_streaming_timeout: std::time::Duration,
+    /// AppHandle for failover UI updates (desktop only)
+    #[cfg(feature = "tauri-desktop")]
+    app_handle: Option<tauri::AppHandle>,
 }
 
 impl RequestForwarder {
@@ -75,6 +78,7 @@ impl RequestForwarder {
         rectifier_config: RectifierConfig,
         optimizer_config: OptimizerConfig,
         copilot_optimizer_config: CopilotOptimizerConfig,
+        #[cfg(feature = "tauri-desktop")] app_handle: Option<tauri::AppHandle>,
     ) -> Self {
         Self {
             router,
@@ -88,6 +92,8 @@ impl RequestForwarder {
             optimizer_config,
             copilot_optimizer_config,
             non_streaming_timeout: std::time::Duration::from_secs(non_streaming_timeout),
+            #[cfg(feature = "tauri-desktop")]
+            app_handle,
         }
     }
 
@@ -224,12 +230,14 @@ impl RequestForwarder {
                             let pid = provider.id.clone();
                             let pname = provider.name.clone();
                             let at = app_type_str.to_string();
+                            #[cfg(feature = "tauri-desktop")]
+                            let ah = self.app_handle.clone();
 
                             tokio::spawn(async move {
                                 let _ = fm
                                     .try_switch(
                                         #[cfg(feature = "tauri-desktop")]
-                                        None,
+                                        ah.as_ref(),
                                         &at,
                                         &pid,
                                         &pname,
@@ -364,12 +372,14 @@ impl RequestForwarder {
                                                 let pid = provider.id.clone();
                                                 let pname = provider.name.clone();
                                                 let at = app_type_str.to_string();
+                                                #[cfg(feature = "tauri-desktop")]
+                                                let ah = self.app_handle.clone();
 
                                                 tokio::spawn(async move {
                                                     let _ = fm
                                                         .try_switch(
                                                             #[cfg(feature = "tauri-desktop")]
-                                                            None,
+                                                            ah.as_ref(),
                                                             &at,
                                                             &pid,
                                                             &pname,
@@ -563,11 +573,13 @@ impl RequestForwarder {
                                             let pid = provider.id.clone();
                                             let pname = provider.name.clone();
                                             let at = app_type_str.to_string();
+                                            #[cfg(feature = "tauri-desktop")]
+                                            let ah = self.app_handle.clone();
                                             tokio::spawn(async move {
                                                 let _ = fm
                                                     .try_switch(
                                                         #[cfg(feature = "tauri-desktop")]
-                                                        None,
+                                                        ah.as_ref(),
                                                         &at,
                                                         &pid,
                                                         &pname,

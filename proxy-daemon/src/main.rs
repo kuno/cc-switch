@@ -82,41 +82,42 @@ use tokio::sync::RwLock;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("info"),
-    )
-    .init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     log::info!("cc-switch proxy daemon starting...");
 
     // Initialize database (uses ~/.cc-switch/cc-switch.db by default)
-    let db = Arc::new(
-        database::Database::init().map_err(|e| anyhow::anyhow!("DB init failed: {e}"))?,
-    );
+    let db =
+        Arc::new(database::Database::init().map_err(|e| anyhow::anyhow!("DB init failed: {e}"))?);
     log::info!("Database initialized");
 
     // Apply env var overrides for listen address/port
+    // Uses targeted update to avoid clobbering per-app retry/timeout settings
     {
-        let mut cfg = db
+        let cfg = db
             .get_proxy_config()
             .await
             .map_err(|e| anyhow::anyhow!("Failed to get proxy config: {e}"))?;
+        let mut addr = cfg.listen_address;
+        let mut port = cfg.listen_port;
         let mut changed = false;
-        if let Ok(addr) = std::env::var("PROXY_LISTEN_ADDR") {
-            log::info!("Overriding listen address from env: {}", addr);
-            cfg.listen_address = addr;
+        if let Ok(env_addr) = std::env::var("PROXY_LISTEN_ADDR") {
+            log::info!("Overriding listen address from env: {}", env_addr);
+            addr = env_addr;
             changed = true;
         }
-        if let Ok(port) = std::env::var("PROXY_LISTEN_PORT") {
-            let port: u16 = port.parse().map_err(|e| anyhow::anyhow!("Invalid PROXY_LISTEN_PORT: {e}"))?;
-            log::info!("Overriding listen port from env: {}", port);
-            cfg.listen_port = port;
+        if let Ok(env_port) = std::env::var("PROXY_LISTEN_PORT") {
+            let p: u16 = env_port
+                .parse()
+                .map_err(|e| anyhow::anyhow!("Invalid PROXY_LISTEN_PORT: {e}"))?;
+            log::info!("Overriding listen port from env: {}", p);
+            port = p;
             changed = true;
         }
         if changed {
-            db.update_proxy_config(cfg)
+            db.update_listen_config(&addr, port)
                 .await
-                .map_err(|e| anyhow::anyhow!("Failed to update proxy config: {e}"))?;
+                .map_err(|e| anyhow::anyhow!("Failed to update listen config: {e}"))?;
         }
     }
 
