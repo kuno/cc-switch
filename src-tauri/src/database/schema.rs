@@ -1199,7 +1199,6 @@ impl Database {
         log::info!("v9 -> v10 迁移完成：已添加 Hermes Agent 支持");
         Ok(())
     }
-
     /// 插入默认模型定价数据
     /// 格式: (model_id, display_name, input, output, cache_read, cache_creation)
     /// 注意: model_id 使用短横线格式（如 claude-haiku-4-5），与 API 返回的模型名称标准化后一致
