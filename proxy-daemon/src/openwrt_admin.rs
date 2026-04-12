@@ -278,6 +278,11 @@ fn select_current_provider_after_delete(
     effective_current: Option<&str>,
     db_current: Option<&str>,
 ) -> Option<String> {
+    let deleted_was_current = [effective_current, db_current]
+        .into_iter()
+        .flatten()
+        .any(|candidate| candidate == deleted_provider_id);
+
     for candidate in [effective_current, db_current] {
         if let Some(candidate) = candidate
             .filter(|candidate| *candidate != deleted_provider_id)
@@ -291,7 +296,11 @@ fn select_current_provider_after_delete(
         }
     }
 
-    providers.keys().next().cloned()
+    if deleted_was_current {
+        providers.keys().next().cloned()
+    } else {
+        None
+    }
 }
 
 fn provider_list_to_view(
@@ -754,6 +763,58 @@ mod tests {
             delete_claude_provider(&db, DEFAULT_PROVIDER_ID).expect("delete last provider");
         assert_eq!(deleted.active_provider_id, None);
         assert_eq!(deleted.providers_remaining, 0);
+        assert_eq!(
+            crate::settings::get_current_provider(&AppType::Claude),
+            None
+        );
+        assert_eq!(
+            db.get_current_provider(CLAUDE_APP_TYPE)
+                .expect("load db current"),
+            None
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn delete_inactive_provider_preserves_no_active_selection() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+
+        upsert_claude_provider_with_payload(
+            &db,
+            Some("provider-a"),
+            sample_payload("A", "secret-a"),
+        )
+        .expect("create provider a");
+        upsert_claude_provider_with_payload(
+            &db,
+            Some("provider-b"),
+            sample_payload("B", "secret-b"),
+        )
+        .expect("create provider b");
+
+        assert_eq!(
+            resolve_active_provider_id(&db).expect("resolve active"),
+            None
+        );
+        assert_eq!(
+            crate::settings::get_current_provider(&AppType::Claude),
+            None
+        );
+        assert_eq!(
+            db.get_current_provider(CLAUDE_APP_TYPE)
+                .expect("load db current"),
+            None
+        );
+
+        let deleted = delete_claude_provider(&db, "provider-a").expect("delete inactive provider");
+        assert_eq!(deleted.deleted_provider_id, "provider-a");
+        assert_eq!(deleted.active_provider_id, None);
+        assert_eq!(deleted.providers_remaining, 1);
+        assert_eq!(
+            resolve_active_provider_id(&db).expect("resolve active"),
+            None
+        );
         assert_eq!(
             crate::settings::get_current_provider(&AppType::Claude),
             None
