@@ -5,6 +5,7 @@ import { popen } from 'fs';
 const DATA_DIR = '/etc/cc-switch';
 const BINARY = '/usr/bin/cc-switch';
 const INIT_SCRIPT = '/etc/init.d/ccswitch';
+const DEFAULT_APP = 'claude';
 
 function shellquote(value) {
 	let string = value;
@@ -16,6 +17,20 @@ function shellquote(value) {
 
 function daemonCommand(args) {
 	return `env CC_SWITCH_DATA_DIR=${shellquote(DATA_DIR)} ${shellquote(BINARY)} ${args} 2>&1`;
+}
+
+function normalizeApp(app) {
+	let value = app;
+
+	if (!value)
+		value = DEFAULT_APP;
+
+	value = trim(value);
+
+	if (value != 'claude' && value != 'codex' && value != 'gemini')
+		return null;
+
+	return value;
 }
 
 function runReadCommand(command) {
@@ -94,66 +109,98 @@ function requireProviderId(providerId) {
 	return null;
 }
 
-function listProviders() {
-	return runProvidersCommand(daemonCommand('openwrt list-providers'));
+function listProviders(app) {
+	let normalizedApp = normalizeApp(app);
+
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
+
+	return runProvidersCommand(daemonCommand(`openwrt ${shellquote(normalizedApp)} list-providers`));
 }
 
-function getProvider(providerId) {
+function getProvider(app, providerId) {
+	let normalizedApp = normalizeApp(app);
 	let missing = requireProviderId(providerId);
 	if (missing)
 		return missing;
 
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
+
 	return runProviderCommand(
-		daemonCommand(`openwrt get-provider ${shellquote(providerId)}`)
+		daemonCommand(`openwrt ${shellquote(normalizedApp)} get-provider ${shellquote(providerId)}`)
 	);
 }
 
-function getActiveProvider() {
-	return runProviderCommand(daemonCommand('openwrt get-active-provider'));
+function getActiveProvider(app) {
+	let normalizedApp = normalizeApp(app);
+
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
+
+	return runProviderCommand(daemonCommand(`openwrt ${shellquote(normalizedApp)} get-active-provider`));
 }
 
-function upsertProvider(providerId, provider) {
+function upsertProvider(app, providerId, provider) {
+	let normalizedApp = normalizeApp(app);
+
 	if (!provider)
 		return { ok: false, error: 'provider payload is required' };
 
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
+
 	let providerJson = sprintf('%J', provider);
 	let command = providerId
-		? daemonCommand(`openwrt upsert-provider ${shellquote(providerId)}`)
-		: daemonCommand('openwrt upsert-provider');
+		? daemonCommand(`openwrt ${shellquote(normalizedApp)} upsert-provider ${shellquote(providerId)}`)
+		: daemonCommand(`openwrt ${shellquote(normalizedApp)} upsert-provider`);
 
 	return runProviderCommand(
 		`printf '%s\n' ${shellquote(providerJson)} | ${command}`
 	);
 }
 
-function upsertActiveProvider(provider) {
+function upsertActiveProvider(app, provider) {
+	let normalizedApp = normalizeApp(app);
+
 	if (!provider)
 		return { ok: false, error: 'provider payload is required' };
+
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
 
 	let providerJson = sprintf('%J', provider);
 
 	return runProviderCommand(
-		`printf '%s\n' ${shellquote(providerJson)} | ${daemonCommand('openwrt upsert-active-provider')}`
+		`printf '%s\n' ${shellquote(providerJson)} | ${daemonCommand(`openwrt ${shellquote(normalizedApp)} upsert-active-provider`)}`
 	);
 }
 
-function deleteProvider(providerId) {
+function deleteProvider(app, providerId) {
+	let normalizedApp = normalizeApp(app);
 	let missing = requireProviderId(providerId);
 	if (missing)
 		return missing;
+
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
 
 	return runResultCommand(
-		daemonCommand(`openwrt delete-provider ${shellquote(providerId)}`)
+		daemonCommand(`openwrt ${shellquote(normalizedApp)} delete-provider ${shellquote(providerId)}`)
 	);
 }
 
-function activateProvider(providerId) {
+function activateProvider(app, providerId) {
+	let normalizedApp = normalizeApp(app);
 	let missing = requireProviderId(providerId);
 	if (missing)
 		return missing;
 
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
+
 	return runProviderCommand(
-		daemonCommand(`openwrt activate-provider ${shellquote(providerId)}`)
+		daemonCommand(`openwrt ${shellquote(normalizedApp)} activate-provider ${shellquote(providerId)}`)
 	);
 }
 
@@ -171,65 +218,78 @@ function restartService() {
 return {
 	ccswitch: {
 		list_providers: {
-			call: function() {
-				return listProviders();
+			args: {
+				app: {}
+			},
+
+			call: function(request) {
+				return listProviders(request.args.app);
 			}
 		},
 
 		get_provider: {
 			args: {
+				app: {},
 				provider_id: {}
 			},
 
 			call: function(request) {
-				return getProvider(request.args.provider_id);
+				return getProvider(request.args.app, request.args.provider_id);
 			}
 		},
 
 		get_active_provider: {
-			call: function() {
-				return getActiveProvider();
+			args: {
+				app: {}
+			},
+
+			call: function(request) {
+				return getActiveProvider(request.args.app);
 			}
 		},
 
 		upsert_provider: {
 			args: {
+				app: {},
 				provider_id: {},
 				provider: {}
 			},
 
 			call: function(request) {
-				return upsertProvider(request.args.provider_id, request.args.provider);
+				return upsertProvider(request.args.app, request.args.provider_id, request.args.provider);
 			}
 		},
 
 		upsert_active_provider: {
 			args: {
+				app: {},
 				provider: {}
 			},
 
 			call: function(request) {
-				return upsertActiveProvider(request.args.provider);
+				return upsertActiveProvider(request.args.app, request.args.provider);
 			}
 		},
 
 		delete_provider: {
 			args: {
+				app: {},
 				provider_id: {}
 			},
 
 			call: function(request) {
-				return deleteProvider(request.args.provider_id);
+				return deleteProvider(request.args.app, request.args.provider_id);
 			}
 		},
 
 		activate_provider: {
 			args: {
+				app: {},
 				provider_id: {}
 			},
 
 			call: function(request) {
-				return activateProvider(request.args.provider_id);
+				return activateProvider(request.args.app, request.args.provider_id);
 			}
 		},
 
