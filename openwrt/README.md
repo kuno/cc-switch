@@ -42,8 +42,8 @@ Then build the IPKs:
 
 This produces:
 
-- `openwrt/dist/cc-switch_0.1.0-1_aarch64_generic.ipk`
-- `openwrt/dist/luci-app-cc-switch_0.1.0-1_all.ipk`
+- `openwrt/dist/cc-switch_0.2.0-1_aarch64_generic.ipk`
+- `openwrt/dist/luci-app-cc-switch_0.2.0-1_all.ipk`
 
 Built-in target aliases:
 
@@ -96,13 +96,13 @@ OpenWrt-style control-script split directly into the `.ipk` archives:
 ```bash
 ROUTER=root@192.168.1.1
 
-scp openwrt/dist/cc-switch_0.1.0-1_aarch64_generic.ipk \
-    openwrt/dist/luci-app-cc-switch_0.1.0-1_all.ipk \
+scp openwrt/dist/cc-switch_0.2.0-1_aarch64_generic.ipk \
+    openwrt/dist/luci-app-cc-switch_0.2.0-1_all.ipk \
     $ROUTER:/tmp/
 
 ssh $ROUTER opkg install \
-  /tmp/cc-switch_0.1.0-1_aarch64_generic.ipk \
-  /tmp/luci-app-cc-switch_0.1.0-1_all.ipk
+  /tmp/cc-switch_0.2.0-1_aarch64_generic.ipk \
+  /tmp/luci-app-cc-switch_0.2.0-1_all.ipk
 ```
 
 Live install and removal behavior:
