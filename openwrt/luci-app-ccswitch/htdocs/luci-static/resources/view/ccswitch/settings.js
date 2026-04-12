@@ -323,9 +323,6 @@ return view.extend({
 		var activeProvider = this.emptyProviderView();
 		var i;
 
-		if (!activeProviderId && providers.length === 1)
-			activeProviderId = providers[0].providerId;
-
 		for (i = 0; i < providers.length; i++) {
 			providers[i].active = !!(activeProviderId && providers[i].providerId === activeProviderId);
 			if (providers[i].active)
@@ -365,13 +362,22 @@ return view.extend({
 
 	buildLegacyProviderState: function (provider) {
 		var providers = [];
+		var state;
 
 		if (provider && provider.configured) {
 			provider.active = true;
 			providers.push(provider);
 		}
 
-		return this.buildProviderState(providers, provider.providerId, false);
+		state = this.buildProviderState(providers, provider.providerId, false);
+
+		if (provider && provider.configured && !state.activeProvider.configured) {
+			providers[0].active = true;
+			state.activeProvider = providers[0];
+			state.activeProviderId = provider.providerId || null;
+		}
+
+		return state;
 	},
 
 	loadProviderState: function () {
@@ -551,6 +557,8 @@ return view.extend({
 				: _('Save the first Claude provider below, then start or restart the service.');
 		} else if (activeProvider.configured) {
 			summaryText = _('Claude traffic will use the active saved provider together with the current outbound proxy settings.');
+		} else if (providerState.providers.length) {
+			summaryText = _('Saved providers are available, but none is active yet. Activate one below when you are ready to switch routing.');
 		} else {
 			summaryText = _('Add a saved provider below, then activate one when you are ready to route Claude traffic through it.');
 		}
@@ -920,59 +928,150 @@ return view.extend({
 		return (result && (result.error || result.message)) || null;
 	},
 
+	rpcFailureMessage: function (failure) {
+		if (failure == null)
+			return null;
+
+		if (typeof failure === 'string')
+			return failure;
+
+		if (failure.message)
+			return failure.message;
+
+		if (failure.error)
+			return failure.error;
+
+		try {
+			return JSON.stringify(failure);
+		} catch (e) {
+			return String(failure);
+		}
+	},
+
+	isCompatibilityRpcFailure: function (failure) {
+		var message = this.rpcFailureMessage(failure);
+
+		if (!message)
+			return true;
+
+		message = message.toLowerCase();
+
+		return message.indexOf('method not found') >= 0 ||
+			message.indexOf('no such method') >= 0 ||
+			message.indexOf('unknown method') >= 0 ||
+			message.indexOf('invalid argument') >= 0 ||
+			message.indexOf('invalid arguments') >= 0 ||
+			message.indexOf('invalid params') >= 0 ||
+			message.indexOf('invalid parameters') >= 0 ||
+			message.indexOf('unknown argument') >= 0 ||
+			message.indexOf('unknown parameter') >= 0 ||
+			message.indexOf('unexpected argument') >= 0 ||
+			message.indexOf('unexpected parameter') >= 0 ||
+			message.indexOf('missing argument') >= 0 ||
+			message.indexOf('missing parameter') >= 0 ||
+			message.indexOf('argument mismatch') >= 0 ||
+			message.indexOf('parameter mismatch') >= 0;
+	},
+
 	invokeRpcCandidates: async function (candidates, missingMessage) {
-		var lastError = null;
+		var lastCompatibilityFailure = null;
 		var i;
 
 		for (i = 0; i < candidates.length; i++) {
-			var result = await L.resolveDefault(candidates[i](), null);
+			try {
+				var result = await candidates[i].call();
 
-			if (this.isRpcSuccess(result))
-				return result;
+				if (this.isRpcSuccess(result))
+					return result;
 
-			if (result !== null) {
-				lastError = this.rpcError(result) || lastError;
+				if (candidates[i].compatibilityFallback && this.isCompatibilityRpcFailure(result)) {
+					lastCompatibilityFailure = result;
+					continue;
+				}
+
+				throw new Error(this.rpcError(result) || missingMessage);
+			} catch (err) {
+				if (candidates[i].compatibilityFallback && this.isCompatibilityRpcFailure(err)) {
+					lastCompatibilityFailure = err;
+					continue;
+				}
+
+				throw new Error(this.rpcFailureMessage(err) || missingMessage);
 			}
 		}
 
-		throw new Error(lastError || missingMessage);
+		throw new Error(this.rpcFailureMessage(lastCompatibilityFailure) || missingMessage);
 	},
 
 	invokePhase2Upsert: function (providerId, providerPayload) {
 		var providerJson = JSON.stringify(providerPayload);
-		var candidates = [];
+		var missingMessage = _('The Phase 2 provider save RPC is not available in this build.');
 
 		if (providerId) {
-			candidates.push(function () { return callUpsertProviderByProviderId(providerId, providerJson); });
-			candidates.push(function () { return callUpsertProviderById(providerId, providerJson); });
+			return this.invokeRpcCandidates([
+				{
+					call: function () { return callUpsertProviderByProviderId(providerId, providerJson); },
+					compatibilityFallback: true
+				},
+				{
+					call: function () { return callUpsertProviderById(providerId, providerJson); },
+					compatibilityFallback: true
+				}
+			], missingMessage);
 		}
 
-		candidates.push(function () { return callUpsertProvider(providerJson); });
-		candidates.push(function () { return callSaveProvider(providerJson); });
-
-		return this.invokeRpcCandidates(candidates,
-			_('The Phase 2 provider save RPC is not available in this build.'));
+		return this.invokeRpcCandidates([
+			{
+				call: function () { return callUpsertProvider(providerJson); },
+				compatibilityFallback: true
+			},
+			{
+				call: function () { return callSaveProvider(providerJson); },
+				compatibilityFallback: true
+			}
+		], missingMessage);
 	},
 
 	invokePhase2Delete: function (providerId) {
 		return this.invokeRpcCandidates([
-			function () { return callDeleteProviderByProviderId(providerId); },
-			function () { return callDeleteProviderById(providerId); }
+			{
+				call: function () { return callDeleteProviderByProviderId(providerId); },
+				compatibilityFallback: true
+			},
+			{
+				call: function () { return callDeleteProviderById(providerId); },
+				compatibilityFallback: true
+			}
 		], _('The Phase 2 provider delete RPC is not available in this build.'));
 	},
 
 	invokePhase2Activate: function (providerId) {
 		return this.invokeRpcCandidates([
-			function () { return callActivateProviderByProviderId(providerId); },
-			function () { return callActivateProviderById(providerId); },
-			function () { return callSwitchProviderByProviderId(providerId); },
-			function () { return callSwitchProviderById(providerId); }
+			{
+				call: function () { return callActivateProviderByProviderId(providerId); },
+				compatibilityFallback: true
+			},
+			{
+				call: function () { return callActivateProviderById(providerId); },
+				compatibilityFallback: true
+			},
+			{
+				call: function () { return callSwitchProviderByProviderId(providerId); },
+				compatibilityFallback: true
+			},
+			{
+				call: function () { return callSwitchProviderById(providerId); },
+				compatibilityFallback: true
+			}
 		], _('The Phase 2 provider activate RPC is not available in this build.'));
 	},
 
 	restartService: function () {
 		return this.invokeRpcCandidates([
-			function () { return callRestartService(); }
+			{
+				call: function () { return callRestartService(); },
+				compatibilityFallback: false
+			}
 		], _('Failed to restart service.'));
 	},
 
