@@ -17,6 +17,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 mod app_store;
+mod openwrt_admin;
 
 #[path = "../../src-tauri/src/app_config.rs"]
 mod app_config;
@@ -82,8 +83,48 @@ use tokio::sync::RwLock;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    let args: Vec<String> = std::env::args().skip(1).collect();
 
+    if !args.is_empty() {
+        init_logger("warn");
+        return run_cli(args).await;
+    }
+
+    init_logger("info");
+    run_daemon().await
+}
+
+fn init_logger(default_filter: &str) {
+    let _ =
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(default_filter))
+            .try_init();
+}
+
+async fn run_cli(args: Vec<String>) -> anyhow::Result<()> {
+    let db = database::Database::init().map_err(|e| anyhow::anyhow!("DB init failed: {e}"))?;
+
+    match args.as_slice() {
+        [namespace, command] if namespace == "openwrt" && command == "get-active-provider" => {
+            print_json(&openwrt_admin::get_active_claude_provider(&db)?)?;
+            Ok(())
+        }
+        [namespace, command] if namespace == "openwrt" && command == "upsert-active-provider" => {
+            print_json(&openwrt_admin::upsert_active_claude_provider(&db)?)?;
+            Ok(())
+        }
+        _ => Err(anyhow::anyhow!(
+            "unsupported command. expected one of: `cc-switch openwrt get-active-provider`, `cc-switch openwrt upsert-active-provider`"
+        )),
+    }
+}
+
+fn print_json<T: serde::Serialize>(value: &T) -> anyhow::Result<()> {
+    serde_json::to_writer_pretty(std::io::stdout(), value)?;
+    println!();
+    Ok(())
+}
+
+async fn run_daemon() -> anyhow::Result<()> {
     log::info!("cc-switch proxy daemon starting...");
 
     // Initialize database (uses ~/.cc-switch/cc-switch.db by default)
@@ -145,8 +186,7 @@ async fn main() -> anyhow::Result<()> {
 
     log::info!("Proxy listening on {}:{}", info.address, info.port);
 
-    // Wait for Ctrl-C
-    tokio::signal::ctrl_c().await?;
+    wait_for_shutdown_signal().await?;
     log::info!("Shutting down...");
 
     proxy_service
@@ -154,5 +194,26 @@ async fn main() -> anyhow::Result<()> {
         .await
         .map_err(|e| anyhow::anyhow!("Stop failed: {e}"))?;
 
+    Ok(())
+}
+
+#[cfg(unix)]
+async fn wait_for_shutdown_signal() -> anyhow::Result<()> {
+    use tokio::signal::unix::{signal, SignalKind};
+
+    let mut sigint = signal(SignalKind::interrupt())?;
+    let mut sigterm = signal(SignalKind::terminate())?;
+
+    tokio::select! {
+        _ = sigint.recv() => {}
+        _ = sigterm.recv() => {}
+    }
+
+    Ok(())
+}
+
+#[cfg(not(unix))]
+async fn wait_for_shutdown_signal() -> anyhow::Result<()> {
+    tokio::signal::ctrl_c().await?;
     Ok(())
 }

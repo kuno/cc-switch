@@ -22,7 +22,7 @@ use super::{
         create_logged_passthrough_stream, process_response, read_decoded_body,
         strip_entity_headers_for_rebuilt_body, SseUsageCollector,
     },
-    server::ProxyState,
+    server::{populate_status_active_targets, ProxyState},
     types::*,
     usage::parser::TokenUsage,
     ProxyError,
@@ -50,7 +50,15 @@ pub async fn health_check() -> (StatusCode, Json<Value>) {
 
 /// 获取服务状态
 pub async fn get_status(State(state): State<ProxyState>) -> Result<Json<ProxyStatus>, ProxyError> {
-    let status = state.status.read().await.clone();
+    let mut status = state.status.read().await.clone();
+
+    if let Some(start) = *state.start_time.read().await {
+        status.uptime_seconds = start.elapsed().as_secs();
+    }
+
+    let current_providers = state.current_providers.read().await;
+    populate_status_active_targets(&mut status, &current_providers);
+
     Ok(Json(status))
 }
 

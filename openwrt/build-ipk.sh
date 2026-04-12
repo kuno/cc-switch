@@ -84,13 +84,13 @@ mkdir -p "$CONTROL"
 cat > "$CONTROL/control" <<EOF
 Package: ${PKG_NAME}
 Version: ${VERSION}-${PKG_RELEASE}
-Depends: libc, luci-base
+Depends: libc, luci-base, rpcd-mod-ucode
 Section: luci
 Architecture: ${OPKG_ARCH}
 Maintainer: kuno <noreply@github.com>
 Description: Open CC Switch - AI API Proxy for OpenWrt
- AI API proxy daemon with LuCI web interface. Provides provider routing,
- failover, request optimization, and outbound proxy configuration.
+ AI API proxy daemon with LuCI web interface. Provides Claude provider
+ configuration, request routing, and outbound proxy configuration.
 EOF
 
 cat > "$CONTROL/postinst" <<'EOF'
@@ -135,9 +135,11 @@ chmod 755                                   "$DATA/etc/init.d/ccswitch"
 
 # LuCI files
 mkdir -p "$DATA/usr/share/rpcd/acl.d"
+mkdir -p "$DATA/usr/share/rpcd/ucode"
 mkdir -p "$DATA/usr/share/luci/menu.d"
 mkdir -p "$DATA/www/luci-static/resources/view/ccswitch"
 cp "$LUCI_SRC/root/usr/share/rpcd/acl.d/luci-app-ccswitch.json"  "$DATA/usr/share/rpcd/acl.d/"
+cp "$LUCI_SRC/root/usr/share/rpcd/ucode/ccswitch" "$DATA/usr/share/rpcd/ucode/"
 cp "$LUCI_SRC/root/usr/share/luci/menu.d/luci-app-ccswitch.json" "$DATA/usr/share/luci/menu.d/"
 cp "$LUCI_SRC/htdocs/luci-static/resources/view/ccswitch/settings.js" \
     "$DATA/www/luci-static/resources/view/ccswitch/"

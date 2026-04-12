@@ -27,6 +27,45 @@ use tokio::sync::{oneshot, RwLock};
 use tokio::task::JoinHandle;
 use tower_http::cors::{Any, CorsLayer};
 
+fn active_target_priority(app_type: &str) -> u8 {
+    if app_type.eq_ignore_ascii_case("claude") {
+        0
+    } else {
+        1
+    }
+}
+
+pub(crate) fn populate_status_active_targets(
+    status: &mut ProxyStatus,
+    current_providers: &std::collections::HashMap<String, (String, String)>,
+) {
+    status.active_targets = current_providers
+        .iter()
+        .map(|(app_type, (provider_id, provider_name))| ActiveTarget {
+            app_type: app_type.clone(),
+            provider_id: provider_id.clone(),
+            provider_name: provider_name.clone(),
+        })
+        .collect();
+
+    status.active_targets.sort_by(|left, right| {
+        active_target_priority(&left.app_type)
+            .cmp(&active_target_priority(&right.app_type))
+            .then_with(|| left.app_type.cmp(&right.app_type))
+            .then_with(|| left.provider_name.cmp(&right.provider_name))
+            .then_with(|| left.provider_id.cmp(&right.provider_id))
+    });
+
+    status.current_provider = status
+        .active_targets
+        .first()
+        .map(|target| target.provider_name.clone());
+    status.current_provider_id = status
+        .active_targets
+        .first()
+        .map(|target| target.provider_id.clone());
+}
+
 /// 代理服务器状态（共享）
 #[derive(Clone)]
 pub struct ProxyState {
@@ -267,14 +306,7 @@ impl ProxyServer {
 
         // 从 current_providers HashMap 获取每个应用类型当前正在使用的 provider
         let current_providers = self.state.current_providers.read().await;
-        status.active_targets = current_providers
-            .iter()
-            .map(|(app_type, (provider_id, provider_name))| ActiveTarget {
-                app_type: app_type.clone(),
-                provider_id: provider_id.clone(),
-                provider_name: provider_name.clone(),
-            })
-            .collect();
+        populate_status_active_targets(&mut status, &current_providers);
 
         status
     }
@@ -370,5 +402,40 @@ impl ProxyServer {
             .provider_router
             .reset_provider_breaker(provider_id, app_type)
             .await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::database::Database;
+
+    #[tokio::test]
+    async fn get_status_prefers_claude_target_for_legacy_current_provider_fields() {
+        let db = Arc::new(Database::memory().expect("init db"));
+        let server = ProxyServer::new(
+            ProxyConfig::default(),
+            db,
+            None,
+            None,
+            #[cfg(feature = "tauri-desktop")]
+            None,
+        );
+
+        server
+            .set_active_target("Codex", "codex-provider", "Codex Provider")
+            .await;
+        server
+            .set_active_target("Claude", "claude-provider", "Claude Provider")
+            .await;
+
+        let status = server.get_status().await;
+        assert_eq!(status.active_targets.len(), 2);
+        assert_eq!(status.active_targets[0].app_type, "Claude");
+        assert_eq!(status.current_provider.as_deref(), Some("Claude Provider"));
+        assert_eq!(
+            status.current_provider_id.as_deref(),
+            Some("claude-provider")
+        );
     }
 }

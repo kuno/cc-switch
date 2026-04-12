@@ -1,0 +1,110 @@
+'use strict';
+
+import { popen } from 'fs';
+
+const DATA_DIR = '/etc/cc-switch';
+const BINARY = '/usr/bin/cc-switch';
+const INIT_SCRIPT = '/etc/init.d/ccswitch';
+
+function shellquote(value) {
+	let string = value;
+	if (string == null)
+		string = '';
+
+	return `'${replace(string, "'", "'\\''")}'`;
+}
+
+function daemonCommand(args) {
+	return `env CC_SWITCH_DATA_DIR=${shellquote(DATA_DIR)} ${shellquote(BINARY)} ${args} 2>&1`;
+}
+
+function runReadCommand(command) {
+	let proc = popen(command, 'r');
+
+	if (!proc)
+		return { ok: false, error: 'failed to start command' };
+
+	let output = proc.read('all');
+	if (output == null)
+		output = '';
+	let code = proc.close();
+
+	if (code !== 0)
+		return {
+			ok: false,
+			code: code,
+			error: output || 'command failed'
+		};
+
+	return {
+		ok: true,
+		code: code,
+		output: output
+	};
+}
+
+function getActiveProvider() {
+	let result = runReadCommand(daemonCommand('openwrt get-active-provider'));
+
+	if (!result.ok)
+		return result;
+
+	return {
+		ok: true,
+		provider_json: result.output
+	};
+}
+
+function upsertActiveProvider(provider) {
+	if (!provider)
+		return { ok: false, error: 'provider payload is required' };
+
+	let result = runReadCommand(
+		`printf '%s\n' ${shellquote(provider)} | ${daemonCommand('openwrt upsert-active-provider')}`
+	);
+
+	if (!result.ok)
+		return result;
+
+	return {
+		ok: true,
+		provider_json: result.output
+	};
+}
+
+function restartService() {
+	let result = runReadCommand(`${shellquote(INIT_SCRIPT)} restart`);
+
+	return {
+		ok: result.ok,
+		code: result.code,
+		output: result.output ? result.output : '',
+		error: result.error
+	};
+}
+
+return {
+	ccswitch: {
+		get_active_provider: {
+			call: function() {
+				return getActiveProvider();
+			}
+		},
+
+		upsert_active_provider: {
+			args: {
+				provider: {}
+			},
+
+			call: function(request) {
+				return upsertActiveProvider(request.args.provider);
+			}
+		},
+
+		restart_service: {
+			call: function() {
+				return restartService();
+			}
+		}
+	}
+};

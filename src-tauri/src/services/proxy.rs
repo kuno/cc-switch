@@ -228,11 +228,40 @@ impl ProxyService {
             .await
             .map_err(|e| format!("启动代理服务器失败: {e}"))?;
 
+        self.preload_active_targets(&server).await?;
+
         // 5. 保存服务器实例
         *self.server.write().await = Some(server);
 
         log::info!("代理服务器已启动: {}:{}", info.address, info.port);
         Ok(info)
+    }
+
+    async fn preload_active_targets(&self, server: &ProxyServer) -> Result<(), String> {
+        for app_type in [AppType::Claude, AppType::Codex, AppType::Gemini] {
+            let current_id =
+                crate::settings::get_effective_current_provider(&self.db, &app_type)
+                    .map_err(|e| format!("读取 {} 当前供应商失败: {e}", app_type.as_str()))?;
+
+            let Some(current_id) = current_id else {
+                continue;
+            };
+
+            let provider = self
+                .db
+                .get_provider_by_id(&current_id, app_type.as_str())
+                .map_err(|e| format!("读取 {} 供应商失败: {e}", app_type.as_str()))?;
+
+            let Some(provider) = provider else {
+                continue;
+            };
+
+            server
+                .set_active_target(app_type.as_str(), &provider.id, &provider.name)
+                .await;
+        }
+
+        Ok(())
     }
 
     /// 启动代理服务器（带 Live 配置接管）

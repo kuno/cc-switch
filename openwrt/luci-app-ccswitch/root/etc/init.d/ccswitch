@@ -6,6 +6,7 @@ USE_PROCD=1
 
 PROG=/usr/bin/cc-switch
 CONFIG=ccswitch
+DATA_DIR=/etc/cc-switch
 LOG_DIR=/var/log/cc-switch
 LOG_FILE="$LOG_DIR/cc-switch.log"
 MAX_LOG_SIZE=1048576  # 1MB
@@ -25,6 +26,7 @@ start_service() {
 
 	# Ensure log directory exists
 	mkdir -p "$LOG_DIR"
+	mkdir -p "$DATA_DIR"
 
 	# Rotate log if it exceeds max size
 	if [ -f "$LOG_FILE" ] && [ "$(wc -c < "$LOG_FILE")" -gt "$MAX_LOG_SIZE" ]; then
@@ -35,9 +37,9 @@ start_service() {
 	procd_open_instance
 	procd_set_param command /bin/sh -c "exec $PROG >> $LOG_FILE 2>&1"
 
-	# Proxy-daemon reads these env vars
+	# cc-switch reads these env vars
 	procd_set_param env \
-		CC_SWITCH_DATA_DIR="/etc/cc-switch" \
+		CC_SWITCH_DATA_DIR="$DATA_DIR" \
 		PROXY_LISTEN_ADDR="$listen_addr" \
 		PROXY_LISTEN_PORT="$listen_port" \
 		RUST_LOG="$log_level"

@@ -8,7 +8,7 @@ PKG_LICENSE:=MIT
 PKG_MAINTAINER:=kuno <noreply@github.com>
 
 LUCI_TITLE:=LuCI support for Open CC Switch
-LUCI_DEPENDS:=+cc-switch
+LUCI_DEPENDS:=+cc-switch +rpcd-mod-ucode
 LUCI_PKGARCH:=all
 
 include $(TOPDIR)/feeds/luci/luci.mk

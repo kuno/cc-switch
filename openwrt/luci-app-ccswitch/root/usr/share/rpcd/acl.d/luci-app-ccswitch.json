@@ -4,11 +4,15 @@
 		"read": {
 			"uci": ["ccswitch"],
 			"ubus": {
-				"service": ["list"]
+				"service": ["list"],
+				"ccswitch": ["get_active_provider"]
 			}
 		},
 		"write": {
-			"uci": ["ccswitch"]
+			"uci": ["ccswitch"],
+			"ubus": {
+				"ccswitch": ["upsert_active_provider", "restart_service"]
+			}
 		}
 	}
 }
