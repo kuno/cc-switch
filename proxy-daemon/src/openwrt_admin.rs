@@ -130,23 +130,25 @@ pub fn activate_claude_provider(
     db: &Database,
     provider_id: &str,
 ) -> anyhow::Result<ClaudeProviderView> {
-    let provider = load_provider(db, provider_id)?;
-    set_active_provider_id(db, Some(provider_id))?;
-    Ok(provider_to_view(&provider, Some(provider_id)))
+    let provider_id = normalize_provider_id(provider_id)?;
+    let provider = load_provider(db, &provider_id)?;
+    set_active_provider_id(db, Some(&provider_id))?;
+    Ok(provider_to_view(&provider, Some(&provider_id)))
 }
 
 pub fn delete_claude_provider(
     db: &Database,
     provider_id: &str,
 ) -> anyhow::Result<ClaudeProviderDeleteView> {
-    load_provider(db, provider_id)?;
+    let provider_id = normalize_provider_id(provider_id)?;
+    load_provider(db, &provider_id)?;
 
     let effective_current = resolve_active_provider_id(db)?;
     let db_current = db
         .get_current_provider(CLAUDE_APP_TYPE)
         .map_err(|e| anyhow!("failed to read database current Claude provider: {e}"))?;
 
-    db.delete_provider(CLAUDE_APP_TYPE, provider_id)
+    db.delete_provider(CLAUDE_APP_TYPE, &provider_id)
         .map_err(|e| anyhow!("failed to delete Claude provider {provider_id}: {e}"))?;
 
     let remaining = db
@@ -154,14 +156,14 @@ pub fn delete_claude_provider(
         .map_err(|e| anyhow!("failed to reload Claude providers after delete: {e}"))?;
     let next_current = select_current_provider_after_delete(
         &remaining,
-        provider_id,
+        &provider_id,
         effective_current.as_deref(),
         db_current.as_deref(),
     );
     set_active_provider_id(db, next_current.as_deref())?;
 
     Ok(ClaudeProviderDeleteView {
-        deleted_provider_id: provider_id.to_string(),
+        deleted_provider_id: provider_id,
         active_provider_id: next_current,
         providers_remaining: remaining.len(),
     })
@@ -517,6 +519,7 @@ mod tests {
     use tempfile::TempDir;
 
     struct TestEnv {
+        _guard: std::sync::MutexGuard<'static, ()>,
         tmp: TempDir,
         original_home: Option<String>,
         original_userprofile: Option<String>,
@@ -526,6 +529,9 @@ mod tests {
 
     impl TestEnv {
         fn new() -> Self {
+            let guard = crate::settings::test_env_lock()
+                .lock()
+                .expect("lock test env");
             let tmp = TempDir::new().expect("create temp dir");
             let home = tmp.path().join("home");
             let data = tmp.path().join("data");
@@ -545,6 +551,7 @@ mod tests {
             crate::settings::reload_settings().expect("reload settings");
 
             Self {
+                _guard: guard,
                 tmp,
                 original_home,
                 original_userprofile,
@@ -671,6 +678,35 @@ mod tests {
 
     #[test]
     #[serial]
+    fn activate_provider_trims_whitespace_padded_id() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+
+        upsert_claude_provider_with_payload(
+            &db,
+            Some("provider-a"),
+            sample_payload("A", "secret-a"),
+        )
+        .expect("create provider a");
+
+        let activated =
+            activate_claude_provider(&db, "  provider-a  ").expect("activate trimmed provider");
+        assert!(activated.active);
+        assert_eq!(activated.provider_id.as_deref(), Some("provider-a"));
+        assert_eq!(
+            crate::settings::get_current_provider(&AppType::Claude).as_deref(),
+            Some("provider-a")
+        );
+        assert_eq!(
+            db.get_current_provider(CLAUDE_APP_TYPE)
+                .expect("load db current")
+                .as_deref(),
+            Some("provider-a")
+        );
+    }
+
+    #[test]
+    #[serial]
     fn delete_active_provider_promotes_remaining_provider() {
         let _env = TestEnv::new();
         let db = Database::memory().expect("db");
@@ -726,6 +762,40 @@ mod tests {
             db.get_current_provider(CLAUDE_APP_TYPE)
                 .expect("load db current"),
             None
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn delete_provider_trims_whitespace_padded_id() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+
+        upsert_claude_provider_with_payload(
+            &db,
+            Some("provider-a"),
+            sample_payload("A", "secret-a"),
+        )
+        .expect("create provider a");
+        upsert_claude_provider_with_payload(
+            &db,
+            Some("provider-b"),
+            sample_payload("B", "secret-b"),
+        )
+        .expect("create provider b");
+        activate_claude_provider(&db, "provider-a").expect("activate provider a");
+
+        let deleted =
+            delete_claude_provider(&db, "  provider-a  ").expect("delete trimmed provider a");
+        assert_eq!(deleted.deleted_provider_id, "provider-a");
+        assert_eq!(deleted.active_provider_id.as_deref(), Some("provider-b"));
+        assert!(db
+            .get_provider_by_id("provider-a", CLAUDE_APP_TYPE)
+            .expect("load deleted provider")
+            .is_none());
+        assert_eq!(
+            crate::settings::get_current_provider(&AppType::Claude).as_deref(),
+            Some("provider-b")
         );
     }
 
