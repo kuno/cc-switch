@@ -140,30 +140,30 @@ pub fn delete_claude_provider(
     db: &Database,
     provider_id: &str,
 ) -> anyhow::Result<ClaudeProviderDeleteView> {
-    let provider_id = normalize_provider_id(provider_id)?;
-    load_provider(db, &provider_id)?;
+    let normalized_provider_id = normalize_provider_id(provider_id)?;
+    load_provider(db, &normalized_provider_id)?;
 
     let effective_current = resolve_active_provider_id(db)?;
     let db_current = db
         .get_current_provider(CLAUDE_APP_TYPE)
         .map_err(|e| anyhow!("failed to read database current Claude provider: {e}"))?;
 
-    db.delete_provider(CLAUDE_APP_TYPE, &provider_id)
-        .map_err(|e| anyhow!("failed to delete Claude provider {provider_id}: {e}"))?;
+    db.delete_provider(CLAUDE_APP_TYPE, &normalized_provider_id)
+        .map_err(|e| anyhow!("failed to delete Claude provider {normalized_provider_id}: {e}"))?;
 
     let remaining = db
         .get_all_providers(CLAUDE_APP_TYPE)
         .map_err(|e| anyhow!("failed to reload Claude providers after delete: {e}"))?;
     let next_current = select_current_provider_after_delete(
         &remaining,
-        &provider_id,
+        &normalized_provider_id,
         effective_current.as_deref(),
         db_current.as_deref(),
     );
     set_active_provider_id(db, next_current.as_deref())?;
 
     Ok(ClaudeProviderDeleteView {
-        deleted_provider_id: provider_id,
+        deleted_provider_id: normalized_provider_id,
         active_provider_id: next_current,
         providers_remaining: remaining.len(),
     })
@@ -789,12 +789,19 @@ mod tests {
             delete_claude_provider(&db, "  provider-a  ").expect("delete trimmed provider a");
         assert_eq!(deleted.deleted_provider_id, "provider-a");
         assert_eq!(deleted.active_provider_id.as_deref(), Some("provider-b"));
+        assert_eq!(deleted.providers_remaining, 1);
         assert!(db
             .get_provider_by_id("provider-a", CLAUDE_APP_TYPE)
             .expect("load deleted provider")
             .is_none());
         assert_eq!(
             crate::settings::get_current_provider(&AppType::Claude).as_deref(),
+            Some("provider-b")
+        );
+        assert_eq!(
+            db.get_current_provider(CLAUDE_APP_TYPE)
+                .expect("load db current")
+                .as_deref(),
             Some("provider-b")
         );
     }
