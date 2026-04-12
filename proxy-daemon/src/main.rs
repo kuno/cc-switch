@@ -145,7 +145,7 @@ async fn run_cli(args: Vec<String>) -> anyhow::Result<()> {
             Ok(())
         }
         _ => Err(anyhow::anyhow!(
-            "unsupported command. expected one of: `cc-switch openwrt get-active-provider`, `cc-switch openwrt upsert-active-provider`, `cc-switch openwrt list-providers`, `cc-switch openwrt get-provider <provider-id>`, `cc-switch openwrt upsert-provider [provider-id]`, `cc-switch openwrt delete-provider <provider-id>`, `cc-switch openwrt activate-provider <provider-id>`"
+            "unsupported command. expected one of: `cc-switch openwrt list-providers`, `cc-switch openwrt get-provider <id>`, `cc-switch openwrt upsert-provider [id]`, `cc-switch openwrt delete-provider <id>`, `cc-switch openwrt activate-provider <id>`, `cc-switch openwrt get-active-provider`, `cc-switch openwrt upsert-active-provider`"
         )),
     }
 }
