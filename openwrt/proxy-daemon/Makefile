@@ -14,12 +14,15 @@ define Package/cc-switch
   CATEGORY:=Network
   TITLE:=CC Switch AI API Proxy Daemon
   URL:=https://github.com/kuno/open-cc-switch
-  DEPENDS:=+libpthread +libstdcpp
 endef
 
 define Package/cc-switch/description
   A lightweight AI API proxy daemon that provides provider routing,
   failover, and request optimization for LLM API traffic.
+endef
+
+define Package/cc-switch/conffiles
+/etc/config/ccswitch
 endef
 
 # Skip source compile — we use a pre-built static binary.
@@ -31,8 +34,10 @@ define Build/Compile
 endef
 
 define Package/cc-switch/install
-	$(INSTALL_DIR) $(1)/usr/bin
+	$(INSTALL_DIR) $(1)/usr/bin $(1)/etc/config $(1)/etc/init.d
 	$(INSTALL_BIN) ./files/cc-switch $(1)/usr/bin/cc-switch
+	$(INSTALL_CONF) ./files/etc/config/ccswitch $(1)/etc/config/ccswitch
+	$(INSTALL_BIN) ./files/etc/init.d/ccswitch $(1)/etc/init.d/ccswitch
 endef
 
 $(eval $(call BuildPackage,cc-switch))

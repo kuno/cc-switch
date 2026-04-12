@@ -1,160 +1,434 @@
 #!/bin/bash
 #
-# Build .ipk package for OpenWrt
-# Usage: ./build-ipk.sh [aarch64|x86_64]
-#
-# Prerequisites:
-#   - Cross-compiled cc-switch binary at:
-#     proxy-daemon/target/<target>/release/cc-switch
-#
-# Output:
-#   openwrt/dist/luci-app-cc-switch_0.1.0-1_<arch>.ipk
+# Build split OpenWrt .ipk packages that mirror the feed layout:
+#   - cc-switch
+#   - luci-app-cc-switch
 
 set -euo pipefail
+umask 022
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-VERSION="0.1.0"
-PKG_RELEASE="1"
-
-# Architecture mapping
-ARCH="${1:-aarch64}"
-case "$ARCH" in
-    aarch64)
-        RUST_TARGET="aarch64-unknown-linux-musl"
-        OPKG_ARCH="aarch64_generic"
-        ;;
-    x86_64)
-        RUST_TARGET="x86_64-unknown-linux-musl"
-        OPKG_ARCH="x86_64"
-        ;;
-    *)
-        echo "Usage: $0 [aarch64|x86_64]"
-        exit 1
-        ;;
-esac
-
-DIST_DIR="$SCRIPT_DIR/dist"
-WORK_DIR="$SCRIPT_DIR/.build-tmp"
-BINARY="$PROJECT_DIR/proxy-daemon/target/$RUST_TARGET/release/cc-switch"
+DAEMON_MAKEFILE="$SCRIPT_DIR/proxy-daemon/Makefile"
+LUCI_MAKEFILE="$SCRIPT_DIR/luci-app-ccswitch/Makefile"
+DAEMON_SRC="$SCRIPT_DIR/proxy-daemon/files"
 LUCI_SRC="$SCRIPT_DIR/luci-app-ccswitch"
-PKG_NAME="luci-app-cc-switch"
 
-# Clean
-rm -rf "$WORK_DIR" "$DIST_DIR"
-mkdir -p "$DIST_DIR" "$WORK_DIR"
+read_make_var() {
+	local file="$1"
+	local key="$2"
 
-# --- Helper: create .ipk from control dir + data dir ---
+	sed -n "s/^${key}:=//p" "$file" | head -n 1
+}
+
+DEFAULT_VERSION="$(read_make_var "$DAEMON_MAKEFILE" PKG_VERSION)"
+DEFAULT_RELEASE="$(read_make_var "$DAEMON_MAKEFILE" PKG_RELEASE)"
+
+VERSION="${PKG_VERSION_OVERRIDE:-$DEFAULT_VERSION}"
+PKG_RELEASE="${PKG_RELEASE_OVERRIDE:-$DEFAULT_RELEASE}"
+DIST_DIR="$SCRIPT_DIR/dist"
+ARCH_ALIAS=""
+RUST_TARGET=""
+OPKG_ARCH=""
+BINARY=""
+
+usage() {
+	cat <<EOF
+Usage:
+  $(basename "$0") [aarch64|x86_64]
+  $(basename "$0") --rust-target <triple> --opkg-arch <arch> [--binary <path>]
+
+Known targets:
+  aarch64  -> aarch64-unknown-linux-musl / aarch64_generic
+  x86_64   -> x86_64-unknown-linux-musl  / x86_64
+
+Options:
+  --binary <path>       Use a prebuilt cc-switch binary instead of the default
+  --dist-dir <path>     Output directory for generated .ipk files
+  --version <version>   Override the package version
+  --release <release>   Override the package release
+  --list-targets        Print the built-in target mappings
+  -h, --help            Show this help text
+
+For targets not listed above, pass both --rust-target and --opkg-arch.
+The standalone builder expects a statically linked musl binary so runtime
+dependencies remain predictable outside the OpenWrt SDK.
+EOF
+}
+
+list_targets() {
+	cat <<'EOF'
+aarch64  aarch64-unknown-linux-musl  aarch64_generic
+x86_64   x86_64-unknown-linux-musl   x86_64
+EOF
+}
+
+die() {
+	echo "ERROR: $*" >&2
+	exit 1
+}
+
+require_command() {
+	command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+parse_args() {
+	while [ "$#" -gt 0 ]; do
+		case "$1" in
+			aarch64|x86_64)
+				[ -z "$ARCH_ALIAS" ] || die "architecture specified more than once"
+				ARCH_ALIAS="$1"
+				;;
+			--rust-target)
+				shift
+				[ "$#" -gt 0 ] || die "--rust-target requires a value"
+				RUST_TARGET="$1"
+				;;
+			--opkg-arch)
+				shift
+				[ "$#" -gt 0 ] || die "--opkg-arch requires a value"
+				OPKG_ARCH="$1"
+				;;
+			--binary)
+				shift
+				[ "$#" -gt 0 ] || die "--binary requires a value"
+				BINARY="$1"
+				;;
+			--dist-dir)
+				shift
+				[ "$#" -gt 0 ] || die "--dist-dir requires a value"
+				DIST_DIR="$1"
+				;;
+			--version)
+				shift
+				[ "$#" -gt 0 ] || die "--version requires a value"
+				VERSION="$1"
+				;;
+			--release)
+				shift
+				[ "$#" -gt 0 ] || die "--release requires a value"
+				PKG_RELEASE="$1"
+				;;
+			--list-targets)
+				list_targets
+				exit 0
+				;;
+			-h|--help)
+				usage
+				exit 0
+				;;
+			*)
+				die "unknown argument: $1"
+				;;
+		esac
+		shift
+	done
+}
+
+resolve_target() {
+	if [ -n "$ARCH_ALIAS" ] && { [ -n "$RUST_TARGET" ] || [ -n "$OPKG_ARCH" ]; }; then
+		die "use either a built-in arch alias or the explicit --rust-target/--opkg-arch pair"
+	fi
+
+	if [ -n "$ARCH_ALIAS" ]; then
+		case "$ARCH_ALIAS" in
+			aarch64)
+				RUST_TARGET="aarch64-unknown-linux-musl"
+				OPKG_ARCH="aarch64_generic"
+				;;
+			x86_64)
+				RUST_TARGET="x86_64-unknown-linux-musl"
+				OPKG_ARCH="x86_64"
+				;;
+		esac
+	fi
+
+	if [ -z "$RUST_TARGET" ] && [ -z "$OPKG_ARCH" ]; then
+		RUST_TARGET="aarch64-unknown-linux-musl"
+		OPKG_ARCH="aarch64_generic"
+	fi
+
+	[ -n "$RUST_TARGET" ] || die "--opkg-arch requires --rust-target"
+	[ -n "$OPKG_ARCH" ] || die "--rust-target requires --opkg-arch"
+
+	if [ -z "$BINARY" ]; then
+		BINARY="$PROJECT_DIR/proxy-daemon/target/$RUST_TARGET/release/cc-switch"
+	fi
+}
+
+validate_package_metadata() {
+	local luci_version luci_release
+
+	[ -n "$DEFAULT_VERSION" ] || die "failed to determine package version from $DAEMON_MAKEFILE"
+	[ -n "$DEFAULT_RELEASE" ] || die "failed to determine package release from $DAEMON_MAKEFILE"
+
+	luci_version="$(read_make_var "$LUCI_MAKEFILE" PKG_VERSION)"
+	luci_release="$(read_make_var "$LUCI_MAKEFILE" PKG_RELEASE)"
+
+	[ "$DEFAULT_VERSION" = "$luci_version" ] || die "package version mismatch between daemon and LuCI makefiles"
+	[ "$DEFAULT_RELEASE" = "$luci_release" ] || die "package release mismatch between daemon and LuCI makefiles"
+	[ -n "$VERSION" ] || die "effective package version is empty"
+	[ -n "$PKG_RELEASE" ] || die "effective package release is empty"
+}
+
+assert_inputs() {
+	require_command tar
+	require_command sed
+	require_command mktemp
+	require_command file
+	require_command install
+
+	[ -f "$BINARY" ] || die "binary not found: $BINARY
+Build it first with:
+  cd proxy-daemon && cargo build --release --target $RUST_TARGET"
+
+	[ -f "$DAEMON_SRC/etc/config/ccswitch" ] || die "missing daemon config template"
+	[ -f "$DAEMON_SRC/etc/init.d/ccswitch" ] || die "missing daemon init script"
+	[ -f "$LUCI_SRC/root/usr/share/rpcd/acl.d/luci-app-ccswitch.json" ] || die "missing rpcd ACL file"
+	[ -f "$LUCI_SRC/root/usr/share/rpcd/ucode/ccswitch" ] || die "missing rpcd ucode handler"
+	[ -f "$LUCI_SRC/root/usr/share/luci/menu.d/luci-app-ccswitch.json" ] || die "missing LuCI menu file"
+	[ -f "$LUCI_SRC/htdocs/luci-static/resources/view/ccswitch/settings.js" ] || die "missing LuCI settings view"
+}
+
+assert_static_binary() {
+	local file_output
+
+	file_output="$(file "$BINARY")"
+	case "$file_output" in
+		*"statically linked"*|*"static-pie linked"*)
+			;;
+		*)
+			die "standalone IPK builds require a statically linked musl binary.
+Binary inspection result:
+  $file_output"
+			;;
+	esac
+}
+
+setup_tar_flags() {
+	if tar --version 2>/dev/null | grep -q 'GNU tar'; then
+		TAR_FLAGS=(--format=ustar --owner=0 --group=0 --numeric-owner)
+	else
+		TAR_FLAGS=(--format ustar --uid 0 --gid 0 --uname root --gname root)
+	fi
+}
+
+tar_from_dir() {
+	local src_dir="$1"
+	local output="$2"
+
+	COPYFILE_DISABLE=1 tar "${TAR_FLAGS[@]}" -czf "$output" -C "$src_dir" .
+}
+
+tar_from_files() {
+	local cwd="$1"
+	local output="$2"
+	shift 2
+
+	(
+		cd "$cwd"
+		COPYFILE_DISABLE=1 tar "${TAR_FLAGS[@]}" -czf "$output" "$@"
+	)
+}
+
 build_ipk() {
-    local control_dir="$1"
-    local data_dir="$2"
-    local output="$3"
-    local pkg_dir="$WORK_DIR/ipk-assembly"
+	local control_dir="$1"
+	local data_dir="$2"
+	local output="$3"
+	local pkg_dir="$WORK_DIR/$(basename "$output" .ipk)"
 
-    rm -rf "$pkg_dir"
-    mkdir -p "$pkg_dir"
+	rm -rf "$pkg_dir"
+	mkdir -p "$pkg_dir"
 
-    echo "2.0" > "$pkg_dir/debian-binary"
-
-    # Use ustar format — no PAX extended headers, compatible with busybox tar on OpenWrt.
-    TAR_OPTS="--format ustar --no-mac-metadata"
-
-    (cd "$control_dir" && tar $TAR_OPTS -czf "$pkg_dir/control.tar.gz" ./)
-    (cd "$data_dir" && tar $TAR_OPTS -czf "$pkg_dir/data.tar.gz" ./)
-    (cd "$pkg_dir" && tar $TAR_OPTS -czf "$output" debian-binary control.tar.gz data.tar.gz)
-
-    echo "  -> $(basename "$output")"
+	printf '2.0\n' > "$pkg_dir/debian-binary"
+	tar_from_dir "$control_dir" "$pkg_dir/control.tar.gz"
+	tar_from_dir "$data_dir" "$pkg_dir/data.tar.gz"
+	tar_from_files "$pkg_dir" "$output" debian-binary control.tar.gz data.tar.gz
 }
 
-# ============================================================
-# Single package: luci-app-cc-switch (binary + LuCI)
-# ============================================================
-echo "=== Building ${PKG_NAME}_${VERSION}-${PKG_RELEASE}_${OPKG_ARCH}.ipk ==="
+emit_control_file() {
+	local path="$1"
+	local package_name="$2"
+	local section="$3"
+	local arch="$4"
+	local depends="$5"
+	local description="$6"
 
-if [ ! -f "$BINARY" ]; then
-    echo "ERROR: Binary not found at $BINARY"
-    echo "Cross-compile first:"
-    echo "  cd proxy-daemon && cargo build --release --target $RUST_TARGET"
-    exit 1
-fi
-
-# Control
-CONTROL="$WORK_DIR/control"
-mkdir -p "$CONTROL"
-cat > "$CONTROL/control" <<EOF
-Package: ${PKG_NAME}
-Version: ${VERSION}-${PKG_RELEASE}
-Depends: libc, luci-base, rpcd-mod-ucode
-Section: luci
-Architecture: ${OPKG_ARCH}
+	cat > "$path" <<EOF
+Package: $package_name
+Version: $VERSION-$PKG_RELEASE
+Section: $section
+Architecture: $arch
 Maintainer: kuno <noreply@github.com>
-Description: Open CC Switch - AI API Proxy for OpenWrt
- AI API proxy daemon with LuCI web interface. Provides Claude provider
- configuration, request routing, and outbound proxy configuration.
 EOF
 
-cat > "$CONTROL/postinst" <<'EOF'
+	if [ -n "$depends" ]; then
+		cat >> "$path" <<EOF
+Depends: $depends
+EOF
+	fi
+
+	cat >> "$path" <<EOF
+Description: $description
+EOF
+}
+
+build_daemon_package() {
+	local control_dir="$WORK_DIR/cc-switch-control"
+	local data_dir="$WORK_DIR/cc-switch-data"
+	local output="$DIST_DIR/cc-switch_${VERSION}-${PKG_RELEASE}_${OPKG_ARCH}.ipk"
+
+	rm -rf "$control_dir" "$data_dir"
+	mkdir -p "$control_dir" "$data_dir/usr/bin" "$data_dir/etc/config" "$data_dir/etc/init.d"
+
+	emit_control_file \
+		"$control_dir/control" \
+		"cc-switch" \
+		"net" \
+		"$OPKG_ARCH" \
+		"" \
+		"CC Switch AI API proxy daemon for OpenWrt
+ Standalone proxy daemon with procd integration and UCI-managed runtime settings."
+
+	cat > "$control_dir/postinst" <<'EOF'
 #!/bin/sh
 [ -n "${IPKG_INSTROOT}" ] || {
-    chmod +x /usr/bin/cc-switch 2>/dev/null
-    /etc/init.d/rpcd restart
-    /etc/init.d/uhttpd restart
+	chmod 0755 /usr/bin/cc-switch 2>/dev/null || true
+	chmod 0755 /etc/init.d/ccswitch 2>/dev/null || true
+	/etc/init.d/ccswitch restart >/dev/null 2>&1 || true
 }
 exit 0
 EOF
-chmod 755 "$CONTROL/postinst"
+	chmod 0755 "$control_dir/postinst"
 
-cat > "$CONTROL/prerm" <<'EOF'
+	cat > "$control_dir/prerm" <<'EOF'
 #!/bin/sh
 [ -n "${IPKG_INSTROOT}" ] || {
-    /etc/init.d/ccswitch disable 2>/dev/null
-    /etc/init.d/ccswitch stop 2>/dev/null
+	/etc/init.d/ccswitch stop >/dev/null 2>&1 || true
+	/etc/init.d/ccswitch disable >/dev/null 2>&1 || true
 }
 exit 0
 EOF
-chmod 755 "$CONTROL/prerm"
+	chmod 0755 "$control_dir/prerm"
 
-cat > "$CONTROL/conffiles" <<EOF
+	cat > "$control_dir/conffiles" <<'EOF'
 /etc/config/ccswitch
 EOF
 
-# Data — binary + LuCI files
-DATA="$WORK_DIR/data"
+	install -m 0755 "$BINARY" "$data_dir/usr/bin/cc-switch"
+	install -m 0644 "$DAEMON_SRC/etc/config/ccswitch" "$data_dir/etc/config/ccswitch"
+	install -m 0755 "$DAEMON_SRC/etc/init.d/ccswitch" "$data_dir/etc/init.d/ccswitch"
 
-# Binary
-mkdir -p "$DATA/usr/bin"
-cp "$BINARY" "$DATA/usr/bin/cc-switch"
-chmod 755 "$DATA/usr/bin/cc-switch"
+	rm -f "$output"
+	build_ipk "$control_dir" "$data_dir" "$output"
+}
 
-# Config and init script
-mkdir -p "$DATA/etc/config"
-mkdir -p "$DATA/etc/init.d"
-cp "$LUCI_SRC/root/etc/config/ccswitch"    "$DATA/etc/config/"
-cp "$LUCI_SRC/root/etc/init.d/ccswitch"    "$DATA/etc/init.d/"
-chmod 755                                   "$DATA/etc/init.d/ccswitch"
+build_luci_package() {
+	local control_dir="$WORK_DIR/luci-control"
+	local data_dir="$WORK_DIR/luci-data"
+	local output="$DIST_DIR/luci-app-cc-switch_${VERSION}-${PKG_RELEASE}_all.ipk"
 
-# LuCI files
-mkdir -p "$DATA/usr/share/rpcd/acl.d"
-mkdir -p "$DATA/usr/share/rpcd/ucode"
-mkdir -p "$DATA/usr/share/luci/menu.d"
-mkdir -p "$DATA/www/luci-static/resources/view/ccswitch"
-cp "$LUCI_SRC/root/usr/share/rpcd/acl.d/luci-app-ccswitch.json"  "$DATA/usr/share/rpcd/acl.d/"
-cp "$LUCI_SRC/root/usr/share/rpcd/ucode/ccswitch" "$DATA/usr/share/rpcd/ucode/"
-cp "$LUCI_SRC/root/usr/share/luci/menu.d/luci-app-ccswitch.json" "$DATA/usr/share/luci/menu.d/"
-cp "$LUCI_SRC/htdocs/luci-static/resources/view/ccswitch/settings.js" \
-    "$DATA/www/luci-static/resources/view/ccswitch/"
+	rm -rf "$control_dir" "$data_dir"
+	mkdir -p \
+		"$control_dir" \
+		"$data_dir/usr/share/rpcd/acl.d" \
+		"$data_dir/usr/share/rpcd/ucode" \
+		"$data_dir/usr/share/luci/menu.d" \
+		"$data_dir/www/luci-static/resources/view/ccswitch"
 
-build_ipk "$CONTROL" "$DATA" \
-    "$DIST_DIR/${PKG_NAME}_${VERSION}-${PKG_RELEASE}_${OPKG_ARCH}.ipk"
+	emit_control_file \
+		"$control_dir/control" \
+		"luci-app-cc-switch" \
+		"luci" \
+		"all" \
+		"cc-switch, luci-base, rpcd-mod-ucode" \
+		"LuCI support for Open CC Switch
+ Web UI, rpcd ACLs, and OpenWrt-specific management hooks for cc-switch."
 
-# Clean up
-rm -rf "$WORK_DIR"
+	cat > "$control_dir/postinst" <<'EOF'
+#!/bin/sh
+[ -n "${IPKG_INSTROOT}" ] || {
+	rm -rf /tmp/luci-indexcache /tmp/luci-modulecache/*
+	/etc/init.d/rpcd restart >/dev/null 2>&1 || true
+	/etc/init.d/uhttpd reload >/dev/null 2>&1 || /etc/init.d/uhttpd restart >/dev/null 2>&1 || true
+}
+exit 0
+EOF
+	chmod 0755 "$control_dir/postinst"
 
-echo ""
-echo "Done! Package in $DIST_DIR/"
-ls -lh "$DIST_DIR/"
-echo ""
+	cat > "$control_dir/postrm" <<'EOF'
+#!/bin/sh
+[ -n "${IPKG_INSTROOT}" ] || {
+	rm -rf /tmp/luci-indexcache /tmp/luci-modulecache/*
+	/etc/init.d/rpcd restart >/dev/null 2>&1 || true
+	/etc/init.d/uhttpd reload >/dev/null 2>&1 || /etc/init.d/uhttpd restart >/dev/null 2>&1 || true
+}
+exit 0
+EOF
+	chmod 0755 "$control_dir/postrm"
+
+	install -m 0644 \
+		"$LUCI_SRC/root/usr/share/rpcd/acl.d/luci-app-ccswitch.json" \
+		"$data_dir/usr/share/rpcd/acl.d/luci-app-ccswitch.json"
+	install -m 0644 \
+		"$LUCI_SRC/root/usr/share/rpcd/ucode/ccswitch" \
+		"$data_dir/usr/share/rpcd/ucode/ccswitch"
+	install -m 0644 \
+		"$LUCI_SRC/root/usr/share/luci/menu.d/luci-app-ccswitch.json" \
+		"$data_dir/usr/share/luci/menu.d/luci-app-ccswitch.json"
+	install -m 0644 \
+		"$LUCI_SRC/htdocs/luci-static/resources/view/ccswitch/settings.js" \
+		"$data_dir/www/luci-static/resources/view/ccswitch/settings.js"
+
+	rm -f "$output"
+	build_ipk "$control_dir" "$data_dir" "$output"
+}
+
+print_checksums() {
+	if command -v sha256sum >/dev/null 2>&1; then
+		sha256sum "$@"
+	elif command -v shasum >/dev/null 2>&1; then
+		shasum -a 256 "$@"
+	fi
+}
+
+parse_args "$@"
+resolve_target
+validate_package_metadata
+assert_inputs
+assert_static_binary
+setup_tar_flags
+
+mkdir -p "$DIST_DIR"
+WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ccswitch-ipk.XXXXXX")"
+trap 'rm -rf "$WORK_DIR"' EXIT
+
+echo "Building OpenWrt IPKs"
+echo "  Version:      $VERSION-$PKG_RELEASE"
+echo "  Rust target:  $RUST_TARGET"
+echo "  OpenWrt arch: $OPKG_ARCH"
+echo "  Binary:       $BINARY"
+echo "  Dist dir:     $DIST_DIR"
+
+build_daemon_package
+build_luci_package
+
+DAEMON_IPK="$DIST_DIR/cc-switch_${VERSION}-${PKG_RELEASE}_${OPKG_ARCH}.ipk"
+LUCI_IPK="$DIST_DIR/luci-app-cc-switch_${VERSION}-${PKG_RELEASE}_all.ipk"
+
+echo
+echo "Built packages:"
+echo "  $DAEMON_IPK"
+echo "  $LUCI_IPK"
+
+if command -v ls >/dev/null 2>&1; then
+	ls -lh "$DAEMON_IPK" "$LUCI_IPK"
+fi
+
+echo
+echo "SHA256:"
+print_checksums "$DAEMON_IPK" "$LUCI_IPK"
+
+echo
 echo "Install on router:"
-echo "  scp $DIST_DIR/${PKG_NAME}_${VERSION}-${PKG_RELEASE}_${OPKG_ARCH}.ipk root@<router-ip>:/tmp/"
-echo "  ssh root@<router-ip>"
-echo "  opkg install /tmp/${PKG_NAME}_${VERSION}-${PKG_RELEASE}_${OPKG_ARCH}.ipk"
+echo "  opkg install /tmp/$(basename "$DAEMON_IPK") /tmp/$(basename "$LUCI_IPK")"
