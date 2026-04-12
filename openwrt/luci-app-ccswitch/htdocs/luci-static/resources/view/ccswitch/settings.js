@@ -319,6 +319,17 @@ return view.extend({
 		return null;
 	},
 
+	findActiveProviderId: function (providers) {
+		var i;
+
+		for (i = 0; i < providers.length; i++) {
+			if (providers[i].active && providers[i].providerId)
+				return providers[i].providerId;
+		}
+
+		return null;
+	},
+
 	buildProviderState: function (providers, activeProviderId, phase2Available) {
 		var activeProvider = this.emptyProviderView();
 		var i;
@@ -353,6 +364,9 @@ return view.extend({
 			null;
 
 		providers = this.normalizeProviderList(this.extractRawProviders(payload), activeProviderId);
+
+		if (!activeProviderId)
+			activeProviderId = this.findActiveProviderId(providers);
 
 		if (!activeProviderId)
 			activeProviderId = this.matchProviderHint(providers, activeHint);
