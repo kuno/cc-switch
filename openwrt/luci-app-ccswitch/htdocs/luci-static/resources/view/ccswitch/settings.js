@@ -7,6 +7,68 @@
 
 var DEFAULT_TOKEN_FIELD = 'ANTHROPIC_AUTH_TOKEN';
 var ALT_TOKEN_FIELD = 'ANTHROPIC_API_KEY';
+var CODEX_TOKEN_FIELD = 'OPENAI_API_KEY';
+var GEMINI_TOKEN_FIELD = 'GEMINI_API_KEY';
+var APP_STORAGE_KEY = 'ccswitch-openwrt-selected-app';
+var APP_OPTIONS = [
+	{
+		id: 'claude',
+		label: 'Claude',
+		providerLabel: _('Claude Providers'),
+		activeProviderLabel: _('Active Claude Provider'),
+		manageDescription: _('Manage saved Claude-compatible providers for OpenWrt while keeping the existing service and outbound proxy controls above unchanged.'),
+		baseUrlDescription: _('Claude-compatible API endpoint.'),
+		baseUrlPlaceholder: 'https://api.anthropic.com',
+		tokenDescription: _('Choose which Anthropic token env key this provider should use.'),
+		tokenLabel: _('Token'),
+		tokenFieldChoices: [DEFAULT_TOKEN_FIELD, ALT_TOKEN_FIELD],
+		modelDescription: _('Optional. Leave blank to avoid a forced model override.'),
+		modelPlaceholder: _('Optional model override'),
+		summaryRunning: _('Claude traffic will use the active saved provider together with the current outbound proxy settings.'),
+		summaryInactive: _('Add a Claude-compatible provider below, then activate one when you are ready to route Claude traffic through it.'),
+		newProviderExample: _('Example: Claude Provider'),
+		editorNameDescription: _('Display name for this Claude-compatible provider.'),
+		tokenRequiredMessage: _('Token is required for the first save.')
+	},
+	{
+		id: 'codex',
+		label: 'Codex',
+		providerLabel: _('Codex Providers'),
+		activeProviderLabel: _('Active Codex Provider'),
+		manageDescription: _('Manage saved Codex / OpenAI Responses providers for OpenWrt while keeping the existing service and outbound proxy controls above unchanged.'),
+		baseUrlDescription: _('OpenAI-compatible Responses endpoint for Codex traffic.'),
+		baseUrlPlaceholder: 'https://api.openai.com/v1',
+		tokenDescription: _('Codex providers use OPENAI_API_KEY.'),
+		tokenLabel: _('API Key'),
+		tokenFieldChoices: [CODEX_TOKEN_FIELD],
+		modelDescription: _('Optional. Leave blank to keep the current or default Codex model.'),
+		modelPlaceholder: 'gpt-5.4',
+		summaryRunning: _('Codex traffic will use the active saved provider together with the current outbound proxy settings.'),
+		summaryInactive: _('Add a Codex provider below, then activate one when you are ready to route Codex traffic through it.'),
+		newProviderExample: _('Example: Codex Provider'),
+		editorNameDescription: _('Display name for this Codex provider.'),
+		tokenRequiredMessage: _('API key is required for the first save.')
+	},
+	{
+		id: 'gemini',
+		label: 'Gemini',
+		providerLabel: _('Gemini Providers'),
+		activeProviderLabel: _('Active Gemini Provider'),
+		manageDescription: _('Manage saved Gemini-compatible providers for OpenWrt while keeping the existing service and outbound proxy controls above unchanged.'),
+		baseUrlDescription: _('Gemini-compatible API endpoint.'),
+		baseUrlPlaceholder: 'https://generativelanguage.googleapis.com/v1beta',
+		tokenDescription: _('Gemini providers use GEMINI_API_KEY. This can also hold OAuth access-token JSON when needed.'),
+		tokenLabel: _('Credential'),
+		tokenFieldChoices: [GEMINI_TOKEN_FIELD],
+		modelDescription: _('Optional. Leave blank to keep the current or default Gemini model.'),
+		modelPlaceholder: 'gemini-3.1-pro',
+		summaryRunning: _('Gemini traffic will use the active saved provider together with the current outbound proxy settings.'),
+		summaryInactive: _('Add a Gemini provider below, then activate one when you are ready to route Gemini traffic through it.'),
+		newProviderExample: _('Example: Gemini Provider'),
+		editorNameDescription: _('Display name for this Gemini provider.'),
+		tokenRequiredMessage: _('Credential is required for the first save.')
+	}
+];
 
 var callServiceList = rpc.declare({
 	object: 'service',
@@ -18,95 +80,98 @@ var callServiceList = rpc.declare({
 var callGetActiveProvider = rpc.declare({
 	object: 'ccswitch',
 	method: 'get_active_provider',
+	params: ['app'],
 	expect: { '': {} }
 });
 
 var callListProviders = rpc.declare({
 	object: 'ccswitch',
 	method: 'list_providers',
+	params: ['app'],
 	expect: { '': {} }
 });
 
 var callListSavedProviders = rpc.declare({
 	object: 'ccswitch',
 	method: 'list_saved_providers',
+	params: ['app'],
 	expect: { '': {} }
 });
 
 var callUpsertActiveProvider = rpc.declare({
 	object: 'ccswitch',
 	method: 'upsert_active_provider',
-	params: ['provider'],
+	params: ['app', 'provider'],
 	expect: { '': {} }
 });
 
 var callUpsertProvider = rpc.declare({
 	object: 'ccswitch',
 	method: 'upsert_provider',
-	params: ['provider'],
+	params: ['app', 'provider'],
 	expect: { '': {} }
 });
 
 var callSaveProvider = rpc.declare({
 	object: 'ccswitch',
 	method: 'save_provider',
-	params: ['provider'],
+	params: ['app', 'provider'],
 	expect: { '': {} }
 });
 
 var callUpsertProviderByProviderId = rpc.declare({
 	object: 'ccswitch',
 	method: 'upsert_provider',
-	params: ['provider_id', 'provider'],
+	params: ['app', 'provider_id', 'provider'],
 	expect: { '': {} }
 });
 
 var callUpsertProviderById = rpc.declare({
 	object: 'ccswitch',
 	method: 'upsert_provider',
-	params: ['id', 'provider'],
+	params: ['app', 'id', 'provider'],
 	expect: { '': {} }
 });
 
 var callDeleteProviderByProviderId = rpc.declare({
 	object: 'ccswitch',
 	method: 'delete_provider',
-	params: ['provider_id'],
+	params: ['app', 'provider_id'],
 	expect: { '': {} }
 });
 
 var callDeleteProviderById = rpc.declare({
 	object: 'ccswitch',
 	method: 'delete_provider',
-	params: ['id'],
+	params: ['app', 'id'],
 	expect: { '': {} }
 });
 
 var callActivateProviderByProviderId = rpc.declare({
 	object: 'ccswitch',
 	method: 'activate_provider',
-	params: ['provider_id'],
+	params: ['app', 'provider_id'],
 	expect: { '': {} }
 });
 
 var callActivateProviderById = rpc.declare({
 	object: 'ccswitch',
 	method: 'activate_provider',
-	params: ['id'],
+	params: ['app', 'id'],
 	expect: { '': {} }
 });
 
 var callSwitchProviderByProviderId = rpc.declare({
 	object: 'ccswitch',
 	method: 'switch_provider',
-	params: ['provider_id'],
+	params: ['app', 'provider_id'],
 	expect: { '': {} }
 });
 
 var callSwitchProviderById = rpc.declare({
 	object: 'ccswitch',
 	method: 'switch_provider',
-	params: ['id'],
+	params: ['app', 'id'],
 	expect: { '': {} }
 });
 
@@ -121,7 +186,7 @@ return view.extend({
 		return Promise.all([
 			uci.load('ccswitch'),
 			L.resolveDefault(callServiceList('ccswitch'), {}),
-			this.loadProviderState()
+			this.loadProviderState(this.getSelectedApp())
 		]);
 	},
 
@@ -135,13 +200,42 @@ return view.extend({
 		}
 	},
 
-	emptyProviderView: function () {
+	getSelectedApp: function () {
+		var saved = localStorage.getItem(APP_STORAGE_KEY);
+		var i;
+
+		for (i = 0; i < APP_OPTIONS.length; i++) {
+			if (APP_OPTIONS[i].id === saved)
+				return saved;
+		}
+
+		return 'claude';
+	},
+
+	saveSelectedApp: function (appId) {
+		localStorage.setItem(APP_STORAGE_KEY, appId);
+	},
+
+	getAppMeta: function (appId) {
+		var i;
+
+		for (i = 0; i < APP_OPTIONS.length; i++) {
+			if (APP_OPTIONS[i].id === appId)
+				return APP_OPTIONS[i];
+		}
+
+		return APP_OPTIONS[0];
+	},
+
+	emptyProviderView: function (appId) {
+		var appMeta = this.getAppMeta(appId || this.getSelectedApp());
+
 		return {
 			configured: false,
 			providerId: null,
 			name: '',
 			baseUrl: '',
-			tokenField: DEFAULT_TOKEN_FIELD,
+			tokenField: appMeta.tokenFieldChoices[0],
 			tokenConfigured: false,
 			tokenMasked: '',
 			model: '',
@@ -150,11 +244,13 @@ return view.extend({
 		};
 	},
 
-	emptyEditorPayload: function () {
+	emptyEditorPayload: function (appId) {
+		var appMeta = this.getAppMeta(appId || this.getSelectedApp());
+
 		return {
 			name: '',
 			baseUrl: '',
-			tokenField: DEFAULT_TOKEN_FIELD,
+			tokenField: appMeta.tokenFieldChoices[0],
 			token: '',
 			model: '',
 			notes: ''
@@ -172,7 +268,7 @@ return view.extend({
 		}
 	},
 
-	parseProviderState: function (providerResponse) {
+	parseProviderState: function (providerResponse, appId) {
 		var parsed = null;
 
 		if (providerResponse && providerResponse.ok === true && providerResponse.provider_json)
@@ -182,9 +278,9 @@ return view.extend({
 			parsed = providerResponse.provider;
 
 		if (!parsed)
-			return this.emptyProviderView();
+			return this.emptyProviderView(appId);
 
-		return this.normalizeProviderView(parsed, null, null);
+		return this.normalizeProviderView(parsed, null, null, appId);
 	},
 
 	extractPhase2ListPayload: function (response) {
@@ -214,8 +310,9 @@ return view.extend({
 		return null;
 	},
 
-	normalizeProviderView: function (provider, fallbackId, activeProviderId) {
-		var normalized = this.emptyProviderView();
+	normalizeProviderView: function (provider, fallbackId, activeProviderId, appId) {
+		var appMeta = this.getAppMeta(appId || this.getSelectedApp());
+		var normalized = this.emptyProviderView(appId);
 		var providerId = null;
 		var isActive = false;
 
@@ -232,7 +329,7 @@ return view.extend({
 		normalized.providerId = providerId;
 		normalized.name = provider.name || '';
 		normalized.baseUrl = provider.baseUrl || provider.base_url || '';
-		normalized.tokenField = provider.tokenField || provider.token_field || DEFAULT_TOKEN_FIELD;
+		normalized.tokenField = provider.tokenField || provider.token_field || appMeta.tokenFieldChoices[0];
 		normalized.tokenConfigured = !!(provider.tokenConfigured || provider.token_configured);
 		normalized.tokenMasked = provider.tokenMasked || provider.token_masked || '';
 		normalized.model = provider.model || '';
@@ -242,17 +339,17 @@ return view.extend({
 		return normalized;
 	},
 
-	normalizeProviderList: function (rawProviders, activeProviderId) {
+	normalizeProviderList: function (rawProviders, activeProviderId, appId) {
 		var list = [];
 		var self = this;
 
 		if (Array.isArray(rawProviders)) {
 			rawProviders.forEach(function (provider, index) {
-				list.push(self.normalizeProviderView(provider, 'provider-' + index, activeProviderId));
+				list.push(self.normalizeProviderView(provider, 'provider-' + index, activeProviderId, appId));
 			});
 		} else if (rawProviders && typeof rawProviders === 'object') {
 			Object.keys(rawProviders).forEach(function (id) {
-				list.push(self.normalizeProviderView(rawProviders[id], id, activeProviderId));
+				list.push(self.normalizeProviderView(rawProviders[id], id, activeProviderId, appId));
 			});
 		}
 
@@ -330,8 +427,8 @@ return view.extend({
 		return null;
 	},
 
-	buildProviderState: function (providers, activeProviderId, phase2Available) {
-		var activeProvider = this.emptyProviderView();
+	buildProviderState: function (providers, activeProviderId, phase2Available, appId) {
+		var activeProvider = this.emptyProviderView(appId);
 		var i;
 
 		for (i = 0; i < providers.length; i++) {
@@ -348,7 +445,7 @@ return view.extend({
 		};
 	},
 
-	parsePhase2ProviderState: function (listResponse, activeHint) {
+	parsePhase2ProviderState: function (listResponse, activeHint, appId) {
 		var payload = this.extractPhase2ListPayload(listResponse);
 		var activeProviderId;
 		var providers;
@@ -363,7 +460,7 @@ return view.extend({
 			(listResponse && (listResponse.activeProviderId || listResponse.active_provider_id)) ||
 			null;
 
-		providers = this.normalizeProviderList(this.extractRawProviders(payload), activeProviderId);
+		providers = this.normalizeProviderList(this.extractRawProviders(payload), activeProviderId, appId);
 
 		if (!activeProviderId)
 			activeProviderId = this.findActiveProviderId(providers);
@@ -371,10 +468,10 @@ return view.extend({
 		if (!activeProviderId)
 			activeProviderId = this.matchProviderHint(providers, activeHint);
 
-		return this.buildProviderState(providers, activeProviderId, true);
+		return this.buildProviderState(providers, activeProviderId, true, appId);
 	},
 
-	buildLegacyProviderState: function (provider) {
+	buildLegacyProviderState: function (provider, appId) {
 		var providers = [];
 		var state;
 
@@ -383,7 +480,7 @@ return view.extend({
 			providers.push(provider);
 		}
 
-		state = this.buildProviderState(providers, provider.providerId, false);
+		state = this.buildProviderState(providers, provider.providerId, false, appId);
 
 		if (provider && provider.configured && !state.activeProvider.configured) {
 			providers[0].active = true;
@@ -394,27 +491,27 @@ return view.extend({
 		return state;
 	},
 
-	loadProviderState: function () {
+	loadProviderState: function (appId) {
 		return Promise.all([
-			L.resolveDefault(callListProviders(), null),
-			L.resolveDefault(callListSavedProviders(), null),
-			L.resolveDefault(callGetActiveProvider(), { ok: false })
+			L.resolveDefault(callListProviders(appId), null),
+			L.resolveDefault(callListSavedProviders(appId), null),
+			L.resolveDefault(callGetActiveProvider(appId), { ok: false })
 		]).then(L.bind(function (results) {
-			var activeProvider = this.parseProviderState(results[2]);
-			var phase2State = this.parsePhase2ProviderState(results[0], activeProvider) ||
-				this.parsePhase2ProviderState(results[1], activeProvider);
+			var activeProvider = this.parseProviderState(results[2], appId);
+			var phase2State = this.parsePhase2ProviderState(results[0], activeProvider, appId) ||
+				this.parsePhase2ProviderState(results[1], activeProvider, appId);
 
 			if (phase2State)
 				return phase2State;
 
-			return this.buildLegacyProviderState(activeProvider);
+			return this.buildLegacyProviderState(activeProvider, appId);
 		}, this));
 	},
 
-	refreshPageState: function () {
+	refreshPageState: function (appId) {
 		return Promise.all([
 			L.resolveDefault(callServiceList('ccswitch'), {}),
-			this.loadProviderState()
+			this.loadProviderState(appId)
 		]).then(L.bind(function (results) {
 			return {
 				isRunning: this.parseServiceState(results[0]),
@@ -437,15 +534,16 @@ return view.extend({
 		return null;
 	},
 
-	providerToEditorPayload: function (provider) {
-		var payload = this.emptyEditorPayload();
+	providerToEditorPayload: function (provider, appId) {
+		var appMeta = this.getAppMeta(appId || this.getSelectedApp());
+		var payload = this.emptyEditorPayload(appId);
 
 		if (!provider)
 			return payload;
 
 		payload.name = provider.name || '';
 		payload.baseUrl = provider.baseUrl || '';
-		payload.tokenField = provider.tokenField || DEFAULT_TOKEN_FIELD;
+		payload.tokenField = provider.tokenField || appMeta.tokenFieldChoices[0];
 		payload.model = provider.model || '';
 		payload.notes = provider.notes || '';
 
@@ -457,16 +555,17 @@ return view.extend({
 			return uiState.providerState.activeProvider;
 
 		if (uiState.editorMode === 'edit')
-			return this.findProviderById(uiState.providerState.providers, uiState.editProviderId) || this.emptyProviderView();
+			return this.findProviderById(uiState.providerState.providers, uiState.editProviderId) || this.emptyProviderView(uiState.selectedApp);
 
-		return this.emptyProviderView();
+		return this.emptyProviderView(uiState.selectedApp);
 	},
 
-	createUiState: function (isRunning, providerState) {
+	createUiState: function (isRunning, providerState, selectedApp) {
 		var activeProvider = providerState.activeProvider;
 
 		return {
 			isRunning: isRunning,
+			selectedApp: selectedApp,
 			providerState: providerState,
 			editorMode: providerState.phase2Available ? 'new' : (activeProvider.configured ? 'legacy' : 'new'),
 			editProviderId: providerState.phase2Available ? null : providerState.activeProviderId,
@@ -515,10 +614,12 @@ return view.extend({
 	},
 
 	createStatusPanel: function (uiState) {
+		var appMeta = this.getAppMeta(uiState.selectedApp);
 		var serviceValue = E('strong');
 		var providerValue = E('strong');
 		var savedCountValue = E('strong');
 		var summaryValue = E('span', { 'style': 'color:#4b5563' });
+		var providerTitle = E('label', { 'class': 'cbi-value-title' }, [appMeta.activeProviderLabel]);
 		var root = E('div', { 'class': 'cbi-section' }, [
 			E('h3', {}, _('Status')),
 			E('div', { 'class': 'cbi-value' }, [
@@ -526,7 +627,7 @@ return view.extend({
 				E('div', { 'class': 'cbi-value-field' }, [serviceValue])
 			]),
 			E('div', { 'class': 'cbi-value' }, [
-				E('label', { 'class': 'cbi-value-title' }, _('Active Claude Provider')),
+				providerTitle,
 				E('div', { 'class': 'cbi-value-field' }, [providerValue])
 			]),
 			E('div', { 'class': 'cbi-value' }, [
@@ -548,6 +649,7 @@ return view.extend({
 
 		return {
 			root: root,
+			providerTitle: providerTitle,
 			serviceValue: serviceValue,
 			providerValue: providerValue,
 			savedCountValue: savedCountValue,
@@ -556,25 +658,27 @@ return view.extend({
 	},
 
 	updateStatusPanel: function (nodes, uiState) {
+		var appMeta = this.getAppMeta(uiState.selectedApp);
 		var providerState = uiState.providerState;
 		var activeProvider = providerState.activeProvider;
 		var summaryText;
 
 		nodes.serviceValue.textContent = uiState.isRunning ? _('Running') : _('Stopped');
 		nodes.serviceValue.style.color = uiState.isRunning ? '#256f3a' : '#b91c1c';
+		nodes.providerTitle.textContent = appMeta.activeProviderLabel;
 		nodes.providerValue.textContent = activeProvider.configured ? activeProvider.name : _('Not configured');
 		nodes.savedCountValue.textContent = String(providerState.providers.length);
 
 		if (!providerState.phase2Available) {
 			summaryText = activeProvider.configured
 				? _('This build is using the Phase 1 active-provider bridge. Multi-provider actions will appear after the backend Phase 2 RPCs land.')
-				: _('Save the first Claude provider below, then start or restart the service.');
+				: _('Save the first provider below, then start or restart the service.');
 		} else if (activeProvider.configured) {
-			summaryText = _('Claude traffic will use the active saved provider together with the current outbound proxy settings.');
+			summaryText = appMeta.summaryRunning;
 		} else if (providerState.providers.length) {
 			summaryText = _('Saved providers are available, but none is active yet. Activate one below when you are ready to switch routing.');
 		} else {
-			summaryText = _('Add a saved provider below, then activate one when you are ready to route Claude traffic through it.');
+			summaryText = appMeta.summaryInactive;
 		}
 
 		nodes.summaryValue.textContent = summaryText;
@@ -592,6 +696,25 @@ return view.extend({
 			E('label', { 'class': 'cbi-value-title' }, title),
 			E('div', { 'class': 'cbi-value-field' }, fieldChildren)
 		]);
+	},
+
+	renderAppSelector: function (uiState, root, statusNodes) {
+		var self = this;
+		var select = E('select', { 'class': 'cbi-input-select' });
+		var i;
+
+		for (i = 0; i < APP_OPTIONS.length; i++) {
+			select.appendChild(E('option', {
+				'value': APP_OPTIONS[i].id,
+				'selected': APP_OPTIONS[i].id === uiState.selectedApp
+			}, [APP_OPTIONS[i].label]));
+		}
+
+		select.addEventListener('change', function () {
+			self.handleSwitchApp(root, uiState, statusNodes, select.value);
+		});
+
+		return this.renderValue(_('Application'), select, _('Choose which CLI tool provider set to manage on this router.'));
 	},
 
 	renderCompatibilityNotice: function () {
@@ -704,10 +827,11 @@ return view.extend({
 	},
 
 	renderProviderList: function (uiState, root, statusNodes) {
+		var appMeta = this.getAppMeta(uiState.selectedApp);
 		var self = this;
 		var children = [];
 
-		children.push(E('h4', { 'style': 'margin:0 0 0.75rem 0' }, [_('Saved Claude Providers')]));
+		children.push(E('h4', { 'style': 'margin:0 0 0.75rem 0' }, [appMeta.providerLabel]));
 
 		if (!uiState.providerState.providers.length) {
 			children.push(E('p', { 'style': 'margin:0;color:#4b5563' }, [
@@ -726,15 +850,16 @@ return view.extend({
 	},
 
 	renderEditorSection: function (uiState, root, statusNodes) {
+		var appMeta = this.getAppMeta(uiState.selectedApp);
 		var self = this;
 		var editingProvider = this.getEditorProvider(uiState);
-		var payload = this.providerToEditorPayload(editingProvider);
+		var payload = this.providerToEditorPayload(editingProvider, uiState.selectedApp);
 		var title;
 		var description;
 		var tokenHint = E('div', { 'class': 'cbi-value-description' }, [
 			editingProvider.tokenConfigured
-				? _('Stored token: ') + editingProvider.tokenMasked
-				: _('No token stored yet.')
+				? _('Stored credential: ') + editingProvider.tokenMasked
+				: _('No credential stored yet.')
 		]);
 		var nameInput;
 		var baseUrlInput;
@@ -745,56 +870,56 @@ return view.extend({
 		var actionChildren = [];
 
 		if (!uiState.providerState.phase2Available) {
-			title = editingProvider.configured ? _('Active Claude Provider') : _('Configure Claude Provider');
+			title = editingProvider.configured ? appMeta.activeProviderLabel : _('Configure Provider');
 			description = editingProvider.configured
 				? _('This compatibility editor updates the active provider only until the multi-provider backend slice lands.')
-				: _('Save the first Claude provider here. Once the backend Phase 2 RPCs land, this page will expand into a full saved-provider manager.');
+				: _('Save the first provider here. Once the backend app-aware RPCs land, this page will expand into a full saved-provider manager.');
 		} else if (uiState.editorMode === 'edit') {
 			title = _('Edit Saved Provider');
-			description = _('Leave the token blank to keep the stored secret. Saving does not automatically activate a different provider.');
+			description = _('Leave the credential blank to keep the stored secret. Saving does not automatically activate a different provider.');
 		} else {
 			title = _('Add Saved Provider');
-			description = _('Add a Claude-compatible provider to the saved list. Activate it later when you want router traffic to use it.');
+			description = appMeta.summaryInactive;
 		}
 
 		nameInput = E('input', {
 			'class': 'cbi-input-text',
 			'type': 'text',
-			'placeholder': _('Example: Claude Provider'),
+			'placeholder': appMeta.newProviderExample,
 			'value': payload.name
 		});
 
 		baseUrlInput = E('input', {
 			'class': 'cbi-input-text',
 			'type': 'url',
-			'placeholder': 'https://api.anthropic.com',
+			'placeholder': appMeta.baseUrlPlaceholder,
 			'value': payload.baseUrl
 		});
 
-		tokenFieldSelect = E('select', { 'class': 'cbi-input-select' }, [
-			E('option', {
-				'value': DEFAULT_TOKEN_FIELD,
-				'selected': payload.tokenField !== ALT_TOKEN_FIELD
-			}, [DEFAULT_TOKEN_FIELD]),
-			E('option', {
-				'value': ALT_TOKEN_FIELD,
-				'selected': payload.tokenField === ALT_TOKEN_FIELD
-			}, [ALT_TOKEN_FIELD])
-		]);
+		tokenFieldSelect = E('select', {
+			'class': 'cbi-input-select',
+			'disabled': appMeta.tokenFieldChoices.length === 1 ? 'disabled' : null
+		});
+		appMeta.tokenFieldChoices.forEach(function (choice) {
+			tokenFieldSelect.appendChild(E('option', {
+				'value': choice,
+				'selected': payload.tokenField === choice || (!payload.tokenField && choice === appMeta.tokenFieldChoices[0])
+			}, [choice]));
+		});
 
 		tokenInput = E('input', {
 			'class': 'cbi-input-password',
 			'type': 'password',
 			'autocomplete': 'off',
 			'placeholder': editingProvider.tokenConfigured
-				? _('Leave blank to keep the stored token')
-				: _('Enter token')
+				? _('Leave blank to keep the stored credential')
+				: _('Enter credential')
 		});
 
 		modelInput = E('input', {
 			'class': 'cbi-input-text',
 			'type': 'text',
-			'placeholder': _('Optional model override'),
+			'placeholder': appMeta.modelPlaceholder,
 			'value': payload.model
 		});
 
@@ -839,11 +964,11 @@ return view.extend({
 		return E('div', { 'class': 'cbi-section' }, [
 			E('h4', { 'style': 'margin-top:0' }, [title]),
 			E('p', { 'style': 'margin-bottom:1rem;color:#4b5563' }, [description]),
-			this.renderValue(_('Name'), nameInput, _('Display name for this Claude-compatible provider.')),
-			this.renderValue(_('Base URL'), baseUrlInput, _('Claude-compatible API endpoint.')),
-			this.renderValue(_('Token Field'), tokenFieldSelect, _('Choose which Anthropic token env key this provider should use.')),
-			this.renderValue(_('Token'), tokenInput, tokenHint),
-			this.renderValue(_('Model'), modelInput, _('Optional. Leave blank to avoid a forced model override.')),
+			this.renderValue(_('Name'), nameInput, appMeta.editorNameDescription),
+			this.renderValue(_('Base URL'), baseUrlInput, appMeta.baseUrlDescription),
+			this.renderValue(_('Token Field'), tokenFieldSelect, appMeta.tokenDescription),
+			this.renderValue(appMeta.tokenLabel, tokenInput, tokenHint),
+			this.renderValue(_('Model'), modelInput, appMeta.modelDescription),
 			this.renderValue(_('Notes'), notesInput, _('Optional notes stored with this provider.')),
 			E('div', { 'class': 'cbi-page-actions' }, actionChildren)
 		]);
@@ -882,12 +1007,14 @@ return view.extend({
 	},
 
 	renderProviderManagerContent: function (root, uiState, statusNodes) {
+		var appMeta = this.getAppMeta(uiState.selectedApp);
 		var children = [
 			E('div', { 'class': 'cbi-section' }, [
-				E('h3', {}, [_('Claude Providers')]),
+				E('h3', {}, [appMeta.providerLabel]),
 				E('p', { 'style': 'margin-bottom:1rem;color:#4b5563' }, [
-					_('Manage saved Claude-compatible providers for OpenWrt while keeping the existing service and outbound proxy controls above unchanged.')
+					appMeta.manageDescription
 				]),
+				this.renderAppSelector(uiState, root, statusNodes),
 				this.renderMessageBanner(uiState.message),
 				!uiState.providerState.phase2Available ? this.renderCompatibilityNotice() : E('div', { 'style': 'display:none' }),
 				this.renderManagerActions(uiState, root, statusNodes),
@@ -918,7 +1045,9 @@ return view.extend({
 		};
 	},
 
-	validateProviderPayload: function (payload, existingProvider) {
+	validateProviderPayload: function (payload, existingProvider, appId) {
+		var appMeta = this.getAppMeta(appId || 'claude');
+
 		if (!payload.name)
 			return _('Provider name is required.');
 
@@ -926,9 +1055,9 @@ return view.extend({
 			return _('Base URL is required.');
 
 		if (!payload.token && !(existingProvider && existingProvider.tokenConfigured))
-			return _('Token is required for the first save.');
+			return appMeta.tokenRequiredMessage;
 
-		if (payload.tokenField !== DEFAULT_TOKEN_FIELD && payload.tokenField !== ALT_TOKEN_FIELD)
+		if (appMeta.tokenFieldChoices.indexOf(payload.tokenField) < 0)
 			return _('Unsupported token field.');
 
 		return null;
@@ -1017,17 +1146,17 @@ return view.extend({
 		throw new Error(this.rpcFailureMessage(lastCompatibilityFailure) || missingMessage);
 	},
 
-	invokePhase2Upsert: function (providerId, providerPayload) {
+	invokePhase2Upsert: function (appId, providerId, providerPayload) {
 		var missingMessage = _('The Phase 2 provider save RPC is not available in this build.');
 
 		if (providerId) {
 			return this.invokeRpcCandidates([
 				{
-					call: function () { return callUpsertProviderByProviderId(providerId, providerPayload); },
+					call: function () { return callUpsertProviderByProviderId(appId, providerId, providerPayload); },
 					compatibilityFallback: true
 				},
 				{
-					call: function () { return callUpsertProviderById(providerId, providerPayload); },
+					call: function () { return callUpsertProviderById(appId, providerId, providerPayload); },
 					compatibilityFallback: true
 				}
 			], missingMessage);
@@ -1035,45 +1164,45 @@ return view.extend({
 
 		return this.invokeRpcCandidates([
 			{
-				call: function () { return callUpsertProvider(providerPayload); },
+				call: function () { return callUpsertProvider(appId, providerPayload); },
 				compatibilityFallback: true
 			},
 			{
-				call: function () { return callSaveProvider(providerPayload); },
+				call: function () { return callSaveProvider(appId, providerPayload); },
 				compatibilityFallback: true
 			}
 		], missingMessage);
 	},
 
-	invokePhase2Delete: function (providerId) {
+	invokePhase2Delete: function (appId, providerId) {
 		return this.invokeRpcCandidates([
 			{
-				call: function () { return callDeleteProviderByProviderId(providerId); },
+				call: function () { return callDeleteProviderByProviderId(appId, providerId); },
 				compatibilityFallback: true
 			},
 			{
-				call: function () { return callDeleteProviderById(providerId); },
+				call: function () { return callDeleteProviderById(appId, providerId); },
 				compatibilityFallback: true
 			}
 		], _('The Phase 2 provider delete RPC is not available in this build.'));
 	},
 
-	invokePhase2Activate: function (providerId) {
+	invokePhase2Activate: function (appId, providerId) {
 		return this.invokeRpcCandidates([
 			{
-				call: function () { return callActivateProviderByProviderId(providerId); },
+				call: function () { return callActivateProviderByProviderId(appId, providerId); },
 				compatibilityFallback: true
 			},
 			{
-				call: function () { return callActivateProviderById(providerId); },
+				call: function () { return callActivateProviderById(appId, providerId); },
 				compatibilityFallback: true
 			},
 			{
-				call: function () { return callSwitchProviderByProviderId(providerId); },
+				call: function () { return callSwitchProviderByProviderId(appId, providerId); },
 				compatibilityFallback: true
 			},
 			{
-				call: function () { return callSwitchProviderById(providerId); },
+				call: function () { return callSwitchProviderById(appId, providerId); },
 				compatibilityFallback: true
 			}
 		], _('The Phase 2 provider activate RPC is not available in this build.'));
@@ -1088,10 +1217,34 @@ return view.extend({
 		], _('Failed to restart service.'));
 	},
 
+	handleSwitchApp: async function (root, uiState, statusNodes, appId) {
+		var refreshed;
+
+		uiState.busy = true;
+		uiState.selectedApp = appId;
+		this.saveSelectedApp(appId);
+		this.setEditorModeNew(uiState);
+		this.setMessage(uiState, 'info', _('Loading provider set...'));
+		this.rerenderManager(root, uiState, statusNodes);
+
+		try {
+			refreshed = await this.refreshPageState(appId);
+			uiState.isRunning = refreshed.isRunning;
+			uiState.providerState = refreshed.providerState;
+			this.setEditorModeNew(uiState);
+			this.clearMessage(uiState);
+		} catch (err) {
+			this.setMessage(uiState, 'error', err.message || String(err));
+		} finally {
+			uiState.busy = false;
+			this.rerenderManager(root, uiState, statusNodes);
+		}
+	},
+
 	handleSaveProvider: async function (root, uiState, statusNodes, refs) {
 		var payload = this.collectProviderPayload(refs);
 		var existingProvider = this.getEditorProvider(uiState);
-		var validationError = this.validateProviderPayload(payload, existingProvider);
+		var validationError = this.validateProviderPayload(payload, existingProvider, uiState.selectedApp);
 		var previousActiveId = uiState.providerState.activeProviderId;
 		var editingId = uiState.editorMode === 'edit' ? uiState.editProviderId : null;
 		var refreshed;
@@ -1110,25 +1263,25 @@ return view.extend({
 
 		try {
 			if (uiState.providerState.phase2Available) {
-				await this.invokePhase2Upsert(editingId, payload);
-				refreshed = await this.refreshPageState();
+				await this.invokePhase2Upsert(uiState.selectedApp, editingId, payload);
+				refreshed = await this.refreshPageState(uiState.selectedApp);
 				shouldRestart = refreshed.isRunning && (
 					previousActiveId !== refreshed.providerState.activeProviderId ||
 					(editingId && editingId === previousActiveId) ||
 					(!previousActiveId && !!refreshed.providerState.activeProviderId)
 				);
 			} else {
-				var legacyResult = await L.resolveDefault(callUpsertActiveProvider(payload), { ok: false });
+				var legacyResult = await L.resolveDefault(callUpsertActiveProvider(uiState.selectedApp, payload), { ok: false });
 				if (!this.isRpcSuccess(legacyResult))
 					throw new Error(this.rpcError(legacyResult) || _('Failed to save provider.'));
 
-				refreshed = await this.refreshPageState();
+				refreshed = await this.refreshPageState(uiState.selectedApp);
 				shouldRestart = refreshed.isRunning;
 			}
 
 			if (shouldRestart) {
 				await this.restartService();
-				refreshed = await this.refreshPageState();
+				refreshed = await this.refreshPageState(uiState.selectedApp);
 				message = _('Provider saved and service restarted.');
 			}
 
@@ -1159,12 +1312,12 @@ return view.extend({
 		this.rerenderManager(root, uiState, statusNodes);
 
 		try {
-			await this.invokePhase2Activate(providerId);
-			refreshed = await this.refreshPageState();
+			await this.invokePhase2Activate(uiState.selectedApp, providerId);
+			refreshed = await this.refreshPageState(uiState.selectedApp);
 
 			if (refreshed.isRunning && previousActiveId !== refreshed.providerState.activeProviderId) {
 				await this.restartService();
-				refreshed = await this.refreshPageState();
+				refreshed = await this.refreshPageState(uiState.selectedApp);
 				message = _('Provider activated and service restarted.');
 			}
 
@@ -1192,14 +1345,14 @@ return view.extend({
 		this.rerenderManager(root, uiState, statusNodes);
 
 		try {
-			await this.invokePhase2Delete(provider.providerId);
-			refreshed = await this.refreshPageState();
+			await this.invokePhase2Delete(uiState.selectedApp, provider.providerId);
+			refreshed = await this.refreshPageState(uiState.selectedApp);
 
 			if (refreshed.isRunning &&
 				(provider.providerId === previousActiveId ||
 					previousActiveId !== refreshed.providerState.activeProviderId)) {
 				await this.restartService();
-				refreshed = await this.refreshPageState();
+				refreshed = await this.refreshPageState(uiState.selectedApp);
 				message = _('Provider deleted and service restarted.');
 			}
 
@@ -1227,7 +1380,7 @@ return view.extend({
 
 		try {
 			await this.restartService();
-			refreshed = await this.refreshPageState();
+			refreshed = await this.refreshPageState(uiState.selectedApp);
 			uiState.isRunning = refreshed.isRunning;
 			uiState.providerState = refreshed.providerState;
 			this.setMessage(uiState, 'success', _('Service restarted.'));
@@ -1240,11 +1393,12 @@ return view.extend({
 	},
 
 	render: function (data) {
+		var selectedApp = this.getSelectedApp();
 		var isRunning = this.parseServiceState(data[1]);
 		var providerState = data[2];
-		var uiState = this.createUiState(isRunning, providerState);
+		var uiState = this.createUiState(isRunning, providerState, selectedApp);
 		var m = new form.Map('ccswitch', _('Open CC Switch'),
-			_('Configure the OpenWrt service, outbound proxy settings, and Claude provider routing for the router proxy.')
+			_('Configure the OpenWrt service, outbound proxy settings, and provider routing for the router proxy.')
 		);
 		var s, o;
 		var self = this;
