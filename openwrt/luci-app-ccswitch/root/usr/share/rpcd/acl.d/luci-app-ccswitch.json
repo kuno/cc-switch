@@ -5,13 +5,19 @@
 			"uci": ["ccswitch"],
 			"ubus": {
 				"service": ["list"],
-				"ccswitch": ["get_active_provider"]
+				"ccswitch": ["list_providers", "get_provider", "get_active_provider"]
 			}
 		},
 		"write": {
 			"uci": ["ccswitch"],
 			"ubus": {
-				"ccswitch": ["upsert_active_provider", "restart_service"]
+				"ccswitch": [
+					"upsert_provider",
+					"upsert_active_provider",
+					"delete_provider",
+					"activate_provider",
+					"restart_service"
+				]
 			}
 		}
 	}

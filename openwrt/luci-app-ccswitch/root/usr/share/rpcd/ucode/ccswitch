@@ -43,16 +43,87 @@ function runReadCommand(command) {
 	};
 }
 
-function getActiveProvider() {
-	let result = runReadCommand(daemonCommand('openwrt get-active-provider'));
+function commandFailure(result) {
+	return {
+		ok: false,
+		code: result.code,
+		error: result.error ? result.error : (result.output ? result.output : 'command failed')
+	};
+}
+
+function runProviderCommand(command) {
+	let result = runReadCommand(command);
 
 	if (!result.ok)
-		return result;
+		return commandFailure(result);
 
 	return {
 		ok: true,
 		provider_json: result.output
 	};
+}
+
+function runProvidersCommand(command) {
+	let result = runReadCommand(command);
+
+	if (!result.ok)
+		return commandFailure(result);
+
+	return {
+		ok: true,
+		providers_json: result.output
+	};
+}
+
+function runResultCommand(command) {
+	let result = runReadCommand(command);
+
+	if (!result.ok)
+		return commandFailure(result);
+
+	return {
+		ok: true,
+		result_json: result.output
+	};
+}
+
+function requireProviderId(providerId) {
+	if (!providerId)
+		return { ok: false, error: 'provider_id is required' };
+
+	return null;
+}
+
+function listProviders() {
+	return runProvidersCommand(daemonCommand('openwrt list-providers'));
+}
+
+function getProvider(providerId) {
+	let missing = requireProviderId(providerId);
+	if (missing)
+		return missing;
+
+	return runProviderCommand(
+		daemonCommand(`openwrt get-provider ${shellquote(providerId)}`)
+	);
+}
+
+function getActiveProvider() {
+	return runProviderCommand(daemonCommand('openwrt get-active-provider'));
+}
+
+function upsertProvider(providerId, provider) {
+	if (!provider)
+		return { ok: false, error: 'provider payload is required' };
+
+	let providerJson = sprintf('%J', provider);
+	let command = providerId
+		? daemonCommand(`openwrt upsert-provider ${shellquote(providerId)}`)
+		: daemonCommand('openwrt upsert-provider');
+
+	return runProviderCommand(
+		`printf '%s\n' ${shellquote(providerJson)} | ${command}`
+	);
 }
 
 function upsertActiveProvider(provider) {
@@ -61,17 +132,29 @@ function upsertActiveProvider(provider) {
 
 	let providerJson = sprintf('%J', provider);
 
-	let result = runReadCommand(
+	return runProviderCommand(
 		`printf '%s\n' ${shellquote(providerJson)} | ${daemonCommand('openwrt upsert-active-provider')}`
 	);
+}
 
-	if (!result.ok)
-		return result;
+function deleteProvider(providerId) {
+	let missing = requireProviderId(providerId);
+	if (missing)
+		return missing;
 
-	return {
-		ok: true,
-		provider_json: result.output
-	};
+	return runResultCommand(
+		daemonCommand(`openwrt delete-provider ${shellquote(providerId)}`)
+	);
+}
+
+function activateProvider(providerId) {
+	let missing = requireProviderId(providerId);
+	if (missing)
+		return missing;
+
+	return runProviderCommand(
+		daemonCommand(`openwrt activate-provider ${shellquote(providerId)}`)
+	);
 }
 
 function restartService() {
@@ -87,9 +170,36 @@ function restartService() {
 
 return {
 	ccswitch: {
+		list_providers: {
+			call: function() {
+				return listProviders();
+			}
+		},
+
+		get_provider: {
+			args: {
+				provider_id: {}
+			},
+
+			call: function(request) {
+				return getProvider(request.args.provider_id);
+			}
+		},
+
 		get_active_provider: {
 			call: function() {
 				return getActiveProvider();
+			}
+		},
+
+		upsert_provider: {
+			args: {
+				provider_id: {},
+				provider: {}
+			},
+
+			call: function(request) {
+				return upsertProvider(request.args.provider_id, request.args.provider);
 			}
 		},
 
@@ -100,6 +210,26 @@ return {
 
 			call: function(request) {
 				return upsertActiveProvider(request.args.provider);
+			}
+		},
+
+		delete_provider: {
+			args: {
+				provider_id: {}
+			},
+
+			call: function(request) {
+				return deleteProvider(request.args.provider_id);
+			}
+		},
+
+		activate_provider: {
+			args: {
+				provider_id: {}
+			},
+
+			call: function(request) {
+				return activateProvider(request.args.provider_id);
 			}
 		},
 
