@@ -23,6 +23,7 @@ read_make_var() {
 
 DEFAULT_VERSION="$(read_make_var "$DAEMON_MAKEFILE" PKG_VERSION)"
 DEFAULT_RELEASE="$(read_make_var "$DAEMON_MAKEFILE" PKG_RELEASE)"
+CC_SWITCH_LEGACY_OWNERS="luci-app-cc-switch, luci-app-open-cc-switch"
 
 VERSION="${PKG_VERSION_OVERRIDE:-$DEFAULT_VERSION}"
 PKG_RELEASE="${PKG_RELEASE_OVERRIDE:-$DEFAULT_RELEASE}"
@@ -358,6 +359,7 @@ emit_control_file() {
 	local arch="$4"
 	local depends="$5"
 	local description="$6"
+	local replaces="${7:-}"
 
 	cat > "$path" <<EOF
 Package: $package_name
@@ -370,6 +372,12 @@ EOF
 	if [ -n "$depends" ]; then
 		cat >> "$path" <<EOF
 Depends: $depends
+EOF
+	fi
+
+	if [ -n "$replaces" ]; then
+		cat >> "$path" <<EOF
+Replaces: $replaces
 EOF
 	fi
 
@@ -393,7 +401,8 @@ build_daemon_package() {
 		"$OPKG_ARCH" \
 		"" \
 		"CC Switch AI API proxy daemon for OpenWrt
- Standalone proxy daemon with procd integration and UCI-managed runtime settings."
+ Standalone proxy daemon with procd integration and UCI-managed runtime settings." \
+		"$CC_SWITCH_LEGACY_OWNERS"
 
 	emit_default_postinst_wrapper "$control_dir/postinst"
 	emit_daemon_postinst_pkg "$control_dir/postinst-pkg"
@@ -433,7 +442,8 @@ build_luci_package() {
 		"all" \
 		"cc-switch, luci-base, rpcd-mod-ucode" \
 		"LuCI support for Open CC Switch
- Web UI, rpcd ACLs, and OpenWrt-specific management hooks for cc-switch."
+ Web UI, rpcd ACLs, and OpenWrt-specific management hooks for cc-switch." \
+		""
 
 	emit_default_postinst_wrapper "$control_dir/postinst"
 	emit_luci_postinst_pkg "$control_dir/postinst-pkg"

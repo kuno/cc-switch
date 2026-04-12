@@ -4,6 +4,8 @@ PKG_NAME:=cc-switch
 PKG_VERSION:=0.1.0
 PKG_RELEASE:=1
 
+CC_SWITCH_LEGACY_OWNERS:=luci-app-cc-switch luci-app-open-cc-switch
+
 PKG_LICENSE:=MIT
 PKG_MAINTAINER:=kuno <noreply@github.com>
 
@@ -77,3 +79,7 @@ define Package/cc-switch/install
 endef
 
 $(eval $(call BuildPackage,cc-switch))
+
+# OpenWrt's package metadata does not expose a REPLACES variable, so append the
+# control field directly after BuildPackage emits the standard stanza.
+Package/cc-switch/CONTROL += $(call addfield,Replaces,$(call mergelist,$(CC_SWITCH_LEGACY_OWNERS)))
