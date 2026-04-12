@@ -214,7 +214,6 @@ fn upsert_active_claude_provider_with_payload(
     }
 
     let target_provider_id = active_provider_id
-        .or(payload_provider_id)
         .unwrap_or_else(|| DEFAULT_PROVIDER_ID.to_string());
     let existing = db
         .get_provider_by_id(&target_provider_id, CLAUDE_APP_TYPE)
@@ -920,6 +919,40 @@ mod tests {
 
         assert!(active.active);
         assert_eq!(active.provider_id.as_deref(), Some(DEFAULT_PROVIDER_ID));
+        assert_eq!(
+            crate::settings::get_current_provider(&AppType::Claude).as_deref(),
+            Some(DEFAULT_PROVIDER_ID)
+        );
+        assert_eq!(
+            db.get_current_provider(CLAUDE_APP_TYPE)
+                .expect("load db current")
+                .as_deref(),
+            Some(DEFAULT_PROVIDER_ID)
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn legacy_upsert_active_provider_ignores_payload_provider_id_when_no_provider_is_active() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+
+        let mut payload = sample_payload("Phase1", "secret");
+        payload.provider_id = Some("provider-b".to_string());
+
+        let active = upsert_active_claude_provider_with_payload(&db, payload)
+            .expect("upsert active provider with payload provider id");
+
+        assert!(active.active);
+        assert_eq!(active.provider_id.as_deref(), Some(DEFAULT_PROVIDER_ID));
+        assert!(db
+            .get_provider_by_id("provider-b", CLAUDE_APP_TYPE)
+            .expect("load payload-selected provider")
+            .is_none());
+        assert!(db
+            .get_provider_by_id(DEFAULT_PROVIDER_ID, CLAUDE_APP_TYPE)
+            .expect("load default provider")
+            .is_some());
         assert_eq!(
             crate::settings::get_current_provider(&AppType::Claude).as_deref(),
             Some(DEFAULT_PROVIDER_ID)
