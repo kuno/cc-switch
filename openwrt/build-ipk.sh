@@ -246,6 +246,111 @@ build_ipk() {
 	tar_from_files "$pkg_dir" "$output" debian-binary control.tar.gz data.tar.gz
 }
 
+emit_default_postinst_wrapper() {
+	local path="$1"
+
+	cat > "$path" <<'EOF'
+#!/bin/sh
+[ "${IPKG_NO_SCRIPT}" = "1" ] && exit 0
+. ${IPKG_INSTROOT}/lib/functions.sh
+default_postinst $0 "$@"
+EOF
+	chmod 0755 "$path"
+}
+
+emit_default_prerm_wrapper() {
+	local path="$1"
+
+	cat > "$path" <<'EOF'
+#!/bin/sh
+[ "${IPKG_NO_SCRIPT}" = "1" ] && exit 0
+. ${IPKG_INSTROOT}/lib/functions.sh
+default_prerm $0 "$@"
+EOF
+	chmod 0755 "$path"
+}
+
+emit_daemon_postinst_pkg() {
+	local path="$1"
+
+	cat > "$path" <<'EOF'
+#!/bin/sh
+STATE_FILE="/var/run/ccswitch.enabled-before-upgrade"
+[ -n "${IPKG_INSTROOT}" ] || {
+	chmod 0755 /usr/bin/cc-switch 2>/dev/null || true
+	chmod 0755 /etc/init.d/ccswitch 2>/dev/null || true
+	if [ -f "$STATE_FILE" ]; then
+		rm -f "$STATE_FILE"
+		/etc/init.d/ccswitch enable >/dev/null 2>&1 || true
+		/etc/init.d/ccswitch restart >/dev/null 2>&1 || true
+	fi
+}
+exit 0
+EOF
+	chmod 0755 "$path"
+}
+
+emit_daemon_prerm_pkg() {
+	local path="$1"
+
+	cat > "$path" <<'EOF'
+#!/bin/sh
+STATE_FILE="/var/run/ccswitch.enabled-before-upgrade"
+[ -n "${IPKG_INSTROOT}" ] || {
+	if /etc/init.d/ccswitch enabled >/dev/null 2>&1; then
+		mkdir -p "${STATE_FILE%/*}"
+		: > "$STATE_FILE"
+	else
+		rm -f "$STATE_FILE"
+	fi
+}
+exit 0
+EOF
+	chmod 0755 "$path"
+}
+
+emit_daemon_postrm() {
+	local path="$1"
+
+	cat > "$path" <<'EOF'
+#!/bin/sh
+STATE_FILE="/var/run/ccswitch.enabled-before-upgrade"
+[ -n "${IPKG_INSTROOT}" ] || rm -f "$STATE_FILE"
+exit 0
+EOF
+	chmod 0755 "$path"
+}
+
+emit_luci_postinst_pkg() {
+	local path="$1"
+
+	cat > "$path" <<'EOF'
+#!/bin/sh
+[ -n "${IPKG_INSTROOT}" ] || {
+	rm -rf /tmp/luci-indexcache /tmp/luci-modulecache/*
+	/etc/init.d/rpcd restart >/dev/null 2>&1 || true
+	/etc/init.d/uhttpd reload >/dev/null 2>&1 || /etc/init.d/uhttpd restart >/dev/null 2>&1 || true
+}
+exit 0
+EOF
+	chmod 0755 "$path"
+}
+
+emit_luci_postrm() {
+	local path="$1"
+
+	cat > "$path" <<'EOF'
+#!/bin/sh
+[ -n "${IPKG_INSTROOT}" ] || {
+	rm -rf /tmp/luci-indexcache /tmp/luci-modulecache/*
+	/etc/init.d/rpcd restart >/dev/null 2>&1 || true
+	/etc/init.d/uhttpd reload >/dev/null 2>&1 || /etc/init.d/uhttpd restart >/dev/null 2>&1 || true
+}
+exit 0
+EOF
+	chmod 0755 "$path"
+}
+
 emit_control_file() {
 	local path="$1"
 	local package_name="$2"
@@ -290,26 +395,11 @@ build_daemon_package() {
 		"CC Switch AI API proxy daemon for OpenWrt
  Standalone proxy daemon with procd integration and UCI-managed runtime settings."
 
-	cat > "$control_dir/postinst" <<'EOF'
-#!/bin/sh
-[ -n "${IPKG_INSTROOT}" ] || {
-	chmod 0755 /usr/bin/cc-switch 2>/dev/null || true
-	chmod 0755 /etc/init.d/ccswitch 2>/dev/null || true
-	/etc/init.d/ccswitch restart >/dev/null 2>&1 || true
-}
-exit 0
-EOF
-	chmod 0755 "$control_dir/postinst"
-
-	cat > "$control_dir/prerm" <<'EOF'
-#!/bin/sh
-[ -n "${IPKG_INSTROOT}" ] || {
-	/etc/init.d/ccswitch stop >/dev/null 2>&1 || true
-	/etc/init.d/ccswitch disable >/dev/null 2>&1 || true
-}
-exit 0
-EOF
-	chmod 0755 "$control_dir/prerm"
+	emit_default_postinst_wrapper "$control_dir/postinst"
+	emit_daemon_postinst_pkg "$control_dir/postinst-pkg"
+	emit_default_prerm_wrapper "$control_dir/prerm"
+	emit_daemon_prerm_pkg "$control_dir/prerm-pkg"
+	emit_daemon_postrm "$control_dir/postrm"
 
 	cat > "$control_dir/conffiles" <<'EOF'
 /etc/config/ccswitch
@@ -345,27 +435,9 @@ build_luci_package() {
 		"LuCI support for Open CC Switch
  Web UI, rpcd ACLs, and OpenWrt-specific management hooks for cc-switch."
 
-	cat > "$control_dir/postinst" <<'EOF'
-#!/bin/sh
-[ -n "${IPKG_INSTROOT}" ] || {
-	rm -rf /tmp/luci-indexcache /tmp/luci-modulecache/*
-	/etc/init.d/rpcd restart >/dev/null 2>&1 || true
-	/etc/init.d/uhttpd reload >/dev/null 2>&1 || /etc/init.d/uhttpd restart >/dev/null 2>&1 || true
-}
-exit 0
-EOF
-	chmod 0755 "$control_dir/postinst"
-
-	cat > "$control_dir/postrm" <<'EOF'
-#!/bin/sh
-[ -n "${IPKG_INSTROOT}" ] || {
-	rm -rf /tmp/luci-indexcache /tmp/luci-modulecache/*
-	/etc/init.d/rpcd restart >/dev/null 2>&1 || true
-	/etc/init.d/uhttpd reload >/dev/null 2>&1 || /etc/init.d/uhttpd restart >/dev/null 2>&1 || true
-}
-exit 0
-EOF
-	chmod 0755 "$control_dir/postrm"
+	emit_default_postinst_wrapper "$control_dir/postinst"
+	emit_luci_postinst_pkg "$control_dir/postinst-pkg"
+	emit_luci_postrm "$control_dir/postrm"
 
 	install -m 0644 \
 		"$LUCI_SRC/root/usr/share/rpcd/acl.d/luci-app-ccswitch.json" \

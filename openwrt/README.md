@@ -6,7 +6,7 @@ This directory contains split OpenWrt packaging for:
 - `luci-app-cc-switch`: the LuCI UI plus rpcd ACL/ucode integration
 
 The split package layout is the same in both the feed metadata and the
-standalone `build-ipk.sh` path.
+standalone `build-ipk.sh` path, including package lifecycle hooks.
 
 ## Package layout
 
@@ -69,6 +69,12 @@ The feed packages live here:
 - `openwrt/proxy-daemon/`
 - `openwrt/luci-app-ccswitch/`
 
+The feed Makefiles also define the package maintainer hooks used for live
+install, upgrade, and removal:
+
+- `Package/cc-switch/{postinst,prerm,postrm}`
+- `Package/luci-app-cc-switch/{postinst,postrm}`
+
 Before running the OpenWrt package build, place the prebuilt daemon binary at:
 
 ```bash
@@ -77,6 +83,13 @@ openwrt/proxy-daemon/files/cc-switch
 
 That package directory also owns the init/config templates under
 `openwrt/proxy-daemon/files/etc/`.
+
+The standalone builder mirrors the same lifecycle behavior by emitting the
+OpenWrt-style control-script split directly into the `.ipk` archives:
+
+- `postinst` wrapper plus `postinst-pkg`
+- `prerm` wrapper plus `prerm-pkg`
+- `postrm` where needed
 
 ## Install on a router
 
@@ -94,8 +107,9 @@ ssh $ROUTER opkg install \
 
 Live install and removal behavior:
 
-- `cc-switch` restarts the service on install or upgrade, but it only stays up when `ccswitch.main.enabled=1`
-- `cc-switch` stops and disables the service before removal
+- on first install, `cc-switch` follows the normal OpenWrt init-script flow and enables the service at boot; runtime start still depends on `ccswitch.main.enabled=1`
+- on upgrade or replacement, `cc-switch` remembers whether the init script was enabled before `prerm` and restores that enablement in `postinst`
+- on final removal, `cc-switch` disables the init script, stops the service, and clears its temporary upgrade-state marker
 - `/etc/config/ccswitch` is packaged as a conffile and is preserved across upgrades
 - `luci-app-cc-switch` refreshes rpcd, uhttpd, and LuCI caches on install and removal
 - runtime data under `/etc/cc-switch` is left in place on package removal

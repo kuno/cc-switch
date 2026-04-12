@@ -25,6 +25,42 @@ define Package/cc-switch/conffiles
 /etc/config/ccswitch
 endef
 
+define Package/cc-switch/postinst
+#!/bin/sh
+STATE_FILE="/var/run/ccswitch.enabled-before-upgrade"
+[ -n "$${IPKG_INSTROOT}" ] || {
+	chmod 0755 /usr/bin/cc-switch 2>/dev/null || true
+	chmod 0755 /etc/init.d/ccswitch 2>/dev/null || true
+	if [ -f "$$STATE_FILE" ]; then
+		rm -f "$$STATE_FILE"
+		/etc/init.d/ccswitch enable >/dev/null 2>&1 || true
+		/etc/init.d/ccswitch restart >/dev/null 2>&1 || true
+	fi
+}
+exit 0
+endef
+
+define Package/cc-switch/prerm
+#!/bin/sh
+STATE_FILE="/var/run/ccswitch.enabled-before-upgrade"
+[ -n "$${IPKG_INSTROOT}" ] || {
+	if /etc/init.d/ccswitch enabled >/dev/null 2>&1; then
+		mkdir -p "$${STATE_FILE%/*}"
+		: > "$$STATE_FILE"
+	else
+		rm -f "$$STATE_FILE"
+	fi
+}
+exit 0
+endef
+
+define Package/cc-switch/postrm
+#!/bin/sh
+STATE_FILE="/var/run/ccswitch.enabled-before-upgrade"
+[ -n "$${IPKG_INSTROOT}" ] || rm -f "$$STATE_FILE"
+exit 0
+endef
+
 # Skip source compile — we use a pre-built static binary.
 # Cross-compile the binary before packaging:
 #   cd proxy-daemon && cargo build --release --target aarch64-unknown-linux-musl
