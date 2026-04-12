@@ -165,7 +165,8 @@ impl WebDavSyncSettings {
 
 /// 应用设置结构
 ///
-/// 存储设备级别设置，保存在本地 `~/.cc-switch/settings.json`，不随数据库同步。
+/// 存储设备级别设置，默认保存在本地 `~/.cc-switch/settings.json`，
+/// 若存在 app config dir override（例如 OpenWrt 的 `CC_SWITCH_DATA_DIR`）则跟随该目录。
 /// 这确保了云同步场景下多设备可以独立运作。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -333,12 +334,9 @@ impl Default for AppSettings {
 
 impl AppSettings {
     fn settings_path() -> Option<PathBuf> {
-        // settings.json 保留用于旧版本迁移和无数据库场景
-        Some(
-            crate::config::get_home_dir()
-                .join(".cc-switch")
-                .join("settings.json"),
-        )
+        // settings.json 保留用于旧版本迁移和无数据库场景，
+        // 但路径应与 app config dir 保持一致，避免 DB 和 settings 分离。
+        Some(crate::config::get_app_config_dir().join("settings.json"))
     }
 
     fn normalize_paths(&mut self) {
@@ -642,6 +640,147 @@ pub fn get_effective_current_provider(
 
     // Fallback 到数据库的 is_current
     db.get_current_provider(app_type.as_str())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::Value;
+    use std::sync::{Mutex, OnceLock};
+    use tempfile::TempDir;
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    struct TestEnv {
+        _guard: std::sync::MutexGuard<'static, ()>,
+        _tmp: TempDir,
+        original_home: Option<String>,
+        original_userprofile: Option<String>,
+        original_test_home: Option<String>,
+        original_data_dir: Option<String>,
+    }
+
+    impl TestEnv {
+        fn new() -> Self {
+            let guard = env_lock().lock().expect("lock test env");
+            let tmp = TempDir::new().expect("create temp dir");
+            let home = tmp.path().join("home");
+            let data = tmp.path().join("data");
+
+            fs::create_dir_all(home.join(".cc-switch")).expect("create home settings dir");
+            fs::create_dir_all(&data).expect("create override settings dir");
+
+            let original_home = std::env::var("HOME").ok();
+            let original_userprofile = std::env::var("USERPROFILE").ok();
+            let original_test_home = std::env::var("CC_SWITCH_TEST_HOME").ok();
+            let original_data_dir = std::env::var("CC_SWITCH_DATA_DIR").ok();
+
+            std::env::set_var("HOME", &home);
+            std::env::set_var("USERPROFILE", &home);
+            std::env::set_var("CC_SWITCH_TEST_HOME", &home);
+            std::env::set_var("CC_SWITCH_DATA_DIR", &data);
+
+            Self {
+                _guard: guard,
+                _tmp: tmp,
+                original_home,
+                original_userprofile,
+                original_test_home,
+                original_data_dir,
+            }
+        }
+
+        fn home_settings_path(&self) -> PathBuf {
+            std::env::var("CC_SWITCH_TEST_HOME")
+                .map(PathBuf::from)
+                .expect("test home")
+                .join(".cc-switch")
+                .join("settings.json")
+        }
+
+        fn override_settings_path(&self) -> PathBuf {
+            std::env::var("CC_SWITCH_DATA_DIR")
+                .map(PathBuf::from)
+                .expect("override dir")
+                .join("settings.json")
+        }
+    }
+
+    impl Drop for TestEnv {
+        fn drop(&mut self) {
+            match &self.original_home {
+                Some(value) => std::env::set_var("HOME", value),
+                None => std::env::remove_var("HOME"),
+            }
+            match &self.original_userprofile {
+                Some(value) => std::env::set_var("USERPROFILE", value),
+                None => std::env::remove_var("USERPROFILE"),
+            }
+            match &self.original_test_home {
+                Some(value) => std::env::set_var("CC_SWITCH_TEST_HOME", value),
+                None => std::env::remove_var("CC_SWITCH_TEST_HOME"),
+            }
+            match &self.original_data_dir {
+                Some(value) => std::env::set_var("CC_SWITCH_DATA_DIR", value),
+                None => std::env::remove_var("CC_SWITCH_DATA_DIR"),
+            }
+
+            let _ = reload_settings();
+        }
+    }
+
+    #[test]
+    fn settings_path_uses_app_config_dir_override() {
+        let env = TestEnv::new();
+        let home_settings = env.home_settings_path();
+        let override_settings = env.override_settings_path();
+
+        fs::write(
+            &home_settings,
+            r#"{"currentProviderClaude":"stale-home-provider"}"#,
+        )
+        .expect("write stale home settings");
+        fs::write(
+            &override_settings,
+            r#"{"currentProviderClaude":"openwrt-provider"}"#,
+        )
+        .expect("write override settings");
+
+        reload_settings().expect("reload settings from override path");
+        assert_eq!(
+            get_current_provider(&AppType::Claude).as_deref(),
+            Some("openwrt-provider")
+        );
+
+        set_current_provider(&AppType::Claude, Some("updated-provider"))
+            .expect("save settings through override path");
+
+        let override_value: Value = serde_json::from_str(
+            &fs::read_to_string(&override_settings).expect("read override settings"),
+        )
+        .expect("parse override settings");
+        let home_value: Value =
+            serde_json::from_str(&fs::read_to_string(&home_settings).expect("read home settings"))
+                .expect("parse home settings");
+
+        assert_eq!(
+            override_value
+                .get("currentProviderClaude")
+                .and_then(Value::as_str),
+            Some("updated-provider")
+        );
+        assert_eq!(
+            home_value
+                .get("currentProviderClaude")
+                .and_then(Value::as_str),
+            Some("stale-home-provider")
+        );
+
+        reload_settings().expect("reload settings after mutation");
+    }
 }
 
 // ===== Skill 同步方式管理函数 =====

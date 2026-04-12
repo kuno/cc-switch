@@ -1,10 +1,10 @@
 # CC Switch for OpenWrt
 
-LuCI app + proxy-daemon package for OpenWrt.
+LuCI app + `cc-switch` daemon package for OpenWrt.
 
 ## Quick Start (manual install without OpenWrt SDK)
 
-### 1. Cross-compile proxy-daemon
+### 1. Cross-compile cc-switch
 
 ```bash
 cd proxy-daemon
@@ -17,8 +17,8 @@ cargo build --release --target aarch64-unknown-linux-musl
 ROUTER=root@192.168.1.1
 
 # Binary
-scp proxy-daemon/target/aarch64-unknown-linux-musl/release/proxy-daemon $ROUTER:/usr/bin/
-ssh $ROUTER chmod +x /usr/bin/proxy-daemon
+scp proxy-daemon/target/aarch64-unknown-linux-musl/release/cc-switch $ROUTER:/usr/bin/
+ssh $ROUTER chmod +x /usr/bin/cc-switch
 
 # UCI config
 scp openwrt/luci-app-ccswitch/root/etc/config/ccswitch $ROUTER:/etc/config/
@@ -29,6 +29,7 @@ ssh $ROUTER chmod +x /etc/init.d/ccswitch
 
 # LuCI files
 scp openwrt/luci-app-ccswitch/root/usr/share/rpcd/acl.d/luci-app-ccswitch.json $ROUTER:/usr/share/rpcd/acl.d/
+scp openwrt/luci-app-ccswitch/root/usr/share/rpcd/ucode/ccswitch $ROUTER:/usr/share/rpcd/ucode/
 scp openwrt/luci-app-ccswitch/root/usr/share/luci/menu.d/luci-app-ccswitch.json $ROUTER:/usr/share/luci/menu.d/
 scp openwrt/luci-app-ccswitch/htdocs/luci-static/resources/view/ccswitch/settings.js $ROUTER:/www/luci-static/resources/view/ccswitch/
 
@@ -47,7 +48,12 @@ ssh $ROUTER /etc/init.d/ccswitch enable
 ssh $ROUTER /etc/init.d/ccswitch start
 ```
 
-### 4. Configure AI clients
+### 4. Configure the Claude provider in LuCI
+
+Open `http://192.168.1.1/cgi-bin/luci/admin/services/ccswitch`, save one Claude-compatible
+provider, then restart the service from the same page if it is already running.
+
+### 5. Configure AI clients
 
 On LAN machines, point AI tools at the router:
 

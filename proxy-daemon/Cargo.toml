@@ -68,3 +68,6 @@ lto = "thin"
 opt-level = "s"
 panic = "unwind"
 strip = "symbols"
+
+[dev-dependencies]
+serial_test = "3"
