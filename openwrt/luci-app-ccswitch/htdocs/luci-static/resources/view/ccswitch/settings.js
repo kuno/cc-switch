@@ -1018,17 +1018,16 @@ return view.extend({
 	},
 
 	invokePhase2Upsert: function (providerId, providerPayload) {
-		var providerJson = JSON.stringify(providerPayload);
 		var missingMessage = _('The Phase 2 provider save RPC is not available in this build.');
 
 		if (providerId) {
 			return this.invokeRpcCandidates([
 				{
-					call: function () { return callUpsertProviderByProviderId(providerId, providerJson); },
+					call: function () { return callUpsertProviderByProviderId(providerId, providerPayload); },
 					compatibilityFallback: true
 				},
 				{
-					call: function () { return callUpsertProviderById(providerId, providerJson); },
+					call: function () { return callUpsertProviderById(providerId, providerPayload); },
 					compatibilityFallback: true
 				}
 			], missingMessage);
@@ -1036,11 +1035,11 @@ return view.extend({
 
 		return this.invokeRpcCandidates([
 			{
-				call: function () { return callUpsertProvider(providerJson); },
+				call: function () { return callUpsertProvider(providerPayload); },
 				compatibilityFallback: true
 			},
 			{
-				call: function () { return callSaveProvider(providerJson); },
+				call: function () { return callSaveProvider(providerPayload); },
 				compatibilityFallback: true
 			}
 		], missingMessage);
@@ -1119,7 +1118,7 @@ return view.extend({
 					(!previousActiveId && !!refreshed.providerState.activeProviderId)
 				);
 			} else {
-				var legacyResult = await L.resolveDefault(callUpsertActiveProvider(JSON.stringify(payload)), { ok: false });
+				var legacyResult = await L.resolveDefault(callUpsertActiveProvider(payload), { ok: false });
 				if (!this.isRpcSuccess(legacyResult))
 					throw new Error(this.rpcError(legacyResult) || _('Failed to save provider.'));
 
