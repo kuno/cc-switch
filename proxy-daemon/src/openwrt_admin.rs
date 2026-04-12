@@ -85,7 +85,7 @@ impl Default for ClaudeProviderView {
 }
 
 pub fn list_claude_providers(db: &Database) -> anyhow::Result<ClaudeProviderListView> {
-    let active_provider_id = resolve_active_provider_id(db)?;
+    let active_provider_id = resolve_active_provider_id_for_read(db)?;
     let providers = db
         .get_all_providers(CLAUDE_APP_TYPE)
         .map_err(|e| anyhow!("failed to list Claude providers: {e}"))?;
@@ -98,18 +98,20 @@ pub fn list_claude_providers(db: &Database) -> anyhow::Result<ClaudeProviderList
 
 pub fn get_claude_provider(db: &Database, provider_id: &str) -> anyhow::Result<ClaudeProviderView> {
     let provider = load_provider(db, provider_id)?;
-    let active_provider_id = resolve_active_provider_id(db)?;
+    let active_provider_id = resolve_active_provider_id_for_read(db)?;
     Ok(provider_to_view(&provider, active_provider_id.as_deref()))
 }
 
 pub fn get_active_claude_provider(db: &Database) -> anyhow::Result<ClaudeProviderView> {
-    let active_provider_id = resolve_active_provider_id(db)?;
-    Ok(active_provider_id
+    let active_provider_id = resolve_active_provider_id_for_read(db)?;
+    let provider = active_provider_id
         .as_deref()
         .map(|provider_id| load_provider(db, provider_id))
-        .transpose()?
+        .transpose()?;
+
+    Ok(provider
         .as_ref()
-        .map(|provider| provider_to_view(provider, active_provider_id.as_deref()))
+        .map(|provider| provider_to_view(provider, Some(provider.id.as_str())))
         .unwrap_or_default())
 }
 
@@ -161,10 +163,11 @@ pub fn delete_claude_provider(
         db_current.as_deref(),
     );
     set_active_provider_id(db, next_current.as_deref())?;
+    let response_active_provider_id = resolve_active_provider_id_for_read(db)?;
 
     Ok(ClaudeProviderDeleteView {
         deleted_provider_id: normalized_provider_id,
-        active_provider_id: next_current,
+        active_provider_id: response_active_provider_id,
         providers_remaining: remaining.len(),
     })
 }
@@ -192,7 +195,7 @@ fn upsert_claude_provider_with_payload(
     db.save_provider(CLAUDE_APP_TYPE, &provider)
         .map_err(|e| anyhow!("failed to save Claude provider: {e}"))?;
 
-    let active_provider_id = resolve_active_provider_id(db)?;
+    let active_provider_id = resolve_active_provider_id_for_read(db)?;
     Ok(provider_to_view(&provider, active_provider_id.as_deref()))
 }
 
@@ -214,9 +217,7 @@ fn upsert_active_claude_provider_with_payload(
         }
     }
 
-    let target_provider_id = active_provider_id
-        .or(payload_provider_id)
-        .unwrap_or_else(|| DEFAULT_PROVIDER_ID.to_string());
+    let target_provider_id = active_provider_id.unwrap_or_else(|| DEFAULT_PROVIDER_ID.to_string());
     let existing = db
         .get_provider_by_id(&target_provider_id, CLAUDE_APP_TYPE)
         .map_err(|e| anyhow!("failed to load Claude provider {target_provider_id}: {e}"))?;
@@ -252,6 +253,19 @@ fn load_provider(db: &Database, provider_id: &str) -> anyhow::Result<Provider> {
 fn resolve_active_provider_id(db: &Database) -> anyhow::Result<Option<String>> {
     crate::settings::get_effective_current_provider(db, &AppType::Claude)
         .map_err(|e| anyhow!("failed to resolve active Claude provider: {e}"))
+}
+
+fn resolve_active_provider_id_for_read(db: &Database) -> anyhow::Result<Option<String>> {
+    if let Some(provider_id) = resolve_active_provider_id(db)? {
+        return Ok(Some(provider_id));
+    }
+
+    let has_legacy_default = db
+        .get_provider_by_id(DEFAULT_PROVIDER_ID, CLAUDE_APP_TYPE)
+        .map_err(|e| anyhow!("failed to load Claude provider {DEFAULT_PROVIDER_ID}: {e}"))?
+        .is_some();
+
+    Ok(has_legacy_default.then(|| DEFAULT_PROVIDER_ID.to_string()))
 }
 
 fn set_active_provider_id(db: &Database, provider_id: Option<&str>) -> anyhow::Result<()> {
@@ -869,6 +883,78 @@ mod tests {
 
     #[test]
     #[serial]
+    fn legacy_get_active_provider_falls_back_to_default_slot_when_no_provider_is_marked_current() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+
+        upsert_claude_provider_with_payload(
+            &db,
+            Some(DEFAULT_PROVIDER_ID),
+            sample_payload("Phase1", "secret"),
+        )
+        .expect("create default provider");
+
+        let active = get_active_claude_provider(&db).expect("read active provider");
+
+        assert!(active.configured);
+        assert!(active.active);
+        assert_eq!(active.provider_id.as_deref(), Some(DEFAULT_PROVIDER_ID));
+        assert_eq!(active.name, "Phase1");
+        assert_eq!(
+            crate::settings::get_current_provider(&AppType::Claude),
+            None
+        );
+        assert_eq!(
+            db.get_current_provider(CLAUDE_APP_TYPE)
+                .expect("load db current"),
+            None
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn legacy_read_surfaces_fall_back_to_default_slot_when_no_provider_is_marked_current() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+
+        upsert_claude_provider_with_payload(
+            &db,
+            Some(DEFAULT_PROVIDER_ID),
+            sample_payload("Phase1", "secret"),
+        )
+        .expect("create default provider");
+
+        let active = get_active_claude_provider(&db).expect("read active provider");
+        let provider = get_claude_provider(&db, DEFAULT_PROVIDER_ID).expect("read provider");
+        let list = list_claude_providers(&db).expect("list providers");
+
+        assert!(active.active);
+        assert_eq!(active.provider_id.as_deref(), Some(DEFAULT_PROVIDER_ID));
+        assert!(provider.active);
+        assert_eq!(provider.provider_id.as_deref(), Some(DEFAULT_PROVIDER_ID));
+        assert_eq!(
+            list.active_provider_id.as_deref(),
+            Some(DEFAULT_PROVIDER_ID)
+        );
+        assert_eq!(list.providers.len(), 1);
+        assert_eq!(
+            list.providers[0].provider_id.as_deref(),
+            Some(DEFAULT_PROVIDER_ID)
+        );
+        assert!(list.providers[0].active);
+        assert_eq!(
+            crate::settings::get_current_provider(&AppType::Claude),
+            None
+        );
+        assert_eq!(
+            db.get_current_provider(CLAUDE_APP_TYPE)
+                .expect("load db current"),
+            None
+        );
+    }
+
+    #[test]
+    #[serial]
     fn legacy_upsert_active_provider_uses_phase_one_default_id() {
         let _env = TestEnv::new();
         let db = Database::memory().expect("db");
@@ -888,6 +974,133 @@ mod tests {
                 .expect("load db current")
                 .as_deref(),
             Some(DEFAULT_PROVIDER_ID)
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn legacy_upsert_active_provider_ignores_payload_provider_id_when_no_provider_is_active() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+
+        let mut payload = sample_payload("Phase1", "secret");
+        payload.provider_id = Some("provider-b".to_string());
+
+        let active = upsert_active_claude_provider_with_payload(&db, payload)
+            .expect("upsert active provider with payload provider id");
+
+        assert!(active.active);
+        assert_eq!(active.provider_id.as_deref(), Some(DEFAULT_PROVIDER_ID));
+        assert!(db
+            .get_provider_by_id("provider-b", CLAUDE_APP_TYPE)
+            .expect("load payload-selected provider")
+            .is_none());
+        assert!(db
+            .get_provider_by_id(DEFAULT_PROVIDER_ID, CLAUDE_APP_TYPE)
+            .expect("load default provider")
+            .is_some());
+        assert_eq!(
+            crate::settings::get_current_provider(&AppType::Claude).as_deref(),
+            Some(DEFAULT_PROVIDER_ID)
+        );
+        assert_eq!(
+            db.get_current_provider(CLAUDE_APP_TYPE)
+                .expect("load db current")
+                .as_deref(),
+            Some(DEFAULT_PROVIDER_ID)
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn legacy_upsert_provider_response_matches_follow_up_reads_when_default_slot_is_effectively_active(
+    ) {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+
+        upsert_claude_provider_with_payload(
+            &db,
+            Some(DEFAULT_PROVIDER_ID),
+            sample_payload("Phase1", "secret"),
+        )
+        .expect("create default provider");
+
+        let mut payload = sample_payload("Phase1 updated", "secret-updated");
+        payload.provider_id = Some(DEFAULT_PROVIDER_ID.to_string());
+        let upserted = upsert_claude_provider_with_payload(&db, Some(DEFAULT_PROVIDER_ID), payload)
+            .expect("update default provider");
+
+        let active = get_active_claude_provider(&db).expect("read active provider");
+        let provider = get_claude_provider(&db, DEFAULT_PROVIDER_ID).expect("read provider");
+        let list = list_claude_providers(&db).expect("list providers");
+
+        assert!(upserted.active);
+        assert_eq!(upserted.provider_id.as_deref(), Some(DEFAULT_PROVIDER_ID));
+        assert_eq!(active.provider_id, upserted.provider_id);
+        assert!(provider.active);
+        assert_eq!(provider.provider_id, upserted.provider_id);
+        assert_eq!(list.active_provider_id, upserted.provider_id);
+        assert_eq!(list.providers.len(), 1);
+        assert!(list.providers[0].active);
+        assert_eq!(list.providers[0].provider_id, upserted.provider_id);
+        assert_eq!(
+            crate::settings::get_current_provider(&AppType::Claude),
+            None
+        );
+        assert_eq!(
+            db.get_current_provider(CLAUDE_APP_TYPE)
+                .expect("load db current"),
+            None
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn legacy_delete_provider_response_matches_follow_up_reads_when_default_slot_is_effectively_active(
+    ) {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+
+        upsert_claude_provider_with_payload(
+            &db,
+            Some(DEFAULT_PROVIDER_ID),
+            sample_payload("Phase1", "secret"),
+        )
+        .expect("create default provider");
+        upsert_claude_provider_with_payload(
+            &db,
+            Some("provider-b"),
+            sample_payload("B", "secret-b"),
+        )
+        .expect("create provider b");
+
+        let deleted = delete_claude_provider(&db, "provider-b").expect("delete provider b");
+        let active = get_active_claude_provider(&db).expect("read active provider");
+        let list = list_claude_providers(&db).expect("list providers");
+
+        assert_eq!(deleted.deleted_provider_id, "provider-b");
+        assert_eq!(
+            deleted.active_provider_id.as_deref(),
+            Some(DEFAULT_PROVIDER_ID)
+        );
+        assert_eq!(deleted.providers_remaining, 1);
+        assert!(active.active);
+        assert_eq!(active.provider_id.as_deref(), Some(DEFAULT_PROVIDER_ID));
+        assert_eq!(list.active_provider_id, deleted.active_provider_id);
+        assert_eq!(list.providers.len(), 1);
+        assert!(list.providers[0].active);
+        assert_eq!(
+            list.providers[0].provider_id.as_deref(),
+            Some(DEFAULT_PROVIDER_ID)
+        );
+        assert_eq!(
+            crate::settings::get_current_provider(&AppType::Claude),
+            None
+        );
+        assert_eq!(
+            db.get_current_provider(CLAUDE_APP_TYPE)
+                .expect("load db current"),
+            None
         );
     }
 }
