@@ -159,7 +159,7 @@ return view.extend({
 						notes: notesInput.value.trim()
 					};
 
-					var saveResult = await L.resolveDefault(callUpsertActiveProvider(JSON.stringify(payload)), { ok: false });
+					var saveResult = await L.resolveDefault(callUpsertActiveProvider(payload), { ok: false });
 					if (!saveResult || saveResult.ok !== true)
 						throw new Error((saveResult && saveResult.error) || _('Failed to save provider'));
 
