@@ -42,7 +42,7 @@ export function SharedProviderCard({
   return (
     <article
       className={cn(
-        "group relative overflow-hidden rounded-[22px] border bg-card p-4 shadow-sm transition-all sm:p-5",
+        "ccswitch-openwrt-provider-card group relative overflow-hidden rounded-[22px] border bg-card p-4 shadow-sm transition-all sm:p-5",
         provider.active
           ? appPresentation.activeCardClassName
           : "border-border-default hover:border-border-active hover:shadow-md",
@@ -98,7 +98,7 @@ export function SharedProviderCard({
           </div>
 
           <div className="grid gap-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(240px,0.8fr)]">
-            <div className="rounded-2xl border border-border-default/70 bg-muted/20 p-4">
+            <div className="ccswitch-openwrt-group rounded-2xl border border-border-default/70 bg-muted/20 p-4">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                 Base URL
               </p>
@@ -107,7 +107,7 @@ export function SharedProviderCard({
               </p>
             </div>
             <dl className="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-1">
-              <div className="rounded-2xl border border-border-default/70 bg-background p-4">
+              <div className="ccswitch-openwrt-stat-card rounded-2xl border border-border-default/70 bg-background p-4">
                 <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                   Model
                 </dt>
@@ -115,7 +115,7 @@ export function SharedProviderCard({
                   {provider.model || "-"}
                 </dd>
               </div>
-              <div className="rounded-2xl border border-border-default/70 bg-background p-4">
+              <div className="ccswitch-openwrt-stat-card rounded-2xl border border-border-default/70 bg-background p-4">
                 <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                   Token field
                 </dt>
@@ -123,7 +123,7 @@ export function SharedProviderCard({
                   {provider.tokenField}
                 </dd>
               </div>
-              <div className="rounded-2xl border border-border-default/70 bg-background p-4 sm:col-span-2 xl:col-span-1">
+              <div className="ccswitch-openwrt-stat-card rounded-2xl border border-border-default/70 bg-background p-4 sm:col-span-2 xl:col-span-1">
                 <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                   Provider ID
                 </dt>
@@ -135,7 +135,7 @@ export function SharedProviderCard({
           </div>
 
           {provider.notes ? (
-            <p className="rounded-2xl border border-border-default/70 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+            <p className="ccswitch-openwrt-inline-note rounded-2xl border border-border-default/70 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
               {provider.notes}
             </p>
           ) : null}
