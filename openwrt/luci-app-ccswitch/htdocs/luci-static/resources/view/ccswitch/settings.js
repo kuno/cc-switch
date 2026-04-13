@@ -10,6 +10,120 @@ var ALT_TOKEN_FIELD = 'ANTHROPIC_API_KEY';
 var CODEX_TOKEN_FIELD = 'OPENAI_API_KEY';
 var GEMINI_TOKEN_FIELD = 'GEMINI_API_KEY';
 var APP_STORAGE_KEY = 'ccswitch-openwrt-selected-app';
+var CLAUDE_PRESETS = [
+	{
+		id: 'claude-official',
+		label: _('Claude Official'),
+		providerName: 'Claude Official',
+		baseUrl: 'https://api.anthropic.com',
+		tokenField: DEFAULT_TOKEN_FIELD,
+		model: '',
+		description: _('Official Anthropic Claude endpoint.')
+	},
+	{
+		id: 'claude-deepseek',
+		label: 'DeepSeek',
+		providerName: 'DeepSeek',
+		baseUrl: 'https://api.deepseek.com/anthropic',
+		tokenField: DEFAULT_TOKEN_FIELD,
+		model: 'DeepSeek-V3.2',
+		description: _('DeepSeek Claude-compatible endpoint.')
+	},
+	{
+		id: 'claude-kimi',
+		label: 'Kimi',
+		providerName: 'Kimi',
+		baseUrl: 'https://api.moonshot.cn/anthropic',
+		tokenField: DEFAULT_TOKEN_FIELD,
+		model: 'kimi-k2.5',
+		description: _('Moonshot Kimi Claude-compatible endpoint.')
+	},
+	{
+		id: 'claude-minimax',
+		label: 'MiniMax',
+		providerName: 'MiniMax',
+		baseUrl: 'https://api.minimaxi.com/anthropic',
+		tokenField: DEFAULT_TOKEN_FIELD,
+		model: 'MiniMax-M2.7',
+		description: _('MiniMax Claude-compatible endpoint.')
+	}
+];
+var CODEX_PRESETS = [
+	{
+		id: 'codex-openai-official',
+		label: _('OpenAI Official'),
+		providerName: 'OpenAI Official',
+		baseUrl: 'https://api.openai.com/v1',
+		tokenField: CODEX_TOKEN_FIELD,
+		model: 'gpt-5.4',
+		description: _('Official OpenAI Responses endpoint for Codex.')
+	},
+	{
+		id: 'codex-azure-openai',
+		label: _('Azure OpenAI'),
+		providerName: 'Azure OpenAI',
+		baseUrl: 'https://YOUR_RESOURCE_NAME.openai.azure.com/openai',
+		tokenField: CODEX_TOKEN_FIELD,
+		model: 'gpt-5.4',
+		description: _('Azure OpenAI Codex endpoint template. Replace YOUR_RESOURCE_NAME before saving.')
+	},
+	{
+		id: 'codex-openrouter',
+		label: 'OpenRouter',
+		providerName: 'OpenRouter',
+		baseUrl: 'https://openrouter.ai/api/v1',
+		tokenField: CODEX_TOKEN_FIELD,
+		model: 'gpt-5.4',
+		description: _('OpenRouter Responses-compatible endpoint for Codex.')
+	},
+	{
+		id: 'codex-packycode',
+		label: 'PackyCode',
+		providerName: 'PackyCode',
+		baseUrl: 'https://www.packyapi.com/v1',
+		tokenField: CODEX_TOKEN_FIELD,
+		model: 'gpt-5.4',
+		description: _('PackyCode Codex-compatible endpoint.')
+	}
+];
+var GEMINI_PRESETS = [
+	{
+		id: 'gemini-google-official',
+		label: _('Google Official'),
+		providerName: 'Google Official',
+		baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+		tokenField: GEMINI_TOKEN_FIELD,
+		model: 'gemini-3.1-pro',
+		description: _('Official Google Gemini API endpoint.')
+	},
+	{
+		id: 'gemini-openrouter',
+		label: 'OpenRouter',
+		providerName: 'OpenRouter',
+		baseUrl: 'https://openrouter.ai/api',
+		tokenField: GEMINI_TOKEN_FIELD,
+		model: 'gemini-3.1-pro',
+		description: _('OpenRouter Gemini-compatible endpoint.')
+	},
+	{
+		id: 'gemini-packycode',
+		label: 'PackyCode',
+		providerName: 'PackyCode',
+		baseUrl: 'https://www.packyapi.com',
+		tokenField: GEMINI_TOKEN_FIELD,
+		model: 'gemini-3.1-pro',
+		description: _('PackyCode Gemini-compatible endpoint.')
+	},
+	{
+		id: 'gemini-ctok',
+		label: 'CTok.ai',
+		providerName: 'CTok.ai',
+		baseUrl: 'https://api.ctok.ai/v1beta',
+		tokenField: GEMINI_TOKEN_FIELD,
+		model: 'gemini-3.1-pro',
+		description: _('CTok Gemini-compatible endpoint.')
+	}
+];
 var APP_OPTIONS = [
 	{
 		id: 'claude',
@@ -28,7 +142,8 @@ var APP_OPTIONS = [
 		summaryInactive: _('Add a Claude-compatible provider below, then activate one when you are ready to route Claude traffic through it.'),
 		newProviderExample: _('Example: Claude Provider'),
 		editorNameDescription: _('Display name for this Claude-compatible provider.'),
-		tokenRequiredMessage: _('Token is required for the first save.')
+		tokenRequiredMessage: _('Token is required for the first save.'),
+		presets: CLAUDE_PRESETS
 	},
 	{
 		id: 'codex',
@@ -47,7 +162,8 @@ var APP_OPTIONS = [
 		summaryInactive: _('Add a Codex provider below, then activate one when you are ready to route Codex traffic through it.'),
 		newProviderExample: _('Example: Codex Provider'),
 		editorNameDescription: _('Display name for this Codex provider.'),
-		tokenRequiredMessage: _('API key is required for the first save.')
+		tokenRequiredMessage: _('API key is required for the first save.'),
+		presets: CODEX_PRESETS
 	},
 	{
 		id: 'gemini',
@@ -66,7 +182,8 @@ var APP_OPTIONS = [
 		summaryInactive: _('Add a Gemini provider below, then activate one when you are ready to route Gemini traffic through it.'),
 		newProviderExample: _('Example: Gemini Provider'),
 		editorNameDescription: _('Display name for this Gemini provider.'),
-		tokenRequiredMessage: _('Credential is required for the first save.')
+		tokenRequiredMessage: _('Credential is required for the first save.'),
+		presets: GEMINI_PRESETS
 	}
 ];
 
@@ -225,6 +342,65 @@ return view.extend({
 		}
 
 		return APP_OPTIONS[0];
+	},
+
+	getPresetOptions: function (appId) {
+		var appMeta = this.getAppMeta(appId);
+
+		return Array.isArray(appMeta.presets) ? appMeta.presets : [];
+	},
+
+	getPresetById: function (appId, presetId) {
+		var presets = this.getPresetOptions(appId);
+		var i;
+
+		for (i = 0; i < presets.length; i++) {
+			if (presets[i].id === presetId)
+				return presets[i];
+		}
+
+		return null;
+	},
+
+	inferPresetIdFromPayload: function (appId, payload) {
+		var presets = this.getPresetOptions(appId);
+		var normalizedBaseUrl = (payload && payload.baseUrl ? payload.baseUrl : '').trim().replace(/\/+$/, '');
+		var normalizedTokenField = (payload && payload.tokenField ? payload.tokenField : '');
+		var i;
+
+		for (i = 0; i < presets.length; i++) {
+			var presetBaseUrl = (presets[i].baseUrl || '').trim().replace(/\/+$/, '');
+			if (presetBaseUrl === normalizedBaseUrl &&
+				(!normalizedTokenField || presets[i].tokenField === normalizedTokenField))
+				return presets[i].id;
+		}
+
+		return 'custom';
+	},
+
+	updatePresetDescription: function (node, appId, presetId) {
+		var preset = this.getPresetById(appId, presetId);
+
+		if (!node)
+			return;
+
+		node.textContent = preset
+			? preset.description || _('Preset selected. You can still adjust the fields below before saving.')
+			: _('Use a preset to prefill the fields below. You can continue editing after selection.');
+	},
+
+	applyPresetToInputs: function (appId, presetId, refs) {
+		var preset = this.getPresetById(appId, presetId);
+
+		this.updatePresetDescription(refs.presetDescriptionNode, appId, presetId);
+
+		if (!preset)
+			return;
+
+		refs.nameInput.value = preset.providerName || preset.label || '';
+		refs.baseUrlInput.value = preset.baseUrl || '';
+		refs.tokenFieldSelect.value = preset.tokenField || this.getAppMeta(appId).tokenFieldChoices[0];
+		refs.modelInput.value = preset.model || '';
 	},
 
 	emptyProviderView: function (appId) {
@@ -855,8 +1031,13 @@ return view.extend({
 		var self = this;
 		var editingProvider = this.getEditorProvider(uiState);
 		var payload = this.providerToEditorPayload(editingProvider, uiState.selectedApp);
+		var presetId = this.inferPresetIdFromPayload(uiState.selectedApp, payload);
 		var title;
 		var description;
+		var presetSelect;
+		var presetDescriptionNode = E('div', { 'class': 'cbi-value-description' }, [
+			_('Use a preset to prefill the fields below. You can continue editing after selection.')
+		]);
 		var tokenHint = E('div', { 'class': 'cbi-value-description' }, [
 			editingProvider.tokenConfigured
 				? _('Stored credential: ') + editingProvider.tokenMasked
@@ -897,6 +1078,21 @@ return view.extend({
 			'value': payload.baseUrl
 		});
 
+		presetSelect = E('select', {
+			'class': 'cbi-input-select'
+		});
+		presetSelect.appendChild(E('option', {
+			'value': 'custom',
+			'selected': presetId === 'custom' ? 'selected' : null
+		}, [_('Custom')]));
+		this.getPresetOptions(uiState.selectedApp).forEach(function (preset) {
+			presetSelect.appendChild(E('option', {
+				'value': preset.id,
+				'selected': preset.id === presetId ? 'selected' : null
+			}, [preset.label]));
+		});
+		this.updatePresetDescription(presetDescriptionNode, uiState.selectedApp, presetId);
+
 		tokenFieldSelect = E('select', {
 			'class': 'cbi-input-select',
 			'disabled': appMeta.tokenFieldChoices.length === 1 ? 'disabled' : null
@@ -906,6 +1102,15 @@ return view.extend({
 				'value': choice,
 				'selected': payload.tokenField === choice || (!payload.tokenField && choice === appMeta.tokenFieldChoices[0]) ? 'selected' : null
 			}, [choice]));
+		});
+		presetSelect.addEventListener('change', function () {
+			self.applyPresetToInputs(uiState.selectedApp, presetSelect.value, {
+				nameInput: nameInput,
+				baseUrlInput: baseUrlInput,
+				tokenFieldSelect: tokenFieldSelect,
+				modelInput: modelInput,
+				presetDescriptionNode: presetDescriptionNode
+			});
 		});
 
 		tokenInput = E('input', {
@@ -965,6 +1170,7 @@ return view.extend({
 		return E('div', { 'class': 'cbi-section' }, [
 			E('h4', { 'style': 'margin-top:0' }, [title]),
 			E('p', { 'style': 'margin-bottom:1rem;color:#4b5563' }, [description]),
+			this.renderValue(_('Preset'), presetSelect, presetDescriptionNode),
 			this.renderValue(_('Name'), nameInput, appMeta.editorNameDescription),
 			this.renderValue(_('Base URL'), baseUrlInput, appMeta.baseUrlDescription),
 			this.renderValue(_('Token Field'), tokenFieldSelect, appMeta.tokenDescription),
