@@ -1,6 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRoot } from "react-dom/client";
-import { SharedRuntimeSurface, type SharedRuntimeSurfaceProps } from "./SharedRuntimeSurface";
+import {
+  SharedRuntimeSurface,
+  type SharedRuntimeSurfaceProps,
+} from "./SharedRuntimeSurface";
 
 export interface MountedSharedRuntimeSurface {
   update(nextProps: SharedRuntimeSurfaceProps): void;

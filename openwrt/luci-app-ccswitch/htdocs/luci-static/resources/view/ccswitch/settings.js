@@ -219,6 +219,19 @@ var callGetActiveProvider = rpc.declare({
 	expect: { '': {} }
 });
 
+var callGetRuntimeStatus = rpc.declare({
+	object: 'ccswitch',
+	method: 'get_runtime_status',
+	expect: { '': {} }
+});
+
+var callGetAppRuntimeStatus = rpc.declare({
+	object: 'ccswitch',
+	method: 'get_app_runtime_status',
+	params: ['app'],
+	expect: { '': {} }
+});
+
 var callListProviders = rpc.declare({
 	object: 'ccswitch',
 	method: 'list_providers',
@@ -806,7 +819,9 @@ return view.extend({
 			bundleError: null,
 			fallbackReason: null,
 			mountHandle: null,
-			mountRequestId: 0
+			mountRequestId: 0,
+			runtimeMountHandle: null,
+			runtimeMountRequestId: 0
 		};
 	},
 
@@ -985,15 +1000,19 @@ return view.extend({
 		var self = this;
 		var messageRoot = E('div', { 'style': 'display:none;margin-bottom:1rem' });
 		var messageText = E('div');
-			var restartButton = E('button', {
-				'class': 'btn cbi-button cbi-button-action',
-				'type': 'button',
-				'click': ui.createHandlerFn(this, async function (ev) {
-					ev.preventDefault();
-					await self.restartServiceFromShellBridge(uiState, statusNodes, shellNodes);
-				})
-			}, [_('Restart Service')]);
+		var restartButton = E('button', {
+			'class': 'btn cbi-button cbi-button-action',
+			'type': 'button',
+			'click': ui.createHandlerFn(this, async function (ev) {
+				ev.preventDefault();
+				await self.restartServiceFromShellBridge(uiState, statusNodes, shellNodes);
+			})
+		}, [_('Restart Service')]);
 		var sharedChromeRoot = E('div');
+		var runtimeMountRoot = E('div', {
+			'id': 'ccswitch-shared-runtime-surface-root',
+			'style': 'margin-top:1rem'
+		});
 		var mountRoot = E('div', {
 			'id': 'ccswitch-shared-provider-ui-root',
 			'style': 'margin-top:1rem'
@@ -1003,19 +1022,29 @@ return view.extend({
 			messageRoot: messageRoot,
 			messageText: messageText,
 			restartButton: restartButton,
+			runtimeMountRoot: runtimeMountRoot,
 			mountRoot: mountRoot,
 			root: null
 		};
 		var root = E('div', { 'class': 'cbi-section' }, [
-			E('h3', {}, [_('Provider Manager')]),
-			E('p', { 'style': 'margin-bottom:1rem;color:#4b5563' }, [
-				_('The shared OpenWrt browser bundle is the primary provider-manager path below. The LuCI fallback provider manager remains available only when the Phase 5 cutover gate disables the real bundle or the bundle fails router verification.')
-			]),
 			sharedChromeRoot,
-			E('div', { 'class': 'cbi-value-description' }, [
-				_('Service settings and outbound proxy controls remain above in the LuCI shell. Provider management mounts below after this page renders.')
+			E('div', { 'class': 'cbi-section' }, [
+				E('h3', {}, [_('Runtime Status')]),
+				E('p', { 'style': 'margin-bottom:1rem;color:#4b5563' }, [
+					_('The shared OpenWrt browser bundle mounts a read-only runtime and failover surface here. Service settings, outbound proxy controls, and restart actions remain in the LuCI shell.')
+				]),
+				runtimeMountRoot
 			]),
-			mountRoot
+			E('div', { 'class': 'cbi-section' }, [
+				E('h3', {}, [_('Provider Manager')]),
+				E('p', { 'style': 'margin-bottom:1rem;color:#4b5563' }, [
+					_('The shared OpenWrt browser bundle is the primary provider-manager path below. The LuCI fallback provider manager remains available only when the Phase 5 cutover gate disables the real bundle or the bundle fails router verification.')
+				]),
+				E('div', { 'class': 'cbi-value-description' }, [
+					_('Service settings and outbound proxy controls remain above in the LuCI shell. Provider management mounts below after this page renders.')
+				]),
+				mountRoot
+			])
 		]);
 
 		shellNodes.root = root;
@@ -1031,7 +1060,7 @@ return view.extend({
 	},
 
 	setProviderShellMode: function (shellNodes, mode) {
-		shellNodes.sharedChromeRoot.style.display = mode === 'fallback' ? 'none' : '';
+		shellNodes.sharedChromeRoot.style.display = '';
 	},
 
 	updateMessageBanner: function (messageRoot, messageText, message) {
@@ -1841,8 +1870,19 @@ return view.extend({
 		};
 	},
 
-		createShellBridge: function (uiState, statusNodes, shellNodes) {
-			var self = this;
+	createRuntimeTransport: function () {
+		return {
+			getRuntimeStatus: function () {
+				return L.resolveDefault(callGetRuntimeStatus(), { ok: false });
+			},
+			getAppRuntimeStatus: function (appId) {
+				return L.resolveDefault(callGetAppRuntimeStatus(appId), { ok: false });
+			}
+		};
+	},
+
+	createShellBridge: function (uiState, statusNodes, shellNodes) {
+		var self = this;
 
 		return {
 			getSelectedApp: function () {
@@ -1885,6 +1925,13 @@ return view.extend({
 			};
 		},
 
+	createSharedRuntimeMountOptions: function (shellNodes) {
+		return {
+			target: shellNodes.runtimeMountRoot,
+			transport: this.createRuntimeTransport()
+		};
+	},
+
 	createSharedProviderMountOptions: function (uiState, statusNodes, shellNodes) {
 		return {
 			target: shellNodes.mountRoot,
@@ -1905,6 +1952,19 @@ return view.extend({
 			return function () { handle.unmount(); };
 
 		return function () {};
+	},
+
+	teardownSharedRuntimeSurface: function (uiState) {
+		if (!uiState.runtimeMountHandle)
+			return;
+
+		try {
+			uiState.runtimeMountHandle();
+		} catch (e) {
+			/* no-op */
+		}
+
+		uiState.runtimeMountHandle = null;
 	},
 
 	teardownSharedProviderUi: function (uiState) {
@@ -1946,7 +2006,33 @@ return view.extend({
 		}, [_('Loading the shared provider manager...')]));
 	},
 
-		loadSharedProviderBundle: function () {
+	showRuntimeSurfaceFallback: function (mountRoot, message) {
+		while (mountRoot.firstChild)
+			mountRoot.removeChild(mountRoot.firstChild);
+
+		mountRoot.appendChild(E('div', {
+			'style': 'padding:1rem;border:1px solid #fecaca;background:#fff7f7;color:#991b1b;border-radius:4px'
+		}, [
+			E('strong', {}, [_('Runtime surface unavailable')]),
+			E('div', { 'style': 'margin-top:0.5rem' }, [
+				message || _('The shared runtime surface could not be loaded from the OpenWrt browser bundle.')
+			]),
+			E('div', { 'style': 'margin-top:0.5rem;color:#7f1d1d' }, [
+				_('The LuCI-owned service settings, outbound proxy controls, restart actions, and provider manager below still remain available.')
+			])
+		]));
+	},
+
+	showRuntimeSurfaceLoading: function (mountRoot) {
+		while (mountRoot.firstChild)
+			mountRoot.removeChild(mountRoot.firstChild);
+
+		mountRoot.appendChild(E('div', {
+			'style': 'padding:1rem;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;border-radius:4px'
+		}, [_('Loading the shared runtime surface...')]));
+	},
+
+	loadSharedProviderBundle: function () {
 		var self = this;
 		var existingApi = window[SHARED_PROVIDER_UI_GLOBAL_KEY];
 		var existingScript;
@@ -2024,25 +2110,69 @@ return view.extend({
 			};
 		},
 
-		bundleProvidesProviderManager: function (api) {
-			return !(api && api.capabilities && api.capabilities.providerManager === false);
-		},
+	bundleProvidesProviderManager: function (api) {
+		return !(api && api.capabilities && api.capabilities.providerManager === false);
+	},
 
-		renderFallbackProviderManager: function (uiState, statusNodes, shellNodes, kind, text, bundleStatus, fallbackReason) {
-			this.teardownSharedProviderUi(uiState);
-			this.setProviderShellMode(shellNodes, 'fallback');
-			this.setBundleStatus(uiState, bundleStatus || 'fallback', text || null, fallbackReason || null);
+	bundleProvidesRuntimeSurface: function (api) {
+		return !!(api &&
+			typeof api.mountRuntimeSurface === 'function' &&
+			!(api.capabilities && api.capabilities.runtimeSurface === false));
+	},
 
-			if (kind && text)
-				this.setMessage(uiState, kind, text);
-			else if (!kind)
-				this.clearMessage(uiState);
+	renderFallbackProviderManager: function (uiState, statusNodes, shellNodes, kind, text, bundleStatus, fallbackReason) {
+		this.teardownSharedProviderUi(uiState);
+		this.setProviderShellMode(shellNodes, 'fallback');
+		this.setBundleStatus(uiState, bundleStatus || 'fallback', text || null, fallbackReason || null);
 
-			this.updateShellChrome(uiState, statusNodes, shellNodes);
-			this.rerenderManager(shellNodes.mountRoot, uiState, statusNodes);
-		},
+		if (kind && text)
+			this.setMessage(uiState, kind, text);
+		else if (!kind)
+			this.clearMessage(uiState);
 
-		mountSharedProviderUi: async function (uiState, statusNodes, shellNodes) {
+		this.updateShellChrome(uiState, statusNodes, shellNodes);
+		this.rerenderManager(shellNodes.mountRoot, uiState, statusNodes);
+	},
+
+	mountSharedRuntimeSurface: async function (uiState, shellNodes) {
+		var requestId;
+		var mountOptions;
+		var api;
+		var handle;
+
+		uiState.runtimeMountRequestId += 1;
+		requestId = uiState.runtimeMountRequestId;
+		this.teardownSharedRuntimeSurface(uiState);
+		this.showRuntimeSurfaceLoading(shellNodes.runtimeMountRoot);
+
+		try {
+			api = await this.loadSharedProviderBundle();
+			if (requestId !== uiState.runtimeMountRequestId)
+				return;
+
+			if (!this.bundleProvidesRuntimeSurface(api)) {
+				this.showRuntimeSurfaceFallback(
+					shellNodes.runtimeMountRoot,
+					_('The shared provider bundle loaded without runtime-surface support, so the OpenWrt runtime panel cannot mount until the bundle contract is restored.')
+				);
+				return;
+			}
+
+			mountOptions = this.createSharedRuntimeMountOptions(shellNodes);
+			handle = await Promise.resolve(api.mountRuntimeSurface(mountOptions));
+			uiState.runtimeMountHandle = this.normalizeMountHandle(handle);
+		} catch (err) {
+			if (requestId !== uiState.runtimeMountRequestId)
+				return;
+
+			this.showRuntimeSurfaceFallback(
+				shellNodes.runtimeMountRoot,
+				this.rpcFailureMessage(err) || _('The shared runtime surface failed to load or mount.')
+			);
+		}
+	},
+
+	mountSharedProviderUi: async function (uiState, statusNodes, shellNodes) {
 			var requestId;
 			var mountOptions;
 			var api;
@@ -2169,6 +2299,7 @@ return view.extend({
 			var statusNodes = self.createStatusPanel(uiState);
 			var shellNodes = self.createProviderShell(uiState, statusNodes);
 
+			void self.mountSharedRuntimeSurface(uiState, shellNodes);
 			void self.mountSharedProviderUi(uiState, statusNodes, shellNodes);
 
 			return E('div', {}, [
