@@ -304,7 +304,7 @@ describe("SharedRuntimeSurface", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByRole("heading", { name: "Runtime Surface" }),
+        screen.getByRole("heading", { name: "Runtime status" }),
       ).toBeInTheDocument(),
     );
 
@@ -314,7 +314,7 @@ describe("SharedRuntimeSurface", () => {
     expect(
       screen.getByText("Runtime detail: connection refused on 127.0.0.1:15721"),
     ).toBeInTheDocument();
-    expect(screen.getAllByText("Read only")).toHaveLength(3);
+    expect(screen.getAllByText("Read-only")).toHaveLength(3);
     expect(screen.queryByText("Failover controls")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Refresh status" }));
@@ -333,7 +333,7 @@ describe("SharedRuntimeSurface", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByRole("heading", { name: "Runtime Surface" }),
+        screen.getByRole("heading", { name: "Runtime status" }),
       ).toBeInTheDocument(),
     );
 
@@ -432,6 +432,35 @@ describe("SharedRuntimeSurface", () => {
     await waitFor(() =>
       expect(codexCard.getByRole("button", { name: "Add to queue" })).toBeEnabled(),
     );
+  });
+
+  it("keeps stale runtime data visible when a refresh fails", async () => {
+    const adapter = {
+      getRuntimeSurface: vi
+        .fn()
+        .mockResolvedValueOnce(createRuntimeSurfaceState())
+        .mockRejectedValueOnce(new Error("rpc timeout")),
+    } satisfies RuntimeSurfacePlatformAdapter;
+
+    renderSurface(adapter);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Runtime status" }),
+      ).toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh status" }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("Refresh failed. Showing the last available status."),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.getByText("rpc timeout")).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "Claude runtime card" }),
+    ).toBeInTheDocument();
   });
 
   it("refetches the runtime surface after a successful control mutation", async () => {
@@ -585,10 +614,14 @@ describe("SharedRuntimeSurface", () => {
 
     await waitFor(() =>
       expect(
-        claudeCard.getByText("Last control action failed"),
+        claudeCard.getByText("Control update failed."),
       ).toBeInTheDocument(),
     );
-    expect(claudeCard.getByText("router write rejected")).toBeInTheDocument();
+    expect(
+      claudeCard.getByText(
+        "router write rejected Refresh the runtime status and try again.",
+      ),
+    ).toBeInTheDocument();
     expect(claudeCard.getByText("Claude Backup")).toBeInTheDocument();
     expect(adapter.getRuntimeSurface).toHaveBeenCalledTimes(1);
   });

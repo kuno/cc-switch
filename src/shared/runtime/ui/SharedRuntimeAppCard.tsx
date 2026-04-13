@@ -234,13 +234,13 @@ export function SharedRuntimeAppCard({
               />
               <SharedRuntimeStatusChip
                 label={
-                  controlsEnabled ? "Failover controls enabled" : "Read only"
+                  controlsEnabled ? "Controls available" : "Read-only"
                 }
                 tone="neutral"
               />
               {status.usingLegacyDefault ? (
                 <SharedRuntimeStatusChip
-                  label="Legacy default slot"
+                  label="Legacy default"
                   tone="fallback"
                 />
               ) : null}
@@ -251,7 +251,7 @@ export function SharedRuntimeAppCard({
               <CardDescription className="text-sm">
                 {status.activeProviderId
                   ? `Active provider ID: ${status.activeProviderId}`
-                  : "No active provider ID reported yet."}
+                  : "No active provider ID available."}
               </CardDescription>
             </div>
           </div>
@@ -338,8 +338,8 @@ export function SharedRuntimeAppCard({
               <div className="space-y-1">
                 <p className="text-sm font-medium">Failover controls</p>
                 <p className="text-sm text-muted-foreground">
-                  Persist auto-failover and queue membership for this app
-                  without changing provider activation directly.
+                  Update auto-failover and queue membership for this app
+                  without changing the active provider.
                 </p>
               </div>
               {pendingAction ? (
@@ -378,8 +378,8 @@ export function SharedRuntimeAppCard({
                 <div className="space-y-1">
                   <p className="text-sm font-medium">Add saved provider</p>
                   <p className="text-sm text-muted-foreground">
-                    Queue a saved provider for {appPresentation.label} without
-                    activating it.
+                    Add a saved provider to the failover queue without changing
+                    the active provider.
                   </p>
                 </div>
 
@@ -452,8 +452,8 @@ export function SharedRuntimeAppCard({
 
                 {availableProvidersError ? (
                   <SharedRuntimeInlineNote
-                    title="Saved-provider options unavailable"
-                    description={availableProvidersError}
+                    title="Could not load saved providers."
+                    description={`${availableProvidersError} Refresh the runtime status and try again.`}
                     tone="warning"
                   />
                 ) : null}
@@ -463,8 +463,8 @@ export function SharedRuntimeAppCard({
             {mutationError ? (
               <div className="mt-4">
                 <SharedRuntimeInlineNote
-                  title="Last control action failed"
-                  description={mutationError}
+                  title="Control update failed."
+                  description={`${mutationError} Refresh the runtime status and try again.`}
                   tone="warning"
                 />
               </div>

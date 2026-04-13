@@ -8,9 +8,9 @@ export function SharedRuntimeLoadingState() {
       <div className="flex items-center gap-3">
         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         <div className="space-y-1">
-          <p className="font-medium">Loading runtime surface...</p>
+          <p className="font-medium">Loading runtime status...</p>
           <p className="text-sm text-muted-foreground">
-            Fetching service status, app health, and failover queue previews.
+            Fetching service status, provider health, and failover state.
           </p>
         </div>
       </div>
@@ -39,8 +39,8 @@ export function SharedRuntimeLoadingState() {
 }
 
 export function SharedRuntimeEmptyState({
-  title = "No runtime status available yet.",
-  description = "The backend did not return a runtime snapshot for this router.",
+  title = "No runtime status available.",
+  description = "Refresh to load the latest service status and provider health for this router.",
 }: {
   title?: string;
   description?: string;
@@ -59,8 +59,8 @@ export function SharedRuntimeEmptyState({
 }
 
 export function SharedRuntimeErrorState({
-  title = "Unable to load runtime status.",
-  description = "Check the OpenWrt RPC bridge and retry once the daemon is reachable again.",
+  title = "Could not load runtime status.",
+  description = "Retry after the OpenWrt service or RPC bridge is available again.",
   detail,
   onRetry,
 }: {
