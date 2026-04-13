@@ -11,6 +11,7 @@ type UiState = {
   message: { kind: "success" | "error" | "info"; text: string } | null;
   bundleStatus: "idle" | "loading" | "ready" | "fallback" | "error";
   bundleError: string | null;
+  fallbackReason: string | null;
   mountHandle: (() => void) | null;
   mountRequestId: number;
 };
@@ -66,6 +67,7 @@ type SettingsView = {
   getBundleAssetPath(): string;
   getSelectedApp(): AppId;
   loadSharedProviderBundle(): Promise<{
+    capabilities?: { providerManager?: boolean };
     mount(options: MountOptions): { unmount(): void } | (() => void) | void;
   }>;
   mountSharedProviderUi(
@@ -87,6 +89,14 @@ type RpcSpec = {
 const SHARED_PROVIDER_UI_GLOBAL_KEY = "__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__";
 const SHARED_PROVIDER_UI_SCRIPT_ID =
   "ccswitch-openwrt-shared-provider-ui-bundle";
+const SHARED_PROVIDER_UI_CUTOVER_MODE_STORAGE_KEY =
+  "ccswitch-openwrt-provider-ui-cutover-mode";
+const SHARED_PROVIDER_UI_DISABLE_GLOBAL_KEY =
+  "__CCSWITCH_OPENWRT_DISABLE_REAL_PROVIDER_UI__";
+const SHARED_PROVIDER_UI_FALLBACK_REASON_GATE_DISABLED = "gate-disabled";
+const SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_FAILURE = "bundle-failure";
+const SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_REGRESSION =
+  "bundle-regression";
 
 function createElement(
   tag: string,
@@ -230,6 +240,9 @@ beforeEach(() => {
   delete (window as unknown as Record<string, unknown>)[
     SHARED_PROVIDER_UI_GLOBAL_KEY
   ];
+  delete (window as unknown as Record<string, unknown>)[
+    SHARED_PROVIDER_UI_DISABLE_GLOBAL_KEY
+  ];
   (globalThis as Record<string, unknown>).E = createElement;
   (globalThis as Record<string, unknown>).L = {
     bind<T extends (...args: never[]) => unknown>(fn: T, ctx: unknown) {
@@ -349,18 +362,46 @@ describe("OpenWrt settings shared-provider shell", () => {
 
     expect(uiState.bundleStatus).toBe("error");
     expect(uiState.bundleError).toBe("bundle missing");
+    expect(uiState.fallbackReason).toBe(
+      SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_FAILURE,
+    );
     expect(statusNodes.bundleValue.textContent).toBe("Unavailable");
     expect(shellNodes.mountRoot.textContent).toContain("Claude Providers");
     expect(shellNodes.mountRoot.textContent).toContain("bundle missing");
-    expect(shellNodes.mountRoot.textContent).toContain(
-      "Configure Provider",
-    );
+    expect(shellNodes.mountRoot.textContent).toContain("Configure Provider");
     expect(statusNodes.summaryValue.textContent).toContain(
-      "LuCI fallback provider manager",
+      "failed to load or mount",
     );
   });
 
-  it("keeps the fallback LuCI provider manager active when the cutover gate disables the real bundle", async () => {
+  it("keeps the guarded LuCI fallback active when the cutover gate disables the real bundle", async () => {
+    const { settings, storage } = loadSettingsView();
+    const uiState = settings.createUiState(false, "claude");
+    const statusNodes = settings.createStatusPanel(uiState);
+    const shellNodes = settings.createProviderShell(uiState, statusNodes);
+    const loadSharedProviderBundle = vi.fn();
+
+    storage.set(SHARED_PROVIDER_UI_CUTOVER_MODE_STORAGE_KEY, "fallback");
+    settings.loadSharedProviderBundle = loadSharedProviderBundle;
+
+    await settings.mountSharedProviderUi(uiState, statusNodes, shellNodes);
+
+    expect(loadSharedProviderBundle).not.toHaveBeenCalled();
+    expect(uiState.bundleStatus).toBe("fallback");
+    expect(uiState.fallbackReason).toBe(
+      SHARED_PROVIDER_UI_FALLBACK_REASON_GATE_DISABLED,
+    );
+    expect(uiState.bundleError).toContain("Phase 5 cutover gate");
+    expect(statusNodes.bundleValue.textContent).toBe("Fallback");
+    expect(shellNodes.mountRoot.textContent).toContain("Claude Providers");
+    expect(shellNodes.mountRoot.textContent).toContain("Configure Provider");
+    expect(shellNodes.mountRoot.textContent).toContain("Phase 5 cutover gate");
+    expect(statusNodes.summaryValue.textContent).toContain(
+      "explicitly disabled by the Phase 5 cutover gate",
+    );
+  });
+
+  it("keeps the guarded LuCI fallback active when the bundle regresses below the real provider-manager contract", async () => {
     const { settings } = loadSettingsView();
     const uiState = settings.createUiState(false, "claude");
     const statusNodes = settings.createStatusPanel(uiState);
@@ -376,18 +417,22 @@ describe("OpenWrt settings shared-provider shell", () => {
 
     expect(mount).not.toHaveBeenCalled();
     expect(uiState.bundleStatus).toBe("fallback");
-    expect(uiState.bundleError).toContain(
-      "LuCI fallback provider manager until the shared slice is published",
+    expect(uiState.fallbackReason).toBe(
+      SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_REGRESSION,
     );
+    expect(uiState.bundleError).toContain("without provider-manager support");
     expect(statusNodes.bundleValue.textContent).toBe("Fallback");
     expect(shellNodes.mountRoot.textContent).toContain("Claude Providers");
     expect(shellNodes.mountRoot.textContent).toContain("Configure Provider");
     expect(shellNodes.mountRoot.textContent).toContain(
-      "LuCI fallback provider manager",
+      "without provider-manager support",
+    );
+    expect(statusNodes.summaryValue.textContent).toContain(
+      "without provider-manager support",
     );
   });
 
-  it("keeps the fallback LuCI provider manager active when the real bundle throws during mount", async () => {
+  it("keeps the guarded LuCI fallback active when the real bundle throws during mount", async () => {
     const { settings } = loadSettingsView();
     const uiState = settings.createUiState(true, "codex");
     const statusNodes = settings.createStatusPanel(uiState);
@@ -406,11 +451,14 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(mount).toHaveBeenCalledTimes(1);
     expect(uiState.bundleStatus).toBe("error");
     expect(uiState.bundleError).toBe("mount regression");
+    expect(uiState.fallbackReason).toBe(
+      SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_FAILURE,
+    );
     expect(statusNodes.bundleValue.textContent).toBe("Unavailable");
     expect(shellNodes.mountRoot.textContent).toContain("Codex Providers");
     expect(shellNodes.mountRoot.textContent).toContain("mount regression");
     expect(statusNodes.summaryValue.textContent).toContain(
-      "LuCI fallback provider manager",
+      "failed to load or mount",
     );
   });
 
@@ -429,7 +477,9 @@ describe("OpenWrt settings shared-provider shell", () => {
     await settings.mountSharedProviderUi(uiState, statusNodes, shellNodes);
 
     expect(uiState.bundleStatus).toBe("ready");
+    expect(uiState.fallbackReason).toBeNull();
     expect(statusNodes.bundleValue.textContent).toBe("Ready");
+    expect(statusNodes.providerValue?.textContent).toBe("Managed by shared UI");
     expect(mount).toHaveBeenCalledTimes(1);
     expect(shellNodes.mountRoot.textContent).not.toContain(
       "LuCI fallback provider manager",
@@ -452,6 +502,7 @@ describe("OpenWrt settings shared-provider shell", () => {
     await settings.mountSharedProviderUi(uiState, statusNodes, shellNodes);
 
     expect(uiState.bundleStatus).toBe("ready");
+    expect(uiState.fallbackReason).toBeNull();
     expect(mount).toHaveBeenCalledTimes(1);
     expect(mount).toHaveBeenCalledWith(
       expect.objectContaining({
