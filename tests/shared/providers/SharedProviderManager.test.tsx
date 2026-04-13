@@ -1,4 +1,4 @@
-import { type ReactElement, useState } from "react";
+import { type ReactElement } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -77,7 +77,9 @@ function createAdapter(
   };
 
   return {
-    listProviderState: vi.fn().mockResolvedValue(buildState("claude", [], null)),
+    listProviderState: vi
+      .fn()
+      .mockResolvedValue(buildState("claude", [], null)),
     saveProvider: vi.fn().mockResolvedValue(undefined),
     activateProvider: vi.fn().mockResolvedValue(undefined),
     deleteProvider: vi.fn().mockResolvedValue(undefined),
@@ -133,7 +135,7 @@ function createMutableAdapter(initialState: {
   };
   let nextProviderId = 1;
 
-  function cloneState(appId: SharedProviderAppId): SharedProviderState {
+  function cloneAppState(appId: SharedProviderAppId): SharedProviderState {
     const state = states[appId];
 
     return {
@@ -154,7 +156,7 @@ function createMutableAdapter(initialState: {
 
   const adapter = createAdapter({
     listProviderState: vi.fn(async (appId: SharedProviderAppId) =>
-      cloneState(appId),
+      cloneAppState(appId),
     ),
     saveProvider: vi.fn(
       async (
@@ -229,7 +231,7 @@ function createMutableAdapter(initialState: {
         );
         const activeProviderId =
           states[appId].activeProviderId === providerId
-            ? providers[0]?.providerId ?? null
+            ? (providers[0]?.providerId ?? null)
             : states[appId].activeProviderId;
 
         rewriteState(appId, providers, activeProviderId);
@@ -253,7 +255,10 @@ function createSaveRaceAdapter() {
       cloneState(states[appId]),
     ),
     saveProvider: vi.fn(
-      async (appId: SharedProviderAppId, draft: SharedProviderEditorPayload) => {
+      async (
+        appId: SharedProviderAppId,
+        draft: SharedProviderEditorPayload,
+      ) => {
         await saveDeferred.promise;
         states[appId] = buildState(
           appId,
@@ -280,23 +285,6 @@ function createSaveRaceAdapter() {
     adapter,
     resolveSave: saveDeferred.resolve,
   };
-}
-
-function ControlledSelectionHarness({
-  adapter,
-}: {
-  adapter: ProviderPlatformAdapter;
-}) {
-  const [selectedApp, setSelectedApp] = useState<SharedProviderAppId>("claude");
-
-  return (
-    <>
-      <button type="button" onClick={() => setSelectedApp("codex")}>
-        External switch to Codex
-      </button>
-      <SharedProviderManager adapter={adapter} selectedApp={selectedApp} />
-    </>
-  );
 }
 
 describe("SharedProviderManager", () => {
@@ -343,9 +331,7 @@ describe("SharedProviderManager", () => {
     const adapter = createAdapter({
       listProviderState,
     });
-    const { user } = renderManager(
-      <SharedProviderManager adapter={adapter} />,
-    );
+    const { user } = renderManager(<SharedProviderManager adapter={adapter} />);
 
     expect(
       await screen.findByText("Unable to load providers."),
@@ -359,7 +345,7 @@ describe("SharedProviderManager", () => {
     expect(listProviderState).toHaveBeenCalledTimes(2);
   });
 
-  it("adds and edits a provider from shared presets and notifies restart state", async () => {
+  it("adds and edits a provider from shared presets in the dedicated panel and notifies restart state", async () => {
     const adapter = createMutableAdapter({
       claude: buildState("claude", [], null),
     });
@@ -377,19 +363,35 @@ describe("SharedProviderManager", () => {
 
     await screen.findByText("No providers saved for Claude yet.");
 
-    const nameInput = screen.getByLabelText("Provider name");
-    const baseUrlInput = screen.getByLabelText("Base URL");
-    const tokenInput = screen.getByLabelText("API token");
+    await user.click(screen.getByRole("button", { name: "Add provider" }));
 
-    expect(nameInput).toHaveValue("Claude Official");
-    expect(baseUrlInput).toHaveValue("https://api.anthropic.com");
+    const addDialog = await screen.findByRole("dialog", {
+      name: "Add provider",
+    });
+    const addDialogScope = within(addDialog);
 
-    await user.type(tokenInput, "secret-token");
-    await user.click(screen.getByRole("button", { name: "Save provider" }));
+    expect(addDialogScope.getByText("Official")).toBeInTheDocument();
+    expect(addDialogScope.getByText("Compatible gateways")).toBeInTheDocument();
+    expect(addDialogScope.getByLabelText("Provider name")).toHaveValue(
+      "Claude Official",
+    );
+    expect(addDialogScope.getByLabelText("Base URL")).toHaveValue(
+      "https://api.anthropic.com",
+    );
+
+    await user.type(addDialogScope.getByLabelText("API token"), "secret-token");
+    await user.click(
+      addDialogScope.getByRole("button", { name: "Save provider" }),
+    );
 
     expect(
       await screen.findByRole("button", { name: "Edit Claude Official" }),
     ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Add provider" }),
+      ).not.toBeInTheDocument(),
+    );
     expect(adapter.saveProvider).toHaveBeenCalledWith(
       "claude",
       expect.objectContaining({
@@ -415,11 +417,19 @@ describe("SharedProviderManager", () => {
     await user.click(
       screen.getByRole("button", { name: "Edit Claude Official" }),
     );
-    await user.clear(screen.getByLabelText("Notes"));
-    await user.type(screen.getByLabelText("Notes"), "Router preset");
-    await user.clear(screen.getByLabelText("Model"));
-    await user.type(screen.getByLabelText("Model"), "claude-sonnet-4");
-    await user.click(screen.getByRole("button", { name: "Update provider" }));
+
+    const editDialog = await screen.findByRole("dialog", {
+      name: "Edit provider",
+    });
+    const editDialogScope = within(editDialog);
+
+    await user.clear(editDialogScope.getByLabelText("Notes"));
+    await user.type(editDialogScope.getByLabelText("Notes"), "Router preset");
+    await user.clear(editDialogScope.getByLabelText("Model"));
+    await user.type(editDialogScope.getByLabelText("Model"), "claude-sonnet-4");
+    await user.click(
+      editDialogScope.getByRole("button", { name: "Update provider" }),
+    );
 
     await waitFor(() =>
       expect(adapter.saveProvider).toHaveBeenLastCalledWith(
@@ -433,51 +443,188 @@ describe("SharedProviderManager", () => {
         "provider-1",
       ),
     );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Edit provider" }),
+      ).not.toBeInTheDocument(),
+    );
     expect(onRestartRequired).toHaveBeenCalledTimes(2);
     expect(screen.getByText("Router preset")).toBeInTheDocument();
   });
 
-  it("ignores stale save completions after the selected app changes", async () => {
-    const { adapter, resolveSave } = createSaveRaceAdapter();
+  it("filters providers locally by provider fields and matched preset labels", async () => {
+    const adapter = createAdapter({
+      listProviderState: vi.fn().mockResolvedValue(
+        buildState(
+          "codex",
+          [
+            createProvider({
+              providerId: "alpha",
+              name: "Alpha",
+              baseUrl: "https://alpha.example.com/v1",
+              tokenField: "OPENAI_API_KEY",
+              notes: "LAN route",
+            }),
+            createProvider({
+              providerId: "packy",
+              name: "Gateway edge",
+              baseUrl: "https://www.packyapi.com/v1",
+              tokenField: "OPENAI_API_KEY",
+            }),
+          ],
+          "alpha",
+        ),
+      ),
+    });
     const { user } = renderManager(
-      <ControlledSelectionHarness adapter={adapter} />,
+      <SharedProviderManager adapter={adapter} defaultApp="codex" />,
+    );
+
+    expect(await screen.findByText("Alpha")).toBeInTheDocument();
+    expect(screen.getByText("Gateway edge")).toBeInTheDocument();
+
+    const searchInput = screen.getByLabelText("Search providers");
+
+    await user.type(searchInput, "PackyCode");
+
+    expect(
+      await screen.findByText('Showing 1 result for "PackyCode" out of 2.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Gateway edge")).toBeInTheDocument();
+    expect(screen.queryByText("Alpha")).not.toBeInTheDocument();
+
+    await user.clear(searchInput);
+    await user.type(searchInput, "LAN route");
+
+    expect(
+      await screen.findByText('Showing 1 result for "LAN route" out of 2.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Alpha")).toBeInTheDocument();
+    expect(screen.queryByText("Gateway edge")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Clear search" }));
+
+    await waitFor(() =>
+      expect(screen.queryByText(/Showing 1 result/)).not.toBeInTheDocument(),
+    );
+    expect(screen.getByText("Alpha")).toBeInTheDocument();
+    expect(screen.getByText("Gateway edge")).toBeInTheDocument();
+    expect(adapter.saveProvider).not.toHaveBeenCalled();
+  });
+
+  it("closes draft state on app switch and resets the add panel to the next app", async () => {
+    const adapter = createMutableAdapter({
+      claude: buildState("claude", [], null),
+      codex: buildState("codex", [], null),
+    });
+    const { user, rerender, queryClient } = renderManager(
+      <SharedProviderManager adapter={adapter} selectedApp="claude" />,
     );
 
     await screen.findByText("No providers saved for Claude yet.");
-    expect(screen.getByLabelText("Provider name")).toHaveValue(
-      "Claude Official",
+
+    await user.click(screen.getByRole("button", { name: "Add provider" }));
+
+    const claudeDialog = await screen.findByRole("dialog", {
+      name: "Add provider",
+    });
+    await user.clear(within(claudeDialog).getByLabelText("Provider name"));
+    await user.type(
+      within(claudeDialog).getByLabelText("Provider name"),
+      "Unsaved Claude",
     );
 
-    await user.type(screen.getByLabelText("API token"), "secret-token");
-    await user.click(screen.getByRole("button", { name: "Save provider" }));
-
-    expect(screen.getByRole("button", { name: "Codex" })).toBeDisabled();
-
-    await user.click(
-      screen.getByRole("button", { name: "External switch to Codex" }),
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <SharedProviderManager adapter={adapter} selectedApp="codex" />
+      </QueryClientProvider>,
     );
 
     expect(
       await screen.findByText("No providers saved for Codex yet."),
     ).toBeInTheDocument();
     await waitFor(() =>
-      expect(screen.getByLabelText("Provider name")).toHaveValue(
-        "OpenAI Official",
-      ),
+      expect(
+        screen.queryByRole("dialog", { name: "Add provider" }),
+      ).not.toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Add provider" }));
+
+    const codexDialog = await screen.findByRole("dialog", {
+      name: "Add provider",
+    });
+    const codexDialogScope = within(codexDialog);
+
+    expect(codexDialogScope.getByLabelText("Provider name")).toHaveValue(
+      "OpenAI Official",
+    );
+    expect(codexDialogScope.getByLabelText("Base URL")).toHaveValue(
+      "https://api.openai.com/v1",
+    );
+  });
+
+  it("ignores stale save completions after the selected app changes", async () => {
+    const { adapter, resolveSave } = createSaveRaceAdapter();
+    const { user, rerender, queryClient } = renderManager(
+      <SharedProviderManager adapter={adapter} selectedApp="claude" />,
+    );
+
+    await screen.findByText("No providers saved for Claude yet.");
+
+    await user.click(screen.getByRole("button", { name: "Add provider" }));
+
+    const addDialog = await screen.findByRole("dialog", {
+      name: "Add provider",
+    });
+    const addDialogScope = within(addDialog);
+
+    expect(addDialogScope.getByLabelText("Provider name")).toHaveValue(
+      "Claude Official",
+    );
+
+    await user.type(addDialogScope.getByLabelText("API token"), "secret-token");
+    await user.click(
+      addDialogScope.getByRole("button", { name: "Save provider" }),
+    );
+
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <SharedProviderManager adapter={adapter} selectedApp="codex" />
+      </QueryClientProvider>,
+    );
+
+    expect(
+      await screen.findByText("No providers saved for Codex yet."),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Add provider" }),
+      ).not.toBeInTheDocument(),
     );
 
     resolveSave();
 
     await waitFor(() =>
-      expect(screen.getByLabelText("Provider name")).not.toBeDisabled(),
-    );
-    expect(screen.getByLabelText("Provider name")).toHaveValue(
-      "OpenAI Official",
-    );
-    expect(screen.getByLabelText("Base URL")).toHaveValue(
-      "https://api.openai.com/v1",
+      expect(
+        screen.getByRole("button", { name: "Add provider" }),
+      ).toBeEnabled(),
     );
     expect(screen.queryByText("Provider saved.")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Add provider" }));
+
+    const codexDialog = await screen.findByRole("dialog", {
+      name: "Add provider",
+    });
+    const codexDialogScope = within(codexDialog);
+
+    expect(codexDialogScope.getByLabelText("Provider name")).toHaveValue(
+      "OpenAI Official",
+    );
+    expect(codexDialogScope.getByLabelText("Base URL")).toHaveValue(
+      "https://api.openai.com/v1",
+    );
   });
 
   it("activates and deletes saved providers", async () => {
@@ -526,7 +673,7 @@ describe("SharedProviderManager", () => {
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Delete Alpha" }));
-    await user.click(screen.getByRole("button", { name: "Confirm delete" }));
+    await user.click(screen.getByRole("button", { name: "Delete provider" }));
 
     await waitFor(() =>
       expect(adapter.deleteProvider).toHaveBeenCalledWith("codex", "alpha"),
@@ -534,7 +681,7 @@ describe("SharedProviderManager", () => {
     expect(screen.queryByText("Alpha")).not.toBeInTheDocument();
   });
 
-  it("removes add and edit entry points when the adapter disables them", async () => {
+  it("hides unsupported add and edit entry points when the adapter disables them", async () => {
     const adapter = createAdapter({
       listProviderState: vi.fn().mockResolvedValue(
         buildState(
@@ -566,14 +713,14 @@ describe("SharedProviderManager", () => {
     expect(
       screen.queryByRole("button", { name: "Add provider" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Edit Alpha" })).toBeDisabled();
     expect(
-      screen.queryByRole("button", { name: "Save provider" }),
+      screen.queryByRole("button", { name: "Edit Alpha" }),
     ).not.toBeInTheDocument();
+    expect(screen.queryByText("Save provider")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Provider name")).not.toBeInTheDocument();
     expect(
       screen.getByText(
-        "This adapter exposes Claude providers without add/edit support.",
+        "Claude providers are visible here, but unsupported management actions stay hidden for this adapter.",
       ),
     ).toBeInTheDocument();
   });
