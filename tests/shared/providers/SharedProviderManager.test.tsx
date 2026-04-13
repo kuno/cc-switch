@@ -599,11 +599,11 @@ describe("SharedProviderManager", () => {
         requiresServiceRestart: true,
       }),
     );
+    const restartRequiredNotice = screen.getByRole("alert");
+    expect(restartRequiredNotice).toHaveTextContent(/provider saved/i);
     expect(
       screen.getByText(/Restart the service to apply provider changes\./i),
     ).toBeInTheDocument();
-    const restartRequiredNotice = screen.getByRole("alert");
-    expect(restartRequiredNotice).toHaveTextContent("Provider saved.");
     expect(restartRequiredNotice).toHaveTextContent("Claude Official");
     expect(restartRequiredNotice).toHaveTextContent(/restart/i);
     expect(restartRequiredNotice).toHaveTextContent(/apply provider changes/i);
@@ -656,6 +656,64 @@ describe("SharedProviderManager", () => {
     expect(onRestartRequired).toHaveBeenCalledTimes(2);
     expect(screen.getByText("Router preset")).toBeInTheDocument();
   });
+
+  it(
+    "treats restart-required mutation notices as warning-level instead of success-only",
+    async () => {
+      const adapter = createMutableAdapter({
+        claude: buildState("claude", [], null),
+      });
+      const onRestartRequired = vi.fn();
+      const { user } = renderManager(
+        <SharedProviderManager
+          adapter={adapter}
+          onRestartRequired={onRestartRequired}
+          shellState={{
+            serviceName: "ccswitch",
+            serviceStatusLabel: "running",
+          }}
+        />,
+      );
+
+      await screen.findByText("No providers saved for Claude yet.");
+
+      await user.click(
+        screen.getByRole("button", {
+          name: "Add provider",
+        }),
+      );
+
+      const addDialog = await screen.findByRole("dialog", {
+        name: "Add Claude provider",
+      });
+      const addDialogScope = within(addDialog);
+
+      await user.type(addDialogScope.getByLabelText("API token"), "secret-token");
+      await user.click(
+        addDialogScope.getByRole("button", {
+          name: "Save provider",
+        }),
+      );
+
+      expect(
+        await screen.findByRole("button", { name: "Edit Claude Official" }),
+      ).toBeInTheDocument();
+      expect(onRestartRequired).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "saved",
+          appId: "claude",
+          providerName: "Claude Official",
+          requiresServiceRestart: true,
+        }),
+      );
+
+      const restartRequiredNotice = screen.getByRole("alert");
+      expect(restartRequiredNotice).toHaveTextContent("Claude Official");
+      expect(restartRequiredNotice).toHaveTextContent(/restart/i);
+      expect(restartRequiredNotice).not.toHaveTextContent(/immediately/i);
+      expect(restartRequiredNotice.className).not.toContain("border-emerald-500/30");
+    },
+  );
 
   it("shows grouped presets and form sections, and keeps custom drafts editable after preset selection", async () => {
     const adapter = createMutableAdapter({
