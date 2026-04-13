@@ -2,7 +2,7 @@
 
 Phase 14 stays local-only. The verification gate for this branch is:
 
-1. `rtk pnpm test:unit -- tests/shared/providers/SharedProviderManager.test.tsx tests/shared/providers/ui/SharedProviderCard.test.tsx tests/shared/runtime/SharedRuntimeSurface.test.tsx tests/shared/runtime/ui/SharedRuntimeAppCard.test.tsx tests/openwrt/settings.providerState.test.ts tests/openwrt/providerUiBundle.test.ts`
+1. `rtk pnpm exec vitest run tests/shared/providers/SharedProviderManager.test.tsx tests/shared/providers/ui/SharedProviderCard.test.tsx tests/shared/runtime/SharedRuntimeSurface.test.tsx tests/shared/runtime/ui/SharedRuntimeAppCard.test.tsx tests/openwrt/settings.providerState.test.ts tests/openwrt/providerUiBundle.test.ts`
 2. `rtk pnpm build:openwrt-provider-ui`
 3. `rtk pnpm typecheck`
 
@@ -11,7 +11,7 @@ Current local guardrails cover:
 - host-owned LuCI shell layout, mount ordering, and fallback ownership seams
 - shared token-field defaults and stored-secret state across Claude, Codex, and Gemini
 - responsive mount hooks and staged embed-safe selectors for provider/runtime surfaces
-- OpenWrt dialog portal ownership, centering classes, viewport-safe sizing, and staged overlay selectors
+- OpenWrt dialog body-portal ownership, centered viewport-safe staged selectors, and overlay ownership
 - staged bundle safety for the canonical OpenWrt JS/CSS artifacts
 
 Deferred assertion:
