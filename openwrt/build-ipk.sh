@@ -13,6 +13,7 @@ DAEMON_MAKEFILE="$SCRIPT_DIR/proxy-daemon/Makefile"
 LUCI_MAKEFILE="$SCRIPT_DIR/luci-app-ccswitch/Makefile"
 DAEMON_SRC="$SCRIPT_DIR/proxy-daemon/files"
 LUCI_SRC="$SCRIPT_DIR/luci-app-ccswitch"
+OPENWRT_PROVIDER_UI_ASSET="$LUCI_SRC/htdocs/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js"
 
 read_make_var() {
 	local file="$1"
@@ -71,6 +72,26 @@ die() {
 
 require_command() {
 	command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+ensure_openwrt_provider_ui_asset() {
+	if [ -f "$OPENWRT_PROVIDER_UI_ASSET" ]; then
+		return
+	fi
+
+	if ! command -v pnpm >/dev/null 2>&1; then
+		die "missing OpenWrt provider UI bundle: $OPENWRT_PROVIDER_UI_ASSET
+Build it first with:
+  cd $PROJECT_DIR && pnpm build:openwrt-provider-ui"
+	fi
+
+	echo "Building OpenWrt shared provider UI bundle"
+	(
+		cd "$PROJECT_DIR"
+		pnpm build:openwrt-provider-ui
+	)
+
+	[ -f "$OPENWRT_PROVIDER_UI_ASSET" ] || die "expected OpenWrt provider UI bundle was not produced: $OPENWRT_PROVIDER_UI_ASSET"
 }
 
 parse_args() {
@@ -189,6 +210,7 @@ Build it first with:
 	[ -f "$LUCI_SRC/root/usr/share/rpcd/ucode/ccswitch" ] || die "missing rpcd ucode handler"
 	[ -f "$LUCI_SRC/root/usr/share/luci/menu.d/luci-app-ccswitch.json" ] || die "missing LuCI menu file"
 	[ -f "$LUCI_SRC/htdocs/luci-static/resources/view/ccswitch/settings.js" ] || die "missing LuCI settings view"
+	[ -f "$OPENWRT_PROVIDER_UI_ASSET" ] || die "missing OpenWrt provider UI bundle"
 }
 
 assert_static_binary() {
@@ -433,7 +455,8 @@ build_luci_package() {
 		"$data_dir/usr/share/rpcd/acl.d" \
 		"$data_dir/usr/share/rpcd/ucode" \
 		"$data_dir/usr/share/luci/menu.d" \
-		"$data_dir/www/luci-static/resources/view/ccswitch"
+		"$data_dir/www/luci-static/resources/view/ccswitch" \
+		"$data_dir/www/luci-static/resources/ccswitch/provider-ui"
 
 	emit_control_file \
 		"$control_dir/control" \
@@ -461,6 +484,9 @@ build_luci_package() {
 	install -m 0644 \
 		"$LUCI_SRC/htdocs/luci-static/resources/view/ccswitch/settings.js" \
 		"$data_dir/www/luci-static/resources/view/ccswitch/settings.js"
+	install -m 0644 \
+		"$OPENWRT_PROVIDER_UI_ASSET" \
+		"$data_dir/www/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js"
 
 	rm -f "$output"
 	build_ipk "$control_dir" "$data_dir" "$output"
@@ -477,6 +503,7 @@ print_checksums() {
 parse_args "$@"
 resolve_target
 validate_package_metadata
+ensure_openwrt_provider_ui_asset
 assert_inputs
 assert_static_binary
 setup_tar_flags
