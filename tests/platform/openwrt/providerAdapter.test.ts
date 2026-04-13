@@ -220,6 +220,29 @@ describe("OpenWrt provider adapter", () => {
     expect(upsertActiveProvider).toHaveBeenCalledOnce();
   });
 
+  it("preserves a blank token when editing so the backend can keep the stored secret", async () => {
+    const upsertProviderByProviderId = vi.fn().mockResolvedValue({ ok: true });
+    const adapter = createOpenWrtProviderAdapter(
+      createTransport({
+        upsertProviderByProviderId,
+      }),
+    );
+
+    await adapter.saveProvider(
+      "codex",
+      {
+        ...SAMPLE_DRAFT,
+        token: "",
+      },
+      "provider-b",
+    );
+
+    expect(upsertProviderByProviderId).toHaveBeenCalledWith("codex", "provider-b", {
+      ...SAMPLE_DRAFT,
+      token: "",
+    });
+  });
+
   it("reports the full capability surface when phase 2 provider RPCs are available", async () => {
     const adapter = createOpenWrtProviderAdapter(
       createTransport({
