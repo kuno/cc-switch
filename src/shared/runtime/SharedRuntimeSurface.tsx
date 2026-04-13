@@ -137,7 +137,7 @@ export function SharedRuntimeSurface({
       <div
         data-ccswitch-region="runtime-header"
         data-ccswitch-layout="stack-to-row"
-        className="ccswitch-openwrt-page-header flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"
+        className="ccswitch-openwrt-page-header flex flex-col gap-3"
       >
         <div className="space-y-1.5">
           <h2 className="text-2xl font-semibold tracking-tight">

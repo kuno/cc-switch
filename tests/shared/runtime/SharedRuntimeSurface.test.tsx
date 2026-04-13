@@ -354,6 +354,7 @@ describe("SharedRuntimeSurface", () => {
       "data-ccswitch-layout",
       "stack-to-row",
     );
+    expect(runtimeHeader).not.toHaveClass("sm:flex-row");
     expect(runtimeBody).toHaveAttribute(
       "data-ccswitch-layout",
       "embedded-stack",
