@@ -72,6 +72,11 @@ type OpenWrtProviderManagerMountState = {
   disposed: boolean;
 };
 
+type OpenWrtShellMutationState = Pick<
+  OpenWrtProviderManagerMountState,
+  "disposed" | "restartPending" | "selectedApp" | "serviceRunning"
+>;
+
 const APP_LABELS: Record<SharedProviderAppId, string> = {
   claude: "Claude",
   codex: "Codex",
@@ -162,6 +167,23 @@ function buildSharedProviderShellState(
   };
 }
 
+function handleProviderMutationEvent(
+  state: OpenWrtShellMutationState,
+  shell: OpenWrtSharedProviderShellApi,
+  rerender: () => void,
+  event: OpenWrtProviderMutationEvent,
+) {
+  if (state.disposed) {
+    return;
+  }
+
+  state.selectedApp = shell.getSelectedApp();
+  state.serviceRunning = event.serviceRunning;
+  state.restartPending = event.restartRequired;
+  shell.showMessage("success", buildMutationShellMessage(event));
+  rerender();
+}
+
 function mountOpenWrtSharedProviderManager(
   options: OpenWrtSharedProviderMountOptions,
 ) {
@@ -179,15 +201,7 @@ function mountOpenWrtSharedProviderManager(
       return state.serviceRunning;
     },
     async onProviderMutation(event) {
-      if (state.disposed) {
-        return;
-      }
-
-      state.selectedApp = options.shell.getSelectedApp();
-      state.serviceRunning = event.serviceRunning;
-      state.restartPending = event.restartRequired;
-      options.shell.showMessage("success", buildMutationShellMessage(event));
-      rerender();
+      handleProviderMutationEvent(state, options.shell, rerender, event);
     },
   });
 
@@ -246,6 +260,13 @@ const api: OpenWrtSharedProviderBundleApi = {
 };
 
 export const openWrtSharedProviderBundleApi = api;
+
+export const __private__ = {
+  buildMutationShellMessage,
+  buildSharedProviderShellState,
+  getProviderNameFromMutation,
+  handleProviderMutationEvent,
+};
 
 (globalThis as OpenWrtSharedProviderGlobal)[
   OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY
