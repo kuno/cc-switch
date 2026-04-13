@@ -509,6 +509,16 @@ describe("SharedProviderManager", () => {
     expect(
       await screen.findByText("Could not load provider settings."),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Retry after the adapter or OpenWrt RPC bridge is available again.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen
+        .getByText("Unable to load providers.")
+        .closest(".ccswitch-openwrt-state-shell--warning"),
+    ).not.toBeNull();
 
     await user.click(screen.getByRole("button", { name: "Retry" }));
 
@@ -592,11 +602,18 @@ describe("SharedProviderManager", () => {
     expect(
       screen.getByText(/Restart the service to apply provider changes\./i),
     ).toBeInTheDocument();
-    expect(
-      screen
-        .getByText("Provider saved.")
-        .closest(".ccswitch-openwrt-shell-alert"),
-    ).toHaveClass("bg-amber-500/10");
+    const restartRequiredNotice = screen.getByRole("alert");
+    expect(restartRequiredNotice).toHaveTextContent("Provider saved.");
+    expect(restartRequiredNotice).toHaveTextContent("Claude Official");
+    expect(restartRequiredNotice).toHaveTextContent(/restart/i);
+    expect(restartRequiredNotice).toHaveTextContent(/apply provider changes/i);
+    expect(restartRequiredNotice).toHaveTextContent(/luci restart control/i);
+    expect(restartRequiredNotice).toHaveTextContent(/service: ccswitch/i);
+    expect(restartRequiredNotice).toHaveTextContent(/current service status: running/i);
+    expect(restartRequiredNotice).not.toHaveTextContent(
+      "Changes are available immediately.",
+    );
+    expect(restartRequiredNotice).toHaveClass("bg-amber-500/10");
 
     const editProviderButton = screen.getByRole("button", {
       name: "Edit Claude Official",

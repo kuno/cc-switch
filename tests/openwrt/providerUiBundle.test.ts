@@ -370,7 +370,13 @@ describe("OpenWrt provider UI bundle", () => {
       providerManager: true,
       runtimeSurface: true,
     });
+    expect(Object.keys(api ?? {}).sort()).toEqual([
+      "capabilities",
+      "mount",
+      "mountRuntimeSurface",
+    ]);
     expect(typeof api?.mountRuntimeSurface).toBe("function");
+    expect(typeof api?.mount).toBe("function");
 
     let handle:
       | void

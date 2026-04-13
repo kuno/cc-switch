@@ -324,6 +324,54 @@ describe("SharedRuntimeSurface", () => {
     );
   });
 
+  it("shows normalized empty and hard-error states with retry-oriented recovery copy", async () => {
+    const emptyAdapter = {
+      getRuntimeSurface: vi.fn().mockResolvedValue(null),
+    } satisfies RuntimeSurfacePlatformAdapter;
+
+    const { unmount } = renderSurface(emptyAdapter);
+
+    expect(
+      await screen.findByText("No runtime status available yet."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "The backend did not return a runtime snapshot for this router.",
+      ),
+    ).toBeInTheDocument();
+
+    unmount();
+
+    const errorAdapter = {
+      getRuntimeSurface: vi
+        .fn()
+        .mockRejectedValue(new Error("rpc bridge offline")),
+    } satisfies RuntimeSurfacePlatformAdapter;
+
+    renderSurface(errorAdapter);
+
+    expect(
+      await screen.findByText("Unable to load runtime status."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Check the OpenWrt RPC bridge and retry once the daemon is reachable again.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("rpc bridge offline")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(
+      screen
+        .getByText("Unable to load runtime status.")
+        .closest(".ccswitch-openwrt-state-shell--warning"),
+    ).not.toBeNull();
+    expect(
+      screen.getByText("rpc bridge offline").closest(
+        ".ccswitch-openwrt-inline-note--warning",
+      ),
+    ).not.toBeNull();
+  });
+
   it("exposes stable layout hooks for the embedded runtime surface", async () => {
     const adapter = {
       getRuntimeSurface: vi.fn().mockResolvedValue(createRuntimeSurfaceState()),
@@ -624,5 +672,37 @@ describe("SharedRuntimeSurface", () => {
     ).toBeInTheDocument();
     expect(claudeCard.getByText("Claude Backup")).toBeInTheDocument();
     expect(adapter.getRuntimeSurface).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps stale runtime data visible and uses warning note styling when a refresh fails", async () => {
+    const adapter = {
+      getRuntimeSurface: vi
+        .fn()
+        .mockResolvedValueOnce(createRuntimeSurfaceState())
+        .mockRejectedValueOnce(new Error("refresh bridge offline")),
+    } satisfies RuntimeSurfacePlatformAdapter;
+
+    renderSurface(adapter);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Runtime Surface" }),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole("region", { name: "Claude runtime card" }),
+    ).toHaveTextContent("Claude Router Primary");
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh status" }));
+
+    const refreshNoteTitle = await screen.findByText("Latest refresh failed");
+    expect(refreshNoteTitle).toBeInTheDocument();
+    expect(screen.getByText("refresh bridge offline")).toBeInTheDocument();
+    expect(
+      refreshNoteTitle.closest(".ccswitch-openwrt-inline-note--warning"),
+    ).not.toBeNull();
+    expect(screen.getByRole("region", { name: "Claude runtime card" })).toHaveTextContent(
+      "Claude Router Primary",
+    );
   });
 });
