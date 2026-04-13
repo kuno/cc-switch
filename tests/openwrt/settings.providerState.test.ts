@@ -14,6 +14,8 @@ type UiState = {
   fallbackReason: string | null;
   mountHandle: (() => void) | null;
   mountRequestId: number;
+  runtimeMountHandle: (() => void) | null;
+  runtimeMountRequestId: number;
 };
 
 type StatusNodes = {
@@ -31,6 +33,7 @@ type ShellNodes = {
   sharedChromeRoot?: HTMLElement;
   messageRoot: HTMLElement;
   messageText: HTMLElement;
+  runtimeMountRoot: HTMLElement;
   mountRoot: HTMLElement;
   restartButton: HTMLButtonElement;
   root: HTMLElement;
@@ -46,7 +49,7 @@ type ShellBridge = {
   showMessage(kind: "success" | "error" | "info", text: string): void;
 };
 
-type MountOptions = {
+type ProviderMountOptions = {
   appId: AppId;
   serviceStatus: { isRunning: boolean };
   shell: ShellBridge;
@@ -54,9 +57,15 @@ type MountOptions = {
   transport: Record<string, (...args: unknown[]) => Promise<unknown>>;
 };
 
+type RuntimeMountOptions = {
+  target: HTMLElement;
+  transport: Record<string, (...args: unknown[]) => Promise<unknown>>;
+};
+
 type SettingsView = {
   createProviderShell(uiState: UiState, statusNodes: StatusNodes): ShellNodes;
   createProviderTransport(): Record<string, (...args: unknown[]) => Promise<unknown>>;
+  createRuntimeTransport(): Record<string, (...args: unknown[]) => Promise<unknown>>;
   createShellBridge(
     uiState: UiState,
     statusNodes: StatusNodes,
@@ -67,15 +76,25 @@ type SettingsView = {
   getBundleAssetPath(): string;
   getSelectedApp(): AppId;
   loadSharedProviderBundle(): Promise<{
-    capabilities?: { providerManager?: boolean };
-    mount(options: MountOptions): { unmount(): void } | (() => void) | void;
+    capabilities?: { providerManager?: boolean; runtimeSurface?: boolean };
+    mount(
+      options: ProviderMountOptions,
+    ): { unmount(): void } | (() => void) | void;
+    mountRuntimeSurface?(
+      options: RuntimeMountOptions,
+    ): { unmount(): void } | (() => void) | void;
   }>;
+  mountSharedRuntimeSurface(
+    uiState: UiState,
+    shellNodes: ShellNodes,
+  ): Promise<void>;
   mountSharedProviderUi(
     uiState: UiState,
     statusNodes: StatusNodes,
     shellNodes: ShellNodes,
   ): Promise<void>;
   saveSelectedApp(appId: AppId): void;
+  teardownSharedRuntimeSurface(uiState: UiState): void;
   teardownSharedProviderUi(uiState: UiState): void;
 };
 
@@ -325,6 +344,30 @@ describe("OpenWrt settings shared-provider shell", () => {
     });
   });
 
+  it("wires raw rpc transport methods for the shared runtime surface", async () => {
+    const { settings } = loadSettingsView();
+    const transport = settings.createRuntimeTransport();
+
+    const statusResult = await transport.getRuntimeStatus();
+    const appStatusResult = await transport.getAppRuntimeStatus("codex");
+
+    expect(statusResult).toMatchObject({
+      args: [],
+      spec: {
+        method: "get_runtime_status",
+        object: "ccswitch",
+      },
+    });
+    expect(appStatusResult).toMatchObject({
+      args: ["codex"],
+      spec: {
+        method: "get_app_runtime_status",
+        object: "ccswitch",
+        params: ["app"],
+      },
+    });
+  });
+
   it("lets the shared bundle update the shell-owned selected app and banner state", () => {
     const { settings, localStorage } = loadSettingsView("claude");
     const uiState = settings.createUiState(true, "claude");
@@ -346,6 +389,103 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(statusNodes.appValue.textContent).toBe("Gemini");
     expect(shellNodes.messageText.textContent).toBe("Restart required.");
     expect(shellNodes.messageRoot.style.display).toBe("");
+  });
+
+  it("mounts the runtime surface above the provider manager through a separate bundle contract", async () => {
+    const { settings } = loadSettingsView("claude");
+    const uiState = settings.createUiState(true, "claude");
+    const statusNodes = settings.createStatusPanel(uiState);
+    const shellNodes = settings.createProviderShell(uiState, statusNodes);
+    const runtimeUnmount = vi.fn();
+    const providerUnmount = vi.fn();
+    const mountRuntimeSurface = vi
+      .fn()
+      .mockReturnValue({ unmount: runtimeUnmount });
+    const mount = vi.fn().mockReturnValue({ unmount: providerUnmount });
+
+    settings.loadSharedProviderBundle = vi.fn().mockResolvedValue({
+      capabilities: { providerManager: true, runtimeSurface: true },
+      mount,
+      mountRuntimeSurface,
+    });
+
+    await settings.mountSharedRuntimeSurface(uiState, shellNodes);
+    await settings.mountSharedProviderUi(uiState, statusNodes, shellNodes);
+
+    expect(mountRuntimeSurface).toHaveBeenCalledTimes(1);
+    expect(mountRuntimeSurface).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: shellNodes.runtimeMountRoot,
+        transport: expect.objectContaining({
+          getRuntimeStatus: expect.any(Function),
+          getAppRuntimeStatus: expect.any(Function),
+        }),
+      }),
+    );
+    expect(mount).toHaveBeenCalledTimes(1);
+    expect(mount).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: shellNodes.mountRoot,
+      }),
+    );
+
+    settings.teardownSharedRuntimeSurface(uiState);
+    settings.teardownSharedProviderUi(uiState);
+
+    expect(runtimeUnmount).toHaveBeenCalledTimes(1);
+    expect(providerUnmount).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows runtime-only fallback text when the bundle lacks runtime-surface support", async () => {
+    const { settings } = loadSettingsView();
+    const uiState = settings.createUiState(false, "claude");
+    const statusNodes = settings.createStatusPanel(uiState);
+    const shellNodes = settings.createProviderShell(uiState, statusNodes);
+    const mount = vi.fn().mockReturnValue({ unmount: vi.fn() });
+
+    settings.loadSharedProviderBundle = vi.fn().mockResolvedValue({
+      capabilities: { providerManager: true, runtimeSurface: false },
+      mount,
+    });
+
+    await settings.mountSharedRuntimeSurface(uiState, shellNodes);
+    await settings.mountSharedProviderUi(uiState, statusNodes, shellNodes);
+
+    expect(shellNodes.runtimeMountRoot.textContent).toContain(
+      "without runtime-surface support",
+    );
+    expect(shellNodes.mountRoot.textContent).not.toContain(
+      "without runtime-surface support",
+    );
+    expect(mount).toHaveBeenCalledTimes(1);
+    expect(uiState.bundleStatus).toBe("ready");
+  });
+
+  it("shows runtime-only fallback text when the runtime surface throws during mount", async () => {
+    const { settings } = loadSettingsView();
+    const uiState = settings.createUiState(true, "claude");
+    const statusNodes = settings.createStatusPanel(uiState);
+    const shellNodes = settings.createProviderShell(uiState, statusNodes);
+    const mountRuntimeSurface = vi.fn().mockImplementation(() => {
+      throw new Error("runtime mount regression");
+    });
+    const mount = vi.fn().mockReturnValue({ unmount: vi.fn() });
+
+    settings.loadSharedProviderBundle = vi.fn().mockResolvedValue({
+      capabilities: { providerManager: true, runtimeSurface: true },
+      mount,
+      mountRuntimeSurface,
+    });
+
+    await settings.mountSharedRuntimeSurface(uiState, shellNodes);
+    await settings.mountSharedProviderUi(uiState, statusNodes, shellNodes);
+
+    expect(shellNodes.runtimeMountRoot.textContent).toContain(
+      "runtime mount regression",
+    );
+    expect(mount).toHaveBeenCalledTimes(1);
+    expect(uiState.bundleStatus).toBe("ready");
+    expect(statusNodes.bundleValue.textContent).toBe("Ready");
   });
 
   it("keeps the LuCI shell functional when the shared bundle fails to load", async () => {

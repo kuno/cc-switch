@@ -4,11 +4,19 @@ import {
   type OpenWrtProviderTransport,
 } from "@/platform/openwrt/providers";
 import {
+  createOpenWrtRuntimeAdapter,
+  type OpenWrtRuntimeTransport,
+} from "@/platform/openwrt/runtime";
+import {
   mountSharedProviderManager,
   type MountedSharedProviderManager,
   type SharedProviderManagerProps,
   type SharedProviderShellState,
 } from "@/shared/providers";
+import {
+  mountSharedRuntimeSurface,
+  type MountedSharedRuntimeSurface,
+} from "@/shared/runtime";
 import type {
   SharedProviderAppId,
   SharedProviderView,
@@ -45,14 +53,27 @@ export interface OpenWrtSharedProviderMountOptions {
   shell: OpenWrtSharedProviderShellApi;
 }
 
+export interface OpenWrtSharedRuntimeMountOptions {
+  target: HTMLElement;
+  transport: OpenWrtRuntimeTransport;
+}
+
 export interface OpenWrtSharedProviderBundleCapabilities {
   providerManager: boolean;
+  runtimeSurface: boolean;
 }
 
 export interface OpenWrtSharedProviderBundleApi {
   capabilities?: OpenWrtSharedProviderBundleCapabilities;
   mount(
     options: OpenWrtSharedProviderMountOptions,
+  ):
+    | void
+    | (() => void)
+    | { unmount(): void }
+    | Promise<void | (() => void) | { unmount(): void }>;
+  mountRuntimeSurface(
+    options: OpenWrtSharedRuntimeMountOptions,
   ):
     | void
     | (() => void)
@@ -250,12 +271,35 @@ function mountOpenWrtSharedProviderManager(
   };
 }
 
+function mountOpenWrtSharedRuntimeSurface(
+  options: OpenWrtSharedRuntimeMountOptions,
+) {
+  let mounted: MountedSharedRuntimeSurface | null = null;
+
+  clearTarget(options.target);
+  mounted = mountSharedRuntimeSurface(options.target, {
+    adapter: createOpenWrtRuntimeAdapter(options.transport),
+  });
+
+  return {
+    unmount() {
+      mounted?.unmount();
+      mounted = null;
+      clearTarget(options.target);
+    },
+  };
+}
+
 const api: OpenWrtSharedProviderBundleApi = {
   capabilities: {
     providerManager: true,
+    runtimeSurface: true,
   },
   mount(options) {
     return mountOpenWrtSharedProviderManager(options);
+  },
+  mountRuntimeSurface(options) {
+    return mountOpenWrtSharedRuntimeSurface(options);
   },
 };
 
@@ -266,6 +310,7 @@ export const __private__ = {
   buildSharedProviderShellState,
   getProviderNameFromMutation,
   handleProviderMutationEvent,
+  mountOpenWrtSharedRuntimeSurface,
 };
 
 (globalThis as OpenWrtSharedProviderGlobal)[
