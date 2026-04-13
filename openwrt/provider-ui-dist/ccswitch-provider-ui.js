@@ -42,23 +42,23 @@ Error generating stack: `+u.message+`
     margin-right: `).concat(m,"px ").concat(l,`;
     `),o==="padding"&&"padding-right: ".concat(m,"px ").concat(l,";")].filter(Boolean).join(""),`
   }
-
+  
   .`).concat(ro,` {
     right: `).concat(m,"px ").concat(l,`;
   }
-
+  
   .`).concat(no,` {
     margin-right: `).concat(m,"px ").concat(l,`;
   }
-
+  
   .`).concat(ro," .").concat(ro,` {
     right: 0 `).concat(l,`;
   }
-
+  
   .`).concat(no," .").concat(no,` {
     margin-right: 0 `).concat(l,`;
   }
-
+  
   body[`).concat(sn,`] {
     `).concat(ly,": ").concat(m,`px;
   }

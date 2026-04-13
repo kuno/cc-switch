@@ -15,7 +15,9 @@ var SHARED_PROVIDER_UI_CUTOVER_MODE_FALLBACK = 'fallback';
 var SHARED_PROVIDER_UI_DISABLE_GLOBAL_KEY = '__CCSWITCH_OPENWRT_DISABLE_REAL_PROVIDER_UI__';
 var SHARED_PROVIDER_UI_GLOBAL_KEY = '__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__';
 var SHARED_PROVIDER_UI_SCRIPT_ID = 'ccswitch-openwrt-shared-provider-ui-bundle';
+var SHARED_PROVIDER_UI_STYLE_ID = 'ccswitch-openwrt-shared-provider-ui-styles';
 var SHARED_PROVIDER_UI_BUNDLE_PATH = '/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js';
+var SHARED_PROVIDER_UI_STYLE_PATH = '/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.css';
 var SHARED_PROVIDER_UI_FALLBACK_REASON_GATE_DISABLED = 'gate-disabled';
 var SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_FAILURE = 'bundle-failure';
 var SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_REGRESSION = 'bundle-regression';
@@ -819,6 +821,10 @@ return view.extend({
 
 	getBundleAssetPath: function () {
 		return SHARED_PROVIDER_UI_BUNDLE_PATH;
+	},
+
+	getBundleStylePath: function () {
+		return SHARED_PROVIDER_UI_STYLE_PATH;
 	},
 
 	createUiState: function (isRunning, providerStateOrSelectedApp, selectedApp) {
@@ -2077,12 +2083,22 @@ return view.extend({
 		var self = this;
 		var existingApi = window[SHARED_PROVIDER_UI_GLOBAL_KEY];
 		var existingScript;
+		var existingStylesheet;
 
 		if (existingApi && typeof existingApi.mount === 'function')
 			return Promise.resolve(existingApi);
 
 		if (this._sharedProviderBundlePromise)
 			return this._sharedProviderBundlePromise;
+
+		existingStylesheet = document.getElementById(SHARED_PROVIDER_UI_STYLE_ID);
+		if (!existingStylesheet) {
+			existingStylesheet = document.createElement('link');
+			existingStylesheet.id = SHARED_PROVIDER_UI_STYLE_ID;
+			existingStylesheet.rel = 'stylesheet';
+			existingStylesheet.href = self.getBundleStylePath();
+			document.head.appendChild(existingStylesheet);
+		}
 
 		existingScript = document.getElementById(SHARED_PROVIDER_UI_SCRIPT_ID);
 		this._sharedProviderBundlePromise = new Promise(function (resolve, reject) {
