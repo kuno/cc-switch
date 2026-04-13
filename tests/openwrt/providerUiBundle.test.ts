@@ -314,6 +314,25 @@ const FORBIDDEN_DESKTOP_SHELL_PHRASES = [
   "sidebar navigation",
 ] as const;
 
+const FORBIDDEN_DESKTOP_SHELL_SELECTORS = [
+  "#ccswitch-shared-provider-ui-root nav",
+  "#ccswitch-shared-provider-ui-root aside",
+  "#ccswitch-shared-runtime-surface-root nav",
+  "#ccswitch-shared-runtime-surface-root aside",
+  ".titlebar",
+  ".window-controls",
+  ".window-chrome",
+  ".desktop-shell",
+  ".taskbar",
+  ".dock",
+] as const;
+
+function getElementClassName(element: Element): string {
+  return typeof element.getAttribute === "function"
+    ? element.getAttribute("class") ?? ""
+    : "";
+}
+
 describe("OpenWrt provider UI bundle", () => {
   it("registers the runtime-surface capability and mounts a read-only runtime panel", async () => {
     const globalScope = globalThis as typeof globalThis & {
@@ -709,6 +728,136 @@ describe("OpenWrt provider UI bundle", () => {
     target.remove();
   });
 
+  it("mounts runtime and provider surfaces into unified OpenWrt roots without a secondary app shell", async () => {
+    const globalScope = globalThis as typeof globalThis & {
+      [OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY]?: OpenWrtSharedProviderBundleApi;
+    };
+    const api = globalScope[OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY];
+    const shellRoot = document.createElement("div");
+    const runtimeRoot = document.createElement("div");
+    const providerRoot = document.createElement("div");
+    const transport = createTransport({
+      claude: createProviderState("claude", [
+        {
+          active: true,
+          baseUrl: "https://claude-primary.example.com",
+          model: "claude-sonnet-4-5",
+          name: "Claude Primary",
+          providerId: "claude-primary",
+          tokenConfigured: true,
+          tokenField: "ANTHROPIC_AUTH_TOKEN",
+        },
+      ]),
+    });
+    const runtimeTransport = createRuntimeTransport();
+
+    runtimeRoot.id = "ccswitch-shared-runtime-surface-root";
+    providerRoot.id = "ccswitch-shared-provider-ui-root";
+    shellRoot.append(runtimeRoot, providerRoot);
+    document.body.appendChild(shellRoot);
+
+    const shell = {
+      clearMessage: vi.fn(),
+      getSelectedApp: vi.fn().mockReturnValue("claude" satisfies SharedProviderAppId),
+      getServiceStatus: vi.fn().mockReturnValue({ isRunning: true }),
+      refreshServiceStatus: vi.fn().mockResolvedValue({ isRunning: true }),
+      restartService: vi.fn().mockResolvedValue({ isRunning: true }),
+      setSelectedApp: vi.fn().mockImplementation((appId: SharedProviderAppId) => appId),
+      subscribe: vi.fn().mockReturnValue(vi.fn()),
+      showMessage: vi.fn(),
+    };
+
+    let runtimeHandle:
+      | void
+      | (() => void)
+      | {
+          unmount(): void;
+        };
+    let providerHandle:
+      | void
+      | (() => void)
+      | {
+          unmount(): void;
+        };
+
+    await act(async () => {
+      runtimeHandle = await api?.mountRuntimeSurface({
+        target: runtimeRoot,
+        transport: runtimeTransport,
+      });
+      providerHandle = await api?.mount({
+        appId: "claude",
+        serviceStatus: { isRunning: true },
+        shell,
+        target: providerRoot,
+        transport,
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() =>
+      expect(within(runtimeRoot).getByText("Runtime Surface")).toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(
+        within(providerRoot).getByRole("button", { name: "Edit Claude Primary" }),
+      ).toBeInTheDocument(),
+    );
+
+    expect(document.body.classList.contains("ccswitch-openwrt-provider-ui-theme")).toBe(
+      true,
+    );
+    expect(runtimeRoot.firstElementChild?.tagName).toBe("SECTION");
+    expect(runtimeRoot.querySelectorAll('[role="region"]').length).toBe(3);
+    expect(
+      Array.from(runtimeRoot.querySelectorAll("*")).some((element) =>
+        getElementClassName(element).includes("rounded-3xl"),
+      ),
+    ).toBe(true);
+    expect(
+      Array.from(providerRoot.querySelectorAll("*")).some((element) =>
+        getElementClassName(element).includes("rounded-[28px]"),
+      ),
+    ).toBe(true);
+    expect(
+      Array.from(providerRoot.querySelectorAll("article")).every((element) =>
+        getElementClassName(element).includes("rounded-[22px]"),
+      ),
+    ).toBe(true);
+    expect(shellRoot.querySelector("main, nav, aside, [role='navigation']")).toBeNull();
+    expect(shellRoot.querySelector("dialog")).toBeNull();
+    expect(
+      document.body.querySelector(".ccswitch-openwrt-provider-ui-dialog"),
+    ).toBeNull();
+    expect(
+      document.body.querySelector(".ccswitch-openwrt-provider-ui-overlay"),
+    ).toBeNull();
+    expect(
+      within(shellRoot).queryByRole("button", { name: /restart/i }),
+    ).not.toBeInTheDocument();
+
+    await act(async () => {
+      if (typeof runtimeHandle === "function") {
+        runtimeHandle();
+      } else if (runtimeHandle && typeof runtimeHandle.unmount === "function") {
+        runtimeHandle.unmount();
+      }
+
+      if (typeof providerHandle === "function") {
+        providerHandle();
+      } else if (providerHandle && typeof providerHandle.unmount === "function") {
+        providerHandle.unmount();
+      }
+    });
+
+    expect(runtimeRoot.textContent).toBe("");
+    expect(providerRoot.textContent).toBe("");
+    expect(
+      document.body.classList.contains("ccswitch-openwrt-provider-ui-theme"),
+    ).toBe(false);
+    shellRoot.remove();
+  });
+
   it("updates shell messaging and restart state for save, activate, and delete mutations", () => {
     const rerender = vi.fn();
     let restartState = {
@@ -893,7 +1042,6 @@ describe("OpenWrt provider UI bundle", () => {
     const stagedStylesheetSource = readFileSync(stagedStylesheetPath, "utf8");
     const bundleSource = readFileSync(stagedOutputPath, "utf8");
     const stylesheetSource = readFileSync(stagedStylesheetOutputPath, "utf8");
-
     expect(bundleSource).toBe(stagedBundleSource);
     expect(stylesheetSource).toBe(stagedStylesheetSource);
     expect(stagedBundleSource).toContain("__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__");
@@ -904,6 +1052,15 @@ describe("OpenWrt provider UI bundle", () => {
     expect(stagedBundleSource).toContain("cc-switch service");
     expect(stagedStylesheetSource).toContain(
       "body.ccswitch-openwrt-provider-ui-theme",
+    );
+    expect(stagedStylesheetSource).toMatch(
+      /#ccswitch-shared-provider-ui-root,\s*#ccswitch-shared-runtime-surface-root,\s*body\.ccswitch-openwrt-provider-ui-theme\s+\.ccswitch-openwrt-provider-ui-dialog,\s*body\.ccswitch-openwrt-provider-ui-theme\s+\.ccswitch-openwrt-provider-ui-overlay/,
+    );
+    expect(stagedStylesheetSource).toMatch(
+      /#ccswitch-shared-provider-ui-root,\s*#ccswitch-shared-provider-ui-root \*,\s*#ccswitch-shared-provider-ui-root \*:before,\s*#ccswitch-shared-provider-ui-root \*:after,\s*#ccswitch-shared-runtime-surface-root,\s*#ccswitch-shared-runtime-surface-root \*/,
+    );
+    expect(stagedStylesheetSource).toMatch(
+      /#ccswitch-shared-provider-ui-root\s+:focus-visible,\s*#ccswitch-shared-runtime-surface-root\s+:focus-visible,\s*body\.ccswitch-openwrt-provider-ui-theme\s+\.ccswitch-openwrt-provider-ui-dialog\s+:focus-visible/,
     );
     expect(stagedStylesheetSource).toContain(".bg-background");
     expect(stagedStylesheetSource).not.toContain("color-scheme:light");
@@ -918,7 +1075,7 @@ describe("OpenWrt provider UI bundle", () => {
     expect(viteConfig).toContain("openwrt/provider-ui-dist");
   });
 
-  it("keeps the staged OpenWrt bundle free of desktop-shell metaphors", () => {
+  it("keeps the staged OpenWrt bundle free of split-shell selectors and desktop-shell structure", () => {
     const repoRoot = process.cwd();
     const stagedBundleSource = readFileSync(
       path.resolve(repoRoot, "openwrt/provider-ui-dist/ccswitch-provider-ui.js"),
@@ -932,6 +1089,10 @@ describe("OpenWrt provider UI bundle", () => {
     for (const phrase of FORBIDDEN_DESKTOP_SHELL_PHRASES) {
       expect(stagedBundleSource).not.toContain(phrase);
       expect(stagedStylesheetSource).not.toContain(phrase);
+    }
+
+    for (const selector of FORBIDDEN_DESKTOP_SHELL_SELECTORS) {
+      expect(stagedStylesheetSource).not.toContain(selector);
     }
   });
 
