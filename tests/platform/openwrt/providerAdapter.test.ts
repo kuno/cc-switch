@@ -143,6 +143,20 @@ describe("OpenWrt provider adapter", () => {
     expect(state.activeProvider.providerId).toBe("openwrt-claude");
   });
 
+  it("surfaces real load RPC failures instead of hiding them behind legacy state", async () => {
+    const adapter = createOpenWrtProviderAdapter(
+      createTransport({
+        listProviders: vi
+          .fn()
+          .mockResolvedValue({ ok: false, error: "Access denied" }),
+      }),
+    );
+
+    await expect(adapter.listProviderState("claude")).rejects.toThrow(
+      "Access denied",
+    );
+  });
+
   it("uses provider_id and id compatibility fallbacks for update and activate flows", async () => {
     const upsertProviderByProviderId = vi
       .fn()
@@ -190,6 +204,19 @@ describe("OpenWrt provider adapter", () => {
 
     expect(upsertProvider).toHaveBeenCalledOnce();
     expect(saveProvider).toHaveBeenCalledOnce();
+    expect(upsertActiveProvider).toHaveBeenCalledOnce();
+  });
+
+  it("falls back to upsert-active-provider when phase 2 save methods are omitted from the transport", async () => {
+    const upsertActiveProvider = vi.fn().mockResolvedValue({ ok: true });
+    const adapter = createOpenWrtProviderAdapter(
+      createTransport({
+        upsertActiveProvider,
+      }),
+    );
+
+    await adapter.saveProvider("codex", SAMPLE_DRAFT);
+
     expect(upsertActiveProvider).toHaveBeenCalledOnce();
   });
 
