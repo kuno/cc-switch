@@ -985,7 +985,11 @@ export function SharedProviderManager({
           }
         }}
       >
-        <DialogContent className="max-w-sm" zIndex="alert">
+        <DialogContent
+          className="ccswitch-openwrt-provider-ui-dialog max-w-sm"
+          overlayClassName="ccswitch-openwrt-provider-ui-overlay"
+          zIndex="alert"
+        >
           <DialogHeader className="space-y-3 border-b-0 bg-transparent pb-0">
             <DialogTitle className="flex items-center gap-2 text-lg font-semibold">
               <AlertCircle className="h-5 w-5 text-destructive" />
