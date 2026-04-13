@@ -1,0 +1,77 @@
+import type {
+  SharedProviderAppId,
+  SharedProviderEditorPayload,
+} from "@/shared/providers/domain";
+
+export interface OpenWrtRpcResult {
+  ok?: boolean;
+  error?: string;
+  message?: string;
+  provider?: Record<string, unknown>;
+  provider_json?: string;
+  providers_json?: string;
+  state_json?: string;
+  list_json?: string;
+  activeProviderId?: string | null;
+  active_provider_id?: string | null;
+  providers?: unknown;
+  items?: unknown;
+  savedProviders?: unknown;
+  providerMap?: unknown;
+  [key: string]: unknown;
+}
+
+export interface OpenWrtProviderTransport {
+  listProviders(appId: SharedProviderAppId): Promise<OpenWrtRpcResult | null>;
+  listSavedProviders(
+    appId: SharedProviderAppId,
+  ): Promise<OpenWrtRpcResult | null>;
+  getActiveProvider(appId: SharedProviderAppId): Promise<OpenWrtRpcResult>;
+  upsertProvider?(
+    appId: SharedProviderAppId,
+    provider: SharedProviderEditorPayload,
+  ): Promise<OpenWrtRpcResult>;
+  saveProvider?(
+    appId: SharedProviderAppId,
+    provider: SharedProviderEditorPayload,
+  ): Promise<OpenWrtRpcResult>;
+  upsertProviderByProviderId?(
+    appId: SharedProviderAppId,
+    providerId: string,
+    provider: SharedProviderEditorPayload,
+  ): Promise<OpenWrtRpcResult>;
+  upsertProviderById?(
+    appId: SharedProviderAppId,
+    providerId: string,
+    provider: SharedProviderEditorPayload,
+  ): Promise<OpenWrtRpcResult>;
+  upsertActiveProvider?(
+    appId: SharedProviderAppId,
+    provider: SharedProviderEditorPayload,
+  ): Promise<OpenWrtRpcResult>;
+  deleteProviderByProviderId?(
+    appId: SharedProviderAppId,
+    providerId: string,
+  ): Promise<OpenWrtRpcResult>;
+  deleteProviderById?(
+    appId: SharedProviderAppId,
+    providerId: string,
+  ): Promise<OpenWrtRpcResult>;
+  activateProviderByProviderId?(
+    appId: SharedProviderAppId,
+    providerId: string,
+  ): Promise<OpenWrtRpcResult>;
+  activateProviderById?(
+    appId: SharedProviderAppId,
+    providerId: string,
+  ): Promise<OpenWrtRpcResult>;
+  switchProviderByProviderId?(
+    appId: SharedProviderAppId,
+    providerId: string,
+  ): Promise<OpenWrtRpcResult>;
+  switchProviderById?(
+    appId: SharedProviderAppId,
+    providerId: string,
+  ): Promise<OpenWrtRpcResult>;
+  restartService(): Promise<OpenWrtRpcResult>;
+}
