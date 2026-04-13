@@ -219,7 +219,7 @@ export function SharedProviderEditorPanel({
             </div>
           </div>
         </DialogHeader>
-        <form className="flex max-h-[85vh] flex-col" onSubmit={onSubmit}>
+        <form className="flex min-h-0 flex-1 flex-col" onSubmit={onSubmit}>
           <div
             className={cn(
               "grid min-h-0 flex-1 gap-0",
@@ -229,8 +229,11 @@ export function SharedProviderEditorPanel({
             )}
           >
             {supportsPresets ? (
-              <div className="min-h-0 border-b border-border-default bg-muted/10 xl:border-b-0 xl:border-r">
-                <div className="max-h-[32vh] overflow-y-auto px-5 py-5 sm:px-6 xl:max-h-[calc(85vh-210px)]">
+              <div className="flex min-h-0 flex-col border-b border-border-default bg-muted/10 xl:border-b-0 xl:border-r">
+                <div
+                  className="flex-1 overflow-y-auto px-5 py-5 sm:px-6"
+                  data-ccswitch-dialog-scroll-region
+                >
                   <div className="space-y-5">
                     <div className="space-y-1">
                       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
@@ -292,8 +295,11 @@ export function SharedProviderEditorPanel({
               </div>
             ) : null}
 
-            <div className="min-h-0 overflow-y-auto">
-              <div className="space-y-4 px-5 py-5 sm:px-6">
+            <div className="flex min-h-0 flex-col overflow-hidden">
+              <div
+                className="flex-1 space-y-4 overflow-y-auto px-5 py-5 sm:px-6"
+                data-ccswitch-dialog-scroll-region
+              >
                 <section
                   className={cn(
                     "ccswitch-openwrt-group rounded-[24px] border p-4 shadow-sm",
