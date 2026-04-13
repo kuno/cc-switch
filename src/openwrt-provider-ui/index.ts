@@ -94,6 +94,9 @@ export interface OpenWrtSharedProviderBundleApi {
 type OpenWrtSharedProviderGlobal = typeof globalThis & {
   [OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY]?: OpenWrtSharedProviderBundleApi;
 };
+type OpenWrtShellRestartState = Required<
+  ReturnType<NonNullable<OpenWrtSharedProviderShellApi["getRestartState"]>>
+>;
 
 type OpenWrtProviderManagerMountState = {
   mounted: MountedSharedProviderManager | null;
@@ -247,7 +250,7 @@ function buildSharedProviderShellState(
 
 function getShellRestartState(
   shell: OpenWrtSharedProviderShellApi,
-): Required<NonNullable<ReturnType<OpenWrtSharedProviderShellApi["getRestartState"]>>> {
+): OpenWrtShellRestartState {
   const restartState = shell.getRestartState?.();
 
   return {
