@@ -315,6 +315,67 @@ describe("SharedRuntimeSurface", () => {
     );
   });
 
+  it("exposes stable layout hooks for the embedded runtime surface", async () => {
+    const adapter = {
+      getRuntimeSurface: vi.fn().mockResolvedValue(createRuntimeSurfaceState()),
+    } satisfies RuntimeSurfacePlatformAdapter;
+
+    const { container } = renderSurface(adapter);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Runtime Surface" }),
+      ).toBeInTheDocument(),
+    );
+
+    const runtimeSurface = container.querySelector(
+      '[data-ccswitch-region="runtime-surface"]',
+    );
+
+    expect(runtimeSurface).toHaveAttribute(
+      "data-ccswitch-layout",
+      "embedded-stack",
+    );
+
+    const runtimeHeader = runtimeSurface?.querySelector(
+      '[data-ccswitch-region="runtime-header"]',
+    );
+    const runtimeBody = runtimeSurface?.querySelector(
+      '[data-ccswitch-region="runtime-body"]',
+    );
+    const runtimeSummary = runtimeSurface?.querySelector(
+      '[data-ccswitch-region="runtime-summary"]',
+    );
+    const runtimeAppGrid = runtimeSurface?.querySelector(
+      '[data-ccswitch-region="runtime-app-grid"]',
+    );
+
+    expect(runtimeHeader).toHaveAttribute(
+      "data-ccswitch-layout",
+      "stack-to-row",
+    );
+    expect(runtimeBody).toHaveAttribute(
+      "data-ccswitch-layout",
+      "embedded-stack",
+    );
+    expect(runtimeSummary).toContainElement(
+      screen.getByRole("heading", { name: "Service Summary" }),
+    );
+    expect(runtimeAppGrid).toHaveAttribute(
+      "data-ccswitch-layout",
+      "responsive-grid",
+    );
+    expect(runtimeAppGrid).toContainElement(
+      screen.getByRole("region", { name: "Claude runtime card" }),
+    );
+    expect(runtimeAppGrid).toContainElement(
+      screen.getByRole("region", { name: "Codex runtime card" }),
+    );
+    expect(runtimeAppGrid).toContainElement(
+      screen.getByRole("region", { name: "Gemini runtime card" }),
+    );
+  });
+
   it("disables only the active app card controls while a mutation is pending", async () => {
     const addDeferred = createDeferred<void>();
     const adapter = createControlAdapter({

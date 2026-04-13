@@ -751,13 +751,19 @@ export function SharedProviderManager({
 
   return (
     <div
+      data-ccswitch-region="provider-surface"
+      data-ccswitch-layout="embedded-stack"
       className={cn(
-        "ccswitch-openwrt-page-section ccswitch-openwrt-page-section--providers space-y-4",
+        "ccswitch-openwrt-page-section ccswitch-openwrt-page-section--providers space-y-3",
         className,
       )}
     >
       <Card className="ccswitch-openwrt-surface-card overflow-hidden rounded-[28px] border-border-default/80 shadow-sm">
-        <CardHeader className="ccswitch-openwrt-page-header gap-5 border-b border-border-default bg-gradient-to-br from-background via-background to-muted/30">
+        <CardHeader
+          data-ccswitch-region="provider-header"
+          data-ccswitch-layout="embedded-stack"
+          className="ccswitch-openwrt-page-header gap-4 border-b border-border-default bg-gradient-to-br from-background via-background to-muted/30 p-4 sm:p-5"
+        >
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="space-y-2">
               <CardTitle className="text-xl">Provider manager</CardTitle>
@@ -766,7 +772,11 @@ export function SharedProviderManager({
                 OpenWrt-compatible React slice.
               </CardDescription>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div
+              data-ccswitch-region="provider-app-switch"
+              data-ccswitch-layout="wrap-row"
+              className="flex flex-wrap gap-2"
+            >
               {appIds.map((appId) => {
                 const active = appId === currentApp;
                 const appPresentation = SHARED_PROVIDER_APP_PRESENTATION[appId];
@@ -794,8 +804,15 @@ export function SharedProviderManager({
             </div>
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.6fr)]">
-            <section className="ccswitch-openwrt-group ccswitch-openwrt-group--raised rounded-[24px] border border-border-default/80 bg-background/80 p-4 shadow-sm sm:p-5">
+          <div
+            data-ccswitch-region="provider-summary-grid"
+            data-ccswitch-layout="stack-to-split"
+            className="grid gap-3"
+          >
+            <section
+              data-ccswitch-region="provider-summary"
+              className="ccswitch-openwrt-group ccswitch-openwrt-group--raised rounded-[24px] border border-border-default/80 bg-background/80 p-4 shadow-sm sm:p-5"
+            >
               <div className="flex flex-wrap items-center gap-2">
                 <span
                   className={cn(
@@ -831,6 +848,7 @@ export function SharedProviderManager({
             </section>
 
             <section
+              data-ccswitch-region="provider-active-route"
               className={cn(
                 "ccswitch-openwrt-group rounded-[24px] border p-4 shadow-sm sm:p-5",
                 currentActiveProvider
@@ -876,25 +894,33 @@ export function SharedProviderManager({
           ) : null}
         </CardHeader>
 
-        <CardContent className="space-y-4 p-5 sm:p-6">
+        <CardContent
+          data-ccswitch-region="provider-body"
+          data-ccswitch-layout="embedded-stack"
+          className="space-y-3 p-4 pt-4 sm:p-5"
+        >
           {hasRegionError ? (
             <ErrorState onRetry={() => void handleRetry()} />
           ) : isRegionLoading ? (
             <LoadingState />
           ) : state ? (
             <>
-              <SharedProviderToolbar
-                appId={currentApp}
-                searchQuery={searchQuery}
-                visibleCount={filteredProviders.length}
-                totalCount={state.providers.length}
-                disabled={isMutating}
-                searchDisabled={!hasProviders && searchQuery.length === 0}
-                isRefreshing={isRefreshing}
-                onSearchQueryChange={handleSearchChange}
-                onRefresh={() => void handleRetry()}
-                onAddProvider={capabilities.canAdd ? openAddEditor : undefined}
-              />
+              <div data-ccswitch-region="provider-toolbar">
+                <SharedProviderToolbar
+                  appId={currentApp}
+                  searchQuery={searchQuery}
+                  visibleCount={filteredProviders.length}
+                  totalCount={state.providers.length}
+                  disabled={isMutating}
+                  searchDisabled={!hasProviders && searchQuery.length === 0}
+                  isRefreshing={isRefreshing}
+                  onSearchQueryChange={handleSearchChange}
+                  onRefresh={() => void handleRetry()}
+                  onAddProvider={
+                    capabilities.canAdd ? openAddEditor : undefined
+                  }
+                />
+              </div>
 
               {!hasProviders ? (
                 <EmptyState
@@ -908,7 +934,11 @@ export function SharedProviderManager({
                   onClear={clearSearch}
                 />
               ) : (
-                <div className="grid gap-4 xl:grid-cols-2">
+                <div
+                  data-ccswitch-region="provider-card-grid"
+                  data-ccswitch-layout="responsive-grid"
+                  className="grid gap-3"
+                >
                   {filteredProviders.map((provider) => {
                     const matchedPreset = getSharedProviderMatchedPreset(
                       currentApp,

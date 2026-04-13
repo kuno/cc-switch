@@ -325,6 +325,105 @@ describe("SharedProviderManager", () => {
     ).toBeInTheDocument();
   });
 
+  it("exposes stable layout hooks for the embedded provider surface", async () => {
+    const adapter = createAdapter({
+      listProviderState: vi.fn().mockResolvedValue(
+        buildState(
+          "claude",
+          [
+            createProvider({
+              providerId: "claude-primary",
+              name: "Claude Primary",
+              baseUrl: "https://api.anthropic.com",
+              model: "claude-sonnet-4-5",
+            }),
+            createProvider({
+              providerId: "claude-backup",
+              name: "Claude Backup",
+              baseUrl: "https://gateway.example.com",
+              model: "claude-haiku-4-5",
+            }),
+          ],
+          "claude-primary",
+        ),
+      ),
+    });
+
+    const { user, container } = renderManager(
+      <SharedProviderManager adapter={adapter} defaultApp="claude" />,
+    );
+
+    await screen.findByText("Claude Primary");
+
+    const providerSurface = container.querySelector(
+      '[data-ccswitch-region="provider-surface"]',
+    );
+
+    expect(providerSurface).toHaveAttribute(
+      "data-ccswitch-layout",
+      "embedded-stack",
+    );
+
+    const providerHeader = providerSurface?.querySelector(
+      '[data-ccswitch-region="provider-header"]',
+    );
+    const appSwitch = providerSurface?.querySelector(
+      '[data-ccswitch-region="provider-app-switch"]',
+    );
+    const summaryGrid = providerSurface?.querySelector(
+      '[data-ccswitch-region="provider-summary-grid"]',
+    );
+    const providerBody = providerSurface?.querySelector(
+      '[data-ccswitch-region="provider-body"]',
+    );
+    const toolbar = providerSurface?.querySelector(
+      '[data-ccswitch-region="provider-toolbar"]',
+    );
+    const providerCardGrid = providerSurface?.querySelector(
+      '[data-ccswitch-region="provider-card-grid"]',
+    );
+
+    expect(providerHeader).toHaveAttribute(
+      "data-ccswitch-layout",
+      "embedded-stack",
+    );
+    expect(appSwitch).toHaveAttribute("data-ccswitch-layout", "wrap-row");
+    expect(summaryGrid).toHaveAttribute(
+      "data-ccswitch-layout",
+      "stack-to-split",
+    );
+    expect(providerBody).toHaveAttribute(
+      "data-ccswitch-layout",
+      "embedded-stack",
+    );
+    expect(toolbar).toContainElement(
+      screen.getByRole("button", { name: "Add provider" }),
+    );
+    expect(providerCardGrid).toHaveAttribute(
+      "data-ccswitch-layout",
+      "responsive-grid",
+    );
+    expect(providerCardGrid).toContainElement(screen.getByText("Claude Primary"));
+    expect(
+      summaryGrid?.querySelector('[data-ccswitch-region="provider-summary"]'),
+    ).toBeTruthy();
+    expect(
+      summaryGrid?.querySelector(
+        '[data-ccswitch-region="provider-active-route"]',
+      ),
+    ).toBeTruthy();
+
+    await user.click(
+      screen.getByRole("button", { name: "Delete Claude Backup" }),
+    );
+
+    const deleteDialog = await screen.findByRole("dialog", {
+      name: "Delete provider?",
+    });
+
+    expect(deleteDialog).toHaveClass("ccswitch-openwrt-dialog-shell");
+  });
+
   it("shows an error state and retries loading", async () => {
     const listProviderState = vi
       .fn()
