@@ -19,6 +19,7 @@ export interface OpenWrtRuntimeRpcResult {
 }
 
 export interface OpenWrtRuntimeTransport {
+  failoverControlsAvailable?: boolean;
   getRuntimeStatus(): Promise<OpenWrtRuntimeRpcResult | null>;
   getAppRuntimeStatus(
     appId: SharedProviderAppId,

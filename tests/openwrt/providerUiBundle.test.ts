@@ -99,6 +99,7 @@ function createTransport(
 
 function createRuntimeTransport(): OpenWrtRuntimeTransport {
   return {
+    failoverControlsAvailable: false,
     getRuntimeStatus: vi.fn().mockResolvedValue({
       ok: true,
       status_json: JSON.stringify({
@@ -194,6 +195,18 @@ function createRuntimeTransport(): OpenWrtRuntimeTransport {
         unhealthyProviderCount: appId === "claude" ? 1 : 0,
       }),
     })),
+    getAvailableFailoverProviders: vi
+      .fn()
+      .mockResolvedValue({ ok: false, error: "method not found" }),
+    addToFailoverQueue: vi
+      .fn()
+      .mockResolvedValue({ ok: false, error: "method not found" }),
+    removeFromFailoverQueue: vi
+      .fn()
+      .mockResolvedValue({ ok: false, error: "method not found" }),
+    setAutoFailoverEnabled: vi
+      .fn()
+      .mockResolvedValue({ ok: false, error: "method not found" }),
   };
 }
 
@@ -336,10 +349,16 @@ describe("OpenWrt provider UI bundle", () => {
       "No live health observation reported for this queue entry yet.",
     );
     expect(target).toHaveTextContent("Failover queue preview");
+    expect(target).not.toHaveTextContent("Failover controls");
+    expect(target).not.toHaveTextContent("Add to queue");
     expect(transport.getRuntimeStatus).toHaveBeenCalledOnce();
     expect(transport.getAppRuntimeStatus).toHaveBeenCalledWith("claude");
     expect(transport.getAppRuntimeStatus).toHaveBeenCalledWith("codex");
     expect(transport.getAppRuntimeStatus).toHaveBeenCalledWith("gemini");
+    expect(transport.getAvailableFailoverProviders).not.toHaveBeenCalled();
+    expect(transport.addToFailoverQueue).not.toHaveBeenCalled();
+    expect(transport.removeFromFailoverQueue).not.toHaveBeenCalled();
+    expect(transport.setAutoFailoverEnabled).not.toHaveBeenCalled();
 
     await act(async () => {
       if (typeof handle === "function") {

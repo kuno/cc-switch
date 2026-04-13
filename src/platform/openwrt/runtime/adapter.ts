@@ -524,6 +524,7 @@ export function createOpenWrtRuntimeAdapter(
   };
 
   if (
+    transport.failoverControlsAvailable === true &&
     typeof transport.getAvailableFailoverProviders === "function" &&
     typeof transport.addToFailoverQueue === "function" &&
     typeof transport.removeFromFailoverQueue === "function" &&
