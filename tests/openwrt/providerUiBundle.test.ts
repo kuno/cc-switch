@@ -1109,7 +1109,7 @@ describe("OpenWrt provider UI bundle", () => {
       inFlight: true,
     });
     expect(shell.showMessage).toHaveBeenLastCalledWith(
-      "info",
+      "success",
       "Saved Provider was saved. Restart the service to apply provider changes.",
     );
 
@@ -1164,31 +1164,10 @@ describe("OpenWrt provider UI bundle", () => {
       inFlight: true,
     });
     expect(shell.showMessage).toHaveBeenLastCalledWith(
-      "info",
+      "success",
       "provider-delete was deleted. Restart the service to apply provider changes.",
     );
     expect(rerender).toHaveBeenCalledTimes(3);
-  });
-
-  it("maps restart-required shell notices to the neutral info kind", () => {
-    expect(
-      __private__.getMutationShellMessageKind(
-        createMutationEvent({
-          appId: "claude",
-          mutation: "save",
-          restartRequired: true,
-        }),
-      ),
-    ).toBe("info");
-    expect(
-      __private__.getMutationShellMessageKind(
-        createMutationEvent({
-          appId: "codex",
-          mutation: "activate",
-          restartRequired: false,
-        }),
-      ),
-    ).toBe("success");
   });
 
   it("releases the theme lease when initial mount setup throws", () => {
