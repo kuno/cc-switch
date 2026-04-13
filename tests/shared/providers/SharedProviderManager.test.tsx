@@ -507,7 +507,7 @@ describe("SharedProviderManager", () => {
     const { user } = renderManager(<SharedProviderManager adapter={adapter} />);
 
     expect(
-      await screen.findByText("Unable to load providers."),
+      await screen.findByText("Could not load provider settings."),
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Retry" }));
