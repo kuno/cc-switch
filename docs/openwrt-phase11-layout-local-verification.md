@@ -18,7 +18,7 @@ Use these local-only checks for the Phase 11 layout hardening contract.
 - `tests/openwrt/providerUiBundle.test.ts`
   - mounted runtime/provider surfaces expose the expected page, card, and app-switch layout hooks
   - staged bundle and stylesheet keep the shared layout hook selectors needed by the host page
-  - compiled stylesheet still ships the responsive grid utilities and narrow-width field collapse contract
+  - compiled stylesheet still ships the provider-specific `xl:` split-grid contract, shared responsive grid utilities, and the narrow-width host-field collapse contract
   - staged artifacts remain free of forbidden desktop-shell phrases and selectors
 
 ## Staged Artifact Files
