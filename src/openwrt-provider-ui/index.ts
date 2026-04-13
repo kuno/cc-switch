@@ -151,6 +151,21 @@ function acquireThemeLease(): () => void {
   };
 }
 
+function withThemeLease<T>(callback: (release: () => void) => T): T {
+  const releaseThemeLease = acquireThemeLease();
+  let completed = false;
+
+  try {
+    const result = callback(releaseThemeLease);
+    completed = true;
+    return result;
+  } finally {
+    if (!completed) {
+      releaseThemeLease();
+    }
+  }
+}
+
 function getServiceStatusLabel(isRunning: boolean): string {
   return isRunning ? "running" : "stopped";
 }
@@ -230,18 +245,26 @@ function buildSharedProviderShellState(
   };
 }
 
+function getShellRestartState(
+  shell: OpenWrtSharedProviderShellApi,
+): Required<NonNullable<ReturnType<OpenWrtSharedProviderShellApi["getRestartState"]>>> {
+  const restartState = shell.getRestartState?.();
+
+  return {
+    pending: restartState?.pending ?? false,
+    inFlight: restartState?.inFlight ?? false,
+  };
+}
+
 function syncStateFromShell(
   state: OpenWrtShellMutationState,
   shell: OpenWrtSharedProviderShellApi,
 ) {
   state.selectedApp = shell.getSelectedApp();
   state.serviceRunning = shell.getServiceStatus().isRunning;
-
-  const restartState = shell.getRestartState?.();
-  if (restartState) {
-    state.restartPending = restartState.pending;
-    state.restartInFlight = restartState.inFlight;
-  }
+  const restartState = getShellRestartState(shell);
+  state.restartPending = restartState.pending;
+  state.restartInFlight = restartState.inFlight;
 }
 
 function handleProviderMutationEvent(
@@ -254,14 +277,20 @@ function handleProviderMutationEvent(
     return;
   }
 
-  shell.setRestartState?.({
-    pending: event.restartRequired,
-    inFlight: false,
-  });
+  const currentRestartState = getShellRestartState(shell);
+  const nextRestartState = {
+    pending: currentRestartState.pending || event.restartRequired,
+    inFlight: currentRestartState.inFlight,
+  };
+
+  if (event.restartRequired) {
+    shell.setRestartState?.(nextRestartState);
+  }
+
   state.selectedApp = shell.getSelectedApp();
   state.serviceRunning = event.serviceRunning;
-  state.restartPending = event.restartRequired;
-  state.restartInFlight = false;
+  state.restartPending = nextRestartState.pending;
+  state.restartInFlight = nextRestartState.inFlight;
   shell.showMessage("success", buildMutationShellMessage(event));
   rerender();
 }
@@ -269,99 +298,102 @@ function handleProviderMutationEvent(
 function mountOpenWrtSharedProviderManager(
   options: OpenWrtSharedProviderMountOptions,
 ) {
-  const state: OpenWrtProviderManagerMountState = {
-    mounted: null,
-    selectedApp: options.shell.getSelectedApp(),
-    serviceRunning: options.shell.getServiceStatus().isRunning,
-    restartPending: options.shell.getRestartState?.().pending ?? false,
-    restartInFlight: options.shell.getRestartState?.().inFlight ?? false,
-    disposed: false,
-  };
-  const releaseThemeLease = acquireThemeLease();
-  let unsubscribe: (() => void) | undefined;
+  return withThemeLease((releaseThemeLease) => {
+    const initialRestartState = getShellRestartState(options.shell);
+    const state: OpenWrtProviderManagerMountState = {
+      mounted: null,
+      selectedApp: options.shell.getSelectedApp(),
+      serviceRunning: options.shell.getServiceStatus().isRunning,
+      restartPending: initialRestartState.pending,
+      restartInFlight: initialRestartState.inFlight,
+      disposed: false,
+    };
+    let unsubscribe: (() => void) | undefined;
 
-  const adapter = createOpenWrtProviderAdapter(options.transport, {
-    getServiceRunning() {
-      state.serviceRunning = options.shell.getServiceStatus().isRunning;
-      return state.serviceRunning;
-    },
-    async onProviderMutation(event) {
-      handleProviderMutationEvent(state, options.shell, rerender, event);
-    },
-  });
+    const adapter = createOpenWrtProviderAdapter(options.transport, {
+      getServiceRunning() {
+        state.serviceRunning = options.shell.getServiceStatus().isRunning;
+        return state.serviceRunning;
+      },
+      async onProviderMutation(event) {
+        handleProviderMutationEvent(state, options.shell, rerender, event);
+      },
+    });
 
-  function createManagerProps(): SharedProviderManagerProps {
-    syncStateFromShell(state, options.shell);
+    function createManagerProps(): SharedProviderManagerProps {
+      syncStateFromShell(state, options.shell);
+
+      return {
+        adapter,
+        selectedApp: state.selectedApp,
+        onSelectedAppChange(appId) {
+          if (state.disposed) {
+            return;
+          }
+
+          options.shell.setSelectedApp(appId);
+          syncStateFromShell(state, options.shell);
+          rerender();
+        },
+        shellState: buildSharedProviderShellState(state),
+      };
+    }
+
+    function rerender() {
+      if (state.disposed || !state.mounted) {
+        return;
+      }
+
+      state.mounted.update(createManagerProps());
+    }
+
+    clearTarget(options.target);
+    state.mounted = mountSharedProviderManager(
+      options.target,
+      createManagerProps(),
+    );
+    unsubscribe = options.shell.subscribe?.(() => {
+      if (state.disposed) {
+        return;
+      }
+
+      syncStateFromShell(state, options.shell);
+      rerender();
+    });
 
     return {
-      adapter,
-      selectedApp: state.selectedApp,
-      onSelectedAppChange(appId) {
-        if (state.disposed) {
-          return;
-        }
-
-        options.shell.setSelectedApp(appId);
-        syncStateFromShell(state, options.shell);
-        rerender();
+      unmount() {
+        state.disposed = true;
+        unsubscribe?.();
+        state.mounted?.unmount();
+        clearTarget(options.target);
+        releaseThemeLease();
+        options.shell.clearMessage();
       },
-      shellState: buildSharedProviderShellState(state),
     };
-  }
-
-  function rerender() {
-    if (state.disposed || !state.mounted) {
-      return;
-    }
-
-    state.mounted.update(createManagerProps());
-  }
-
-  clearTarget(options.target);
-  state.mounted = mountSharedProviderManager(
-    options.target,
-    createManagerProps(),
-  );
-  unsubscribe = options.shell.subscribe?.(() => {
-    if (state.disposed) {
-      return;
-    }
-
-    syncStateFromShell(state, options.shell);
-    rerender();
   });
-
-  return {
-    unmount() {
-      state.disposed = true;
-      unsubscribe?.();
-      state.mounted?.unmount();
-      clearTarget(options.target);
-      releaseThemeLease();
-      options.shell.clearMessage();
-    },
-  };
 }
 
 function mountOpenWrtSharedRuntimeSurface(
   options: OpenWrtSharedRuntimeMountOptions,
 ) {
-  let mounted: MountedSharedRuntimeSurface | null = null;
-  const releaseThemeLease = acquireThemeLease();
+  return withThemeLease((releaseThemeLease) => {
+    let mounted: MountedSharedRuntimeSurface | null = null;
 
-  clearTarget(options.target);
-  mounted = mountSharedRuntimeSurface(options.target, {
-    adapter: createOpenWrtRuntimeAdapter(options.transport),
+    clearTarget(options.target);
+    mounted = mountSharedRuntimeSurface(options.target, {
+      adapter: createOpenWrtRuntimeAdapter(options.transport),
+    });
+
+    return {
+      unmount() {
+        mounted?.unmount();
+        mounted = null;
+        clearTarget(options.target);
+        releaseThemeLease();
+      },
+    };
   });
-
-  return {
-    unmount() {
-      mounted?.unmount();
-      mounted = null;
-      clearTarget(options.target);
-      releaseThemeLease();
-    },
-  };
 }
 
 const api: OpenWrtSharedProviderBundleApi = {
@@ -383,10 +415,12 @@ export const __private__ = {
   acquireThemeLease,
   buildMutationShellMessage,
   buildSharedProviderShellState,
+  getShellRestartState,
   getProviderNameFromMutation,
   handleProviderMutationEvent,
   mountOpenWrtSharedRuntimeSurface,
   syncStateFromShell,
+  withThemeLease,
 };
 
 (globalThis as OpenWrtSharedProviderGlobal)[

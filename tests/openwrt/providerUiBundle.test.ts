@@ -700,20 +700,26 @@ describe("OpenWrt provider UI bundle", () => {
 
   it("updates shell messaging and restart state for save, activate, and delete mutations", () => {
     const rerender = vi.fn();
+    let restartState = {
+      pending: false,
+      inFlight: true,
+    };
     const shell = {
       clearMessage: vi.fn(),
       getSelectedApp: vi
         .fn<() => SharedProviderAppId>()
         .mockReturnValue("gemini"),
-      getRestartState: vi.fn().mockReturnValue({
-        pending: false,
-        inFlight: true,
-      }),
+      getRestartState: vi.fn().mockImplementation(() => restartState),
       getServiceStatus: vi.fn().mockReturnValue({ isRunning: false }),
       refreshServiceStatus: vi.fn().mockResolvedValue({ isRunning: false }),
       restartService: vi.fn().mockResolvedValue({ isRunning: false }),
       setSelectedApp: vi.fn(),
-      setRestartState: vi.fn(),
+      setRestartState: vi.fn().mockImplementation((nextState) => {
+        restartState = {
+          ...restartState,
+          ...nextState,
+        };
+      }),
       showMessage: vi.fn(),
     };
     const state = {
@@ -747,10 +753,10 @@ describe("OpenWrt provider UI bundle", () => {
     expect(state.selectedApp).toBe("gemini");
     expect(state.serviceRunning).toBe(true);
     expect(state.restartPending).toBe(true);
-    expect(state.restartInFlight).toBe(false);
+    expect(state.restartInFlight).toBe(true);
     expect(shell.setRestartState).toHaveBeenLastCalledWith({
       pending: true,
-      inFlight: false,
+      inFlight: true,
     });
     expect(shell.showMessage).toHaveBeenLastCalledWith(
       "success",
@@ -778,12 +784,9 @@ describe("OpenWrt provider UI bundle", () => {
     );
 
     expect(state.serviceRunning).toBe(false);
-    expect(state.restartPending).toBe(false);
-    expect(state.restartInFlight).toBe(false);
-    expect(shell.setRestartState).toHaveBeenLastCalledWith({
-      pending: false,
-      inFlight: false,
-    });
+    expect(state.restartPending).toBe(true);
+    expect(state.restartInFlight).toBe(true);
+    expect(shell.setRestartState).toHaveBeenCalledTimes(1);
     expect(shell.showMessage).toHaveBeenLastCalledWith(
       "success",
       "Active Provider was activated. The service is stopped, so no restart is needed right now.",
@@ -805,16 +808,30 @@ describe("OpenWrt provider UI bundle", () => {
 
     expect(state.serviceRunning).toBe(true);
     expect(state.restartPending).toBe(true);
-    expect(state.restartInFlight).toBe(false);
+    expect(state.restartInFlight).toBe(true);
     expect(shell.setRestartState).toHaveBeenLastCalledWith({
       pending: true,
-      inFlight: false,
+      inFlight: true,
     });
     expect(shell.showMessage).toHaveBeenLastCalledWith(
       "success",
       "provider-delete was deleted. Restart the service to apply provider changes.",
     );
     expect(rerender).toHaveBeenCalledTimes(3);
+  });
+
+  it("releases the theme lease when initial mount setup throws", () => {
+    expect(document.body.classList.contains("ccswitch-openwrt-provider-ui-theme"))
+      .toBe(false);
+
+    expect(() =>
+      __private__.withThemeLease(() => {
+        throw new Error("mount failed");
+      }),
+    ).toThrow("mount failed");
+
+    expect(document.body.classList.contains("ccswitch-openwrt-provider-ui-theme"))
+      .toBe(false);
   });
 
   it("ships the committed staged real bundle and copies it unchanged for package assembly", () => {
