@@ -1,20 +1,35 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, CheckCircle2 } from "lucide-react";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  AlertCircle,
+  CheckCircle2,
+  Loader2,
+  Pencil,
+  Plus,
+  RefreshCcw,
+  RotateCw,
+  Trash2,
+  Zap,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
 import {
   emptySharedProviderEditorPayload,
+  getGenericPresetDescription,
   getSharedProviderPresetById,
-  getSharedProviderPresetGroups,
+  getSharedProviderPresets,
   inferSharedProviderPresetId,
   OPENWRT_SUPPORTED_PROVIDER_APPS,
   type SharedProviderAppId,
   type SharedProviderCapabilities,
   type SharedProviderEditorPayload,
   type SharedProviderState,
+  type SharedProviderTokenField,
   type SharedProviderView,
 } from "./domain";
 import type {
@@ -23,20 +38,6 @@ import type {
   SharedProviderMutationEvent,
   SharedProviderShellState,
 } from "./managerTypes";
-import {
-  SHARED_PROVIDER_APP_PRESENTATION,
-  SHARED_PROVIDER_TOKEN_FIELD_OPTIONS,
-  SharedProviderAccessState,
-  SharedProviderCard,
-  SharedProviderEditorPanel,
-  SharedProviderEmptyState,
-  SharedProviderErrorState,
-  SharedProviderLoadingState,
-  SharedProviderToolbar,
-  filterSharedProviders,
-  getSharedProviderCardActionVisibility,
-  getSharedProviderDisplayName,
-} from "./ui";
 
 type Notice = {
   tone: "success" | "error";
@@ -57,6 +58,68 @@ type ProviderMutationVariables = {
   providerId: string;
   providerName: string;
   requiresServiceRestart: boolean;
+};
+
+const FIELD_CLASS_NAME =
+  "flex h-9 w-full rounded-md border border-border-default bg-background px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:opacity-50";
+
+const APP_META: Record<
+  SharedProviderAppId,
+  {
+    label: string;
+    accentClassName: string;
+    chipClassName: string;
+  }
+> = {
+  claude: {
+    label: "Claude",
+    accentClassName:
+      "border-orange-500/40 bg-orange-500/10 text-orange-700 dark:text-orange-300",
+    chipClassName:
+      "bg-orange-500/10 text-orange-700 dark:bg-orange-500/20 dark:text-orange-300",
+  },
+  codex: {
+    label: "Codex",
+    accentClassName:
+      "border-green-500/40 bg-green-500/10 text-green-700 dark:text-green-300",
+    chipClassName:
+      "bg-green-500/10 text-green-700 dark:bg-green-500/20 dark:text-green-300",
+  },
+  gemini: {
+    label: "Gemini",
+    accentClassName:
+      "border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-300",
+    chipClassName:
+      "bg-blue-500/10 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300",
+  },
+};
+
+const TOKEN_FIELD_OPTIONS: Record<
+  SharedProviderAppId,
+  Array<{ value: SharedProviderTokenField; label: string }>
+> = {
+  claude: [
+    {
+      value: "ANTHROPIC_AUTH_TOKEN",
+      label: "ANTHROPIC_AUTH_TOKEN",
+    },
+    {
+      value: "ANTHROPIC_API_KEY",
+      label: "ANTHROPIC_API_KEY",
+    },
+  ],
+  codex: [
+    {
+      value: "OPENAI_API_KEY",
+      label: "OPENAI_API_KEY",
+    },
+  ],
+  gemini: [
+    {
+      value: "GEMINI_API_KEY",
+      label: "GEMINI_API_KEY",
+    },
+  ],
 };
 
 const FALLBACK_CAPABILITIES: SharedProviderCapabilities = {
@@ -86,7 +149,7 @@ function getErrorMessage(error: unknown): string {
 }
 
 function getDefaultPresetId(appId: SharedProviderAppId): string {
-  return getSharedProviderPresetGroups(appId)[0]?.presets[0]?.id ?? "custom";
+  return getSharedProviderPresets(appId)[0]?.id ?? "custom";
 }
 
 function createDraftFromPreset(
@@ -149,6 +212,10 @@ function createDraftFromProvider(
     model: provider.model,
     notes: provider.notes,
   };
+}
+
+function getProviderDisplayName(provider: SharedProviderView): string {
+  return provider.name || provider.providerId || "Provider";
 }
 
 function getMutationVerb(action: SharedProviderMutationAction): string {
@@ -227,6 +294,56 @@ function trimDraft(
   };
 }
 
+function LoadingState() {
+  return (
+    <div className="flex min-h-40 flex-col items-center justify-center gap-3 rounded-lg border border-dashed text-sm text-muted-foreground">
+      <Loader2 className="h-5 w-5 animate-spin" />
+      <p>Loading providers...</p>
+    </div>
+  );
+}
+
+function ErrorState({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="flex min-h-40 flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-destructive/40 px-6 text-center">
+      <AlertCircle className="h-6 w-6 text-destructive" />
+      <div className="space-y-1">
+        <p className="font-medium">Unable to load providers.</p>
+        <p className="text-sm text-muted-foreground">
+          Retry after the adapter or OpenWrt RPC bridge is available again.
+        </p>
+      </div>
+      <Button type="button" variant="outline" onClick={onRetry}>
+        Retry
+      </Button>
+    </div>
+  );
+}
+
+function EmptyState({
+  appId,
+  canAdd,
+}: {
+  appId: SharedProviderAppId;
+  canAdd: boolean;
+}) {
+  return (
+    <div className="flex min-h-40 flex-col items-center justify-center gap-3 rounded-lg border border-dashed px-6 text-center">
+      <Plus className="h-6 w-6 text-muted-foreground" />
+      <div className="space-y-1">
+        <p className="font-medium">
+          No providers saved for {APP_META[appId].label} yet.
+        </p>
+        <p className="text-sm text-muted-foreground">
+          {canAdd
+            ? "Choose a preset or enter a custom endpoint and save your first provider."
+            : "This adapter does not allow adding new providers for this app."}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export function SharedProviderManager({
   adapter,
   appIds = OPENWRT_SUPPORTED_PROVIDER_APPS,
@@ -238,9 +355,9 @@ export function SharedProviderManager({
   className,
 }: SharedProviderManagerProps) {
   const initialApp = selectedApp ?? defaultApp ?? appIds[0] ?? "claude";
-  const [internalApp, setInternalApp] =
-    useState<SharedProviderAppId>(initialApp);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [internalApp, setInternalApp] = useState<SharedProviderAppId>(
+    initialApp,
+  );
   const [selectedPresetId, setSelectedPresetId] = useState<string>(
     getDefaultPresetId(initialApp),
   );
@@ -253,12 +370,23 @@ export function SharedProviderManager({
     null,
   );
   const [notice, setNotice] = useState<Notice | null>(null);
-  const [isEditorOpen, setIsEditorOpen] = useState(false);
   const queryClient = useQueryClient();
   const currentApp = selectedApp ?? internalApp;
   const currentAppRef = useRef(currentApp);
+  const presets = getSharedProviderPresets(currentApp);
+  const tokenFieldOptions = TOKEN_FIELD_OPTIONS[currentApp];
+  const fieldIdPrefix = useId();
 
   currentAppRef.current = currentApp;
+
+  useEffect(() => {
+    const nextPresetId = getDefaultPresetId(currentApp);
+    setSelectedPresetId(nextPresetId);
+    setEditingProvider(null);
+    setPendingDelete(null);
+    setNotice(null);
+    setDraft(createDraftFromPreset(currentApp, nextPresetId));
+  }, [currentApp]);
 
   const stateQuery = useQuery({
     queryKey: stateQueryKey(currentApp),
@@ -269,6 +397,20 @@ export function SharedProviderManager({
     queryKey: capabilitiesQueryKey(currentApp),
     queryFn: () => adapter.getCapabilities(currentApp),
   });
+  const canEditProviders =
+    capabilitiesQuery.data?.canEdit ?? FALLBACK_CAPABILITIES.canEdit;
+
+  useEffect(() => {
+    if (!editingProvider || capabilitiesQuery.data == null || canEditProviders) {
+      return;
+    }
+
+    const nextPresetId = getDefaultPresetId(currentApp);
+    setEditingProvider(null);
+    setPendingDelete(null);
+    setSelectedPresetId(nextPresetId);
+    setDraft(createDraftFromPreset(currentApp, nextPresetId));
+  }, [canEditProviders, currentApp, editingProvider, capabilitiesQuery.data]);
 
   const saveMutation = useMutation({
     mutationFn: async (variables: SaveMutationVariables) => {
@@ -298,7 +440,6 @@ export function SharedProviderManager({
         setPendingDelete(null);
         setSelectedPresetId(nextPresetId);
         setDraft(createDraftFromPreset(variables.appId, nextPresetId));
-        setIsEditorOpen(false);
         setNotice(buildSuccessNotice(event, shellState));
       }
 
@@ -376,7 +517,6 @@ export function SharedProviderManager({
           setEditingProvider(null);
           setSelectedPresetId(nextPresetId);
           setDraft(createDraftFromPreset(variables.appId, nextPresetId));
-          setIsEditorOpen(false);
         }
 
         setPendingDelete(null);
@@ -396,49 +536,6 @@ export function SharedProviderManager({
     },
   });
 
-  const capabilities = capabilitiesQuery.data ?? FALLBACK_CAPABILITIES;
-  const isMutating =
-    saveMutation.isPending ||
-    activateMutation.isPending ||
-    deleteMutation.isPending;
-  const canEditProviders =
-    capabilitiesQuery.data?.canEdit ?? FALLBACK_CAPABILITIES.canEdit;
-  const canAddProviders =
-    capabilitiesQuery.data?.canAdd ?? FALLBACK_CAPABILITIES.canAdd;
-
-  function resetEditorState(appId: SharedProviderAppId) {
-    const nextPresetId = getDefaultPresetId(appId);
-    setEditingProvider(null);
-    setSelectedPresetId(nextPresetId);
-    setDraft(createDraftFromPreset(appId, nextPresetId));
-  }
-
-  function closeEditorPanel(appId: SharedProviderAppId) {
-    resetEditorState(appId);
-    setIsEditorOpen(false);
-  }
-
-  useEffect(() => {
-    setSearchQuery("");
-    setPendingDelete(null);
-    setNotice(null);
-    closeEditorPanel(currentApp);
-  }, [currentApp]);
-
-  useEffect(() => {
-    if (!isEditorOpen || capabilitiesQuery.data == null) {
-      return;
-    }
-
-    const canManageCurrentForm = editingProvider
-      ? capabilitiesQuery.data.canEdit
-      : capabilitiesQuery.data.canAdd;
-
-    if (!canManageCurrentForm) {
-      closeEditorPanel(currentApp);
-    }
-  }, [capabilitiesQuery.data, currentApp, editingProvider, isEditorOpen]);
-
   function handleAppChange(appId: SharedProviderAppId) {
     if (isMutating) {
       return;
@@ -451,30 +548,12 @@ export function SharedProviderManager({
     onSelectedAppChange?.(appId);
   }
 
-  function handleOpenAddPanel() {
-    if (!canAddProviders || isMutating) {
-      return;
-    }
-
-    setNotice(null);
+  function resetForm() {
+    const nextPresetId = getDefaultPresetId(currentApp);
+    setEditingProvider(null);
     setPendingDelete(null);
-    resetEditorState(currentApp);
-    setIsEditorOpen(true);
-  }
-
-  function handleEdit(provider: SharedProviderView) {
-    if (!canEditProviders || isMutating) {
-      return;
-    }
-
-    const presetId = inferSharedProviderPresetId(currentApp, provider);
-
-    setNotice(null);
-    setPendingDelete(null);
-    setEditingProvider(provider);
-    setSelectedPresetId(presetId);
-    setDraft(createDraftFromProvider(provider));
-    setIsEditorOpen(true);
+    setSelectedPresetId(nextPresetId);
+    setDraft(createDraftFromPreset(currentApp, nextPresetId));
   }
 
   function handlePresetChange(nextPresetId: string) {
@@ -484,17 +563,17 @@ export function SharedProviderManager({
     );
   }
 
-  function handlePanelOpenChange(open: boolean) {
-    if (saveMutation.isPending) {
+  function handleEdit(provider: SharedProviderView) {
+    if (!canEditProviders || isMutating) {
       return;
     }
 
-    if (!open) {
-      closeEditorPanel(currentApp);
-      return;
-    }
+    const presetId = inferSharedProviderPresetId(currentApp, provider);
 
-    setIsEditorOpen(true);
+    setPendingDelete(null);
+    setEditingProvider(provider);
+    setSelectedPresetId(presetId);
+    setDraft(createDraftFromProvider(provider));
   }
 
   async function handleRetry() {
@@ -505,9 +584,8 @@ export function SharedProviderManager({
     event.preventDefault();
 
     const trimmed = trimDraft(draft);
-    const canSubmit = editingProvider
-      ? capabilities.canEdit
-      : capabilities.canAdd;
+    const capabilities = capabilitiesQuery.data ?? FALLBACK_CAPABILITIES;
+    const canSubmit = editingProvider ? capabilities.canEdit : capabilities.canAdd;
 
     setNotice(null);
 
@@ -516,8 +594,8 @@ export function SharedProviderManager({
         tone: "error",
         title: editingProvider ? "Edit unavailable." : "Add unavailable.",
         description: editingProvider
-          ? `This adapter does not allow editing ${SHARED_PROVIDER_APP_PRESENTATION[currentApp].label} providers.`
-          : `This adapter does not allow adding ${SHARED_PROVIDER_APP_PRESENTATION[currentApp].label} providers.`,
+          ? `This adapter does not allow editing ${APP_META[currentApp].label} providers.`
+          : `This adapter does not allow adding ${APP_META[currentApp].label} providers.`,
       });
       return;
     }
@@ -526,9 +604,7 @@ export function SharedProviderManager({
       appId: currentApp,
       providerId: editingProvider?.providerId ?? undefined,
       providerName:
-        trimmed.name ||
-        editingProvider?.name ||
-        SHARED_PROVIDER_APP_PRESENTATION[currentApp].label,
+        trimmed.name || editingProvider?.name || APP_META[currentApp].label,
       requiresServiceRestart: capabilities.requiresServiceRestart,
       draft: trimmed,
     });
@@ -538,49 +614,49 @@ export function SharedProviderManager({
     if (stateQuery.error || capabilitiesQuery.error) {
       return (
         <div className={cn("space-y-4", className)}>
-          <SharedProviderErrorState onRetry={() => void handleRetry()} />
+          <ErrorState onRetry={() => void handleRetry()} />
         </div>
       );
     }
 
     return (
       <div className={cn("space-y-4", className)}>
-        <SharedProviderLoadingState appId={currentApp} />
+        <LoadingState />
       </div>
     );
   }
 
-  const resolvedState: SharedProviderState = stateQuery.data!;
-  const appLabel = SHARED_PROVIDER_APP_PRESENTATION[currentApp].label;
+  const state: SharedProviderState = stateQuery.data;
+  const capabilities = capabilitiesQuery.data;
   const selectedPreset =
     selectedPresetId === "custom"
       ? null
       : getSharedProviderPresetById(currentApp, selectedPresetId);
-  const presetGroups = getSharedProviderPresetGroups(currentApp);
-  const filteredProviders = filterSharedProviders(
-    currentApp,
-    resolvedState.providers,
-    searchQuery,
-  );
-  const hasProviders = resolvedState.providers.length > 0;
-  const activatePendingProviderId =
-    activateMutation.variables?.providerId ?? null;
-  const accessState =
-    !capabilities.canEdit && !capabilities.canAdd
-      ? {
-          tone: "warning" as const,
-          title: "Provider editing is unavailable.",
-          description: `This adapter exposes ${appLabel} providers without add/edit support.`,
-        }
-      : !capabilities.canAdd
-        ? {
-            tone: "info" as const,
-            title: "Adding providers is unavailable.",
-            description: hasProviders
-              ? `This adapter does not allow adding new ${appLabel} providers. Select a saved provider to edit it instead.`
-              : `This adapter does not allow adding new ${appLabel} providers.`,
-          }
-        : null;
+  const hasProviders = state.providers.length > 0;
+  const isMutating =
+    saveMutation.isPending ||
+    activateMutation.isPending ||
+    deleteMutation.isPending;
+  const canAddProviders = capabilities.canAdd;
+  const canManageCurrentForm = editingProvider
+    ? capabilities.canEdit
+    : canAddProviders;
+  const showEditorForm = editingProvider
+    ? capabilities.canEdit
+    : canAddProviders;
+  const editorTitle = editingProvider
+    ? "Edit provider"
+    : canAddProviders
+      ? "Add provider"
+      : "Provider access";
+  const editorDescription = editingProvider
+    ? `Update ${getProviderDisplayName(editingProvider)} for ${APP_META[currentApp].label}.`
+    : canAddProviders
+      ? `Create a saved provider for ${APP_META[currentApp].label}.`
+      : hasProviders && capabilities.canEdit
+        ? `Adding saved providers for ${APP_META[currentApp].label} is disabled. Select an existing provider to edit it.`
+        : `${APP_META[currentApp].label} providers are read-only for this adapter.`;
+  const formDisabled = saveMutation.isPending || !canManageCurrentForm;
 
   return (
     <div className={cn("space-y-4", className)}>
@@ -604,8 +680,7 @@ export function SharedProviderManager({
                     className={cn(
                       "rounded-full border px-3 py-1.5 text-sm font-medium transition-colors",
                       active
-                        ? SHARED_PROVIDER_APP_PRESENTATION[appId]
-                            .accentClassName
+                        ? APP_META[appId].accentClassName
                         : "border-border-default bg-background text-muted-foreground hover:bg-accent hover:text-foreground",
                       isMutating && "cursor-not-allowed opacity-50",
                     )}
@@ -613,7 +688,7 @@ export function SharedProviderManager({
                     disabled={isMutating}
                     onClick={() => handleAppChange(appId)}
                   >
-                    {SHARED_PROVIDER_APP_PRESENTATION[appId].label}
+                    {APP_META[appId].label}
                   </button>
                 );
               })}
@@ -640,153 +715,427 @@ export function SharedProviderManager({
         </CardHeader>
       </Card>
 
-      <Card>
-        <CardHeader className="space-y-4">
-          <div className="space-y-1">
-            <CardTitle className="text-lg">
-              {appLabel} saved providers
-            </CardTitle>
-            <p className="text-sm text-muted-foreground">
-              {resolvedState.phase2Available
-                ? "Use the operations supported by this adapter to manage saved providers."
-                : "Legacy provider bridge detected. Compatibility mode is active for this app."}
-            </p>
-          </div>
-          <SharedProviderToolbar
-            appId={currentApp}
-            searchQuery={searchQuery}
-            visibleCount={filteredProviders.length}
-            totalCount={resolvedState.providers.length}
-            disabled={isMutating}
-            isRefreshing={stateQuery.isFetching || capabilitiesQuery.isFetching}
-            onSearchQueryChange={setSearchQuery}
-            onRefresh={() => void handleRetry()}
-            onAddProvider={canAddProviders ? handleOpenAddPanel : undefined}
-          />
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {accessState ? (
-            <SharedProviderAccessState
-              tone={accessState.tone}
-              title={accessState.title}
-              description={accessState.description}
-            />
-          ) : null}
-
-          {!hasProviders ? (
-            <SharedProviderEmptyState
-              appId={currentApp}
-              canAdd={canAddProviders}
-              onAddProvider={canAddProviders ? handleOpenAddPanel : undefined}
-            />
-          ) : filteredProviders.length === 0 ? (
-            <SharedProviderEmptyState
-              appId={currentApp}
-              canAdd={canAddProviders}
-              searchQuery={searchQuery}
-              onClearSearch={() => setSearchQuery("")}
-            />
-          ) : (
-            <div className="space-y-3">
-              {filteredProviders.map((provider) => {
-                const providerName = getSharedProviderDisplayName(provider);
-                const presetId = inferSharedProviderPresetId(
-                  currentApp,
-                  provider,
-                );
-                const preset =
-                  presetId === "custom"
-                    ? null
-                    : getSharedProviderPresetById(currentApp, presetId);
-
-                return (
-                  <SharedProviderCard
-                    key={provider.providerId ?? providerName}
-                    appId={currentApp}
-                    provider={provider}
-                    presetLabel={preset?.label ?? null}
-                    actionVisibility={getSharedProviderCardActionVisibility(
-                      capabilities,
-                      provider,
-                    )}
-                    isBusy={isMutating}
-                    isActivatePending={
-                      activateMutation.isPending &&
-                      activatePendingProviderId === provider.providerId
-                    }
-                    onEdit={() => handleEdit(provider)}
-                    onActivate={() => {
-                      if (!provider.providerId) {
-                        return;
-                      }
-
-                      activateMutation.mutate({
-                        appId: currentApp,
-                        providerId: provider.providerId,
-                        providerName,
-                        requiresServiceRestart:
-                          capabilities.requiresServiceRestart,
-                      });
-                    }}
-                    onDelete={() => setPendingDelete(provider)}
-                  />
-                );
-              })}
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
+        <Card>
+          <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="space-y-1">
+              <CardTitle className="text-lg">
+                {APP_META[currentApp].label} saved providers
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                {state.phase2Available
+                  ? "Use the operations supported by this adapter to manage saved providers."
+                  : "Legacy provider bridge detected. Compatibility mode is active for this app."}
+              </p>
             </div>
-          )}
-        </CardContent>
-      </Card>
+            <div className="flex flex-wrap gap-2">
+              <span
+                className={cn(
+                  "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium",
+                  APP_META[currentApp].chipClassName,
+                )}
+              >
+                {state.providers.length} saved
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void handleRetry()}
+                disabled={stateQuery.isFetching || capabilitiesQuery.isFetching}
+              >
+                {stateQuery.isFetching || capabilitiesQuery.isFetching ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCcw className="h-4 w-4" />
+                )}
+                Refresh
+              </Button>
+              {canAddProviders ? (
+                <Button type="button" onClick={resetForm} disabled={isMutating}>
+                  <Plus className="h-4 w-4" />
+                  Add provider
+                </Button>
+              ) : null}
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {pendingDelete ? (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Delete provider?</AlertTitle>
+                <AlertDescription className="space-y-3">
+                  <p>
+                    {getProviderDisplayName(pendingDelete)} will be removed from{" "}
+                    {APP_META[currentApp].label}.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      onClick={() => {
+                        if (!pendingDelete.providerId) {
+                          return;
+                        }
 
-      <SharedProviderEditorPanel
-        open={isEditorOpen}
-        appId={currentApp}
-        mode={editingProvider ? "edit" : "add"}
-        draft={draft}
-        selectedPresetId={selectedPresetId}
-        selectedPreset={selectedPreset}
-        presetGroups={presetGroups}
-        tokenFieldOptions={SHARED_PROVIDER_TOKEN_FIELD_OPTIONS[currentApp]}
-        disabled={
-          saveMutation.isPending ||
-          !(editingProvider ? capabilities.canEdit : capabilities.canAdd)
-        }
-        savePending={saveMutation.isPending}
-        supportsPresets={capabilities.supportsPresets}
-        supportsBlankSecretPreserve={capabilities.supportsBlankSecretPreserve}
-        hasStoredSecret={Boolean(editingProvider?.tokenConfigured)}
-        onOpenChange={handlePanelOpenChange}
-        onPresetChange={handlePresetChange}
-        onDraftChange={setDraft}
-        onSubmit={handleSubmit}
-      />
+                        deleteMutation.mutate({
+                          appId: currentApp,
+                          providerId: pendingDelete.providerId,
+                          providerName: getProviderDisplayName(pendingDelete),
+                          requiresServiceRestart:
+                            capabilities.requiresServiceRestart,
+                        });
+                      }}
+                      disabled={
+                        deleteMutation.isPending ||
+                        !pendingDelete.providerId ||
+                        !capabilities.canDelete
+                      }
+                    >
+                      {deleteMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                      Confirm delete
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setPendingDelete(null)}
+                      disabled={deleteMutation.isPending}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </AlertDescription>
+              </Alert>
+            ) : null}
 
-      <ConfirmDialog
-        isOpen={pendingDelete != null}
-        title="Delete provider?"
-        message={
-          pendingDelete
-            ? `${getSharedProviderDisplayName(pendingDelete)} will be removed from ${appLabel}.`
-            : ""
-        }
-        confirmText="Confirm delete"
-        onConfirm={() => {
-          if (!pendingDelete?.providerId) {
-            return;
-          }
+            {!hasProviders ? (
+              <EmptyState appId={currentApp} canAdd={canAddProviders} />
+            ) : (
+              <div className="space-y-3">
+                {state.providers.map((provider) => {
+                  const providerName = getProviderDisplayName(provider);
 
-          deleteMutation.mutate({
-            appId: currentApp,
-            providerId: pendingDelete.providerId,
-            providerName: getSharedProviderDisplayName(pendingDelete),
-            requiresServiceRestart: capabilities.requiresServiceRestart,
-          });
-        }}
-        onCancel={() => {
-          if (!deleteMutation.isPending) {
-            setPendingDelete(null);
-          }
-        }}
-      />
+                  return (
+                    <article
+                      key={provider.providerId ?? providerName}
+                      className={cn(
+                        "rounded-xl border p-4 transition-colors",
+                        provider.active
+                          ? "border-blue-500/40 bg-blue-500/5"
+                          : "border-border-default bg-background",
+                      )}
+                    >
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div className="min-w-0 space-y-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="font-medium">{providerName}</h3>
+                            {provider.active ? (
+                              <span className="inline-flex items-center rounded-full bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-500/20 dark:text-blue-300">
+                                Active
+                              </span>
+                            ) : null}
+                            {provider.tokenConfigured ? (
+                              <span className="inline-flex items-center rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300">
+                                Secret stored
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
+                            <p className="truncate">
+                              <span className="font-medium text-foreground">
+                                Base URL:
+                              </span>{" "}
+                              {provider.baseUrl || "-"}
+                            </p>
+                            <p className="truncate">
+                              <span className="font-medium text-foreground">
+                                Model:
+                              </span>{" "}
+                              {provider.model || "-"}
+                            </p>
+                            <p className="truncate">
+                              <span className="font-medium text-foreground">
+                                Token field:
+                              </span>{" "}
+                              {provider.tokenField}
+                            </p>
+                            <p className="truncate">
+                              <span className="font-medium text-foreground">
+                                Provider ID:
+                              </span>{" "}
+                              {provider.providerId || "-"}
+                            </p>
+                          </div>
+                          {provider.notes ? (
+                            <p className="rounded-lg bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+                              {provider.notes}
+                            </p>
+                          ) : null}
+                        </div>
+                        <div className="flex flex-wrap gap-2 lg:justify-end">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => handleEdit(provider)}
+                            disabled={!capabilities.canEdit || isMutating}
+                            aria-label={`Edit ${providerName}`}
+                          >
+                            <Pencil className="h-4 w-4" />
+                            Edit
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              if (!provider.providerId) {
+                                return;
+                              }
+
+                              activateMutation.mutate({
+                                appId: currentApp,
+                                providerId: provider.providerId,
+                                providerName,
+                                requiresServiceRestart:
+                                  capabilities.requiresServiceRestart,
+                              });
+                            }}
+                            disabled={
+                              !capabilities.canActivate ||
+                              !provider.providerId ||
+                              provider.active ||
+                              isMutating
+                            }
+                            aria-label={`Activate ${providerName}`}
+                          >
+                            {activateMutation.isPending &&
+                            activateMutation.variables?.providerId ===
+                              provider.providerId ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Zap className="h-4 w-4" />
+                            )}
+                            {provider.active ? "Active" : "Activate"}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => setPendingDelete(provider)}
+                            disabled={!capabilities.canDelete || isMutating}
+                            aria-label={`Delete ${providerName}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Delete
+                          </Button>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="space-y-1">
+            <CardTitle className="text-lg">{editorTitle}</CardTitle>
+            <p className="text-sm text-muted-foreground">{editorDescription}</p>
+          </CardHeader>
+          <CardContent>
+            {showEditorForm ? (
+              <form className="space-y-4" onSubmit={handleSubmit}>
+                <div className="space-y-2">
+                  <Label htmlFor={`${fieldIdPrefix}-preset`}>Preset</Label>
+                  <select
+                    id={`${fieldIdPrefix}-preset`}
+                    className={FIELD_CLASS_NAME}
+                    value={selectedPresetId}
+                    onChange={(event) => handlePresetChange(event.target.value)}
+                    disabled={!capabilities.supportsPresets || formDisabled}
+                  >
+                    <option value="custom">Custom</option>
+                    {presets.map((preset) => (
+                      <option key={preset.id} value={preset.id}>
+                        {preset.label}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-muted-foreground">
+                    {selectedPreset
+                      ? selectedPreset.description ||
+                        getGenericPresetDescription()
+                      : "Custom mode keeps the current fields editable without applying a preset."}
+                  </p>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor={`${fieldIdPrefix}-name`}>Provider name</Label>
+                    <Input
+                      id={`${fieldIdPrefix}-name`}
+                      value={draft.name}
+                      onChange={(event) =>
+                        setDraft((currentDraft) => ({
+                          ...currentDraft,
+                          name: event.target.value,
+                        }))
+                      }
+                      required
+                      disabled={formDisabled}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={`${fieldIdPrefix}-model`}>Model</Label>
+                    <Input
+                      id={`${fieldIdPrefix}-model`}
+                      value={draft.model}
+                      onChange={(event) =>
+                        setDraft((currentDraft) => ({
+                          ...currentDraft,
+                          model: event.target.value,
+                        }))
+                      }
+                      placeholder="Optional model override"
+                      disabled={formDisabled}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor={`${fieldIdPrefix}-base-url`}>Base URL</Label>
+                  <Input
+                    id={`${fieldIdPrefix}-base-url`}
+                    value={draft.baseUrl}
+                    onChange={(event) =>
+                      setDraft((currentDraft) => ({
+                        ...currentDraft,
+                        baseUrl: event.target.value,
+                      }))
+                    }
+                    required
+                    disabled={formDisabled}
+                  />
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor={`${fieldIdPrefix}-token-field`}>
+                      Token field
+                    </Label>
+                    <select
+                      id={`${fieldIdPrefix}-token-field`}
+                      className={FIELD_CLASS_NAME}
+                      value={draft.tokenField}
+                      onChange={(event) =>
+                        setDraft((currentDraft) => ({
+                          ...currentDraft,
+                          tokenField: event.target
+                            .value as SharedProviderEditorPayload["tokenField"],
+                        }))
+                      }
+                      disabled={formDisabled}
+                    >
+                      {tokenFieldOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={`${fieldIdPrefix}-token`}>API token</Label>
+                    <Input
+                      id={`${fieldIdPrefix}-token`}
+                      type="password"
+                      value={draft.token}
+                      onChange={(event) =>
+                        setDraft((currentDraft) => ({
+                          ...currentDraft,
+                          token: event.target.value,
+                        }))
+                      }
+                      placeholder={
+                        editingProvider && capabilities.supportsBlankSecretPreserve
+                          ? "Leave blank to keep the stored secret"
+                          : "Enter the secret for this provider"
+                      }
+                      required={
+                        !editingProvider ||
+                        !capabilities.supportsBlankSecretPreserve
+                      }
+                      disabled={formDisabled}
+                    />
+                    {editingProvider &&
+                    capabilities.supportsBlankSecretPreserve &&
+                    editingProvider.tokenConfigured ? (
+                      <p className="text-xs text-muted-foreground">
+                        Leave the token blank to preserve the stored secret.
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor={`${fieldIdPrefix}-notes`}>Notes</Label>
+                  <Textarea
+                    id={`${fieldIdPrefix}-notes`}
+                    value={draft.notes}
+                    onChange={(event) =>
+                      setDraft((currentDraft) => ({
+                        ...currentDraft,
+                        notes: event.target.value,
+                      }))
+                    }
+                    placeholder="Optional notes for this provider"
+                    disabled={formDisabled}
+                  />
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <Button type="submit" disabled={formDisabled}>
+                    {saveMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : editingProvider ? (
+                      <RotateCw className="h-4 w-4" />
+                    ) : (
+                      <Plus className="h-4 w-4" />
+                    )}
+                    {editingProvider ? "Update provider" : "Save provider"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={resetForm}
+                    disabled={saveMutation.isPending}
+                  >
+                    {editingProvider ? "Cancel edit" : "Reset form"}
+                  </Button>
+                </div>
+              </form>
+            ) : (
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>
+                  {capabilities.canEdit
+                    ? "Adding providers is unavailable."
+                    : "Provider editing is unavailable."}
+                </AlertTitle>
+                <AlertDescription>
+                  {capabilities.canEdit
+                    ? hasProviders
+                      ? `This adapter does not allow adding new ${APP_META[currentApp].label} providers. Select a saved provider to edit it instead.`
+                      : `This adapter does not allow adding new ${APP_META[currentApp].label} providers.`
+                    : `This adapter exposes ${APP_META[currentApp].label} providers without add/edit support.`}
+                </AlertDescription>
+              </Alert>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
