@@ -341,7 +341,7 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
         <AlertCircle className="h-6 w-6" />
       </div>
       <div className="space-y-1">
-        <p className="font-medium">Unable to load providers.</p>
+        <p className="font-medium">Could not load provider settings.</p>
         <p className="text-sm text-muted-foreground">
           Retry after the OpenWrt service or RPC bridge is available again.
         </p>
