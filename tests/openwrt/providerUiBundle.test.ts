@@ -1009,6 +1009,13 @@ describe("OpenWrt provider UI bundle", () => {
     });
 
     expect(editDialog).toHaveClass("ccswitch-openwrt-provider-ui-dialog");
+    expect(editDialog).toHaveClass(
+      "left-1/2",
+      "top-1/2",
+      "translate-x-[-50%]",
+      "translate-y-[-50%]",
+      "max-h-[90vh]",
+    );
     expect(shellRoot.contains(editDialog)).toBe(false);
     expect(
       document.body.querySelector(".ccswitch-openwrt-provider-ui-overlay"),
@@ -1288,6 +1295,18 @@ describe("OpenWrt provider UI bundle", () => {
       /body\.ccswitch-openwrt-provider-ui-theme\s+\.ccswitch-openwrt-provider-ui-dialog>form\{[^}]*display:flex[^}]*min-height:0[^}]*flex:1 1 auto[^}]*flex-direction:column[^}]*max-height:inherit/,
     );
     expect(stagedStylesheetSource).toContain(".bg-background");
+    expect(stagedStylesheetSource).toContain(
+      "html.dark body.ccswitch-openwrt-provider-ui-theme,body.ccswitch-openwrt-provider-ui-theme.dark",
+    );
+    expect(stagedStylesheetSource).toMatch(
+      /--ccswitch-page-surface:\s*hsl\(224 22% 16% \/ \.88\)/,
+    );
+    expect(stagedStylesheetSource).toMatch(
+      /--ccswitch-page-border:\s*hsl\(223 18% 30% \/ \.92\)/,
+    );
+    expect(stagedStylesheetSource).toMatch(
+      /body\.ccswitch-openwrt-provider-ui-theme \.ccswitch-openwrt-provider-ui-overlay\{[^}]*backdrop-filter:blur\(10px\)/,
+    );
     expect(stagedStylesheetSource).not.toContain("color-scheme:light");
     expect(stagedStylesheetSource).not.toContain("scrollbar-width:none");
     expect(stagedBundleSource).not.toContain("process.env.NODE_ENV");
