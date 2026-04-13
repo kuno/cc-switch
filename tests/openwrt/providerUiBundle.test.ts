@@ -849,11 +849,10 @@ describe("OpenWrt provider UI bundle", () => {
     ).not.toBeNull();
     expect(hasClassToken(providerRoot, "sm:grid-cols-2")).toBe(true);
     expect(
-      hasClassToken(
-        providerRoot,
-        "xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.6fr)]",
+      providerRoot.querySelector(
+        '[data-ccswitch-region="provider-summary-grid"][data-ccswitch-layout="stack-to-split"]',
       ),
-    ).toBe(true);
+    ).not.toBeNull();
     expect(
       Array.from(providerRoot.querySelectorAll("*")).some((element) =>
         getElementClassName(element).includes("rounded-[28px]"),
@@ -1154,7 +1153,10 @@ describe("OpenWrt provider UI bundle", () => {
       ".xl\\:grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}",
     );
     expect(stagedStylesheetSource).toContain(
-      ".xl\\:grid-cols-\\[minmax\\(0\\,1fr\\)_minmax\\(280px\\,0\\.6fr\\)\\]{grid-template-columns:minmax(0,1fr) minmax(280px,.6fr)}",
+      '#ccswitch-shared-provider-ui-root [data-ccswitch-layout=stack-to-split]{display:grid;gap:.875rem;grid-template-columns:minmax(0,1fr);align-items:start}',
+    );
+    expect(stagedStylesheetSource).toContain(
+      '@media(min-width:1080px){#ccswitch-shared-provider-ui-root [data-ccswitch-layout=stack-to-split]{grid-template-columns:minmax(0,1.05fr) minmax(18rem,.7fr)}}',
     );
   });
 
