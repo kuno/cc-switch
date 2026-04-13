@@ -2,6 +2,7 @@ import type { SharedProviderAppId } from "@/shared/providers/domain";
 import {
   emptySharedProviderView,
   normalizeSharedProviderView,
+  parseSharedProviderState,
 } from "@/shared/providers/domain";
 import {
   type SharedRuntimeAppStatus,
@@ -14,6 +15,7 @@ import {
 import {
   OPENWRT_RUNTIME_APP_IDS,
   type RuntimePlatformAdapter,
+  type SharedRuntimeFailoverProviderOption,
 } from "@/shared/runtime/types";
 import type { OpenWrtRuntimeRpcResult, OpenWrtRuntimeTransport } from "./types";
 
@@ -91,6 +93,36 @@ function parsePayload(
     response.runtime != null ||
     response.apps != null ||
     response.app != null
+  ) {
+    return response as RuntimeLike;
+  }
+
+  return null;
+}
+
+function parseProviderListPayload(
+  response: OpenWrtRuntimeRpcResult | null | undefined,
+): RuntimeLike | null {
+  if (!response) {
+    return null;
+  }
+
+  for (const key of ["providers_json", "list_json"]) {
+    const candidate = response[key];
+    if (typeof candidate === "string") {
+      try {
+        return JSON.parse(candidate) as RuntimeLike;
+      } catch {
+        return null;
+      }
+    }
+  }
+
+  if (
+    response.providers != null ||
+    response.items != null ||
+    response.savedProviders != null ||
+    response.providerMap != null
   ) {
     return response as RuntimeLike;
   }
@@ -382,10 +414,53 @@ async function loadAppRuntimeStatus(
   return normalizeAppStatus(appId, payload);
 }
 
+async function loadAvailableFailoverProviders(
+  transport: OpenWrtRuntimeTransport &
+    Required<
+      Pick<OpenWrtRuntimeTransport, "getAvailableFailoverProviders">
+    >,
+  appId: SharedProviderAppId,
+): Promise<SharedRuntimeFailoverProviderOption[]> {
+  const response = await transport.getAvailableFailoverProviders(appId);
+
+  if (!isRpcSuccess(response)) {
+    throw new Error(
+      rpcFailureMessage(response) ??
+        `Failed to load ${appId} failover-provider options.`,
+    );
+  }
+
+  const payload = parseProviderListPayload(response) ?? response;
+  const state = parseSharedProviderState(
+    payload as Record<string, unknown>,
+    emptySharedProviderView(appId),
+    appId,
+  );
+
+  return (state?.providers ?? [])
+    .filter((provider) => provider.providerId)
+    .map((provider) => ({
+      providerId: provider.providerId ?? "",
+      providerName: provider.name.trim() || (provider.providerId ?? ""),
+      model: provider.model,
+    }));
+}
+
+async function runRuntimeMutation(
+  action: () => Promise<OpenWrtRuntimeRpcResult | null | undefined>,
+  failureMessage: string,
+): Promise<void> {
+  const response = await action();
+
+  if (!isRpcSuccess(response)) {
+    throw new Error(rpcFailureMessage(response) ?? failureMessage);
+  }
+}
+
 export function createOpenWrtRuntimeAdapter(
   transport: OpenWrtRuntimeTransport,
 ): RuntimePlatformAdapter {
-  return {
+  const adapter: RuntimePlatformAdapter = {
     async getAppRuntimeStatus(appId) {
       return loadAppRuntimeStatus(transport, appId);
     },
@@ -447,15 +522,65 @@ export function createOpenWrtRuntimeAdapter(
       } satisfies SharedRuntimeStatusView;
     },
   };
+
+  if (
+    typeof transport.getAvailableFailoverProviders === "function" &&
+    typeof transport.addToFailoverQueue === "function" &&
+    typeof transport.removeFromFailoverQueue === "function" &&
+    typeof transport.setAutoFailoverEnabled === "function"
+  ) {
+    const controlTransport = transport as OpenWrtRuntimeTransport &
+      Required<
+        Pick<
+          OpenWrtRuntimeTransport,
+          | "getAvailableFailoverProviders"
+          | "addToFailoverQueue"
+          | "removeFromFailoverQueue"
+          | "setAutoFailoverEnabled"
+        >
+      >;
+
+    adapter.getAvailableFailoverProviders = async (appId: SharedProviderAppId) =>
+      loadAvailableFailoverProviders(controlTransport, appId);
+    adapter.addToFailoverQueue = async (
+      appId: SharedProviderAppId,
+      providerId: string,
+    ) =>
+      runRuntimeMutation(
+        () => controlTransport.addToFailoverQueue(appId, providerId),
+        `Failed to add ${providerId} to the ${appId} failover queue.`,
+      );
+    adapter.removeFromFailoverQueue = async (
+      appId: SharedProviderAppId,
+      providerId: string,
+    ) =>
+      runRuntimeMutation(
+        () => controlTransport.removeFromFailoverQueue(appId, providerId),
+        `Failed to remove ${providerId} from the ${appId} failover queue.`,
+      );
+    adapter.setAutoFailoverEnabled = async (
+      appId: SharedProviderAppId,
+      enabled: boolean,
+    ) =>
+      runRuntimeMutation(
+        () => controlTransport.setAutoFailoverEnabled(appId, enabled),
+        `Failed to update ${appId} auto-failover.`,
+      );
+  }
+
+  return adapter;
 }
 
 export const __private__ = {
   isRpcSuccess,
+  loadAvailableFailoverProviders,
   normalizeAppStatus,
   normalizeHealth,
   normalizeProxyStatus,
   normalizeQueueEntry,
   normalizeServiceStatus,
   parsePayload,
+  parseProviderListPayload,
   rpcFailureMessage,
+  runRuntimeMutation,
 };

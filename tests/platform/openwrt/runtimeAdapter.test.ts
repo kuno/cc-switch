@@ -299,6 +299,75 @@ describe("OpenWrt runtime adapter", () => {
     );
   });
 
+  it("normalizes Phase 8 failover-control methods only when the transport supports them", async () => {
+    const transport = createTransport({
+      getAvailableFailoverProviders: vi.fn().mockResolvedValue({
+        ok: true,
+        list_json: JSON.stringify({
+          providers: {
+            "codex-backup": {
+              configured: true,
+              providerId: "codex-backup",
+              name: "Codex Backup",
+              baseUrl: "https://backup.example.com/v1",
+              model: "gpt-5.4-mini",
+              tokenConfigured: true,
+              tokenField: "OPENAI_API_KEY",
+            },
+          },
+        }),
+      }),
+      addToFailoverQueue: vi.fn().mockResolvedValue({ ok: true }),
+      removeFromFailoverQueue: vi.fn().mockResolvedValue({ ok: true }),
+      setAutoFailoverEnabled: vi.fn().mockResolvedValue({ ok: true }),
+    });
+    const adapter = createOpenWrtRuntimeAdapter(transport);
+
+    await expect(
+      adapter.getAvailableFailoverProviders?.("codex"),
+    ).resolves.toEqual([
+      {
+        providerId: "codex-backup",
+        providerName: "Codex Backup",
+        model: "gpt-5.4-mini",
+      },
+    ]);
+    await expect(
+      adapter.addToFailoverQueue?.("codex", "codex-backup"),
+    ).resolves.toBeUndefined();
+    await expect(
+      adapter.removeFromFailoverQueue?.("codex", "codex-backup"),
+    ).resolves.toBeUndefined();
+    await expect(
+      adapter.setAutoFailoverEnabled?.("codex", true),
+    ).resolves.toBeUndefined();
+
+    expect(transport.getAvailableFailoverProviders).toHaveBeenCalledWith(
+      "codex",
+    );
+    expect(transport.addToFailoverQueue).toHaveBeenCalledWith(
+      "codex",
+      "codex-backup",
+    );
+    expect(transport.removeFromFailoverQueue).toHaveBeenCalledWith(
+      "codex",
+      "codex-backup",
+    );
+    expect(transport.setAutoFailoverEnabled).toHaveBeenCalledWith(
+      "codex",
+      true,
+    );
+  });
+
+  it("keeps the adapter read-only when Phase 8 transport methods are absent", () => {
+    const adapter = createOpenWrtRuntimeAdapter(createTransport());
+
+    expect(adapter.getAvailableFailoverProviders).toBeUndefined();
+    expect(adapter.addToFailoverQueue).toBeUndefined();
+    expect(adapter.removeFromFailoverQueue).toBeUndefined();
+    expect(adapter.setAutoFailoverEnabled).toBeUndefined();
+  });
+
   it("parses direct status_json payloads and preserves unknown health as neutral data", () => {
     expect(
       __private__.normalizeHealth(
