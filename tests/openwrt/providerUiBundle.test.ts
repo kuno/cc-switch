@@ -23,22 +23,75 @@ import type {
   SharedProviderState,
 } from "@/shared/providers/domain";
 
-function createTransport(): OpenWrtProviderTransport {
-  const emptyStatePayload = {
-    activeProviderId: null,
-    providers: {},
-  };
+function createTransport(
+  providerStates: Partial<Record<SharedProviderAppId, SharedProviderState>> = {},
+): OpenWrtProviderTransport {
+  function getProviderState(appId: SharedProviderAppId): SharedProviderState {
+    return providerStates[appId] ?? createProviderState(appId, [], null);
+  }
+
+  function createStateResponse(appId: SharedProviderAppId) {
+    const state = getProviderState(appId);
+
+    return {
+      ok: true,
+      providers_json: JSON.stringify({
+        activeProviderId: state.activeProviderId,
+        providers: Object.fromEntries(
+          state.providers.map((provider) => [
+            provider.providerId ?? provider.name,
+            {
+              active: provider.active,
+              baseUrl: provider.baseUrl,
+              configured: provider.configured,
+              model: provider.model,
+              name: provider.name,
+              notes: provider.notes,
+              providerId: provider.providerId,
+              tokenConfigured: provider.tokenConfigured,
+              tokenField: provider.tokenField,
+              tokenMasked: provider.tokenMasked,
+            },
+          ]),
+        ),
+      }),
+    };
+  }
+
+  function createActiveProviderResponse(appId: SharedProviderAppId) {
+    const state = getProviderState(appId);
+
+    if (!state.activeProvider.configured) {
+      return { ok: false };
+    }
+
+    return {
+      ok: true,
+      provider_json: JSON.stringify({
+        active: state.activeProvider.active,
+        baseUrl: state.activeProvider.baseUrl,
+        configured: state.activeProvider.configured,
+        model: state.activeProvider.model,
+        name: state.activeProvider.name,
+        notes: state.activeProvider.notes,
+        providerId: state.activeProvider.providerId,
+        tokenConfigured: state.activeProvider.tokenConfigured,
+        tokenField: state.activeProvider.tokenField,
+        tokenMasked: state.activeProvider.tokenMasked,
+      }),
+    };
+  }
 
   return {
-    listProviders: vi.fn().mockResolvedValue({
-      ok: true,
-      providers_json: JSON.stringify(emptyStatePayload),
-    }),
-    listSavedProviders: vi.fn().mockResolvedValue({
-      ok: true,
-      providers_json: JSON.stringify(emptyStatePayload),
-    }),
-    getActiveProvider: vi.fn().mockResolvedValue({ ok: false }),
+    listProviders: vi
+      .fn<(appId: SharedProviderAppId) => Promise<ReturnType<typeof createStateResponse>>>()
+      .mockImplementation(async (appId) => createStateResponse(appId)),
+    listSavedProviders: vi
+      .fn<(appId: SharedProviderAppId) => Promise<ReturnType<typeof createStateResponse>>>()
+      .mockImplementation(async (appId) => createStateResponse(appId)),
+    getActiveProvider: vi
+      .fn<(appId: SharedProviderAppId) => Promise<ReturnType<typeof createActiveProviderResponse>>>()
+      .mockImplementation(async (appId) => createActiveProviderResponse(appId)),
     restartService: vi.fn().mockResolvedValue({ ok: true }),
   };
 }
@@ -132,7 +185,7 @@ function createMutationEvent(
 }
 
 describe("OpenWrt provider UI bundle", () => {
-  it("registers the real shared provider manager bundle and keeps app selection in the shell", async () => {
+  it("mounts the real Phase 6 provider surface and keeps app selection in the shell", async () => {
     const globalScope = globalThis as typeof globalThis & {
       [OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY]?: OpenWrtSharedProviderBundleApi;
     };
@@ -150,7 +203,40 @@ describe("OpenWrt provider UI bundle", () => {
         .mockImplementation((appId: "claude" | "codex" | "gemini") => appId),
       showMessage: vi.fn(),
     };
-    const transport = createTransport();
+    const transport = createTransport({
+      claude: createProviderState("claude", [
+        {
+          active: true,
+          baseUrl: "https://claude-primary.example.com",
+          model: "claude-sonnet-4-5",
+          name: "Claude Primary",
+          notes: "Pinned for router traffic",
+          providerId: "claude-primary",
+          tokenConfigured: true,
+          tokenField: "ANTHROPIC_AUTH_TOKEN",
+        },
+        {
+          active: false,
+          baseUrl: "https://claude-backup.example.com",
+          model: "claude-haiku-4-5",
+          name: "Claude Backup",
+          providerId: "claude-backup",
+          tokenConfigured: false,
+          tokenField: "ANTHROPIC_API_KEY",
+        },
+      ]),
+      codex: createProviderState("codex", [
+        {
+          active: true,
+          baseUrl: "https://codex-primary.example.com/v1",
+          model: "gpt-5.4",
+          name: "Codex Primary",
+          providerId: "codex-primary",
+          tokenConfigured: true,
+          tokenField: "OPENAI_API_KEY",
+        },
+      ]),
+    });
 
     expect(api).toBeDefined();
     expect(api?.capabilities).toEqual({ providerManager: true });
@@ -175,15 +261,77 @@ describe("OpenWrt provider UI bundle", () => {
     });
 
     await waitFor(() =>
-      expect(within(target).getByText("Provider manager")).toBeInTheDocument(),
+      expect(
+        within(target).getByRole("button", { name: "Edit Claude Primary" }),
+      ).toBeInTheDocument(),
+    );
+    const claudePrimaryCard = within(target)
+      .getByText("Claude Primary")
+      .closest("article");
+    const claudeBackupCard = within(target)
+      .getByText("Claude Backup")
+      .closest("article");
+
+    expect(within(target).getByRole("button", { name: "Claude" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
     );
     expect(
-      within(target).getByText("No providers saved for Claude yet."),
+      within(target).getByRole("button", { name: "Add provider" }),
     ).toBeInTheDocument();
+    expect(claudePrimaryCard).not.toBeNull();
+    expect(claudeBackupCard).not.toBeNull();
+    expect(claudePrimaryCard).toHaveTextContent(
+      "Base URL: https://claude-primary.example.com",
+    );
+    expect(claudePrimaryCard).toHaveTextContent("Model: claude-sonnet-4-5");
+    expect(claudePrimaryCard).toHaveTextContent(
+      "Token field: ANTHROPIC_AUTH_TOKEN",
+    );
+    expect(claudePrimaryCard).toHaveTextContent("Provider ID: claude-primary");
+    expect(claudePrimaryCard).toHaveTextContent("Pinned for router traffic");
+    expect(
+      within(claudePrimaryCard as HTMLElement).getByText("Active", {
+        selector: "span",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(claudePrimaryCard as HTMLElement).getByText("Secret stored", {
+        selector: "span",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(claudePrimaryCard as HTMLElement).getByRole("button", {
+        name: "Activate Claude Primary",
+      }),
+    ).toBeDisabled();
+    expect(
+      within(claudeBackupCard as HTMLElement).getByRole("button", {
+        name: "Activate Claude Backup",
+      }),
+    ).toBeEnabled();
+    expect(
+      within(claudeBackupCard as HTMLElement).queryByText("Secret stored", {
+        selector: "span",
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(target).queryByRole("button", { name: /duplicate/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(target).queryByRole("button", { name: /terminal/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(target).queryByRole("button", { name: /usage/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(target).queryByRole("button", { name: /failover/i }),
+    ).not.toBeInTheDocument();
     expect(target.textContent).not.toContain("Shared provider bundle loaded.");
     expect(target.textContent).not.toContain(
       "Waiting for the shared provider manager implementation.",
     );
+    expect(target.textContent).not.toContain("Configure Provider");
     expect(shell.showMessage).not.toHaveBeenCalled();
     expect(transport.listProviders).toHaveBeenCalledWith("claude");
     expect(transport.listSavedProviders).toHaveBeenCalledWith("claude");
@@ -196,9 +344,24 @@ describe("OpenWrt provider UI bundle", () => {
     expect(shell.setSelectedApp).toHaveBeenCalledWith("codex");
     await waitFor(() =>
       expect(
-        within(target).getByText("No providers saved for Codex yet."),
+        within(target).getByRole("button", { name: "Edit Codex Primary" }),
       ).toBeInTheDocument(),
     );
+    const codexPrimaryCard = within(target)
+      .getByText("Codex Primary")
+      .closest("article");
+
+    expect(within(target).getByRole("button", { name: "Codex" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(codexPrimaryCard).not.toBeNull();
+    expect(codexPrimaryCard).toHaveTextContent(
+      "Base URL: https://codex-primary.example.com/v1",
+    );
+    expect(codexPrimaryCard).toHaveTextContent("Model: gpt-5.4");
+    expect(codexPrimaryCard).toHaveTextContent("Token field: OPENAI_API_KEY");
+    expect(codexPrimaryCard).toHaveTextContent("Provider ID: codex-primary");
     expect(transport.listProviders).toHaveBeenCalledWith("codex");
     expect(transport.listSavedProviders).toHaveBeenCalledWith("codex");
     expect(transport.getActiveProvider).toHaveBeenCalledWith("codex");
@@ -353,7 +516,9 @@ describe("OpenWrt provider UI bundle", () => {
     expect(bundleSource).toBe(stagedBundleSource);
     expect(stagedBundleSource).toContain("__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__");
     expect(stagedBundleSource).toContain("providerManager");
-    expect(stagedBundleSource).toContain("Provider manager");
+    expect(stagedBundleSource).toContain("Add provider");
+    expect(stagedBundleSource).toContain("Secret stored");
+    expect(stagedBundleSource).toContain("Provider ID:");
     expect(stagedBundleSource).toContain("cc-switch service");
     expect(stagedBundleSource).not.toContain("process.env.NODE_ENV");
     expect(stagedBundleSource).not.toContain("Shared provider bundle loaded.");
