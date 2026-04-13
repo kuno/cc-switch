@@ -392,6 +392,7 @@ describe("SharedProviderManager", () => {
       "data-ccswitch-layout",
       "stack-to-split",
     );
+    expect(summaryGrid).toHaveClass("grid");
     expect(providerBody).toHaveAttribute(
       "data-ccswitch-layout",
       "embedded-stack",
@@ -403,6 +404,7 @@ describe("SharedProviderManager", () => {
       "data-ccswitch-layout",
       "responsive-grid",
     );
+    expect(providerCardGrid).toHaveClass("grid");
     expect(providerCardGrid).toContainElement(screen.getByText("Claude Primary"));
     expect(
       summaryGrid?.querySelector('[data-ccswitch-region="provider-summary"]'),

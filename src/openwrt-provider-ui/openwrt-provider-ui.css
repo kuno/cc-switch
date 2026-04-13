@@ -309,6 +309,13 @@ body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-page-section--provider
   gap: 0.875rem;
 }
 
+#ccswitch-shared-provider-ui-root [data-ccswitch-layout="stack-to-split"] {
+  display: grid;
+  gap: 0.875rem;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
 #ccswitch-shared-provider-ui-root [data-ccswitch-layout="wrap-row"] {
   display: flex;
   flex-wrap: wrap;
@@ -324,15 +331,8 @@ body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-page-section--provider
   min-width: 0;
 }
 
-#ccswitch-shared-runtime-surface-root [data-ccswitch-region="runtime-app-grid"],
-#ccswitch-shared-provider-ui-root [data-ccswitch-region="provider-card-grid"] {
-  display: grid;
-  gap: 0.875rem;
-  grid-template-columns: minmax(0, 1fr);
-  align-items: start;
-}
-
-#ccswitch-shared-provider-ui-root [data-ccswitch-region="provider-summary-grid"] {
+#ccswitch-shared-runtime-surface-root [data-ccswitch-layout="responsive-grid"],
+#ccswitch-shared-provider-ui-root [data-ccswitch-layout="responsive-grid"] {
   display: grid;
   gap: 0.875rem;
   grid-template-columns: minmax(0, 1fr);
@@ -498,8 +498,7 @@ body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-preset-chip {
 }
 
 @media (min-width: 1080px) {
-  #ccswitch-shared-provider-ui-root
-    [data-ccswitch-region="provider-summary-grid"] {
+  #ccswitch-shared-provider-ui-root [data-ccswitch-layout="stack-to-split"] {
     grid-template-columns: minmax(0, 1.05fr) minmax(18rem, 0.7fr);
   }
 }
