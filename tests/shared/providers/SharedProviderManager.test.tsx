@@ -454,6 +454,45 @@ describe("SharedProviderManager", () => {
     expect(screen.getByText("Router preset")).toBeInTheDocument();
   });
 
+  it("does not imply blank-secret preserve when the edited provider has no stored secret", async () => {
+    const adapter = createMutableAdapter({
+      claude: buildState(
+        "claude",
+        [
+          createProvider({
+            providerId: "no-secret",
+            name: "No Secret",
+            baseUrl: "https://nosecret.example.com",
+            tokenField: "ANTHROPIC_AUTH_TOKEN",
+            tokenConfigured: false,
+          }),
+        ],
+        "no-secret",
+      ),
+    });
+    const { user } = renderManager(<SharedProviderManager adapter={adapter} />);
+
+    expect(await screen.findByText("No Secret")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Edit No Secret" }));
+
+    const editDialog = await screen.findByRole("dialog", {
+      name: "Edit provider",
+    });
+    const editDialogScope = within(editDialog);
+    const tokenInput = editDialogScope.getByLabelText("API token");
+
+    expect(tokenInput).toHaveAttribute(
+      "placeholder",
+      "Enter the secret for this provider",
+    );
+    expect(
+      editDialogScope.queryByText(
+        "Leave the token blank to preserve the stored secret.",
+      ),
+    ).not.toBeInTheDocument();
+  });
+
   it("filters providers locally by provider fields and matched preset labels", async () => {
     const adapter = createAdapter({
       listProviderState: vi.fn().mockResolvedValue(

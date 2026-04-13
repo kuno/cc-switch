@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { SHARED_PROVIDER_APP_PRESENTATION } from "./presentation";
-import { getSharedProviderSearchSummary } from "./search";
 
 interface SharedProviderToolbarProps {
   appId: SharedProviderAppId;
@@ -12,6 +11,7 @@ interface SharedProviderToolbarProps {
   visibleCount: number;
   totalCount: number;
   disabled?: boolean;
+  searchDisabled?: boolean;
   isRefreshing?: boolean;
   onSearchQueryChange: (value: string) => void;
   onRefresh: () => void;
@@ -24,44 +24,45 @@ export function SharedProviderToolbar({
   visibleCount,
   totalCount,
   disabled = false,
+  searchDisabled = false,
   isRefreshing = false,
   onSearchQueryChange,
   onRefresh,
   onAddProvider,
 }: SharedProviderToolbarProps) {
   const appLabel = SHARED_PROVIDER_APP_PRESENTATION[appId].label;
-  const searchSummary = getSharedProviderSearchSummary(
-    searchQuery,
-    visibleCount,
-    totalCount,
-  );
+  const appPresentation = SHARED_PROVIDER_APP_PRESENTATION[appId];
+  const normalizedSearchQuery = searchQuery.trim();
+  const searchSummary = normalizedSearchQuery
+    ? `Showing ${visibleCount} ${visibleCount === 1 ? "result" : "results"} for "${normalizedSearchQuery}" out of ${totalCount}.`
+    : null;
 
   return (
-    <div className="space-y-3 rounded-xl border border-border-default bg-muted/20 p-3">
-      <div className="flex flex-col gap-3 md:flex-row md:items-center">
-        <div className="relative flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            aria-label="Search providers"
-            className="pl-9 pr-10"
-            value={searchQuery}
-            onChange={(event) => onSearchQueryChange(event.target.value)}
-            placeholder={`Search ${appLabel} providers`}
-            disabled={disabled}
-          />
-          {searchQuery ? (
-            <button
-              type="button"
-              aria-label="Clear search"
+    <div className="space-y-4 rounded-2xl border border-border-default/80 bg-gradient-to-br from-background via-background to-muted/30 p-4 shadow-sm">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span
               className={cn(
-                "absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground",
-                disabled && "pointer-events-none opacity-50",
+                "rounded-full px-3 py-1 text-xs font-semibold",
+                appPresentation.chipClassName,
               )}
-              onClick={() => onSearchQueryChange("")}
             >
-              <X className="h-4 w-4" />
-            </button>
-          ) : null}
+              {appLabel}
+            </span>
+            <span className="rounded-full border border-border-default bg-background px-3 py-1 text-xs font-medium text-muted-foreground">
+              {totalCount} saved
+            </span>
+          </div>
+          <div className="space-y-1">
+            <p className="text-sm font-medium text-foreground">
+              Search saved providers, refresh the current list, or start a new
+              draft.
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Presets only shape the editor draft until you save the provider.
+            </p>
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
@@ -82,9 +83,37 @@ export function SharedProviderToolbar({
           ) : null}
         </div>
       </div>
-      {searchSummary ? (
-        <p className="text-sm text-muted-foreground">{searchSummary}</p>
-      ) : null}
+
+      <div className="space-y-2">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            aria-label="Search providers"
+            className="h-11 rounded-xl border-border-default/80 bg-background/90 pl-9 pr-10"
+            value={searchQuery}
+            onChange={(event) => onSearchQueryChange(event.target.value)}
+            placeholder={`Search ${appLabel} providers`}
+            disabled={searchDisabled}
+          />
+          {searchQuery ? (
+            <button
+              type="button"
+              aria-label="Clear search"
+              className={cn(
+                "absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground",
+                disabled && "pointer-events-none opacity-50",
+              )}
+              onClick={() => onSearchQueryChange("")}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          ) : null}
+        </div>
+        <p className="text-sm text-muted-foreground">
+          {searchSummary ??
+            "Saved providers stay in this list until you edit, activate, or remove them."}
+        </p>
+      </div>
     </div>
   );
 }
