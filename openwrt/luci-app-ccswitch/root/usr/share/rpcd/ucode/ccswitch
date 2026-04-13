@@ -219,7 +219,7 @@ return {
 	ccswitch: {
 		list_providers: {
 			args: {
-				app: {}
+				app: 'claude'
 			},
 
 			call: function(request) {
@@ -229,8 +229,8 @@ return {
 
 		get_provider: {
 			args: {
-				app: {},
-				provider_id: {}
+				app: 'claude',
+				provider_id: 'provider-id'
 			},
 
 			call: function(request) {
@@ -240,7 +240,7 @@ return {
 
 		get_active_provider: {
 			args: {
-				app: {}
+				app: 'claude'
 			},
 
 			call: function(request) {
@@ -250,8 +250,8 @@ return {
 
 		upsert_provider: {
 			args: {
-				app: {},
-				provider_id: {},
+				app: 'claude',
+				provider_id: 'provider-id',
 				provider: {}
 			},
 
@@ -262,7 +262,7 @@ return {
 
 		upsert_active_provider: {
 			args: {
-				app: {},
+				app: 'claude',
 				provider: {}
 			},
 
@@ -273,8 +273,8 @@ return {
 
 		delete_provider: {
 			args: {
-				app: {},
-				provider_id: {}
+				app: 'claude',
+				provider_id: 'provider-id'
 			},
 
 			call: function(request) {
@@ -284,8 +284,8 @@ return {
 
 		activate_provider: {
 			args: {
-				app: {},
-				provider_id: {}
+				app: 'claude',
+				provider_id: 'provider-id'
 			},
 
 			call: function(request) {
