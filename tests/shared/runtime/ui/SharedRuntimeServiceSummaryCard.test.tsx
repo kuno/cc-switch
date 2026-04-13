@@ -84,6 +84,16 @@ describe("SharedRuntimeServiceSummaryCard", () => {
     expect(
       screen.getByText("Runtime detail: daemon connect ECONNREFUSED"),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Live telemetry is unavailable while this view is showing config or unreachable fallback state.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Active connections")).not.toBeInTheDocument();
+    expect(screen.queryByText("Total requests")).not.toBeInTheDocument();
+    expect(screen.queryByText("Success rate")).not.toBeInTheDocument();
+    expect(screen.queryByText("Failover count")).not.toBeInTheDocument();
+    expect(screen.queryByText("Uptime")).not.toBeInTheDocument();
   });
 
   it("renders summary metrics from the runtime snapshot", () => {
@@ -109,5 +119,33 @@ describe("SharedRuntimeServiceSummaryCard", () => {
     expect(screen.getByText("88.5%")).toBeInTheDocument();
     expect(screen.getByText("7")).toBeInTheDocument();
     expect(screen.getByText("1d 1h 1m 1s")).toBeInTheDocument();
+  });
+
+  it("treats unreachable non-live states as telemetry-unavailable", () => {
+    render(
+      <SharedRuntimeServiceSummaryCard
+        service={createServiceStatus({
+          running: false,
+          reachable: false,
+          statusSource: "unknown-source",
+        })}
+        runtime={createRuntimeStatus({
+          running: false,
+          activeConnections: 0,
+          totalRequests: 0,
+          successRate: 0,
+          failoverCount: 0,
+          uptimeSeconds: 0,
+        })}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "Live telemetry is unavailable while this view is showing config or unreachable fallback state.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Active connections")).not.toBeInTheDocument();
+    expect(screen.getByText("127.0.0.1:15721")).toBeInTheDocument();
   });
 });

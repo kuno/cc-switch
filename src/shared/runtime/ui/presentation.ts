@@ -1,4 +1,5 @@
 import type {
+  SharedRuntimeProxyStatus,
   SharedRuntimeAppId,
   SharedRuntimeFailoverQueueEntry,
   SharedRuntimeProviderHealth,
@@ -120,6 +121,13 @@ export function getSharedRuntimeStatusSourceDescription(
   }
 
   return "Showing the latest runtime state reported by the OpenWrt backend.";
+}
+
+export function hasSharedRuntimeLiveTelemetry(
+  service: SharedRuntimeServiceStatus,
+  _runtime: SharedRuntimeProxyStatus,
+): boolean {
+  return service.statusSource === "live-status" && service.reachable;
 }
 
 export function getSharedRuntimeHealthTone(

@@ -12,6 +12,7 @@ import {
   formatSharedRuntimeListenEndpoint,
   formatSharedRuntimePercent,
   formatSharedRuntimeUptime,
+  hasSharedRuntimeLiveTelemetry,
   getSharedRuntimeStatusSourceDescription,
   getSharedRuntimeStatusSourceLabel,
 } from "./presentation";
@@ -44,6 +45,8 @@ export function SharedRuntimeServiceSummaryCard({
   service: SharedRuntimeServiceStatus;
   runtime: SharedRuntimeProxyStatus;
 }) {
+  const hasLiveTelemetry = hasSharedRuntimeLiveTelemetry(service, runtime);
+
   return (
     <Card className="rounded-3xl border-border-default bg-card/95 shadow-sm">
       <CardHeader className="space-y-4 p-5">
@@ -83,31 +86,40 @@ export function SharedRuntimeServiceSummaryCard({
           value={formatSharedRuntimeListenEndpoint(service)}
           icon={<Router className="h-4 w-4" />}
         />
-        <RuntimeMetric
-          label="Active connections"
-          value={formatSharedRuntimeCount(runtime.activeConnections)}
-          icon={<Activity className="h-4 w-4" />}
-        />
-        <RuntimeMetric
-          label="Total requests"
-          value={formatSharedRuntimeCount(runtime.totalRequests)}
-          icon={<TrendingUp className="h-4 w-4" />}
-        />
-        <RuntimeMetric
-          label="Success rate"
-          value={formatSharedRuntimePercent(runtime.successRate)}
-          icon={<TrendingUp className="h-4 w-4" />}
-        />
-        <RuntimeMetric
-          label="Failover count"
-          value={formatSharedRuntimeCount(runtime.failoverCount)}
-          icon={<RotateCw className="h-4 w-4" />}
-        />
-        <RuntimeMetric
-          label="Uptime"
-          value={formatSharedRuntimeUptime(runtime.uptimeSeconds)}
-          icon={<Clock3 className="h-4 w-4" />}
-        />
+        {hasLiveTelemetry ? (
+          <>
+            <RuntimeMetric
+              label="Active connections"
+              value={formatSharedRuntimeCount(runtime.activeConnections)}
+              icon={<Activity className="h-4 w-4" />}
+            />
+            <RuntimeMetric
+              label="Total requests"
+              value={formatSharedRuntimeCount(runtime.totalRequests)}
+              icon={<TrendingUp className="h-4 w-4" />}
+            />
+            <RuntimeMetric
+              label="Success rate"
+              value={formatSharedRuntimePercent(runtime.successRate)}
+              icon={<TrendingUp className="h-4 w-4" />}
+            />
+            <RuntimeMetric
+              label="Failover count"
+              value={formatSharedRuntimeCount(runtime.failoverCount)}
+              icon={<RotateCw className="h-4 w-4" />}
+            />
+            <RuntimeMetric
+              label="Uptime"
+              value={formatSharedRuntimeUptime(runtime.uptimeSeconds)}
+              icon={<Clock3 className="h-4 w-4" />}
+            />
+          </>
+        ) : (
+          <div className="rounded-2xl border border-dashed border-border-default bg-muted/15 p-4 text-sm text-muted-foreground sm:col-span-1 xl:col-span-2">
+            Live telemetry is unavailable while this view is showing config or
+            unreachable fallback state.
+          </div>
+        )}
       </CardContent>
     </Card>
   );
