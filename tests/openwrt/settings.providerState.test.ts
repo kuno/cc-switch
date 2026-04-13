@@ -82,6 +82,7 @@ type SettingsView = {
   createStatusPanel(uiState: UiState): StatusNodes;
   createUiState(isRunning: boolean, selectedApp: AppId): UiState;
   getBundleAssetPath(): string;
+  getBundleStylePath(): string;
   getSelectedApp(): AppId;
   loadSharedProviderBundle(): Promise<{
     capabilities?: { providerManager?: boolean; runtimeSurface?: boolean };
