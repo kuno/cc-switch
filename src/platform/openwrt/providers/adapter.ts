@@ -11,22 +11,27 @@ import {
   normalizeSharedProviderView,
   parseSharedProviderState,
 } from "@/shared/providers/domain";
-import type { OpenWrtProviderTransport, OpenWrtRpcResult } from "./types";
+import type {
+  OpenWrtProviderMutationEvent,
+  OpenWrtProviderMutationKind,
+  OpenWrtProviderRuntimeHooks,
+  OpenWrtProviderTransport,
+  OpenWrtRpcResult,
+} from "./types";
 
 type RpcCandidate = {
   compatibilityFallback: boolean;
   call(): Promise<OpenWrtRpcResult | null | undefined>;
 };
 
-const DEFAULT_CAPABILITIES: SharedProviderCapabilities = {
-  canAdd: true,
-  canEdit: true,
-  canDelete: true,
-  canActivate: true,
+const BASE_CAPABILITIES = {
   supportsPresets: true,
   supportsBlankSecretPreserve: true,
   requiresServiceRestart: true,
-};
+} satisfies Pick<
+  SharedProviderCapabilities,
+  "supportsPresets" | "supportsBlankSecretPreserve" | "requiresServiceRestart"
+>;
 
 function isRpcSuccess(result: OpenWrtRpcResult | null | undefined): boolean {
   return result?.ok === true;
@@ -183,14 +188,45 @@ function buildLegacyProviderState(
   };
 }
 
+function buildCapabilities(
+  state: SharedProviderState,
+): SharedProviderCapabilities {
+  const legacyConfigured = state.activeProvider.configured;
+
+  return {
+    canAdd: state.phase2Available || !legacyConfigured,
+    canEdit: state.phase2Available || legacyConfigured,
+    canDelete: state.phase2Available,
+    canActivate: state.phase2Available,
+    ...BASE_CAPABILITIES,
+  };
+}
+
+async function resolveProviderStateResponse<T>(
+  call: () => Promise<T | null | undefined>,
+  fallback: T,
+): Promise<T> {
+  try {
+    return (await call()) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 async function loadProviderState(
   transport: OpenWrtProviderTransport,
   appId: SharedProviderAppId,
 ): Promise<SharedProviderState> {
   const [listResponse, savedResponse, activeResponse] = await Promise.all([
-    transport.listProviders(appId),
-    transport.listSavedProviders(appId),
-    transport.getActiveProvider(appId),
+    resolveProviderStateResponse(() => transport.listProviders(appId), null),
+    resolveProviderStateResponse(
+      () => transport.listSavedProviders(appId),
+      null,
+    ),
+    resolveProviderStateResponse(
+      () => transport.getActiveProvider(appId),
+      { ok: false },
+    ),
   ]);
   const activeProvider = parseActiveProviderResponse(activeResponse, appId);
 
@@ -328,21 +364,166 @@ async function invokePhase2Activate(
   );
 }
 
+async function resolveServiceRunning(
+  runtimeHooks?: OpenWrtProviderRuntimeHooks,
+): Promise<boolean> {
+  if (!runtimeHooks?.getServiceRunning) {
+    return false;
+  }
+
+  return Boolean(await runtimeHooks.getServiceRunning());
+}
+
+function shouldRequireRestartAfterSave(
+  previousState: SharedProviderState,
+  nextState: SharedProviderState,
+  providerId?: string,
+): boolean {
+  if (!nextState.phase2Available) {
+    return true;
+  }
+
+  return Boolean(
+    previousState.activeProviderId !== nextState.activeProviderId ||
+      (providerId && providerId === previousState.activeProviderId) ||
+      (!previousState.activeProviderId && nextState.activeProviderId),
+  );
+}
+
+function shouldRequireRestartAfterActivate(
+  previousState: SharedProviderState,
+  nextState: SharedProviderState,
+): boolean {
+  return previousState.activeProviderId !== nextState.activeProviderId;
+}
+
+function shouldRequireRestartAfterDelete(
+  previousState: SharedProviderState,
+  nextState: SharedProviderState,
+  providerId: string,
+): boolean {
+  return Boolean(
+    providerId === previousState.activeProviderId ||
+      previousState.activeProviderId !== nextState.activeProviderId,
+  );
+}
+
+function shouldRequireRestart(
+  mutation: OpenWrtProviderMutationKind,
+  previousState: SharedProviderState,
+  nextState: SharedProviderState,
+  providerId?: string,
+): boolean {
+  switch (mutation) {
+    case "save":
+      return shouldRequireRestartAfterSave(previousState, nextState, providerId);
+    case "activate":
+      return shouldRequireRestartAfterActivate(previousState, nextState);
+    case "delete":
+      return shouldRequireRestartAfterDelete(
+        previousState,
+        nextState,
+        providerId ?? "",
+      );
+  }
+}
+
+async function notifyProviderMutation(
+  transport: OpenWrtProviderTransport,
+  runtimeHooks: OpenWrtProviderRuntimeHooks | undefined,
+  appId: SharedProviderAppId,
+  mutation: OpenWrtProviderMutationKind,
+  previousState: SharedProviderState,
+  providerId?: string,
+): Promise<void> {
+  if (!runtimeHooks?.onProviderMutation) {
+    return;
+  }
+
+  const [providerState, serviceRunning] = await Promise.all([
+    loadProviderState(transport, appId),
+    resolveServiceRunning(runtimeHooks),
+  ]);
+  const event: OpenWrtProviderMutationEvent = {
+    appId,
+    mutation,
+    providerId: providerId ?? null,
+    serviceRunning,
+    restartRequired:
+      serviceRunning &&
+      shouldRequireRestart(mutation, previousState, providerState, providerId),
+    providerState,
+    capabilities: buildCapabilities(providerState),
+  };
+
+  try {
+    await runtimeHooks.onProviderMutation(event);
+  } catch (error) {
+    console.warn("[openwrt/providers] Failed to notify runtime hook", error);
+  }
+}
+
 export function createOpenWrtProviderAdapter(
   transport: OpenWrtProviderTransport,
+  runtimeHooks?: OpenWrtProviderRuntimeHooks,
 ): ProviderPlatformAdapter {
   return {
     async listProviderState(appId) {
       return loadProviderState(transport, appId);
     },
     async saveProvider(appId, draft, providerId) {
+      const previousState = runtimeHooks
+        ? await loadProviderState(transport, appId)
+        : null;
+
       await invokePhase2Upsert(transport, appId, draft, providerId);
+
+      if (previousState) {
+        await notifyProviderMutation(
+          transport,
+          runtimeHooks,
+          appId,
+          "save",
+          previousState,
+          providerId,
+        );
+      }
     },
     async activateProvider(appId, providerId) {
+      const previousState = runtimeHooks
+        ? await loadProviderState(transport, appId)
+        : null;
+
       await invokePhase2Activate(transport, appId, providerId);
+
+      if (previousState) {
+        await notifyProviderMutation(
+          transport,
+          runtimeHooks,
+          appId,
+          "activate",
+          previousState,
+          providerId,
+        );
+      }
     },
     async deleteProvider(appId, providerId) {
+      const previousState = runtimeHooks
+        ? await loadProviderState(transport, appId)
+        : null;
+
       await invokePhase2Delete(transport, appId, providerId);
+
+      if (previousState) {
+        await notifyProviderMutation(
+          transport,
+          runtimeHooks,
+          appId,
+          "delete",
+          previousState,
+          providerId,
+        );
+      }
     },
     async restartServiceIfNeeded() {
       const result = await transport.restartService();
@@ -352,17 +533,20 @@ export function createOpenWrtProviderAdapter(
         );
       }
     },
-    async getCapabilities() {
-      return DEFAULT_CAPABILITIES;
+    async getCapabilities(appId) {
+      const state = await loadProviderState(transport, appId);
+      return buildCapabilities(state);
     },
   };
 }
 
 export const __private__ = {
+  buildCapabilities,
   invokeRpcCandidates,
   isCompatibilityRpcFailure,
   isRpcSuccess,
   loadProviderState,
   parseActiveProviderResponse,
   rpcFailureMessage,
+  shouldRequireRestart,
 };
