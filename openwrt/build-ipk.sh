@@ -14,6 +14,7 @@ LUCI_MAKEFILE="$SCRIPT_DIR/luci-app-ccswitch/Makefile"
 DAEMON_SRC="$SCRIPT_DIR/proxy-daemon/files"
 LUCI_SRC="$SCRIPT_DIR/luci-app-ccswitch"
 OPENWRT_PROVIDER_UI_ASSET="$LUCI_SRC/htdocs/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js"
+PREPARE_PROVIDER_UI_BUNDLE="$SCRIPT_DIR/prepare-provider-ui-bundle.sh"
 
 read_make_var() {
 	local file="$1"
@@ -75,22 +76,8 @@ require_command() {
 }
 
 ensure_openwrt_provider_ui_asset() {
-	if [ -f "$OPENWRT_PROVIDER_UI_ASSET" ]; then
-		return
-	fi
-
-	if ! command -v pnpm >/dev/null 2>&1; then
-		die "missing OpenWrt provider UI bundle: $OPENWRT_PROVIDER_UI_ASSET
-Build it first with:
-  cd $PROJECT_DIR && pnpm build:openwrt-provider-ui"
-	fi
-
-	echo "Building OpenWrt shared provider UI bundle"
-	(
-		cd "$PROJECT_DIR"
-		pnpm build:openwrt-provider-ui
-	)
-
+	[ -x "$PREPARE_PROVIDER_UI_BUNDLE" ] || die "missing provider UI bundle helper: $PREPARE_PROVIDER_UI_BUNDLE"
+	"$PREPARE_PROVIDER_UI_BUNDLE" --output-dir "$(dirname "$OPENWRT_PROVIDER_UI_ASSET")"
 	[ -f "$OPENWRT_PROVIDER_UI_ASSET" ] || die "expected OpenWrt provider UI bundle was not produced: $OPENWRT_PROVIDER_UI_ASSET"
 }
 
