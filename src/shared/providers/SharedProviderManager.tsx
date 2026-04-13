@@ -3,6 +3,7 @@ import {
   useDeferredValue,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -767,6 +768,7 @@ export function SharedProviderManager({
   const queryClient = useQueryClient();
   const currentApp = selectedApp ?? internalApp;
   const currentAppRef = useRef(currentApp);
+  const previousAppRef = useRef(currentApp);
   const fieldIdPrefix = useId();
   const editorFormId = `${fieldIdPrefix}-provider-editor-form`;
   const presets = getSharedProviderPresets(currentApp);
@@ -930,7 +932,12 @@ export function SharedProviderManager({
     : `Create a saved provider for ${APP_META[currentApp].label}. Presets only update this local draft until you save.`;
   const isRefreshing = stateQuery.isFetching || capabilitiesQuery.isFetching;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (previousAppRef.current === currentApp) {
+      return;
+    }
+
+    previousAppRef.current = currentApp;
     resetEditorForApp(currentApp);
     setPendingDelete(null);
     setNotice(null);
@@ -993,6 +1000,10 @@ export function SharedProviderManager({
     if (isMutating) {
       return;
     }
+
+    resetEditorForApp(appId);
+    setPendingDelete(null);
+    setNotice(null);
 
     if (selectedApp == null) {
       setInternalApp(appId);
