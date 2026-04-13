@@ -1,27 +1,14 @@
 import { act, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { emptySharedProviderView } from "@/shared/providers/domain";
 import {
-  emptySharedRuntimeAppView,
-  emptySharedRuntimeProvider,
   mountSharedRuntimeSurface,
   type RuntimeSurfacePlatformAdapter,
-  type SharedRuntimeState,
+  type SharedRuntimeStatusView,
 } from "@/shared/runtime";
 
-function createState(activeProviderName: string): SharedRuntimeState {
-  const claude = emptySharedRuntimeAppView("claude");
-  claude.providerCount = 1;
-  claude.proxyEnabled = true;
-  claude.activeProviderId = activeProviderName.toLowerCase().replace(/\s+/g, "-");
-  claude.activeProvider = {
-    ...emptySharedRuntimeProvider(),
-    configured: true,
-    providerId: claude.activeProviderId,
-    name: activeProviderName,
-    model: "claude-sonnet-4-5",
-    active: true,
-  };
-
+function createState(activeProviderName: string): SharedRuntimeStatusView {
+  const providerId = activeProviderName.toLowerCase().replace(/\s+/g, "-");
   return {
     service: {
       running: true,
@@ -32,23 +19,95 @@ function createState(activeProviderName: string): SharedRuntimeState {
       enableLogging: true,
       statusSource: "live-status",
       statusError: null,
+    },
+    runtime: {
+      running: true,
+      address: "127.0.0.1",
+      port: 15721,
       activeConnections: 1,
       totalRequests: 10,
       successRequests: 9,
       failedRequests: 1,
       successRate: 90,
       uptimeSeconds: 30,
+      currentProvider: activeProviderName,
+      currentProviderId: providerId,
+      lastRequestAt: null,
+      lastError: null,
       failoverCount: 1,
-      currentProviderName: activeProviderName,
-      currentProviderId: claude.activeProviderId,
+      activeTargets: [
+        {
+          appType: "claude",
+          providerName: activeProviderName,
+          providerId,
+        },
+      ],
     },
-    apps: [claude],
+    apps: [
+      {
+        app: "claude",
+        providerCount: 1,
+        proxyEnabled: true,
+        autoFailoverEnabled: false,
+        maxRetries: 1,
+        activeProviderId: providerId,
+        activeProvider: {
+          ...emptySharedProviderView("claude"),
+          configured: true,
+          providerId,
+          name: activeProviderName,
+          model: "claude-sonnet-4-5",
+          active: true,
+        },
+        activeProviderHealth: null,
+        usingLegacyDefault: false,
+        failoverQueueDepth: 0,
+        failoverQueue: [],
+        observedProviderCount: 0,
+        healthyProviderCount: 0,
+        unhealthyProviderCount: 0,
+      },
+      {
+        app: "codex",
+        providerCount: 0,
+        proxyEnabled: false,
+        autoFailoverEnabled: false,
+        maxRetries: 0,
+        activeProviderId: null,
+        activeProvider: emptySharedProviderView("codex"),
+        activeProviderHealth: null,
+        usingLegacyDefault: false,
+        failoverQueueDepth: 0,
+        failoverQueue: [],
+        observedProviderCount: 0,
+        healthyProviderCount: 0,
+        unhealthyProviderCount: 0,
+      },
+      {
+        app: "gemini",
+        providerCount: 0,
+        proxyEnabled: false,
+        autoFailoverEnabled: false,
+        maxRetries: 0,
+        activeProviderId: null,
+        activeProvider: emptySharedProviderView("gemini"),
+        activeProviderHealth: null,
+        usingLegacyDefault: false,
+        failoverQueueDepth: 0,
+        failoverQueue: [],
+        observedProviderCount: 0,
+        healthyProviderCount: 0,
+        unhealthyProviderCount: 0,
+      },
+    ],
   };
 }
 
-function createAdapter(state: SharedRuntimeState): RuntimeSurfacePlatformAdapter {
+function createAdapter(
+  state: SharedRuntimeStatusView,
+): RuntimeSurfacePlatformAdapter {
   return {
-    getRuntimeState: vi.fn().mockResolvedValue(state),
+    getRuntimeSurface: vi.fn().mockResolvedValue(state),
   };
 }
 
@@ -81,8 +140,8 @@ describe("mountSharedRuntimeSurface", () => {
       expect(within(container).getByText("Claude Router Failover")).toBeInTheDocument(),
     );
 
-    expect(initialAdapter.getRuntimeState).toHaveBeenCalled();
-    expect(updatedAdapter.getRuntimeState).toHaveBeenCalled();
+    expect(initialAdapter.getRuntimeSurface).toHaveBeenCalled();
+    expect(updatedAdapter.getRuntimeSurface).toHaveBeenCalled();
 
     await act(async () => {
       mounted.unmount();

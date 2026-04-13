@@ -1,140 +1,15 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { emptySharedProviderView } from "@/shared/providers/domain";
 import {
   createSharedRuntimeSurfaceQueryClient,
-  emptySharedRuntimeAppView,
-  emptySharedRuntimeHealth,
-  emptySharedRuntimeProvider,
-  type RuntimeSurfacePlatformAdapter,
   SharedRuntimeSurface,
-  type SharedRuntimeProviderHealth,
-  type SharedRuntimeState,
+  type RuntimeSurfacePlatformAdapter,
+  type SharedRuntimeStatusView,
 } from "@/shared/runtime";
 
-function createAdapter(state: SharedRuntimeState): RuntimeSurfacePlatformAdapter {
-  return {
-    getRuntimeState: vi.fn().mockResolvedValue(state),
-  };
-}
-
-function createHealth(
-  providerId: string,
-  partial: Partial<SharedRuntimeProviderHealth> = {},
-): SharedRuntimeProviderHealth {
-  return {
-    ...emptySharedRuntimeHealth(providerId),
-    providerId,
-    ...partial,
-  };
-}
-
-function createState(): SharedRuntimeState {
-  const claude = emptySharedRuntimeAppView("claude");
-  claude.providerCount = 3;
-  claude.proxyEnabled = true;
-  claude.autoFailoverEnabled = true;
-  claude.maxRetries = 4;
-  claude.activeProviderId = "claude-primary";
-  claude.activeProvider = {
-    ...emptySharedRuntimeProvider(),
-    configured: true,
-    providerId: "claude-primary",
-    name: "Claude Router Primary",
-    model: "claude-sonnet-4-5",
-    active: true,
-  };
-  claude.activeProviderHealth = createHealth("claude-primary", {
-    observed: true,
-    healthy: true,
-    lastSuccessAt: "2026-04-13T07:14:00Z",
-  });
-  claude.failoverQueueDepth = 2;
-  claude.failoverQueue = [
-    {
-      providerId: "claude-primary",
-      providerName: "Claude Router Primary",
-      sortIndex: 1,
-      active: true,
-      health: createHealth("claude-primary", {
-        observed: true,
-        healthy: true,
-      }),
-    },
-    {
-      providerId: "claude-backup",
-      providerName: "Claude Backup",
-      sortIndex: 2,
-      active: false,
-      health: createHealth("claude-backup", {
-        observed: true,
-        healthy: false,
-        consecutiveFailures: 2,
-        lastError: "upstream timeout",
-      }),
-    },
-  ];
-  claude.observedProviderCount = 2;
-  claude.healthyProviderCount = 1;
-  claude.unhealthyProviderCount = 1;
-
-  const codex = emptySharedRuntimeAppView("codex");
-  codex.providerCount = 1;
-  codex.proxyEnabled = true;
-  codex.autoFailoverEnabled = false;
-  codex.activeProviderId = "codex-primary";
-  codex.activeProvider = {
-    ...emptySharedRuntimeProvider(),
-    configured: true,
-    providerId: "codex-primary",
-    name: "Codex Router Primary",
-    model: "gpt-5.4",
-    active: true,
-  };
-  codex.activeProviderHealth = createHealth("codex-primary", {
-    observed: true,
-    healthy: true,
-  });
-  codex.failoverQueueDepth = 0;
-  codex.failoverQueue = [];
-  codex.observedProviderCount = 1;
-  codex.healthyProviderCount = 1;
-  codex.unhealthyProviderCount = 0;
-
-  const gemini = emptySharedRuntimeAppView("gemini");
-  gemini.providerCount = 2;
-  gemini.proxyEnabled = false;
-  gemini.autoFailoverEnabled = false;
-  gemini.activeProviderId = "gemini-router";
-  gemini.activeProvider = {
-    ...emptySharedRuntimeProvider(),
-    configured: true,
-    providerId: "gemini-router",
-    name: "Gemini Router",
-    model: "gemini-3.1-pro",
-    active: true,
-  };
-  gemini.activeProviderHealth = createHealth("gemini-router", {
-    observed: false,
-    healthy: true,
-  });
-  gemini.failoverQueueDepth = 1;
-  gemini.failoverQueue = [
-    {
-      providerId: "gemini-router",
-      providerName: "Gemini Router",
-      sortIndex: 1,
-      active: true,
-      health: createHealth("gemini-router", {
-        observed: false,
-        healthy: true,
-      }),
-    },
-  ];
-  gemini.observedProviderCount = 0;
-  gemini.healthyProviderCount = 0;
-  gemini.unhealthyProviderCount = 0;
-
+function createRuntimeSurfaceState(): SharedRuntimeStatusView {
   return {
     service: {
       running: false,
@@ -145,83 +20,221 @@ function createState(): SharedRuntimeState {
       enableLogging: true,
       statusSource: "config-fallback",
       statusError: "connection refused on 127.0.0.1:15721",
+    },
+    runtime: {
+      running: false,
+      address: "127.0.0.1",
+      port: 15721,
       activeConnections: 3,
       totalRequests: 21,
       successRequests: 18,
       failedRequests: 3,
       successRate: 85.7,
       uptimeSeconds: 42,
-      failoverCount: 2,
-      currentProviderName: "Claude Router Primary",
+      currentProvider: "Claude Router Primary",
       currentProviderId: "claude-primary",
+      lastRequestAt: null,
+      lastError: "upstream timeout",
+      failoverCount: 2,
+      activeTargets: [
+        {
+          appType: "claude",
+          providerName: "Claude Router Primary",
+          providerId: "claude-primary",
+        },
+      ],
     },
-    apps: [claude, codex, gemini],
+    apps: [
+      {
+        app: "claude",
+        providerCount: 3,
+        proxyEnabled: true,
+        autoFailoverEnabled: true,
+        maxRetries: 4,
+        activeProviderId: "claude-primary",
+        activeProvider: {
+          ...emptySharedProviderView("claude"),
+          configured: true,
+          providerId: "claude-primary",
+          name: "Claude Router Primary",
+          model: "claude-sonnet-4-5",
+          active: true,
+        },
+        activeProviderHealth: {
+          providerId: "claude-primary",
+          observed: true,
+          healthy: true,
+          consecutiveFailures: 0,
+          lastSuccessAt: "2026-04-13T07:14:00Z",
+          lastFailureAt: null,
+          lastError: null,
+          updatedAt: "2026-04-13T07:14:00Z",
+        },
+        usingLegacyDefault: false,
+        failoverQueueDepth: 2,
+        failoverQueue: [
+          {
+            providerId: "claude-primary",
+            providerName: "Claude Router Primary",
+            sortIndex: 0,
+            active: true,
+            health: {
+              providerId: "claude-primary",
+              observed: true,
+              healthy: true,
+              consecutiveFailures: 0,
+              lastSuccessAt: "2026-04-13T07:14:00Z",
+              lastFailureAt: null,
+              lastError: null,
+              updatedAt: "2026-04-13T07:14:00Z",
+            },
+          },
+          {
+            providerId: "claude-backup",
+            providerName: "Claude Backup",
+            sortIndex: 1,
+            active: false,
+            health: {
+              providerId: "claude-backup",
+              observed: true,
+              healthy: false,
+              consecutiveFailures: 2,
+              lastSuccessAt: null,
+              lastFailureAt: "2026-04-13T07:16:00Z",
+              lastError: "upstream timeout",
+              updatedAt: "2026-04-13T07:16:00Z",
+            },
+          },
+        ],
+        observedProviderCount: 2,
+        healthyProviderCount: 1,
+        unhealthyProviderCount: 1,
+      },
+      {
+        app: "codex",
+        providerCount: 1,
+        proxyEnabled: true,
+        autoFailoverEnabled: false,
+        maxRetries: 2,
+        activeProviderId: "codex-primary",
+        activeProvider: {
+          ...emptySharedProviderView("codex"),
+          configured: true,
+          providerId: "codex-primary",
+          name: "Codex Router Primary",
+          model: "gpt-5.4",
+          active: true,
+        },
+        activeProviderHealth: {
+          providerId: "codex-primary",
+          observed: true,
+          healthy: true,
+          consecutiveFailures: 0,
+          lastSuccessAt: "2026-04-13T07:12:00Z",
+          lastFailureAt: null,
+          lastError: null,
+          updatedAt: "2026-04-13T07:12:00Z",
+        },
+        usingLegacyDefault: false,
+        failoverQueueDepth: 0,
+        failoverQueue: [],
+        observedProviderCount: 1,
+        healthyProviderCount: 1,
+        unhealthyProviderCount: 0,
+      },
+      {
+        app: "gemini",
+        providerCount: 2,
+        proxyEnabled: false,
+        autoFailoverEnabled: false,
+        maxRetries: 1,
+        activeProviderId: "gemini-router",
+        activeProvider: {
+          ...emptySharedProviderView("gemini"),
+          configured: true,
+          providerId: "gemini-router",
+          name: "Gemini Router",
+          model: "gemini-3.1-pro",
+          active: true,
+        },
+        activeProviderHealth: {
+          providerId: "gemini-router",
+          observed: false,
+          healthy: true,
+          consecutiveFailures: 0,
+          lastSuccessAt: null,
+          lastFailureAt: null,
+          lastError: null,
+          updatedAt: null,
+        },
+        usingLegacyDefault: false,
+        failoverQueueDepth: 1,
+        failoverQueue: [
+          {
+            providerId: "gemini-router",
+            providerName: "Gemini Router",
+            sortIndex: 0,
+            active: true,
+            health: {
+              providerId: "gemini-router",
+              observed: false,
+              healthy: true,
+              consecutiveFailures: 0,
+              lastSuccessAt: null,
+              lastFailureAt: null,
+              lastError: null,
+              updatedAt: null,
+            },
+          },
+        ],
+        observedProviderCount: 0,
+        healthyProviderCount: 0,
+        unhealthyProviderCount: 0,
+      },
+    ],
   };
 }
 
-function renderSurface(state: SharedRuntimeState) {
+function renderSurface(adapter: RuntimeSurfacePlatformAdapter) {
   const queryClient = createSharedRuntimeSurfaceQueryClient();
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <SharedRuntimeSurface adapter={createAdapter(state)} />
+      <SharedRuntimeSurface adapter={adapter} />
     </QueryClientProvider>,
   );
 }
 
 describe("SharedRuntimeSurface", () => {
-  it("renders fallback service state, queue ordering, and neutral unknown health", async () => {
-    renderSurface(createState());
+  it("composes the service summary and app cards using the shared runtime primitives", async () => {
+    const adapter = {
+      getRuntimeSurface: vi.fn().mockResolvedValue(createRuntimeSurfaceState()),
+    } satisfies RuntimeSurfacePlatformAdapter;
+
+    renderSurface(adapter);
 
     await waitFor(() =>
       expect(
-        screen.getByRole("heading", { name: "Runtime status" }),
+        screen.getByRole("heading", { name: "Runtime Surface" }),
       ).toBeInTheDocument(),
     );
 
-    expect(screen.getByText("Config fallback")).toBeInTheDocument();
-    expect(screen.getByText("Daemon unreachable")).toBeInTheDocument();
-    expect(screen.getByText("connection refused on 127.0.0.1:15721")).toBeInTheDocument();
-    expect(screen.getByText("127.0.0.1:15721")).toBeInTheDocument();
-    expect(screen.getByText("85.7%")).toBeInTheDocument();
-    expect(screen.getByText("42s")).toBeInTheDocument();
-
-    const claudeCard = screen.getByRole("article", {
-      name: "Claude runtime card",
-    });
     expect(
-      within(claudeCard).getAllByText("Claude Router Primary").length,
-    ).toBeGreaterThan(0);
+      screen.getByRole("heading", { name: "Service Summary" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Runtime detail: connection refused on 127.0.0.1:15721")).toBeInTheDocument();
+    expect(screen.getAllByText("Claude Router Primary").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Codex Router Primary").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Gemini Router").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Read only").length).toBe(3);
     expect(
-      within(claudeCard).getAllByText("Provider ID: claude-primary").length,
-    ).toBeGreaterThan(0);
-    expect(within(claudeCard).getByText("Queue depth: 2")).toBeInTheDocument();
-    expect(within(claudeCard).getAllByText("Healthy").length).toBeGreaterThan(0);
-    expect(within(claudeCard).getAllByText("Unhealthy").length).toBeGreaterThan(0);
-    expect(within(claudeCard).getByText("P1")).toBeInTheDocument();
-    expect(within(claudeCard).getByText("P2")).toBeInTheDocument();
-    expect(within(claudeCard).getByText("Active provider")).toBeInTheDocument();
-    expect(within(claudeCard).getByText("upstream timeout")).toBeInTheDocument();
-
-    const geminiCard = screen.getByRole("article", {
-      name: "Gemini runtime card",
-    });
-    expect(within(geminiCard).getAllByText("Gemini Router").length).toBeGreaterThan(0);
-    expect(
-      within(geminiCard).getAllByText(
-        "No health observation has been recorded yet.",
-      ).length,
-    ).toBeGreaterThan(0);
-    expect(within(geminiCard).getAllByText("Unknown").length).toBeGreaterThan(0);
-
-    expect(
-      screen.queryByRole("button", { name: /activate/i }),
+      screen.queryByRole("button", { name: /edit|activate|delete/i }),
     ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /edit/i }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /delete/i }),
-    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh status" }));
+
+    await waitFor(() =>
+      expect(adapter.getRuntimeSurface).toHaveBeenCalledTimes(2),
+    );
   });
 });
