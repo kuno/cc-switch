@@ -1,4 +1,4 @@
-import "@/index.css";
+import "./openwrt-provider-ui.css";
 import {
   createOpenWrtProviderAdapter,
   type OpenWrtProviderMutationEvent,
@@ -34,6 +34,15 @@ export interface OpenWrtSharedProviderShellApi {
   getServiceStatus(): {
     isRunning: boolean;
   };
+  getRestartState?(): {
+    pending: boolean;
+    inFlight: boolean;
+  };
+  setRestartState?(state: {
+    pending?: boolean;
+    inFlight?: boolean;
+  }): void;
+  subscribe?(listener: () => void): () => void;
   refreshServiceStatus(): Promise<{
     isRunning: boolean;
   }>;
@@ -91,12 +100,17 @@ type OpenWrtProviderManagerMountState = {
   selectedApp: SharedProviderAppId;
   serviceRunning: boolean;
   restartPending: boolean;
+  restartInFlight: boolean;
   disposed: boolean;
 };
 
 type OpenWrtShellMutationState = Pick<
   OpenWrtProviderManagerMountState,
-  "disposed" | "restartPending" | "selectedApp" | "serviceRunning"
+  | "disposed"
+  | "restartInFlight"
+  | "restartPending"
+  | "selectedApp"
+  | "serviceRunning"
 >;
 
 const APP_LABELS: Record<SharedProviderAppId, string> = {
@@ -104,11 +118,37 @@ const APP_LABELS: Record<SharedProviderAppId, string> = {
   codex: "Codex",
   gemini: "Gemini",
 };
+const OPENWRT_SHARED_PROVIDER_UI_THEME_CLASS =
+  "ccswitch-openwrt-provider-ui-theme";
+let activeThemeLeaseCount = 0;
 
 function clearTarget(target: HTMLElement) {
   while (target.firstChild) {
     target.removeChild(target.firstChild);
   }
+}
+
+function acquireThemeLease(): () => void {
+  if (typeof document === "undefined") {
+    return () => {};
+  }
+
+  if (activeThemeLeaseCount === 0) {
+    document.body.classList.add(OPENWRT_SHARED_PROVIDER_UI_THEME_CLASS);
+  }
+
+  activeThemeLeaseCount += 1;
+
+  return () => {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    activeThemeLeaseCount = Math.max(0, activeThemeLeaseCount - 1);
+    if (activeThemeLeaseCount === 0) {
+      document.body.classList.remove(OPENWRT_SHARED_PROVIDER_UI_THEME_CLASS);
+    }
+  };
 }
 
 function getServiceStatusLabel(isRunning: boolean): string {
@@ -186,7 +226,22 @@ function buildSharedProviderShellState(
     serviceName: "cc-switch service",
     serviceStatusLabel: getServiceStatusLabel(state.serviceRunning),
     restartPending: state.restartPending,
+    restartInFlight: state.restartInFlight,
   };
+}
+
+function syncStateFromShell(
+  state: OpenWrtShellMutationState,
+  shell: OpenWrtSharedProviderShellApi,
+) {
+  state.selectedApp = shell.getSelectedApp();
+  state.serviceRunning = shell.getServiceStatus().isRunning;
+
+  const restartState = shell.getRestartState?.();
+  if (restartState) {
+    state.restartPending = restartState.pending;
+    state.restartInFlight = restartState.inFlight;
+  }
 }
 
 function handleProviderMutationEvent(
@@ -199,9 +254,14 @@ function handleProviderMutationEvent(
     return;
   }
 
+  shell.setRestartState?.({
+    pending: event.restartRequired,
+    inFlight: false,
+  });
   state.selectedApp = shell.getSelectedApp();
   state.serviceRunning = event.serviceRunning;
   state.restartPending = event.restartRequired;
+  state.restartInFlight = false;
   shell.showMessage("success", buildMutationShellMessage(event));
   rerender();
 }
@@ -213,9 +273,12 @@ function mountOpenWrtSharedProviderManager(
     mounted: null,
     selectedApp: options.shell.getSelectedApp(),
     serviceRunning: options.shell.getServiceStatus().isRunning,
-    restartPending: false,
+    restartPending: options.shell.getRestartState?.().pending ?? false,
+    restartInFlight: options.shell.getRestartState?.().inFlight ?? false,
     disposed: false,
   };
+  const releaseThemeLease = acquireThemeLease();
+  let unsubscribe: (() => void) | undefined;
 
   const adapter = createOpenWrtProviderAdapter(options.transport, {
     getServiceRunning() {
@@ -228,6 +291,8 @@ function mountOpenWrtSharedProviderManager(
   });
 
   function createManagerProps(): SharedProviderManagerProps {
+    syncStateFromShell(state, options.shell);
+
     return {
       adapter,
       selectedApp: state.selectedApp,
@@ -236,12 +301,8 @@ function mountOpenWrtSharedProviderManager(
           return;
         }
 
-        const nextSelectedApp = options.shell.setSelectedApp(appId);
-        if (nextSelectedApp === state.selectedApp) {
-          return;
-        }
-
-        state.selectedApp = nextSelectedApp;
+        options.shell.setSelectedApp(appId);
+        syncStateFromShell(state, options.shell);
         rerender();
       },
       shellState: buildSharedProviderShellState(state),
@@ -261,12 +322,22 @@ function mountOpenWrtSharedProviderManager(
     options.target,
     createManagerProps(),
   );
+  unsubscribe = options.shell.subscribe?.(() => {
+    if (state.disposed) {
+      return;
+    }
+
+    syncStateFromShell(state, options.shell);
+    rerender();
+  });
 
   return {
     unmount() {
       state.disposed = true;
+      unsubscribe?.();
       state.mounted?.unmount();
       clearTarget(options.target);
+      releaseThemeLease();
       options.shell.clearMessage();
     },
   };
@@ -276,6 +347,7 @@ function mountOpenWrtSharedRuntimeSurface(
   options: OpenWrtSharedRuntimeMountOptions,
 ) {
   let mounted: MountedSharedRuntimeSurface | null = null;
+  const releaseThemeLease = acquireThemeLease();
 
   clearTarget(options.target);
   mounted = mountSharedRuntimeSurface(options.target, {
@@ -287,6 +359,7 @@ function mountOpenWrtSharedRuntimeSurface(
       mounted?.unmount();
       mounted = null;
       clearTarget(options.target);
+      releaseThemeLease();
     },
   };
 }
@@ -307,11 +380,13 @@ const api: OpenWrtSharedProviderBundleApi = {
 export const openWrtSharedProviderBundleApi = api;
 
 export const __private__ = {
+  acquireThemeLease,
   buildMutationShellMessage,
   buildSharedProviderShellState,
   getProviderNameFromMutation,
   handleProviderMutationEvent,
   mountOpenWrtSharedRuntimeSurface,
+  syncStateFromShell,
 };
 
 (globalThis as OpenWrtSharedProviderGlobal)[

@@ -316,6 +316,8 @@ describe("OpenWrt provider UI bundle", () => {
       runtimeSurface: true,
     });
     expect(typeof api?.mountRuntimeSurface).toBe("function");
+    expect(document.body.classList.contains("ccswitch-openwrt-provider-ui-theme"))
+      .toBe(false);
 
     let handle:
       | void
@@ -334,6 +336,8 @@ describe("OpenWrt provider UI bundle", () => {
     await waitFor(() =>
       expect(within(target).getByText("Runtime Surface")).toBeInTheDocument(),
     );
+    expect(document.body.classList.contains("ccswitch-openwrt-provider-ui-theme"))
+      .toBe(true);
 
     expect(target).toHaveTextContent("Service Summary");
     expect(target).toHaveTextContent("Config fallback");
@@ -371,6 +375,8 @@ describe("OpenWrt provider UI bundle", () => {
       }
     });
 
+    expect(document.body.classList.contains("ccswitch-openwrt-provider-ui-theme"))
+      .toBe(false);
     expect(target.textContent).toBe("");
     target.remove();
   });
@@ -478,16 +484,26 @@ describe("OpenWrt provider UI bundle", () => {
     const api = globalScope[OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY];
     const target = document.createElement("div");
     document.body.appendChild(target);
+    const unsubscribe = vi.fn();
+    let selectedApp: SharedProviderAppId = "claude";
     const shell = {
       clearMessage: vi.fn(),
-      getSelectedApp: vi.fn().mockReturnValue("claude"),
+      getSelectedApp: vi.fn().mockImplementation(() => selectedApp),
+      getRestartState: vi
+        .fn()
+        .mockReturnValue({ pending: false, inFlight: false }),
       getServiceStatus: vi.fn().mockReturnValue({ isRunning: false }),
       refreshServiceStatus: vi.fn().mockResolvedValue({ isRunning: false }),
       restartService: vi.fn().mockResolvedValue({ isRunning: false }),
       setSelectedApp: vi
         .fn()
-        .mockImplementation((appId: "claude" | "codex" | "gemini") => appId),
+        .mockImplementation((appId: "claude" | "codex" | "gemini") => {
+          selectedApp = appId;
+          return selectedApp;
+        }),
+      setRestartState: vi.fn(),
       showMessage: vi.fn(),
+      subscribe: vi.fn().mockReturnValue(unsubscribe),
     };
     const transport = createTransport({
       claude: createProviderState("claude", [
@@ -626,6 +642,9 @@ describe("OpenWrt provider UI bundle", () => {
     );
     expect(target.textContent).not.toContain("Configure Provider");
     expect(shell.showMessage).not.toHaveBeenCalled();
+    expect(shell.subscribe).toHaveBeenCalledTimes(1);
+    expect(document.body.classList.contains("ccswitch-openwrt-provider-ui-theme"))
+      .toBe(true);
     expect(transport.listProviders).toHaveBeenCalledWith("claude");
     expect(transport.listSavedProviders).toHaveBeenCalledWith("claude");
     expect(transport.getActiveProvider).toHaveBeenCalledWith("claude");
@@ -672,6 +691,9 @@ describe("OpenWrt provider UI bundle", () => {
     });
 
     expect(shell.clearMessage).toHaveBeenCalledTimes(1);
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+    expect(document.body.classList.contains("ccswitch-openwrt-provider-ui-theme"))
+      .toBe(false);
     expect(target.textContent).toBe("");
     target.remove();
   });
@@ -683,14 +705,20 @@ describe("OpenWrt provider UI bundle", () => {
       getSelectedApp: vi
         .fn<() => SharedProviderAppId>()
         .mockReturnValue("gemini"),
+      getRestartState: vi.fn().mockReturnValue({
+        pending: false,
+        inFlight: true,
+      }),
       getServiceStatus: vi.fn().mockReturnValue({ isRunning: false }),
       refreshServiceStatus: vi.fn().mockResolvedValue({ isRunning: false }),
       restartService: vi.fn().mockResolvedValue({ isRunning: false }),
       setSelectedApp: vi.fn(),
+      setRestartState: vi.fn(),
       showMessage: vi.fn(),
     };
     const state = {
       disposed: false,
+      restartInFlight: true,
       restartPending: false,
       selectedApp: "claude" as SharedProviderAppId,
       serviceRunning: false,
@@ -719,6 +747,11 @@ describe("OpenWrt provider UI bundle", () => {
     expect(state.selectedApp).toBe("gemini");
     expect(state.serviceRunning).toBe(true);
     expect(state.restartPending).toBe(true);
+    expect(state.restartInFlight).toBe(false);
+    expect(shell.setRestartState).toHaveBeenLastCalledWith({
+      pending: true,
+      inFlight: false,
+    });
     expect(shell.showMessage).toHaveBeenLastCalledWith(
       "success",
       "Saved Provider was saved. Restart the service to apply provider changes.",
@@ -746,6 +779,11 @@ describe("OpenWrt provider UI bundle", () => {
 
     expect(state.serviceRunning).toBe(false);
     expect(state.restartPending).toBe(false);
+    expect(state.restartInFlight).toBe(false);
+    expect(shell.setRestartState).toHaveBeenLastCalledWith({
+      pending: false,
+      inFlight: false,
+    });
     expect(shell.showMessage).toHaveBeenLastCalledWith(
       "success",
       "Active Provider was activated. The service is stopped, so no restart is needed right now.",
@@ -767,6 +805,11 @@ describe("OpenWrt provider UI bundle", () => {
 
     expect(state.serviceRunning).toBe(true);
     expect(state.restartPending).toBe(true);
+    expect(state.restartInFlight).toBe(false);
+    expect(shell.setRestartState).toHaveBeenLastCalledWith({
+      pending: true,
+      inFlight: false,
+    });
     expect(shell.showMessage).toHaveBeenLastCalledWith(
       "success",
       "provider-delete was deleted. Restart the service to apply provider changes.",
@@ -829,8 +872,12 @@ describe("OpenWrt provider UI bundle", () => {
     expect(stagedBundleSource).toContain("Secret stored");
     expect(stagedBundleSource).toContain("Provider ID");
     expect(stagedBundleSource).toContain("cc-switch service");
-    expect(stagedStylesheetSource).toContain(":root");
+    expect(stagedStylesheetSource).toContain(
+      "body.ccswitch-openwrt-provider-ui-theme",
+    );
     expect(stagedStylesheetSource).toContain(".bg-background");
+    expect(stagedStylesheetSource).not.toContain("color-scheme:light");
+    expect(stagedStylesheetSource).not.toContain("scrollbar-width:none");
     expect(stagedBundleSource).not.toContain("process.env.NODE_ENV");
     expect(stagedBundleSource).not.toContain("Shared provider bundle loaded.");
     expect(stagedBundleSource).not.toContain(
