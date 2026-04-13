@@ -1,8 +1,13 @@
+import { providerPresets as claudeProviderPresets } from "@/config/claudeProviderPresets";
+import { codexProviderPresets } from "@/config/codexProviderPresets";
+import { geminiProviderPresets } from "@/config/geminiProviderPresets";
 import type {
   SharedProviderAppId,
   SharedProviderPreset,
+  SharedProviderPresetCategoryId,
   SharedProviderTokenField,
 } from "@/shared/providers/domain/types";
+import type { ProviderCategory } from "@/types";
 
 type OpenWrtPresetDefinition = {
   id: string;
@@ -13,6 +18,16 @@ type OpenWrtPresetDefinition = {
   description?: string;
 };
 
+type SourcePresetLike = {
+  name: string;
+  category?: ProviderCategory;
+  icon?: string;
+  iconColor?: string;
+  theme?: {
+    backgroundColor?: string;
+  };
+};
+
 const DEFAULT_TOKEN_FIELDS: Record<
   SharedProviderAppId,
   SharedProviderTokenField
@@ -20,6 +35,12 @@ const DEFAULT_TOKEN_FIELDS: Record<
   claude: "ANTHROPIC_AUTH_TOKEN",
   codex: "OPENAI_API_KEY",
   gemini: "GEMINI_API_KEY",
+};
+
+const SOURCE_PRESETS: Record<SharedProviderAppId, SourcePresetLike[]> = {
+  claude: claudeProviderPresets,
+  codex: codexProviderPresets,
+  gemini: geminiProviderPresets,
 };
 
 const RAW_OPENWRT_PROVIDER_PRESETS: Record<
@@ -390,10 +411,40 @@ const RAW_OPENWRT_PROVIDER_PRESETS: Record<
   ],
 };
 
+function resolveSharedCategory(
+  definition: OpenWrtPresetDefinition,
+  sourcePreset?: SourcePresetLike,
+): SharedProviderPresetCategoryId {
+  const category = sourcePreset?.category;
+
+  if (
+    category === "official" ||
+    category === "cn_official" ||
+    category === "cloud_provider" ||
+    category === "aggregator" ||
+    category === "third_party"
+  ) {
+    return category;
+  }
+
+  return definition.id.includes("official") ? "official" : "third_party";
+}
+
+function findSourcePreset(
+  appId: SharedProviderAppId,
+  definition: OpenWrtPresetDefinition,
+): SourcePresetLike | undefined {
+  return SOURCE_PRESETS[appId].find(
+    (preset) => preset.name === definition.label,
+  );
+}
+
 function buildOpenWrtPreset(
   appId: SharedProviderAppId,
   definition: OpenWrtPresetDefinition,
 ): SharedProviderPreset {
+  const sourcePreset = findSourcePreset(appId, definition);
+
   return {
     id: definition.id,
     appId,
@@ -404,6 +455,10 @@ function buildOpenWrtPreset(
     model: definition.model ?? "",
     description: definition.description ?? "",
     sourcePresetName: definition.label,
+    category: resolveSharedCategory(definition, sourcePreset),
+    icon: sourcePreset?.icon,
+    iconColor: sourcePreset?.iconColor,
+    accentColor: sourcePreset?.theme?.backgroundColor,
     supportedOn: {
       desktop: true,
       openwrt: true,
