@@ -220,6 +220,40 @@ describe("OpenWrt provider adapter", () => {
     expect(upsertActiveProvider).toHaveBeenCalledOnce();
   });
 
+  it("reports the full capability surface when phase 2 provider RPCs are available", async () => {
+    const adapter = createOpenWrtProviderAdapter(
+      createTransport({
+        listProviders: vi.fn().mockResolvedValue(
+          createPhase2ListResponse("provider-b", {
+            "provider-a": {
+              provider_id: "provider-a",
+              name: "Alpha",
+              base_url: "https://alpha.example.com",
+            },
+            "provider-b": {
+              provider_id: "provider-b",
+              name: "Beta",
+              base_url: "https://beta.example.com",
+            },
+          }),
+        ),
+        getActiveProvider: vi
+          .fn()
+          .mockResolvedValue(createActiveProviderResponse("provider-b", "codex")),
+      }),
+    );
+
+    await expect(adapter.getCapabilities("codex")).resolves.toEqual({
+      canAdd: true,
+      canEdit: true,
+      canDelete: true,
+      canActivate: true,
+      supportsPresets: true,
+      supportsBlankSecretPreserve: true,
+      requiresServiceRestart: true,
+    });
+  });
+
   it("surfaces non-compatibility save failures instead of hiding them behind the phase 1 fallback", async () => {
     const upsertProvider = vi
       .fn()
