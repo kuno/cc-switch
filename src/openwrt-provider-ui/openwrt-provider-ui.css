@@ -2,44 +2,59 @@
 @tailwind utilities;
 
 body.ccswitch-openwrt-provider-ui-theme {
-  --background: 0 0% 100%;
-  --foreground: 240 10% 3.9%;
+  --background: 210 33% 98%;
+  --foreground: 222 47% 11%;
   --card: 0 0% 100%;
-  --card-foreground: 240 10% 3.9%;
+  --card-foreground: 222 47% 11%;
   --popover: 0 0% 100%;
-  --popover-foreground: 240 10% 3.9%;
-  --primary: 210 100% 56%;
+  --popover-foreground: 222 47% 11%;
+  --primary: 217 91% 60%;
   --primary-foreground: 0 0% 100%;
-  --secondary: 240 4.8% 95.9%;
-  --secondary-foreground: 240 5.9% 10%;
-  --muted: 240 4.8% 95.9%;
-  --muted-foreground: 240 3.8% 46.1%;
-  --accent: 240 4.8% 95.9%;
-  --accent-foreground: 240 5.9% 10%;
-  --destructive: 0 84.2% 60.2%;
+  --secondary: 210 32% 95%;
+  --secondary-foreground: 222 35% 16%;
+  --muted: 210 30% 95%;
+  --muted-foreground: 217 19% 42%;
+  --accent: 212 38% 95%;
+  --accent-foreground: 222 35% 16%;
+  --destructive: 0 72% 51%;
   --destructive-foreground: 0 0% 98%;
-  --border: 240 5.9% 90%;
-  --input: 240 5.9% 90%;
-  --ring: 210 100% 56%;
+  --border: 215 28% 84%;
+  --input: 215 28% 84%;
+  --ring: 217 91% 60%;
   --radius: 0.5rem;
   --ccswitch-page-bg:
-    radial-gradient(circle at top left, hsl(210 100% 98%), transparent 32%),
-    radial-gradient(circle at top right, hsl(212 100% 96%), transparent 36%),
+    radial-gradient(circle at top left, hsl(208 100% 98%), transparent 32%),
+    radial-gradient(circle at top right, hsl(214 100% 96%), transparent 36%),
     linear-gradient(
       180deg,
-      hsl(210 33% 99%),
-      hsl(210 25% 97%) 54%,
-      hsl(210 22% 96%)
+      hsl(210 38% 99%),
+      hsl(210 30% 97%) 54%,
+      hsl(210 24% 95%)
     );
-  --ccswitch-page-surface: hsl(0 0% 100% / 0.9);
+  --ccswitch-page-surface: hsl(213 30% 97% / 0.86);
   --ccswitch-page-surface-strong: hsl(0 0% 100% / 0.96);
-  --ccswitch-page-surface-muted: hsl(210 40% 98% / 0.84);
-  --ccswitch-page-border: hsl(214 24% 86% / 0.9);
-  --ccswitch-page-border-strong: hsl(214 29% 78% / 0.96);
+  --ccswitch-page-surface-muted: hsl(210 36% 95% / 0.9);
+  --ccswitch-page-border: hsl(215 28% 84% / 0.68);
+  --ccswitch-page-border-strong: hsl(214 24% 74% / 0.82);
+  --ccswitch-page-divider: hsl(215 26% 88% / 0.86);
   --ccswitch-page-shadow:
-    0 18px 42px hsl(218 38% 20% / 0.08), 0 1px 0 hsl(0 0% 100% / 0.8);
+    0 20px 48px hsl(222 44% 14% / 0.08), 0 1px 0 hsl(0 0% 100% / 0.84);
+  --ccswitch-page-shadow-soft:
+    0 16px 34px hsl(220 34% 18% / 0.06), 0 1px 0 hsl(0 0% 100% / 0.78);
   --ccswitch-page-shadow-strong:
-    0 28px 72px hsl(220 40% 14% / 0.16), 0 1px 0 hsl(0 0% 100% / 0.82);
+    0 32px 92px hsl(222 44% 14% / 0.16), 0 1px 0 hsl(0 0% 100% / 0.82);
+  --ccswitch-page-emphasis: hsl(217 91% 60%);
+  --ccswitch-page-emphasis-soft: hsl(217 91% 60% / 0.12);
+  --ccswitch-page-chip-bg: hsl(210 29% 96% / 0.92);
+  --ccswitch-page-banner-success-bg: hsl(142 72% 97% / 0.98);
+  --ccswitch-page-banner-success-border: hsl(142 60% 74% / 0.72);
+  --ccswitch-page-banner-success-text: hsl(142 71% 24%);
+  --ccswitch-page-banner-warning-bg: hsl(42 100% 96% / 0.98);
+  --ccswitch-page-banner-warning-border: hsl(34 89% 72% / 0.76);
+  --ccswitch-page-banner-warning-text: hsl(25 95% 30%);
+  --ccswitch-page-banner-error-bg: hsl(0 86% 97% / 0.98);
+  --ccswitch-page-banner-error-border: hsl(0 84% 81% / 0.78);
+  --ccswitch-page-banner-error-text: hsl(0 74% 35%);
   --ccswitch-page-radius-xl: 1.75rem;
   --ccswitch-page-radius-lg: 1.3rem;
   --ccswitch-page-radius-md: 1rem;
@@ -53,43 +68,58 @@ body.ccswitch-openwrt-provider-ui-theme {
 
 html.dark body.ccswitch-openwrt-provider-ui-theme,
 body.ccswitch-openwrt-provider-ui-theme.dark {
-  --background: 240 5% 12%;
-  --foreground: 0 0% 98%;
-  --card: 240 5% 16%;
-  --card-foreground: 0 0% 98%;
-  --popover: 240 5% 16%;
-  --popover-foreground: 0 0% 98%;
-  --primary: 210 100% 54%;
+  --background: 222 30% 10%;
+  --foreground: 210 40% 96%;
+  --card: 223 27% 14%;
+  --card-foreground: 210 40% 96%;
+  --popover: 223 27% 14%;
+  --popover-foreground: 210 40% 96%;
+  --primary: 207 100% 72%;
   --primary-foreground: 0 0% 100%;
-  --secondary: 240 5% 18%;
-  --secondary-foreground: 0 0% 98%;
-  --muted: 240 5% 18%;
-  --muted-foreground: 240 5% 64.9%;
-  --accent: 240 5% 18%;
-  --accent-foreground: 0 0% 98%;
-  --destructive: 0 62.8% 30.6%;
+  --secondary: 223 22% 20%;
+  --secondary-foreground: 210 40% 96%;
+  --muted: 223 22% 20%;
+  --muted-foreground: 217 16% 70%;
+  --accent: 223 22% 20%;
+  --accent-foreground: 210 40% 96%;
+  --destructive: 0 72% 58%;
   --destructive-foreground: 0 0% 98%;
-  --border: 240 5% 24%;
-  --input: 240 5% 24%;
-  --ring: 210 100% 54%;
+  --border: 220 19% 31%;
+  --input: 220 19% 31%;
+  --ring: 207 100% 72%;
   --ccswitch-page-bg:
     radial-gradient(circle at top left, hsl(214 52% 18%), transparent 30%),
-    radial-gradient(circle at top right, hsl(222 42% 18%), transparent 35%),
+    radial-gradient(circle at top right, hsl(221 46% 19%), transparent 35%),
     linear-gradient(
       180deg,
       hsl(224 28% 10%),
-      hsl(224 24% 12%) 55%,
-      hsl(224 22% 11%)
+      hsl(223 24% 12%) 55%,
+      hsl(222 24% 11%)
     );
-  --ccswitch-page-surface: hsl(224 22% 16% / 0.88);
-  --ccswitch-page-surface-strong: hsl(224 18% 18% / 0.96);
-  --ccswitch-page-surface-muted: hsl(224 20% 20% / 0.7);
-  --ccswitch-page-border: hsl(223 18% 30% / 0.92);
-  --ccswitch-page-border-strong: hsl(220 18% 38% / 0.96);
+  --ccswitch-page-surface: hsl(223 28% 16% / 0.88);
+  --ccswitch-page-surface-strong: hsl(224 24% 18% / 0.96);
+  --ccswitch-page-surface-muted: hsl(223 23% 20% / 0.84);
+  --ccswitch-page-border: hsl(220 19% 31% / 0.9);
+  --ccswitch-page-border-strong: hsl(217 18% 40% / 0.96);
+  --ccswitch-page-divider: hsl(220 18% 28% / 0.86);
   --ccswitch-page-shadow:
-    0 18px 44px hsl(220 50% 3% / 0.34), 0 1px 0 hsl(0 0% 100% / 0.03);
+    0 22px 52px hsl(220 50% 2% / 0.4), 0 1px 0 hsl(0 0% 100% / 0.04);
+  --ccswitch-page-shadow-soft:
+    0 18px 38px hsl(220 50% 2% / 0.26), 0 1px 0 hsl(0 0% 100% / 0.03);
   --ccswitch-page-shadow-strong:
-    0 30px 88px hsl(220 50% 3% / 0.52), 0 1px 0 hsl(0 0% 100% / 0.04);
+    0 34px 96px hsl(220 50% 2% / 0.58), 0 1px 0 hsl(0 0% 100% / 0.05);
+  --ccswitch-page-emphasis: hsl(207 100% 72%);
+  --ccswitch-page-emphasis-soft: hsl(207 100% 72% / 0.16);
+  --ccswitch-page-chip-bg: hsl(223 23% 20% / 0.92);
+  --ccswitch-page-banner-success-bg: hsl(145 42% 20% / 0.92);
+  --ccswitch-page-banner-success-border: hsl(145 46% 36% / 0.9);
+  --ccswitch-page-banner-success-text: hsl(142 72% 83%);
+  --ccswitch-page-banner-warning-bg: hsl(33 44% 20% / 0.92);
+  --ccswitch-page-banner-warning-border: hsl(33 58% 42% / 0.9);
+  --ccswitch-page-banner-warning-text: hsl(38 96% 79%);
+  --ccswitch-page-banner-error-bg: hsl(0 44% 21% / 0.92);
+  --ccswitch-page-banner-error-border: hsl(0 55% 42% / 0.9);
+  --ccswitch-page-banner-error-text: hsl(0 86% 86%);
 }
 
 body.ccswitch-openwrt-provider-ui-theme .cbi-map {
@@ -101,7 +131,7 @@ body.ccswitch-openwrt-provider-ui-theme .cbi-map {
 body.ccswitch-openwrt-provider-ui-theme .cbi-section {
   margin: 0 0 1rem;
   padding: clamp(1rem, 1rem + 0.5vw, 1.4rem);
-  border: 1px solid var(--ccswitch-page-border);
+  border: 1px solid var(--ccswitch-page-border-strong);
   border-radius: var(--ccswitch-page-radius-xl);
   background: linear-gradient(
     180deg,
@@ -151,7 +181,7 @@ body.ccswitch-openwrt-provider-ui-theme .cbi-value {
   grid-template-columns: minmax(10rem, 13.5rem) minmax(0, 1fr);
   gap: 0.6rem 1.25rem;
   padding: 0.9rem 0;
-  border-top: 1px solid hsl(var(--border) / 0.72);
+  border-top: 1px solid var(--ccswitch-page-divider);
 }
 
 body.ccswitch-openwrt-provider-ui-theme .cbi-value:first-of-type {
@@ -194,13 +224,17 @@ body.ccswitch-openwrt-provider-ui-theme textarea,
 body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-field {
   width: 100%;
   min-height: var(--ccswitch-page-density);
-  border: 1px solid hsl(var(--border));
+  border: 1px solid var(--ccswitch-page-border-strong);
   border-radius: var(--ccswitch-page-radius-md);
-  background: hsl(var(--background) / 0.96);
+  background: linear-gradient(
+    180deg,
+    hsl(var(--background) / 0.98),
+    hsl(var(--accent) / 0.82)
+  );
   color: hsl(var(--foreground));
   box-shadow:
-    inset 0 1px 0 hsl(0 0% 100% / 0.68),
-    0 1px 2px hsl(220 22% 12% / 0.05);
+    inset 0 1px 0 hsl(0 0% 100% / 0.34),
+    0 10px 20px -18px hsl(220 38% 12% / 0.28);
   transition:
     border-color 120ms ease,
     box-shadow 120ms ease,
@@ -217,10 +251,10 @@ body.ccswitch-openwrt-provider-ui-theme input[type="number"]:focus,
 body.ccswitch-openwrt-provider-ui-theme select:focus,
 body.ccswitch-openwrt-provider-ui-theme textarea:focus,
 body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-field:focus {
-  border-color: hsl(var(--primary) / 0.5);
+  border-color: var(--ccswitch-page-emphasis);
   box-shadow:
-    0 0 0 4px hsl(var(--ring) / 0.14),
-    0 8px 16px hsl(220 32% 18% / 0.08);
+    0 0 0 4px var(--ccswitch-page-emphasis-soft),
+    0 14px 28px -24px hsl(220 40% 12% / 0.45);
   outline: none;
 }
 
@@ -231,14 +265,18 @@ body.ccswitch-openwrt-provider-ui-theme .btn {
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  border: 1px solid hsl(var(--border));
+  border: 1px solid var(--ccswitch-page-border-strong);
   border-radius: 999px;
-  background: hsl(var(--background) / 0.95);
+  background: linear-gradient(
+    180deg,
+    hsl(var(--background) / 0.98),
+    hsl(var(--accent) / 0.84)
+  );
   color: hsl(var(--foreground));
   font-weight: 600;
   box-shadow:
-    inset 0 1px 0 hsl(0 0% 100% / 0.74),
-    0 10px 20px hsl(220 22% 16% / 0.06);
+    inset 0 1px 0 hsl(0 0% 100% / 0.42),
+    0 12px 24px -20px hsl(220 34% 14% / 0.32);
   transition:
     transform 120ms ease,
     border-color 120ms ease,
@@ -248,8 +286,12 @@ body.ccswitch-openwrt-provider-ui-theme .btn {
 
 body.ccswitch-openwrt-provider-ui-theme .cbi-button:hover,
 body.ccswitch-openwrt-provider-ui-theme .btn:hover {
-  border-color: hsl(var(--primary) / 0.32);
-  background: hsl(var(--accent));
+  border-color: hsl(var(--primary) / 0.36);
+  background: linear-gradient(
+    180deg,
+    hsl(var(--background) / 0.98),
+    var(--ccswitch-page-chip-bg)
+  );
   transform: translateY(-1px);
 }
 
@@ -261,7 +303,7 @@ body.ccswitch-openwrt-provider-ui-theme .btn:disabled {
 }
 
 body.ccswitch-openwrt-provider-ui-theme .cbi-button-action {
-  border-color: hsl(var(--primary) / 0.35);
+  border-color: hsl(var(--primary) / 0.42);
   background: linear-gradient(
     180deg,
     hsl(var(--primary) / 0.96),
@@ -269,7 +311,7 @@ body.ccswitch-openwrt-provider-ui-theme .cbi-button-action {
   );
   color: hsl(var(--primary-foreground));
   box-shadow:
-    0 16px 30px hsl(var(--primary) / 0.24),
+    0 18px 34px hsl(var(--primary) / 0.22),
     inset 0 1px 0 hsl(0 0% 100% / 0.22);
 }
 
@@ -342,7 +384,7 @@ body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-page-section--provider
 body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-surface-card,
 body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-card,
 body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-dialog-shell {
-  border-color: var(--ccswitch-page-border);
+  border-color: var(--ccswitch-page-border-strong);
   background: linear-gradient(
     180deg,
     var(--ccswitch-page-surface-strong),
@@ -357,14 +399,15 @@ body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-stat-card,
 body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-inline-note,
 body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-state-shell,
 body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-preset-chip {
-  border: 1px solid hsl(var(--border) / 0.78);
-  border-radius: var(--ccswitch-page-radius-lg);
+  border: 1px solid var(--ccswitch-page-border);
   background: linear-gradient(
     180deg,
-    hsl(var(--background) / 0.96),
+    hsl(var(--background) / 0.98),
     var(--ccswitch-page-surface-muted)
   );
-  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.72);
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.28),
+    var(--ccswitch-page-shadow-soft);
   border-radius: 1.1rem;
 }
 
@@ -373,7 +416,7 @@ body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-stat-card,
 body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-card {
   background: linear-gradient(
     180deg,
-    hsl(var(--background) / 0.98),
+    var(--ccswitch-page-surface-strong),
     var(--ccswitch-page-surface)
   );
 }
@@ -387,6 +430,9 @@ body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-group--muted {
 }
 
 body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-status-chip {
+  border-color: var(--ccswitch-page-border);
+  background: var(--ccswitch-page-chip-bg);
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.2);
   font-weight: 600;
   letter-spacing: 0.01em;
 }
@@ -419,35 +465,42 @@ body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-status-chip {
 
 body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-app-switch {
   min-height: 2.15rem;
-  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.58);
+  border-color: var(--ccswitch-page-border);
+  background: linear-gradient(
+    180deg,
+    hsl(var(--background) / 0.98),
+    var(--ccswitch-page-chip-bg)
+  );
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.24),
+    0 10px 18px -18px hsl(220 40% 12% / 0.3);
 }
 
 body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-shell-alert {
+  border-color: var(--ccswitch-page-border-strong);
+  background: linear-gradient(
+    180deg,
+    hsl(var(--background) / 0.98),
+    var(--ccswitch-page-surface-muted)
+  );
   border-radius: 1.2rem;
-  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.34);
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.18),
+    var(--ccswitch-page-shadow-soft);
 }
 
 body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-inline-note--warning,
 body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-state-shell--warning {
-  border-color: hsl(35 90% 56% / 0.34);
+  border-color: var(--ccswitch-page-banner-warning-border);
   background: linear-gradient(
     180deg,
-    hsl(42 100% 96%),
-    hsl(40 100% 97% / 0.86)
+    var(--ccswitch-page-banner-warning-bg),
+    var(--ccswitch-page-surface-strong)
   );
-}
-
-html.dark
-  body.ccswitch-openwrt-provider-ui-theme
-  .ccswitch-openwrt-inline-note--warning,
-body.ccswitch-openwrt-provider-ui-theme.dark
-  .ccswitch-openwrt-inline-note--warning,
-html.dark
-  body.ccswitch-openwrt-provider-ui-theme
-  .ccswitch-openwrt-state-shell--warning,
-body.ccswitch-openwrt-provider-ui-theme.dark
-  .ccswitch-openwrt-state-shell--warning {
-  background: linear-gradient(180deg, hsl(34 42% 18%), hsl(34 40% 16% / 0.9));
+  color: var(--ccswitch-page-banner-warning-text);
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.14),
+    var(--ccswitch-page-shadow-soft);
 }
 
 body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-overlay {
