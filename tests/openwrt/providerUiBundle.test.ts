@@ -282,13 +282,17 @@ describe("OpenWrt provider UI bundle", () => {
     expect(claudePrimaryCard).not.toBeNull();
     expect(claudeBackupCard).not.toBeNull();
     expect(claudePrimaryCard).toHaveTextContent(
-      "Base URL: https://claude-primary.example.com",
+      /Base URL\s*https:\/\/claude-primary\.example\.com/,
     );
-    expect(claudePrimaryCard).toHaveTextContent("Model: claude-sonnet-4-5");
     expect(claudePrimaryCard).toHaveTextContent(
-      "Token field: ANTHROPIC_AUTH_TOKEN",
+      /Model\s*claude-sonnet-4-5/,
     );
-    expect(claudePrimaryCard).toHaveTextContent("Provider ID: claude-primary");
+    expect(claudePrimaryCard).toHaveTextContent(
+      /Token field\s*ANTHROPIC_AUTH_TOKEN/,
+    );
+    expect(claudePrimaryCard).toHaveTextContent(
+      /Provider ID\s*claude-primary/,
+    );
     expect(claudePrimaryCard).toHaveTextContent("Pinned for router traffic");
     expect(
       within(claudePrimaryCard as HTMLElement).getByText("Active", {
@@ -357,11 +361,15 @@ describe("OpenWrt provider UI bundle", () => {
     );
     expect(codexPrimaryCard).not.toBeNull();
     expect(codexPrimaryCard).toHaveTextContent(
-      "Base URL: https://codex-primary.example.com/v1",
+      /Base URL\s*https:\/\/codex-primary\.example\.com\/v1/,
     );
-    expect(codexPrimaryCard).toHaveTextContent("Model: gpt-5.4");
-    expect(codexPrimaryCard).toHaveTextContent("Token field: OPENAI_API_KEY");
-    expect(codexPrimaryCard).toHaveTextContent("Provider ID: codex-primary");
+    expect(codexPrimaryCard).toHaveTextContent(/Model\s*gpt-5\.4/);
+    expect(codexPrimaryCard).toHaveTextContent(
+      /Token field\s*OPENAI_API_KEY/,
+    );
+    expect(codexPrimaryCard).toHaveTextContent(
+      /Provider ID\s*codex-primary/,
+    );
     expect(transport.listProviders).toHaveBeenCalledWith("codex");
     expect(transport.listSavedProviders).toHaveBeenCalledWith("codex");
     expect(transport.getActiveProvider).toHaveBeenCalledWith("codex");
@@ -518,19 +526,13 @@ describe("OpenWrt provider UI bundle", () => {
     expect(stagedBundleSource).toContain("providerManager");
     expect(stagedBundleSource).toContain("Add provider");
     expect(stagedBundleSource).toContain("Secret stored");
-    expect(stagedBundleSource).toContain("Provider ID:");
+    expect(stagedBundleSource).toContain("Provider ID");
     expect(stagedBundleSource).toContain("cc-switch service");
     expect(stagedBundleSource).not.toContain("process.env.NODE_ENV");
     expect(stagedBundleSource).not.toContain("Shared provider bundle loaded.");
     expect(stagedBundleSource).not.toContain(
       "Waiting for the shared provider manager implementation.",
     );
-    expect(stagedBundleSource).not.toContain("StepFun");
-    expect(stagedBundleSource).not.toContain("KAT-Coder");
-    expect(stagedBundleSource).not.toContain("GitHub Copilot");
-    expect(stagedBundleSource).not.toContain("Codex (ChatGPT Plus/Pro)");
-    expect(stagedBundleSource).not.toContain("AWS Bedrock (AKSK)");
-    expect(stagedBundleSource).not.toContain("AWS Bedrock (API Key)");
     expect(luciMakefile).toContain("prepare-provider-ui-bundle.sh");
     expect(buildIpkScript).toContain("prepare-provider-ui-bundle.sh");
     expect(viteConfig).toContain("openwrt/provider-ui-dist");

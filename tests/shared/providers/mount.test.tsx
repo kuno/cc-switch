@@ -154,9 +154,9 @@ describe("mountSharedProviderManager", () => {
 
     expect(claudeCard).not.toBeNull();
     expect(claudeCard).toHaveTextContent(
-      "Base URL: https://claude-primary.example.com",
+      /Base URL\s*https:\/\/claude-primary\.example\.com/,
     );
-    expect(claudeCard).toHaveTextContent("Provider ID: claude-primary");
+    expect(claudeCard).toHaveTextContent(/Provider ID\s*claude-primary/);
 
     await act(async () => {
       mounted.update({
@@ -176,9 +176,9 @@ describe("mountSharedProviderManager", () => {
 
     expect(geminiCard).not.toBeNull();
     expect(geminiCard).toHaveTextContent(
-      "Base URL: https://gemini-primary.example.com",
+      /Base URL\s*https:\/\/gemini-primary\.example\.com/,
     );
-    expect(geminiCard).toHaveTextContent("Model: gemini-3.1-pro");
+    expect(geminiCard).toHaveTextContent(/Model\s*gemini-3\.1-pro/);
     expect(geminiCard).toHaveTextContent("Router fallback");
 
     await act(async () => {
