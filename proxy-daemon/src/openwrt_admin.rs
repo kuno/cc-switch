@@ -354,6 +354,100 @@ pub async fn get_app_runtime_status(
     build_app_runtime_status(db, app_type).await
 }
 
+pub fn get_available_failover_providers(
+    db: &Database,
+    app_type: &AppType,
+) -> anyhow::Result<Vec<OpenWrtProviderView>> {
+    let profile = openwrt_app_profile(app_type)?;
+    let active_provider_id = resolve_active_provider_id_for_read(db, app_type, profile)?;
+    let providers = db
+        .get_available_providers_for_failover(profile.app_id)
+        .map_err(|e| {
+            anyhow!(
+                "failed to list available {} failover providers: {e}",
+                profile.app_id
+            )
+        })?;
+
+    Ok(providers
+        .iter()
+        .map(|provider| {
+            provider_to_view(app_type, profile, provider, active_provider_id.as_deref())
+        })
+        .collect())
+}
+
+pub async fn add_to_failover_queue(
+    db: &Database,
+    app_type: &AppType,
+    provider_id: &str,
+) -> anyhow::Result<OpenWrtAppRuntimeStatusView> {
+    let profile = openwrt_app_profile(app_type)?;
+    let normalized_provider_id = normalize_provider_id(provider_id)?;
+    load_provider(db, profile, &normalized_provider_id)?;
+
+    db.add_to_failover_queue(profile.app_id, &normalized_provider_id)
+        .map_err(|e| {
+            anyhow!(
+                "failed to add {} provider {normalized_provider_id} to failover queue: {e}",
+                profile.app_id
+            )
+        })?;
+
+    sync_failover_target_after_queue_update(db, app_type, profile).await?;
+    build_app_runtime_status(db, app_type).await
+}
+
+pub async fn remove_from_failover_queue(
+    db: &Database,
+    app_type: &AppType,
+    provider_id: &str,
+) -> anyhow::Result<OpenWrtAppRuntimeStatusView> {
+    let profile = openwrt_app_profile(app_type)?;
+    let normalized_provider_id = normalize_provider_id(provider_id)?;
+    load_provider(db, profile, &normalized_provider_id)?;
+    prevent_empty_failover_queue_while_enabled(db, profile, &normalized_provider_id).await?;
+
+    db.remove_from_failover_queue(profile.app_id, &normalized_provider_id)
+        .map_err(|e| {
+            anyhow!(
+                "failed to remove {} provider {normalized_provider_id} from failover queue: {e}",
+                profile.app_id
+            )
+        })?;
+
+    sync_failover_target_after_queue_update(db, app_type, profile).await?;
+    build_app_runtime_status(db, app_type).await
+}
+
+pub async fn set_auto_failover_enabled(
+    db: &Database,
+    app_type: &AppType,
+    enabled: bool,
+) -> anyhow::Result<OpenWrtAppRuntimeStatusView> {
+    let profile = openwrt_app_profile(app_type)?;
+    let queue_head_provider_id = if enabled {
+        Some(ensure_failover_queue_ready_for_enable(db, app_type, profile).await?)
+    } else {
+        None
+    };
+
+    let mut config = load_proxy_config_for_app(db, profile).await?;
+    config.auto_failover_enabled = enabled;
+    db.update_proxy_config_for_app(config).await.map_err(|e| {
+        anyhow!(
+            "failed to update {} auto failover setting: {e}",
+            profile.app_id
+        )
+    })?;
+
+    if let Some(queue_head_provider_id) = queue_head_provider_id.as_deref() {
+        set_active_provider_id(db, app_type, profile, Some(queue_head_provider_id))?;
+    }
+
+    build_app_runtime_status(db, app_type).await
+}
+
 pub fn list_claude_providers(db: &Database) -> anyhow::Result<OpenWrtProviderListView> {
     list_providers(db, &AppType::Claude)
 }
@@ -679,6 +773,97 @@ async fn load_proxy_config_for_app(
     db.get_proxy_config_for_app(profile.app_id)
         .await
         .map_err(|e| anyhow!("failed to read {} proxy config: {e}", profile.app_id))
+}
+
+fn load_failover_queue(
+    db: &Database,
+    profile: OpenWrtAppProfile,
+) -> anyhow::Result<Vec<crate::database::FailoverQueueItem>> {
+    db.get_failover_queue(profile.app_id)
+        .map_err(|e| anyhow!("failed to list {} failover queue: {e}", profile.app_id))
+}
+
+async fn ensure_failover_queue_ready_for_enable(
+    db: &Database,
+    app_type: &AppType,
+    profile: OpenWrtAppProfile,
+) -> anyhow::Result<String> {
+    let mut queue = load_failover_queue(db, profile)?;
+
+    if queue.is_empty() {
+        let active_provider_id = resolve_active_provider_id_for_read(db, app_type, profile)?;
+        let Some(active_provider_id) = active_provider_id else {
+            return Err(anyhow!(
+                "{} auto failover requires a current provider or a non-empty failover queue",
+                profile.app_id
+            ));
+        };
+
+        load_provider(db, profile, &active_provider_id)?;
+        db.add_to_failover_queue(profile.app_id, &active_provider_id)
+            .map_err(|e| {
+                anyhow!(
+                    "failed to seed {} failover queue with active provider {active_provider_id}: {e}",
+                    profile.app_id
+                )
+            })?;
+        queue = load_failover_queue(db, profile)?;
+    }
+
+    queue
+        .first()
+        .map(|entry| entry.provider_id.clone())
+        .ok_or_else(|| anyhow!("{} failover queue is empty", profile.app_id))
+}
+
+async fn prevent_empty_failover_queue_while_enabled(
+    db: &Database,
+    profile: OpenWrtAppProfile,
+    provider_id: &str,
+) -> anyhow::Result<()> {
+    let config = load_proxy_config_for_app(db, profile).await?;
+    if !config.auto_failover_enabled {
+        return Ok(());
+    }
+
+    let queue = load_failover_queue(db, profile)?;
+    let removing_last_provider = queue.len() == 1
+        && queue
+            .first()
+            .map(|entry| entry.provider_id.as_str() == provider_id)
+            .unwrap_or(false);
+
+    if removing_last_provider {
+        return Err(anyhow!(
+            "{} auto failover requires at least one queued provider; disable auto failover before removing the last queued provider",
+            profile.app_id
+        ));
+    }
+
+    Ok(())
+}
+
+async fn sync_failover_target_after_queue_update(
+    db: &Database,
+    app_type: &AppType,
+    profile: OpenWrtAppProfile,
+) -> anyhow::Result<()> {
+    let config = load_proxy_config_for_app(db, profile).await?;
+    if !config.auto_failover_enabled {
+        return Ok(());
+    }
+
+    let queue = load_failover_queue(db, profile)?;
+    let queue_head_provider_id = queue
+        .first()
+        .map(|entry| entry.provider_id.as_str())
+        .ok_or_else(|| {
+            anyhow!(
+                "{} auto failover requires at least one queued provider",
+                profile.app_id
+            )
+        })?;
+    set_active_provider_id(db, app_type, profile, Some(queue_head_provider_id))
 }
 
 fn build_provider_health_view(
@@ -1076,8 +1261,14 @@ fn init_provider(
     notes: String,
     profile: OpenWrtAppProfile,
 ) -> Provider {
-    let mut provider = existing
-        .unwrap_or_else(|| Provider::with_id(provider_id, name.to_string(), json!({}), None));
+    let mut provider = match existing {
+        Some(existing) => existing,
+        None => {
+            let mut provider = Provider::with_id(provider_id, name.to_string(), json!({}), None);
+            provider.in_failover_queue = false;
+            provider
+        }
+    };
 
     provider.name = name.to_string();
     provider.notes = normalize_optional(notes);
@@ -1090,7 +1281,6 @@ fn init_provider(
     if provider.icon_color.is_none() {
         provider.icon_color = Some(profile.icon_color.to_string());
     }
-    provider.in_failover_queue = false;
 
     provider
 }
@@ -2202,6 +2392,240 @@ mod tests {
                 .expect("load gemini db current")
                 .as_deref(),
             Some("gemini-b")
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn available_failover_providers_reject_unsupported_apps() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+
+        let error = get_available_failover_providers(&db, &AppType::OpenCode)
+            .expect_err("unsupported app should fail");
+
+        assert!(error
+            .to_string()
+            .contains("OpenWrt provider management is not implemented"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    #[serial]
+    async fn add_to_failover_queue_rejects_provider_ids_from_other_apps() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+        let payload = OpenWrtProviderPayload {
+            provider_id: None,
+            name: "Codex Relay".to_string(),
+            base_url: "https://codex.example/v1".to_string(),
+            token_field: CODEX_TOKEN_FIELD.to_string(),
+            token: "sk-codex-secret".to_string(),
+            model: "gpt-5.4".to_string(),
+            notes: String::new(),
+        };
+
+        upsert_provider_with_payload(&db, &AppType::Codex, Some("shared-id"), payload)
+            .expect("create codex provider");
+
+        let error = add_to_failover_queue(&db, &AppType::Claude, "shared-id")
+            .await
+            .expect_err("cross-app provider should fail");
+
+        assert!(error
+            .to_string()
+            .contains("claude provider shared-id does not exist"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    #[serial]
+    async fn failover_queue_mutations_refresh_available_providers_and_clear_health_on_remove() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+
+        upsert_claude_provider_with_payload(
+            &db,
+            Some("provider-a"),
+            sample_payload("Provider A", "secret-a"),
+        )
+        .expect("create provider a");
+        upsert_claude_provider_with_payload(
+            &db,
+            Some("provider-b"),
+            sample_payload("Provider B", "secret-b"),
+        )
+        .expect("create provider b");
+        upsert_claude_provider_with_payload(
+            &db,
+            Some("provider-c"),
+            sample_payload("Provider C", "secret-c"),
+        )
+        .expect("create provider c");
+
+        let queued = add_to_failover_queue(&db, &AppType::Claude, "provider-b")
+            .await
+            .expect("queue provider b");
+
+        assert_eq!(queued.failover_queue_depth, 1);
+        assert_eq!(queued.failover_queue[0].provider_id, "provider-b");
+
+        let available_after_add = get_available_failover_providers(&db, &AppType::Claude)
+            .expect("list available providers after add");
+        let available_ids_after_add = available_after_add
+            .iter()
+            .filter_map(|provider| provider.provider_id.as_deref())
+            .collect::<Vec<_>>();
+        assert_eq!(available_ids_after_add, vec!["provider-a", "provider-c"]);
+
+        let mut updated_payload = sample_payload("Provider B Updated", "");
+        updated_payload.provider_id = Some("provider-b".to_string());
+        upsert_claude_provider_with_payload(&db, None, updated_payload)
+            .expect("update queued provider");
+
+        let queue_after_update = db
+            .get_failover_queue(CLAUDE_APP_TYPE)
+            .expect("queue after provider update");
+        assert_eq!(queue_after_update.len(), 1);
+        assert_eq!(queue_after_update[0].provider_id, "provider-b");
+
+        db.update_provider_health(
+            "provider-b",
+            CLAUDE_APP_TYPE,
+            false,
+            Some("timeout".to_string()),
+        )
+        .await
+        .expect("record provider b health");
+
+        let removed = remove_from_failover_queue(&db, &AppType::Claude, "provider-b")
+            .await
+            .expect("remove provider b from queue");
+
+        assert_eq!(removed.failover_queue_depth, 0);
+
+        let available_after_remove = get_available_failover_providers(&db, &AppType::Claude)
+            .expect("list available providers after remove");
+        let available_ids_after_remove = available_after_remove
+            .iter()
+            .filter_map(|provider| provider.provider_id.as_deref())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            available_ids_after_remove,
+            vec!["provider-a", "provider-b", "provider-c"]
+        );
+
+        let health_records = db
+            .list_provider_health_records(CLAUDE_APP_TYPE)
+            .await
+            .expect("health records after queue removal");
+        assert!(health_records
+            .into_iter()
+            .all(|record| record.provider_id != "provider-b"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    #[serial]
+    async fn set_auto_failover_enabled_seeds_queue_from_current_provider_and_preserves_queue_on_disable(
+    ) {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+
+        upsert_claude_provider_with_payload(
+            &db,
+            Some("provider-a"),
+            sample_payload("Provider A", "secret-a"),
+        )
+        .expect("create provider a");
+        activate_claude_provider(&db, "provider-a").expect("activate provider a");
+
+        let enabled = set_auto_failover_enabled(&db, &AppType::Claude, true)
+            .await
+            .expect("enable auto failover");
+
+        assert!(enabled.auto_failover_enabled);
+        assert_eq!(enabled.failover_queue_depth, 1);
+        assert_eq!(enabled.failover_queue[0].provider_id, "provider-a");
+        assert_eq!(enabled.active_provider_id.as_deref(), Some("provider-a"));
+
+        let disabled = set_auto_failover_enabled(&db, &AppType::Claude, false)
+            .await
+            .expect("disable auto failover");
+
+        assert!(!disabled.auto_failover_enabled);
+        assert_eq!(disabled.failover_queue_depth, 1);
+        assert_eq!(disabled.failover_queue[0].provider_id, "provider-a");
+        assert_eq!(disabled.active_provider_id.as_deref(), Some("provider-a"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    #[serial]
+    async fn set_auto_failover_enabled_switches_active_provider_to_queue_head() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+
+        upsert_claude_provider_with_payload(
+            &db,
+            Some("provider-a"),
+            sample_payload("Provider A", "secret-a"),
+        )
+        .expect("create provider a");
+        upsert_claude_provider_with_payload(
+            &db,
+            Some("provider-b"),
+            sample_payload("Provider B", "secret-b"),
+        )
+        .expect("create provider b");
+        activate_claude_provider(&db, "provider-b").expect("activate provider b");
+        add_to_failover_queue(&db, &AppType::Claude, "provider-a")
+            .await
+            .expect("queue provider a");
+
+        let enabled = set_auto_failover_enabled(&db, &AppType::Claude, true)
+            .await
+            .expect("enable auto failover");
+
+        assert!(enabled.auto_failover_enabled);
+        assert_eq!(enabled.active_provider_id.as_deref(), Some("provider-a"));
+        assert_eq!(
+            crate::settings::get_current_provider(&AppType::Claude).as_deref(),
+            Some("provider-a")
+        );
+        assert_eq!(
+            db.get_current_provider(CLAUDE_APP_TYPE)
+                .expect("load database current provider")
+                .as_deref(),
+            Some("provider-a")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    #[serial]
+    async fn remove_from_failover_queue_rejects_removing_the_last_provider_while_enabled() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+
+        upsert_claude_provider_with_payload(
+            &db,
+            Some("provider-a"),
+            sample_payload("Provider A", "secret-a"),
+        )
+        .expect("create provider a");
+        activate_claude_provider(&db, "provider-a").expect("activate provider a");
+        set_auto_failover_enabled(&db, &AppType::Claude, true)
+            .await
+            .expect("enable auto failover");
+
+        let error = remove_from_failover_queue(&db, &AppType::Claude, "provider-a")
+            .await
+            .expect_err("removing last queued provider should fail");
+
+        assert!(error
+            .to_string()
+            .contains("disable auto failover before removing the last queued provider"));
+        assert_eq!(
+            db.get_failover_queue(CLAUDE_APP_TYPE)
+                .expect("queue after failed removal")
+                .len(),
+            1
         );
     }
 
