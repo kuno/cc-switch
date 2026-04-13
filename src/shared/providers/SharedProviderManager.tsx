@@ -1156,7 +1156,10 @@ export function SharedProviderManager({
               Delete provider
             </DialogTitle>
           </DialogHeader>
-          <div className="min-h-0 px-6 py-4" data-ccswitch-dialog-scroll-region>
+          <div
+            className="min-h-0 overflow-y-auto px-6 py-4"
+            data-ccswitch-dialog-scroll-region
+          >
             <DialogDescription className="text-sm leading-relaxed">
               {pendingDelete
                 ? `Delete ${getSharedProviderDisplayName(pendingDelete)} from the saved ${currentPresentation.label} providers on this router.`

@@ -224,7 +224,7 @@ export function SharedProviderEditorPanel({
             className={cn(
               "grid min-h-0 flex-1 gap-0",
               supportsPresets
-                ? "xl:grid-cols-[minmax(320px,0.88fr)_minmax(0,1.12fr)]"
+                ? "grid-cols-1 grid-rows-[minmax(0,0.8fr)_minmax(0,1.2fr)] xl:grid-cols-[minmax(320px,0.88fr)_minmax(0,1.12fr)] xl:grid-rows-1"
                 : "grid-cols-1",
             )}
           >
