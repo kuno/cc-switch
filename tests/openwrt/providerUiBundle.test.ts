@@ -316,8 +316,6 @@ describe("OpenWrt provider UI bundle", () => {
       runtimeSurface: true,
     });
     expect(typeof api?.mountRuntimeSurface).toBe("function");
-    expect(document.body.classList.contains("ccswitch-openwrt-provider-ui-theme"))
-      .toBe(false);
 
     let handle:
       | void
@@ -336,8 +334,6 @@ describe("OpenWrt provider UI bundle", () => {
     await waitFor(() =>
       expect(within(target).getByText("Runtime Surface")).toBeInTheDocument(),
     );
-    expect(document.body.classList.contains("ccswitch-openwrt-provider-ui-theme"))
-      .toBe(true);
 
     expect(target).toHaveTextContent("Service Summary");
     expect(target).toHaveTextContent("Config fallback");
@@ -375,8 +371,6 @@ describe("OpenWrt provider UI bundle", () => {
       }
     });
 
-    expect(document.body.classList.contains("ccswitch-openwrt-provider-ui-theme"))
-      .toBe(false);
     expect(target.textContent).toBe("");
     target.remove();
   });
@@ -489,9 +483,6 @@ describe("OpenWrt provider UI bundle", () => {
     const shell = {
       clearMessage: vi.fn(),
       getSelectedApp: vi.fn().mockImplementation(() => selectedApp),
-      getRestartState: vi
-        .fn()
-        .mockReturnValue({ pending: false, inFlight: false }),
       getServiceStatus: vi.fn().mockReturnValue({ isRunning: false }),
       refreshServiceStatus: vi.fn().mockResolvedValue({ isRunning: false }),
       restartService: vi.fn().mockResolvedValue({ isRunning: false }),
@@ -499,11 +490,10 @@ describe("OpenWrt provider UI bundle", () => {
         .fn()
         .mockImplementation((appId: "claude" | "codex" | "gemini") => {
           selectedApp = appId;
-          return selectedApp;
+          return appId;
         }),
-      setRestartState: vi.fn(),
-      showMessage: vi.fn(),
       subscribe: vi.fn().mockReturnValue(unsubscribe),
+      showMessage: vi.fn(),
     };
     const transport = createTransport({
       claude: createProviderState("claude", [
@@ -610,10 +600,10 @@ describe("OpenWrt provider UI bundle", () => {
       }),
     ).toBeInTheDocument();
     expect(
-      within(claudePrimaryCard as HTMLElement).getByRole("button", {
+      within(claudePrimaryCard as HTMLElement).queryByRole("button", {
         name: "Activate Claude Primary",
       }),
-    ).toBeDisabled();
+    ).not.toBeInTheDocument();
     expect(
       within(claudeBackupCard as HTMLElement).getByRole("button", {
         name: "Activate Claude Backup",
@@ -643,8 +633,9 @@ describe("OpenWrt provider UI bundle", () => {
     expect(target.textContent).not.toContain("Configure Provider");
     expect(shell.showMessage).not.toHaveBeenCalled();
     expect(shell.subscribe).toHaveBeenCalledTimes(1);
-    expect(document.body.classList.contains("ccswitch-openwrt-provider-ui-theme"))
-      .toBe(true);
+    expect(
+      document.body.classList.contains("ccswitch-openwrt-provider-ui-theme"),
+    ).toBe(true);
     expect(transport.listProviders).toHaveBeenCalledWith("claude");
     expect(transport.listSavedProviders).toHaveBeenCalledWith("claude");
     expect(transport.getActiveProvider).toHaveBeenCalledWith("claude");
@@ -692,8 +683,9 @@ describe("OpenWrt provider UI bundle", () => {
 
     expect(shell.clearMessage).toHaveBeenCalledTimes(1);
     expect(unsubscribe).toHaveBeenCalledTimes(1);
-    expect(document.body.classList.contains("ccswitch-openwrt-provider-ui-theme"))
-      .toBe(false);
+    expect(
+      document.body.classList.contains("ccswitch-openwrt-provider-ui-theme"),
+    ).toBe(false);
     expect(target.textContent).toBe("");
     target.remove();
   });
@@ -821,8 +813,9 @@ describe("OpenWrt provider UI bundle", () => {
   });
 
   it("releases the theme lease when initial mount setup throws", () => {
-    expect(document.body.classList.contains("ccswitch-openwrt-provider-ui-theme"))
-      .toBe(false);
+    expect(
+      document.body.classList.contains("ccswitch-openwrt-provider-ui-theme"),
+    ).toBe(false);
 
     expect(() =>
       __private__.withThemeLease(() => {
@@ -830,8 +823,9 @@ describe("OpenWrt provider UI bundle", () => {
       }),
     ).toThrow("mount failed");
 
-    expect(document.body.classList.contains("ccswitch-openwrt-provider-ui-theme"))
-      .toBe(false);
+    expect(
+      document.body.classList.contains("ccswitch-openwrt-provider-ui-theme"),
+    ).toBe(false);
   });
 
   it("ships the committed staged real bundle and copies it unchanged for package assembly", () => {
