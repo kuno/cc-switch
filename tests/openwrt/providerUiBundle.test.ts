@@ -992,7 +992,7 @@ describe("OpenWrt provider UI bundle", () => {
     });
 
     const editDialog = await within(document.body).findByRole("dialog", {
-      name: "Edit provider",
+      name: "Edit Claude provider",
     });
 
     expect(editDialog).toHaveClass("ccswitch-openwrt-provider-ui-dialog");
@@ -1019,7 +1019,7 @@ describe("OpenWrt provider UI bundle", () => {
     });
 
     const deleteDialog = await within(document.body).findByRole("dialog", {
-      name: "Delete provider?",
+      name: "Delete Claude provider",
     });
 
     expect(deleteDialog).toHaveClass("ccswitch-openwrt-provider-ui-dialog");

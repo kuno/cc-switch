@@ -910,7 +910,7 @@ describe("SharedProviderManager", () => {
     clearSearchButton.focus();
     expect(clearSearchButton).toHaveFocus();
 
-    await user.keyboard("[Enter]");
+    await user.keyboard("{Enter}");
 
     await waitFor(() => expect(searchInput).toHaveValue(""));
     await waitFor(() =>
@@ -921,23 +921,23 @@ describe("SharedProviderManager", () => {
     deleteButton.focus();
     expect(deleteButton).toHaveFocus();
 
-    await user.keyboard("[Enter]");
+    await user.keyboard("{Enter}");
 
     const deleteDialog = await screen.findByRole("dialog", {
-      name: "Delete provider?",
+      name: "Delete Codex provider",
     });
     expect(deleteDialog).toHaveAccessibleDescription(
-      "Alpha will be removed from Codex.",
+      "Remove Alpha from the saved Codex providers on this router.",
     );
     expect(
       within(deleteDialog).getByRole("button", { name: "Cancel" }),
     ).toHaveFocus();
 
-    await user.keyboard("[Escape]");
+    await user.keyboard("{Escape}");
 
     await waitFor(() =>
       expect(
-        screen.queryByRole("dialog", { name: "Delete provider?" }),
+        screen.queryByRole("dialog", { name: "Delete Codex provider" }),
       ).not.toBeInTheDocument(),
     );
 
@@ -947,10 +947,10 @@ describe("SharedProviderManager", () => {
     addProviderButton.focus();
     expect(addProviderButton).toHaveFocus();
 
-    await user.keyboard("[Enter]");
+    await user.keyboard("{Enter}");
 
     const addDialog = await screen.findByRole("dialog", {
-      name: "Add provider",
+      name: "Add Codex provider",
     });
     expect(addDialog).toHaveAccessibleDescription(
       "Create a saved Codex provider from a grouped preset or a custom endpoint draft.",
@@ -959,11 +959,11 @@ describe("SharedProviderManager", () => {
       within(addDialog).getByLabelText("Provider name"),
     ).toBeInTheDocument();
 
-    await user.keyboard("[Escape]");
+    await user.keyboard("{Escape}");
 
     await waitFor(() =>
       expect(
-        screen.queryByRole("dialog", { name: "Add provider" }),
+        screen.queryByRole("dialog", { name: "Add Codex provider" }),
       ).not.toBeInTheDocument(),
     );
   });
