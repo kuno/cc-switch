@@ -84,6 +84,10 @@ type RpcSpec = {
   params?: string[];
 };
 
+const SHARED_PROVIDER_UI_GLOBAL_KEY = "__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__";
+const SHARED_PROVIDER_UI_SCRIPT_ID =
+  "ccswitch-openwrt-shared-provider-ui-bundle";
+
 function createElement(
   tag: string,
   attrs?: Record<string, unknown> | unknown[] | string,
@@ -222,6 +226,10 @@ function loadSettingsView(selectedApp?: AppId) {
 }
 
 beforeEach(() => {
+  document.head.innerHTML = "";
+  delete (window as unknown as Record<string, unknown>)[
+    SHARED_PROVIDER_UI_GLOBAL_KEY
+  ];
   (globalThis as Record<string, unknown>).E = createElement;
   (globalThis as Record<string, unknown>).L = {
     bind<T extends (...args: never[]) => unknown>(fn: T, ctx: unknown) {
@@ -248,6 +256,24 @@ describe("OpenWrt settings shared-provider shell", () => {
       "ccswitch-openwrt-selected-app",
       "codex",
     );
+  });
+
+  it("reuses a pre-registered bundle API without injecting another script", async () => {
+    const { settings } = loadSettingsView();
+    const api = {
+      mount: vi.fn(),
+    };
+    const appendChildSpy = vi.spyOn(document.head, "appendChild");
+
+    (window as unknown as Record<string, unknown>)[
+      SHARED_PROVIDER_UI_GLOBAL_KEY
+    ] = api;
+
+    await expect(settings.loadSharedProviderBundle()).resolves.toBe(api);
+    expect(document.getElementById(SHARED_PROVIDER_UI_SCRIPT_ID)).toBeNull();
+    expect(appendChildSpy).not.toHaveBeenCalled();
+
+    appendChildSpy.mockRestore();
   });
 
   it("wires raw rpc transport methods for the shared provider bundle", async () => {
@@ -309,7 +335,7 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(shellNodes.messageRoot.style.display).toBe("");
   });
 
-  it("keeps the LuCI shell functional when the shared bundle fails to mount", async () => {
+  it("keeps the LuCI shell functional when the shared bundle fails to load", async () => {
     const { settings } = loadSettingsView();
     const uiState = settings.createUiState(false, "claude");
     const statusNodes = settings.createStatusPanel(uiState);
@@ -322,15 +348,19 @@ describe("OpenWrt settings shared-provider shell", () => {
     await settings.mountSharedProviderUi(uiState, statusNodes, shellNodes);
 
     expect(uiState.bundleStatus).toBe("error");
+    expect(uiState.bundleError).toBe("bundle missing");
     expect(statusNodes.bundleValue.textContent).toBe("Unavailable");
     expect(shellNodes.mountRoot.textContent).toContain("Claude Providers");
     expect(shellNodes.mountRoot.textContent).toContain("bundle missing");
     expect(shellNodes.mountRoot.textContent).toContain(
       "Configure Provider",
     );
+    expect(statusNodes.summaryValue.textContent).toContain(
+      "LuCI fallback provider manager",
+    );
   });
 
-  it("keeps the fallback LuCI provider manager active when the bundle is only a placeholder", async () => {
+  it("keeps the fallback LuCI provider manager active when the cutover gate disables the real bundle", async () => {
     const { settings } = loadSettingsView();
     const uiState = settings.createUiState(false, "claude");
     const statusNodes = settings.createStatusPanel(uiState);
@@ -346,10 +376,62 @@ describe("OpenWrt settings shared-provider shell", () => {
 
     expect(mount).not.toHaveBeenCalled();
     expect(uiState.bundleStatus).toBe("fallback");
+    expect(uiState.bundleError).toContain(
+      "LuCI fallback provider manager until the shared slice is published",
+    );
     expect(statusNodes.bundleValue.textContent).toBe("Fallback");
     expect(shellNodes.mountRoot.textContent).toContain("Claude Providers");
     expect(shellNodes.mountRoot.textContent).toContain("Configure Provider");
     expect(shellNodes.mountRoot.textContent).toContain(
+      "LuCI fallback provider manager",
+    );
+  });
+
+  it("keeps the fallback LuCI provider manager active when the real bundle throws during mount", async () => {
+    const { settings } = loadSettingsView();
+    const uiState = settings.createUiState(true, "codex");
+    const statusNodes = settings.createStatusPanel(uiState);
+    const shellNodes = settings.createProviderShell(uiState, statusNodes);
+    const mount = vi.fn().mockImplementation(() => {
+      throw new Error("mount regression");
+    });
+
+    settings.loadSharedProviderBundle = vi.fn().mockResolvedValue({
+      capabilities: { providerManager: true },
+      mount,
+    });
+
+    await settings.mountSharedProviderUi(uiState, statusNodes, shellNodes);
+
+    expect(mount).toHaveBeenCalledTimes(1);
+    expect(uiState.bundleStatus).toBe("error");
+    expect(uiState.bundleError).toBe("mount regression");
+    expect(statusNodes.bundleValue.textContent).toBe("Unavailable");
+    expect(shellNodes.mountRoot.textContent).toContain("Codex Providers");
+    expect(shellNodes.mountRoot.textContent).toContain("mount regression");
+    expect(statusNodes.summaryValue.textContent).toContain(
+      "LuCI fallback provider manager",
+    );
+  });
+
+  it("treats an omitted providerManager capability as the real-bundle path", async () => {
+    const { settings } = loadSettingsView("gemini");
+    const uiState = settings.createUiState(true, "gemini");
+    const statusNodes = settings.createStatusPanel(uiState);
+    const shellNodes = settings.createProviderShell(uiState, statusNodes);
+    const unmount = vi.fn();
+    const mount = vi.fn().mockReturnValue({ unmount });
+
+    settings.loadSharedProviderBundle = vi.fn().mockResolvedValue({
+      mount,
+    });
+
+    await settings.mountSharedProviderUi(uiState, statusNodes, shellNodes);
+
+    expect(uiState.bundleStatus).toBe("ready");
+    expect(statusNodes.bundleValue.textContent).toBe("Ready");
+    expect(mount).toHaveBeenCalledTimes(1);
+    expect(shellNodes.mountRoot.textContent).not.toContain(
       "LuCI fallback provider manager",
     );
   });
