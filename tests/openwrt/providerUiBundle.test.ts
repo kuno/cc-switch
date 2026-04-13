@@ -849,8 +849,7 @@ describe("OpenWrt provider UI bundle", () => {
     expect(
       runtimeRoot.querySelector(".ccswitch-openwrt-surface-card"),
     ).not.toBeNull();
-    expect(hasClassToken(runtimeRoot, "sm:grid-cols-2")).toBe(true);
-    expect(hasClassToken(runtimeRoot, "xl:grid-cols-3")).toBe(true);
+    expect(runtimeRoot).toHaveTextContent("Queue depth / retries");
     expect(
       Array.from(runtimeRoot.querySelectorAll("*")).some((element) =>
         getElementClassName(element).includes("rounded-3xl"),

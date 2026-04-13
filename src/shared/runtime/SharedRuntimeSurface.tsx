@@ -138,7 +138,7 @@ export function SharedRuntimeSurface({
       <div
         data-ccswitch-region="runtime-header"
         data-ccswitch-layout="stack-to-row"
-        className="ccswitch-openwrt-page-header flex flex-col gap-3"
+        className="ccswitch-openwrt-page-header flex flex-col gap-4"
       >
         <div className="space-y-1.5">
           <h2 className="text-2xl font-semibold tracking-tight">
@@ -155,7 +155,7 @@ export function SharedRuntimeSurface({
           type="button"
           variant="outline"
           size="sm"
-          className="ccswitch-openwrt-page-action"
+          className="ccswitch-openwrt-page-action w-full sm:w-fit"
           aria-busy={runtimeQuery.isFetching}
           onClick={() => {
             void runtimeQuery.refetch();
@@ -182,7 +182,7 @@ export function SharedRuntimeSurface({
       <div
         data-ccswitch-region="runtime-body"
         data-ccswitch-layout="embedded-stack"
-        className="space-y-3"
+        className="space-y-4"
       >
         <div data-ccswitch-region="runtime-summary">
           <SharedRuntimeServiceSummaryCard
@@ -194,7 +194,7 @@ export function SharedRuntimeSurface({
         <div
           data-ccswitch-region="runtime-app-grid"
           data-ccswitch-layout="responsive-grid"
-          className="grid gap-3"
+          className="grid gap-4"
         >
           {orderedApps.map((status) => (
             <SharedRuntimeAppCard
