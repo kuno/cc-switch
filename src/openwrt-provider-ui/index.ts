@@ -32,7 +32,12 @@ export interface OpenWrtSharedProviderMountOptions {
   shell: OpenWrtSharedProviderShellApi;
 }
 
+export interface OpenWrtSharedProviderBundleCapabilities {
+  providerManager: boolean;
+}
+
 export interface OpenWrtSharedProviderBundleApi {
+  capabilities?: OpenWrtSharedProviderBundleCapabilities;
   mount(
     options: OpenWrtSharedProviderMountOptions,
   ):
@@ -126,6 +131,9 @@ function renderPlaceholder(
 }
 
 const api: OpenWrtSharedProviderBundleApi = {
+  capabilities: {
+    providerManager: false,
+  },
   mount(options) {
     return renderPlaceholder(options);
   },

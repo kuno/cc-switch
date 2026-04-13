@@ -9,7 +9,7 @@ type UiState = {
   selectedApp: AppId;
   busy: boolean;
   message: { kind: "success" | "error" | "info"; text: string } | null;
-  bundleStatus: "idle" | "loading" | "ready" | "error";
+  bundleStatus: "idle" | "loading" | "ready" | "fallback" | "error";
   bundleError: string | null;
   mountHandle: (() => void) | null;
   mountRequestId: number;
@@ -21,9 +21,13 @@ type StatusNodes = {
   root: HTMLElement;
   serviceValue: HTMLElement;
   summaryValue: HTMLElement;
+  providerTitle?: HTMLElement;
+  providerValue?: HTMLElement;
+  savedCountValue?: HTMLElement;
 };
 
 type ShellNodes = {
+  sharedChromeRoot?: HTMLElement;
   messageRoot: HTMLElement;
   messageText: HTMLElement;
   mountRoot: HTMLElement;
@@ -319,12 +323,34 @@ describe("OpenWrt settings shared-provider shell", () => {
 
     expect(uiState.bundleStatus).toBe("error");
     expect(statusNodes.bundleValue.textContent).toBe("Unavailable");
-    expect(shellNodes.messageText.textContent).toContain("bundle missing");
+    expect(shellNodes.mountRoot.textContent).toContain("Claude Providers");
+    expect(shellNodes.mountRoot.textContent).toContain("bundle missing");
     expect(shellNodes.mountRoot.textContent).toContain(
-      "Shared Provider UI unavailable",
+      "Configure Provider",
     );
+  });
+
+  it("keeps the fallback LuCI provider manager active when the bundle is only a placeholder", async () => {
+    const { settings } = loadSettingsView();
+    const uiState = settings.createUiState(false, "claude");
+    const statusNodes = settings.createStatusPanel(uiState);
+    const shellNodes = settings.createProviderShell(uiState, statusNodes);
+    const mount = vi.fn();
+
+    settings.loadSharedProviderBundle = vi.fn().mockResolvedValue({
+      capabilities: { providerManager: false },
+      mount,
+    });
+
+    await settings.mountSharedProviderUi(uiState, statusNodes, shellNodes);
+
+    expect(mount).not.toHaveBeenCalled();
+    expect(uiState.bundleStatus).toBe("fallback");
+    expect(statusNodes.bundleValue.textContent).toBe("Fallback");
+    expect(shellNodes.mountRoot.textContent).toContain("Claude Providers");
+    expect(shellNodes.mountRoot.textContent).toContain("Configure Provider");
     expect(shellNodes.mountRoot.textContent).toContain(
-      "OpenWrt-native service settings",
+      "LuCI fallback provider manager",
     );
   });
 
@@ -336,7 +362,10 @@ describe("OpenWrt settings shared-provider shell", () => {
     const unmount = vi.fn();
     const mount = vi.fn().mockReturnValue({ unmount });
 
-    settings.loadSharedProviderBundle = vi.fn().mockResolvedValue({ mount });
+    settings.loadSharedProviderBundle = vi.fn().mockResolvedValue({
+      capabilities: { providerManager: true },
+      mount,
+    });
 
     await settings.mountSharedProviderUi(uiState, statusNodes, shellNodes);
 

@@ -1,3 +1,7 @@
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY,
@@ -22,6 +26,7 @@ describe("OpenWrt provider UI bundle placeholder", () => {
     };
 
     expect(api).toBeDefined();
+    expect(api?.capabilities).toEqual({ providerManager: false });
 
     const handle = await Promise.resolve(
       api!.mount({
@@ -50,5 +55,42 @@ describe("OpenWrt provider UI bundle placeholder", () => {
 
     expect(shell.clearMessage).toHaveBeenCalledTimes(1);
     expect(target.textContent).toBe("");
+  });
+
+  it("stages the same bundle asset for standalone and feed builds", () => {
+    const repoRoot = process.cwd();
+    const outputDir = mkdtempSync(path.join(os.tmpdir(), "ccswitch-openwrt-ui-"));
+    const helperPath = path.resolve(
+      repoRoot,
+      "openwrt/prepare-provider-ui-bundle.sh",
+    );
+    const stagedBundlePath = path.resolve(
+      repoRoot,
+      "openwrt/provider-ui-dist/ccswitch-provider-ui.js",
+    );
+    const stagedOutputPath = path.join(outputDir, "ccswitch-provider-ui.js");
+    const luciMakefile = readFileSync(
+      path.resolve(repoRoot, "openwrt/luci-app-ccswitch/Makefile"),
+      "utf8",
+    );
+    const buildIpkScript = readFileSync(
+      path.resolve(repoRoot, "openwrt/build-ipk.sh"),
+      "utf8",
+    );
+
+    execFileSync("sh", [helperPath, "--output-dir", outputDir], {
+      cwd: repoRoot,
+    });
+
+    expect(existsSync(stagedBundlePath)).toBe(true);
+    expect(existsSync(stagedOutputPath)).toBe(true);
+    expect(readFileSync(stagedOutputPath, "utf8")).toContain(
+      "__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__",
+    );
+    expect(readFileSync(stagedOutputPath, "utf8")).toContain(
+      "providerManager",
+    );
+    expect(luciMakefile).toContain("prepare-provider-ui-bundle.sh");
+    expect(buildIpkScript).toContain("prepare-provider-ui-bundle.sh");
   });
 });
