@@ -31,6 +31,18 @@ copy_bundle() {
 	cp "$src" "$dest"
 }
 
+sync_bundle() {
+	src="$1"
+
+	[ -f "$src" ] || die "bundle source does not exist: $src"
+
+	if [ "$src" != "$STAGED_BUNDLE" ]; then
+		copy_bundle "$src" "$STAGED_DIR"
+	fi
+
+	copy_bundle "$STAGED_BUNDLE" "$OUTPUT_DIR"
+}
+
 usage() {
 	cat <<'EOF'
 Usage:
@@ -38,8 +50,8 @@ Usage:
 
 Resolution order:
   1. $CCSWITCH_OPENWRT_PROVIDER_UI_BUNDLE if set
-  2. existing emitted bundle under luci-app-ccswitch/htdocs/...
-  3. staged bundle under openwrt/provider-ui-dist/
+  2. staged bundle under openwrt/provider-ui-dist/
+  3. existing emitted bundle under luci-app-ccswitch/htdocs/...
   4. build via `pnpm build:openwrt-provider-ui`
 EOF
 }
@@ -67,17 +79,17 @@ if [ -z "$OUTPUT_DIR" ]; then
 fi
 
 if [ -n "$EXPLICIT_BUNDLE" ]; then
-	copy_bundle "$EXPLICIT_BUNDLE" "$OUTPUT_DIR"
-	exit 0
-fi
-
-if [ -f "$EMITTED_BUNDLE" ]; then
-	copy_bundle "$EMITTED_BUNDLE" "$OUTPUT_DIR"
+	sync_bundle "$EXPLICIT_BUNDLE"
 	exit 0
 fi
 
 if [ -f "$STAGED_BUNDLE" ]; then
 	copy_bundle "$STAGED_BUNDLE" "$OUTPUT_DIR"
+	exit 0
+fi
+
+if [ -f "$EMITTED_BUNDLE" ]; then
+	sync_bundle "$EMITTED_BUNDLE"
 	exit 0
 fi
 
@@ -87,8 +99,8 @@ if command -v pnpm >/dev/null 2>&1; then
 		pnpm build:openwrt-provider-ui
 	)
 
-	[ -f "$EMITTED_BUNDLE" ] || die "pnpm reported success but did not produce: $EMITTED_BUNDLE"
-	copy_bundle "$EMITTED_BUNDLE" "$OUTPUT_DIR"
+	[ -f "$STAGED_BUNDLE" ] || die "pnpm reported success but did not produce: $STAGED_BUNDLE"
+	copy_bundle "$STAGED_BUNDLE" "$OUTPUT_DIR"
 	exit 0
 fi
 

@@ -321,6 +321,10 @@ describe("OpenWrt provider UI bundle", () => {
       path.resolve(repoRoot, "openwrt/build-ipk.sh"),
       "utf8",
     );
+    const viteConfig = readFileSync(
+      path.resolve(repoRoot, "vite.config.ts"),
+      "utf8",
+    );
 
     execFileSync("pnpm", ["build:openwrt-provider-ui"], {
       cwd: repoRoot,
@@ -344,5 +348,6 @@ describe("OpenWrt provider UI bundle", () => {
     expect(bundleSource).not.toContain("AWS Bedrock (API Key)");
     expect(luciMakefile).toContain("prepare-provider-ui-bundle.sh");
     expect(buildIpkScript).toContain("prepare-provider-ui-bundle.sh");
+    expect(viteConfig).toContain("openwrt/provider-ui-dist");
   });
 });
