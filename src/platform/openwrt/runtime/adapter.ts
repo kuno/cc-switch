@@ -4,35 +4,37 @@ import {
   normalizeSharedProviderView,
 } from "@/shared/providers/domain";
 import {
+  type SharedRuntimeAppStatus,
+  type SharedRuntimeFailoverQueueEntry,
+  type SharedRuntimeProviderHealth,
+  type SharedRuntimeProxyStatus,
+  type SharedRuntimeServiceStatus,
+  type SharedRuntimeStatusView,
+} from "@/shared/runtime/domain";
+import {
   OPENWRT_RUNTIME_APP_IDS,
   type RuntimePlatformAdapter,
-  type SharedRuntimeAppStatus,
-  type SharedRuntimeProviderHealth,
-  type SharedRuntimeQueueEntry,
-  type SharedRuntimeServiceStatus,
-  type SharedRuntimeSurfaceState,
-} from "@/shared/runtime";
-import type { ProxyStatus } from "@/types/proxy";
+} from "@/shared/runtime/types";
 import type { OpenWrtRuntimeRpcResult, OpenWrtRuntimeTransport } from "./types";
 
 type RuntimeLike = Record<string, unknown>;
 
-const EMPTY_PROXY_STATUS: ProxyStatus = {
+const EMPTY_PROXY_STATUS: SharedRuntimeProxyStatus = {
   running: false,
   address: "",
   port: 0,
-  active_connections: 0,
-  total_requests: 0,
-  success_requests: 0,
-  failed_requests: 0,
-  success_rate: 0,
-  uptime_seconds: 0,
-  current_provider: null,
-  current_provider_id: null,
-  last_request_at: null,
-  last_error: null,
-  failover_count: 0,
-  active_targets: [],
+  activeConnections: 0,
+  totalRequests: 0,
+  successRequests: 0,
+  failedRequests: 0,
+  successRate: 0,
+  uptimeSeconds: 0,
+  currentProvider: null,
+  currentProviderId: null,
+  lastRequestAt: null,
+  lastError: null,
+  failoverCount: 0,
+  activeTargets: [],
 };
 
 function isRpcSuccess(result: OpenWrtRuntimeRpcResult | null | undefined): boolean {
@@ -187,7 +189,7 @@ function normalizeHealth(
   };
 }
 
-function normalizeQueueEntry(value: unknown): SharedRuntimeQueueEntry | null {
+function normalizeQueueEntry(value: unknown): SharedRuntimeFailoverQueueEntry | null {
   if (!value || typeof value !== "object") {
     return null;
   }
@@ -218,7 +220,7 @@ function normalizeQueueEntry(value: unknown): SharedRuntimeQueueEntry | null {
   };
 }
 
-function normalizeProxyStatus(value: unknown): ProxyStatus {
+function normalizeProxyStatus(value: unknown): SharedRuntimeProxyStatus {
   if (!value || typeof value !== "object") {
     return EMPTY_PROXY_STATUS;
   }
@@ -229,26 +231,30 @@ function normalizeProxyStatus(value: unknown): ProxyStatus {
     running: getBoolean(typedValue, ["running"]),
     address: getString(typedValue, ["address"]),
     port: getNumber(typedValue, ["port"]),
-    active_connections: getNumber(typedValue, ["active_connections"]),
-    total_requests: getNumber(typedValue, ["total_requests"]),
-    success_requests: getNumber(typedValue, ["success_requests"]),
-    failed_requests: getNumber(typedValue, ["failed_requests"]),
-    success_rate: getNumber(typedValue, ["success_rate"]),
-    uptime_seconds: getNumber(typedValue, ["uptime_seconds"]),
-    current_provider: getOptionalString(typedValue, ["current_provider"]),
-    current_provider_id: getOptionalString(typedValue, ["current_provider_id"]),
-    last_request_at: getOptionalString(typedValue, ["last_request_at"]),
-    last_error: getOptionalString(typedValue, ["last_error"]),
-    failover_count: getNumber(typedValue, ["failover_count"]),
-    active_targets: Array.isArray(typedValue.active_targets)
-      ? (typedValue.active_targets as ProxyStatus["active_targets"])
+    activeConnections: getNumber(typedValue, ["active_connections"]),
+    totalRequests: getNumber(typedValue, ["total_requests"]),
+    successRequests: getNumber(typedValue, ["success_requests"]),
+    failedRequests: getNumber(typedValue, ["failed_requests"]),
+    successRate: getNumber(typedValue, ["success_rate"]),
+    uptimeSeconds: getNumber(typedValue, ["uptime_seconds"]),
+    currentProvider: getOptionalString(typedValue, ["current_provider"]),
+    currentProviderId: getOptionalString(typedValue, ["current_provider_id"]),
+    lastRequestAt: getOptionalString(typedValue, ["last_request_at"]),
+    lastError: getOptionalString(typedValue, ["last_error"]),
+    failoverCount: getNumber(typedValue, ["failover_count"]),
+    activeTargets: Array.isArray(typedValue.active_targets)
+      ? typedValue.active_targets.map((entry) => ({
+          appType: getString(entry as RuntimeLike, ["app_type"]) as SharedProviderAppId,
+          providerName: getString(entry as RuntimeLike, ["provider_name"]),
+          providerId: getString(entry as RuntimeLike, ["provider_id"]),
+        }))
       : [],
   };
 }
 
 function emptyAppStatus(appId: SharedProviderAppId): SharedRuntimeAppStatus {
   return {
-    appId,
+    app: appId,
     providerCount: 0,
     proxyEnabled: false,
     autoFailoverEnabled: false,
@@ -282,13 +288,13 @@ function normalizeAppStatus(
         .map((entry) => normalizeQueueEntry(entry))
         .filter(function (
           entry,
-        ): entry is SharedRuntimeQueueEntry {
+        ): entry is SharedRuntimeFailoverQueueEntry {
           return entry != null;
         })
     : [];
 
   return {
-    appId,
+    app: appId,
     providerCount: getNumber(typedValue, ["providerCount", "provider_count"]),
     proxyEnabled: getBoolean(typedValue, ["proxyEnabled", "proxy_enabled"]),
     autoFailoverEnabled: getBoolean(typedValue, [
@@ -341,7 +347,6 @@ function normalizeServiceStatus(value: unknown): SharedRuntimeServiceStatus {
       enableLogging: false,
       statusSource: "config-fallback",
       statusError: null,
-      runtime: EMPTY_PROXY_STATUS,
     };
   }
 
@@ -358,7 +363,6 @@ function normalizeServiceStatus(value: unknown): SharedRuntimeServiceStatus {
       getString(typedValue, ["statusSource", "status_source"]) ||
       "config-fallback",
     statusError: getOptionalString(typedValue, ["statusError", "status_error"]),
-    runtime: EMPTY_PROXY_STATUS,
   };
 }
 
@@ -400,7 +404,7 @@ export function createOpenWrtRuntimeAdapter(
       }
 
       const service = normalizeServiceStatus(payload.service);
-      service.runtime = normalizeProxyStatus(payload.runtime);
+      const runtime = normalizeProxyStatus(payload.runtime);
 
       const baseApps = new Map<SharedProviderAppId, SharedRuntimeAppStatus>();
       if (Array.isArray(payload.apps)) {
@@ -438,8 +442,9 @@ export function createOpenWrtRuntimeAdapter(
 
       return {
         service,
+        runtime,
         apps,
-      } satisfies SharedRuntimeSurfaceState;
+      } satisfies SharedRuntimeStatusView;
     },
   };
 }

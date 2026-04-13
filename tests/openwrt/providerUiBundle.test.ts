@@ -316,11 +316,14 @@ describe("OpenWrt provider UI bundle", () => {
       await Promise.resolve();
     });
     await waitFor(() =>
-      expect(within(target).getByText("Runtime Status")).toBeInTheDocument(),
+      expect(within(target).getByText("Runtime Surface")).toBeInTheDocument(),
     );
 
+    expect(target).toHaveTextContent("Service Summary");
     expect(target).toHaveTextContent("Config fallback");
-    expect(target).toHaveTextContent("Live daemon status unavailable");
+    expect(target).toHaveTextContent(
+      "The daemon could not be reached. Showing saved OpenWrt configuration and failover context instead.",
+    );
     expect(target).toHaveTextContent(
       "dial tcp 127.0.0.1:15721: connect: connection refused",
     );
@@ -328,9 +331,11 @@ describe("OpenWrt provider UI bundle", () => {
     expect(target).toHaveTextContent("Codex");
     expect(target).toHaveTextContent("Gemini");
     expect(target).toHaveTextContent("Claude Primary");
-    expect(target).toHaveTextContent("Queue Depth");
-    expect(target).toHaveTextContent("Provider health has not been observed yet");
-    expect(target).toHaveTextContent("Failover Queue Preview");
+    expect(target).toHaveTextContent("Queue depth");
+    expect(target).toHaveTextContent(
+      "No live health observation reported for this queue entry yet.",
+    );
+    expect(target).toHaveTextContent("Failover queue preview");
     expect(transport.getRuntimeStatus).toHaveBeenCalledOnce();
     expect(transport.getAppRuntimeStatus).toHaveBeenCalledWith("claude");
     expect(transport.getAppRuntimeStatus).toHaveBeenCalledWith("codex");

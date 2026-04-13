@@ -120,12 +120,12 @@ describe("OpenWrt runtime adapter", () => {
     expect(state.service.reachable).toBe(false);
     expect(state.service.statusSource).toBe("config-fallback");
     expect(state.service.statusError).toBe("connection refused");
-    expect(state.service.runtime.active_connections).toBe(2);
-    expect(state.service.runtime.failover_count).toBe(2);
+    expect(state.runtime.activeConnections).toBe(2);
+    expect(state.runtime.failoverCount).toBe(2);
     expect(state.apps).toHaveLength(3);
     expect(state.apps[0]).toEqual(
       expect.objectContaining({
-        appId: "claude",
+        app: "claude",
         proxyEnabled: true,
         autoFailoverEnabled: true,
         failoverQueueDepth: 1,
@@ -155,7 +155,7 @@ describe("OpenWrt runtime adapter", () => {
     );
     expect(state.apps[2]).toEqual(
       expect.objectContaining({
-        appId: "gemini",
+        app: "gemini",
         proxyEnabled: false,
         usingLegacyDefault: true,
         observedProviderCount: 0,
@@ -261,7 +261,7 @@ describe("OpenWrt runtime adapter", () => {
     expect(state.service.statusSource).toBe("live-status");
     expect(state.apps[1]).toEqual(
       expect.objectContaining({
-        appId: "codex",
+        app: "codex",
         providerCount: 1,
         activeProviderId: "codex-primary",
         observedProviderCount: 1,
@@ -291,7 +291,7 @@ describe("OpenWrt runtime adapter", () => {
 
     expect(appState).toEqual(
       expect.objectContaining({
-        appId: "codex",
+        app: "codex",
         providerCount: 1,
         proxyEnabled: true,
         activeProviderId: "codex-active",
