@@ -13,7 +13,6 @@ type UiState = {
   bundleError: string | null;
   fallbackReason: string | null;
   restartPending: boolean;
-  restartInFlight?: boolean;
   mountHandle: (() => void) | null;
   mountRequestId: number;
   runtimeMountHandle: (() => void) | null;
@@ -83,7 +82,6 @@ type SettingsView = {
   ): ShellBridge;
   createStatusPanel(uiState: UiState): StatusNodes;
   createUiState(isRunning: boolean, selectedApp: AppId): UiState;
-  updateStatusPanel(statusNodes: StatusNodes, uiState: UiState): void;
   getBundleAssetPath(): string;
   getBundleStylePath(): string;
   getSelectedApp(): AppId;
@@ -517,7 +515,7 @@ describe("OpenWrt settings shared-provider shell", () => {
     const providerShell = shellNodes.mountRoot.closest("section");
 
     expect(statusNodes.summaryValue.textContent).toBe(
-      "Provider changes are saved. Restart the service to apply provider changes.",
+      "Provider changes are saved in the shared editor. Use the LuCI restart control to apply them on the running service.",
     );
     expect(shellNodes.root.className).toBe("ccswitch-host-shell-stack");
     expect(shellChildren).toHaveLength(2);
@@ -529,10 +527,10 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(shellText).toContain("Runtime Status");
     expect(shellText).toContain("Provider Manager");
     expect(shellText).toContain(
-      "Service settings, outbound proxy controls, and restart actions stay in LuCI.",
+      "Service settings, outbound proxy controls, and restart actions remain in the LuCI shell.",
     );
     expect(shellText).toContain(
-      "Service settings, outbound proxy controls, status, and restart actions stay in the LuCI shell.",
+      "Service settings, outbound proxy controls, status, and restart actions stay above in the LuCI host shell.",
     );
     expect(shellNodes.sharedChromeRoot?.querySelectorAll(".ccswitch-host-actions")).toHaveLength(
       1,
@@ -656,10 +654,10 @@ describe("OpenWrt settings shared-provider shell", () => {
     await settings.mountSharedProviderUi(uiState, statusNodes, shellNodes);
 
     expect(shellNodes.runtimeMountRoot.textContent).toContain(
-      "missing runtime-panel support",
+      "without runtime-surface support",
     );
     expect(shellNodes.mountRoot.textContent).not.toContain(
-      "missing runtime-panel support",
+      "without runtime-surface support",
     );
     expect(mount).toHaveBeenCalledTimes(1);
     expect(uiState.bundleStatus).toBe("ready");
@@ -713,8 +711,8 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(shellNodes.mountRoot.textContent).toContain("Claude Providers");
     expect(shellNodes.mountRoot.textContent).toContain("bundle missing");
     expect(shellNodes.mountRoot.textContent).toContain("Configure Provider");
-    expect(statusNodes.summaryValue.textContent).toBe(
-      "LuCI fallback mode is active because the shared provider panel failed to load.",
+    expect(statusNodes.summaryValue.textContent).toContain(
+      "failed to load or mount",
     );
   });
 
@@ -735,15 +733,13 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(uiState.fallbackReason).toBe(
       SHARED_PROVIDER_UI_FALLBACK_REASON_GATE_DISABLED,
     );
-    expect(uiState.bundleError).toContain("disabled for this browser");
+    expect(uiState.bundleError).toContain("Phase 5 cutover gate");
     expect(statusNodes.bundleValue.textContent).toBe("Fallback");
     expect(shellNodes.mountRoot.textContent).toContain("Claude Providers");
     expect(shellNodes.mountRoot.textContent).toContain("Configure Provider");
-    expect(shellNodes.mountRoot.textContent).toContain(
-      "disabled for this browser",
-    );
-    expect(statusNodes.summaryValue.textContent).toBe(
-      "LuCI fallback mode is active because the shared provider panel is disabled for this browser.",
+    expect(shellNodes.mountRoot.textContent).toContain("Phase 5 cutover gate");
+    expect(statusNodes.summaryValue.textContent).toContain(
+      "explicitly disabled by the Phase 5 cutover gate",
     );
   });
 
@@ -766,15 +762,15 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(uiState.fallbackReason).toBe(
       SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_REGRESSION,
     );
-    expect(uiState.bundleError).toContain("without provider-panel support");
+    expect(uiState.bundleError).toContain("without provider-manager support");
     expect(statusNodes.bundleValue.textContent).toBe("Fallback");
     expect(shellNodes.mountRoot.textContent).toContain("Claude Providers");
     expect(shellNodes.mountRoot.textContent).toContain("Configure Provider");
     expect(shellNodes.mountRoot.textContent).toContain(
-      "without provider-panel support",
+      "without provider-manager support",
     );
-    expect(statusNodes.summaryValue.textContent).toBe(
-      "LuCI fallback mode is active because the shared bundle is missing provider-panel support.",
+    expect(statusNodes.summaryValue.textContent).toContain(
+      "without provider-manager support",
     );
   });
 
@@ -803,8 +799,8 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(statusNodes.bundleValue.textContent).toBe("Unavailable");
     expect(shellNodes.mountRoot.textContent).toContain("Codex Providers");
     expect(shellNodes.mountRoot.textContent).toContain("mount regression");
-    expect(statusNodes.summaryValue.textContent).toBe(
-      "LuCI fallback mode is active because the shared provider panel failed to load.",
+    expect(statusNodes.summaryValue.textContent).toContain(
+      "failed to load or mount",
     );
   });
 
@@ -870,34 +866,5 @@ describe("OpenWrt settings shared-provider shell", () => {
     settings.teardownSharedProviderUi(uiState);
 
     expect(unmount).toHaveBeenCalledTimes(1);
-  });
-
-  it("keeps restart and fallback summary copy aligned in the LuCI shell", () => {
-    const { settings } = loadSettingsView("codex");
-    const uiState = settings.createUiState(true, "codex");
-    const statusNodes = settings.createStatusPanel(uiState);
-
-    uiState.bundleStatus = "ready";
-    uiState.restartPending = true;
-    settings.updateStatusPanel(statusNodes, uiState);
-    expect(statusNodes.summaryValue.textContent).toBe(
-      "Provider changes are saved. Restart the service to apply provider changes.",
-    );
-
-    uiState.restartPending = false;
-    uiState.restartInFlight = true;
-    settings.updateStatusPanel(statusNodes, uiState);
-    expect(statusNodes.summaryValue.textContent).toBe(
-      "LuCI is restarting the service to apply provider changes.",
-    );
-
-    uiState.restartInFlight = false;
-    uiState.bundleStatus = "fallback";
-    uiState.fallbackReason =
-      SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_REGRESSION;
-    settings.updateStatusPanel(statusNodes, uiState);
-    expect(statusNodes.summaryValue.textContent).toBe(
-      "LuCI fallback mode is active because the shared bundle is missing provider-panel support.",
-    );
   });
 });
