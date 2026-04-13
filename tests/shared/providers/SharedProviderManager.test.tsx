@@ -309,12 +309,12 @@ describe("SharedProviderManager", () => {
       />,
     );
 
-    expect(screen.getByText("Loading providers...")).toBeInTheDocument();
+    expect(screen.getByText("Loading provider settings...")).toBeInTheDocument();
 
     resolveProviders(buildState("claude", [], null));
 
     expect(
-      await screen.findByText("No providers saved for Claude yet."),
+      await screen.findByText("No Claude providers saved."),
     ).toBeInTheDocument();
 
     const claudeTab = screen.getByRole("button", { name: "Claude" });
@@ -328,7 +328,7 @@ describe("SharedProviderManager", () => {
       "true",
     );
     expect(
-      await screen.findByText("No providers saved for Codex yet."),
+      await screen.findByText("No Codex providers saved."),
     ).toBeInTheDocument();
   });
 
@@ -352,12 +352,14 @@ describe("SharedProviderManager", () => {
 
     await screen.findByText("Alpha");
 
-    const addButton = screen.getByRole("button", { name: "Add provider" });
+    const addButton = screen.getAllByRole("button", {
+      name: "Add provider",
+    })[0]!;
     addButton.focus();
     await user.keyboard("{Enter}");
 
     const addDialog = await screen.findByRole("dialog", {
-      name: "Add Claude provider",
+      name: "Save Claude provider",
     });
     expect(within(addDialog).getByLabelText("Provider name")).toHaveFocus();
 
@@ -365,7 +367,7 @@ describe("SharedProviderManager", () => {
 
     await waitFor(() =>
       expect(
-        screen.queryByRole("dialog", { name: "Add Claude provider" }),
+        screen.queryByRole("dialog", { name: "Save Claude provider" }),
       ).not.toBeInTheDocument(),
     );
     expect(addButton).toHaveFocus();
@@ -375,7 +377,7 @@ describe("SharedProviderManager", () => {
     await user.keyboard("{Enter}");
 
     const deleteDialog = await screen.findByRole("dialog", {
-      name: "Delete Claude provider",
+      name: "Delete provider",
     });
     expect(
       within(deleteDialog).getByRole("button", { name: "Cancel" }),
@@ -385,7 +387,7 @@ describe("SharedProviderManager", () => {
 
     await waitFor(() =>
       expect(
-        screen.queryByRole("dialog", { name: "Delete Claude provider" }),
+        screen.queryByRole("dialog", { name: "Delete provider" }),
       ).not.toBeInTheDocument(),
     );
     expect(deleteButton).toHaveFocus();
@@ -464,7 +466,7 @@ describe("SharedProviderManager", () => {
       "embedded-stack",
     );
     expect(toolbar).toContainElement(
-      screen.getByRole("button", { name: "Add provider" }),
+      screen.getAllByRole("button", { name: "Add provider" })[0]!,
     );
     expect(providerCardGrid).toHaveAttribute(
       "data-ccswitch-layout",
@@ -488,7 +490,7 @@ describe("SharedProviderManager", () => {
     );
 
     const deleteDialog = await screen.findByRole("dialog", {
-      name: "Delete Claude provider",
+      name: "Delete provider",
     });
 
     expect(deleteDialog).toHaveClass("ccswitch-openwrt-dialog-shell");
@@ -511,7 +513,7 @@ describe("SharedProviderManager", () => {
     await user.click(screen.getByRole("button", { name: "Retry" }));
 
     expect(
-      await screen.findByText("No providers saved for Claude yet."),
+      await screen.findByText("No Claude providers saved."),
     ).toBeInTheDocument();
     expect(listProviderState).toHaveBeenCalledTimes(2);
   });
@@ -532,16 +534,16 @@ describe("SharedProviderManager", () => {
       />,
     );
 
-    await screen.findByText("No providers saved for Claude yet.");
+    await screen.findByText("No Claude providers saved.");
 
-    const addProviderButton = screen.getByRole("button", {
+    const addProviderButton = screen.getAllByRole("button", {
       name: "Add provider",
-    });
+    })[0]!;
     addProviderButton.focus();
     await user.keyboard("{Enter}");
 
     const addDialog = await screen.findByRole("dialog", {
-      name: "Add Claude provider",
+      name: "Save Claude provider",
     });
     const addDialogScope = within(addDialog);
 
@@ -566,7 +568,7 @@ describe("SharedProviderManager", () => {
     ).toBeInTheDocument();
     await waitFor(() =>
       expect(
-        screen.queryByRole("dialog", { name: "Add Claude provider" }),
+        screen.queryByRole("dialog", { name: "Save Claude provider" }),
       ).not.toBeInTheDocument(),
     );
     expect(adapter.saveProvider).toHaveBeenCalledWith(
@@ -588,8 +590,13 @@ describe("SharedProviderManager", () => {
       }),
     );
     expect(
-      screen.getByText(/Restart the ccswitch to apply provider changes./i),
+      screen.getByText(/Restart the service to apply provider changes\./i),
     ).toBeInTheDocument();
+    expect(
+      screen
+        .getByText("Provider saved.")
+        .closest(".ccswitch-openwrt-shell-alert"),
+    ).toHaveClass("bg-amber-500/10");
 
     const editProviderButton = screen.getByRole("button", {
       name: "Edit Claude Official",
@@ -598,7 +605,7 @@ describe("SharedProviderManager", () => {
     await user.keyboard("{Enter}");
 
     const editDialog = await screen.findByRole("dialog", {
-      name: "Edit Claude provider",
+      name: "Update Claude provider",
     });
     const editDialogScope = within(editDialog);
 
@@ -626,7 +633,7 @@ describe("SharedProviderManager", () => {
     );
     await waitFor(() =>
       expect(
-        screen.queryByRole("dialog", { name: "Edit Claude provider" }),
+        screen.queryByRole("dialog", { name: "Update Claude provider" }),
       ).not.toBeInTheDocument(),
     );
     expect(onRestartRequired).toHaveBeenCalledTimes(2);
@@ -641,11 +648,13 @@ describe("SharedProviderManager", () => {
       <SharedProviderManager adapter={adapter} defaultApp="codex" />,
     );
 
-    await screen.findByText("No providers saved for Codex yet.");
-    await user.click(screen.getByRole("button", { name: "Add provider" }));
+    await screen.findByText("No Codex providers saved.");
+    await user.click(
+      screen.getAllByRole("button", { name: "Add provider" })[0]!,
+    );
 
     const dialog = await screen.findByRole("dialog", {
-      name: "Add Codex provider",
+      name: "Save Codex provider",
     });
     const dialogScope = within(dialog);
 
@@ -737,7 +746,7 @@ describe("SharedProviderManager", () => {
     );
 
     const storedSecretDialog = await screen.findByRole("dialog", {
-      name: "Edit Claude provider",
+      name: "Update Claude provider",
     });
     const storedSecretScope = within(storedSecretDialog);
 
@@ -759,14 +768,14 @@ describe("SharedProviderManager", () => {
 
     await waitFor(() =>
       expect(
-        screen.queryByRole("dialog", { name: "Edit Claude provider" }),
+        screen.queryByRole("dialog", { name: "Update Claude provider" }),
       ).not.toBeInTheDocument(),
     );
 
     await user.click(screen.getByRole("button", { name: "Edit Claude Empty" }));
 
     const emptySecretDialog = await screen.findByRole("dialog", {
-      name: "Edit Claude provider",
+      name: "Update Claude provider",
     });
     const emptySecretScope = within(emptySecretDialog);
 
@@ -924,10 +933,10 @@ describe("SharedProviderManager", () => {
     await user.keyboard("{Enter}");
 
     const deleteDialog = await screen.findByRole("dialog", {
-      name: "Delete Codex provider",
+      name: "Delete provider",
     });
     expect(deleteDialog).toHaveAccessibleDescription(
-      "Remove Alpha from the saved Codex providers on this router.",
+      "Delete Alpha from the saved Codex providers on this router.",
     );
     expect(
       within(deleteDialog).getByRole("button", { name: "Cancel" }),
@@ -937,7 +946,7 @@ describe("SharedProviderManager", () => {
 
     await waitFor(() =>
       expect(
-        screen.queryByRole("dialog", { name: "Delete Codex provider" }),
+        screen.queryByRole("dialog", { name: "Delete provider" }),
       ).not.toBeInTheDocument(),
     );
 
@@ -950,10 +959,10 @@ describe("SharedProviderManager", () => {
     await user.keyboard("{Enter}");
 
     const addDialog = await screen.findByRole("dialog", {
-      name: "Add Codex provider",
+      name: "Save Codex provider",
     });
     expect(addDialog).toHaveAccessibleDescription(
-      "Create a saved Codex provider from a grouped preset or a custom endpoint draft.",
+      "Save a new Codex provider from a preset or a custom draft.",
     );
     expect(
       within(addDialog).getByLabelText("Provider name"),
@@ -963,7 +972,7 @@ describe("SharedProviderManager", () => {
 
     await waitFor(() =>
       expect(
-        screen.queryByRole("dialog", { name: "Add Codex provider" }),
+        screen.queryByRole("dialog", { name: "Save Codex provider" }),
       ).not.toBeInTheDocument(),
     );
   });
@@ -977,12 +986,14 @@ describe("SharedProviderManager", () => {
       <SharedProviderManager adapter={adapter} selectedApp="claude" />,
     );
 
-    await screen.findByText("No providers saved for Claude yet.");
+    await screen.findByText("No Claude providers saved.");
 
-    await user.click(screen.getByRole("button", { name: "Add provider" }));
+    await user.click(
+      screen.getAllByRole("button", { name: "Add provider" })[0]!,
+    );
 
     const claudeDialog = await screen.findByRole("dialog", {
-      name: "Add Claude provider",
+      name: "Save Claude provider",
     });
     await user.clear(within(claudeDialog).getByLabelText("Provider name"));
     await user.type(
@@ -997,18 +1008,20 @@ describe("SharedProviderManager", () => {
     );
 
     expect(
-      await screen.findByText("No providers saved for Codex yet."),
+      await screen.findByText("No Codex providers saved."),
     ).toBeInTheDocument();
     await waitFor(() =>
       expect(
-        screen.queryByRole("dialog", { name: "Add Claude provider" }),
+        screen.queryByRole("dialog", { name: "Save Claude provider" }),
       ).not.toBeInTheDocument(),
     );
 
-    await user.click(screen.getByRole("button", { name: "Add provider" }));
+    await user.click(
+      screen.getAllByRole("button", { name: "Add provider" })[0]!,
+    );
 
     const codexDialog = await screen.findByRole("dialog", {
-      name: "Add Codex provider",
+      name: "Save Codex provider",
     });
     const codexDialogScope = within(codexDialog);
 
@@ -1039,16 +1052,16 @@ describe("SharedProviderManager", () => {
 
     await waitFor(() =>
       expect(
-        within(container).getByText("No providers saved for Claude yet."),
+        within(container).getByText("No Claude providers saved."),
       ).toBeInTheDocument(),
     );
 
     await user.click(
-      within(container).getByRole("button", { name: "Add provider" }),
+      within(container).getAllByRole("button", { name: "Add provider" })[0]!,
     );
 
     const addDialog = await screen.findByRole("dialog", {
-      name: "Add Claude provider",
+      name: "Save Claude provider",
     });
     await user.clear(within(addDialog).getByLabelText("Provider name"));
     await user.type(
@@ -1068,7 +1081,7 @@ describe("SharedProviderManager", () => {
         within(container).getByRole("button", { name: "Codex" }),
       ).toHaveAttribute("aria-pressed", "true");
       expect(
-        screen.queryByRole("dialog", { name: "Add Claude provider" }),
+        screen.queryByRole("dialog", { name: "Save Claude provider" }),
       ).not.toBeInTheDocument();
       expect(
         screen.queryByDisplayValue("Unsaved Claude"),
@@ -1087,14 +1100,14 @@ describe("SharedProviderManager", () => {
       <SharedProviderManager adapter={adapter} selectedApp="claude" />,
     );
 
-    await screen.findByText("No providers saved for Claude yet.");
+    await screen.findByText("No Claude providers saved.");
 
     await user.click(
       within(container).getAllByRole("button", { name: "Add provider" })[0]!,
     );
 
     const addDialog = await screen.findByRole("dialog", {
-      name: "Add Claude provider",
+      name: "Save Claude provider",
     });
     const addDialogScope = within(addDialog);
 
@@ -1114,11 +1127,11 @@ describe("SharedProviderManager", () => {
     );
 
     expect(
-      await screen.findByText("No providers saved for Codex yet."),
+      await screen.findByText("No Codex providers saved."),
     ).toBeInTheDocument();
     await waitFor(() =>
       expect(
-        screen.queryByRole("dialog", { name: "Add Claude provider" }),
+        screen.queryByRole("dialog", { name: "Save Claude provider" }),
       ).not.toBeInTheDocument(),
     );
 
@@ -1136,7 +1149,7 @@ describe("SharedProviderManager", () => {
     );
 
     const codexDialog = await screen.findByRole("dialog", {
-      name: "Add Codex provider",
+      name: "Save Codex provider",
     });
     const codexDialogScope = within(codexDialog);
 
@@ -1192,7 +1205,7 @@ describe("SharedProviderManager", () => {
 
     const betaCard = screen.getByText("Beta").closest("article");
     expect(
-      within(betaCard as HTMLElement).getByText("Active", {
+      within(betaCard as HTMLElement).getByText("Active provider", {
         selector: "span",
       }),
     ).toBeInTheDocument();
@@ -1257,7 +1270,7 @@ describe("SharedProviderManager", () => {
     expect(screen.queryByLabelText("Provider name")).not.toBeInTheDocument();
     expect(
       screen.getByText(
-        "Claude providers are visible here, but unsupported management actions stay hidden for this adapter.",
+        "Claude providers stay visible here, but this surface is read-only for provider changes on this router.",
       ),
     ).toBeInTheDocument();
   });

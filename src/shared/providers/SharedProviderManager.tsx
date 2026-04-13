@@ -60,7 +60,7 @@ import {
 } from "./ui/presentation";
 
 type Notice = {
-  tone: "success" | "error";
+  tone: "success" | "warning" | "error";
   title: string;
   description: string;
 };
@@ -213,7 +213,6 @@ function buildSuccessNotice(
   event: SharedProviderMutationEvent,
   shellState?: SharedProviderShellState,
 ): Notice {
-  const serviceName = shellState?.serviceName?.trim() || "service";
   const providerName = event.providerName || "Provider";
   const verb = getMutationVerb(event.action);
   const title =
@@ -231,14 +230,18 @@ function buildSuccessNotice(
     };
   }
 
-  let description = `${providerName} was ${verb}. Restart the ${serviceName} to apply provider changes.`;
+  let description = `${providerName} was ${verb}. Restart the service to apply provider changes.`;
 
   if (shellState?.restartInFlight) {
-    description += " Restart is already in progress.";
+    description += " A service restart is already in progress.";
   } else if (shellState?.restartPending) {
-    description += " Restart is still pending.";
+    description += " A service restart is still pending.";
   } else {
     description += " Use the LuCI restart control when ready.";
+  }
+
+  if (shellState?.serviceName?.trim()) {
+    description += ` Service: ${shellState.serviceName.trim()}.`;
   }
 
   if (shellState?.serviceStatusLabel) {
@@ -246,7 +249,7 @@ function buildSuccessNotice(
   }
 
   return {
-    tone: "success",
+    tone: "warning",
     title,
     description,
   };
@@ -287,22 +290,22 @@ function getProviderRegionDescription(
   capabilities: SharedProviderCapabilities | undefined,
 ): string {
   if (!state || !capabilities) {
-    return "Manage Claude, Codex, and Gemini providers through the shared OpenWrt-compatible React slice.";
+    return "Manage saved providers for Claude, Codex, and Gemini from one shared OpenWrt surface.";
   }
 
   if (!state.phase2Available) {
-    return "Legacy provider bridge detected. Compatibility mode is active for this app.";
+    return "LuCI fallback mode is active for this app. Saved providers stay visible, but some actions may be limited.";
   }
 
   if (!capabilities.canAdd && !capabilities.canEdit) {
-    return `${SHARED_PROVIDER_APP_PRESENTATION[appId].label} providers are visible here, but unsupported management actions stay hidden for this adapter.`;
+    return `${SHARED_PROVIDER_APP_PRESENTATION[appId].label} providers stay visible here, but this surface is read-only for provider changes on this router.`;
   }
 
   if (!capabilities.canAdd) {
-    return `Saved ${SHARED_PROVIDER_APP_PRESENTATION[appId].label} providers remain editable, but adding new entries is disabled for this adapter.`;
+    return `Saved ${SHARED_PROVIDER_APP_PRESENTATION[appId].label} providers stay editable here, but adding a provider is unavailable on this router.`;
   }
 
-  return "Use the operations supported by this adapter to manage saved providers.";
+  return "Review saved providers and use the actions available for this router.";
 }
 
 function LoadingState() {
@@ -310,7 +313,7 @@ function LoadingState() {
     <div className="ccswitch-openwrt-state-shell space-y-4 rounded-2xl border border-dashed border-border-default bg-muted/10 p-5">
       <div className="flex items-center gap-3 text-sm text-muted-foreground">
         <Loader2 className="h-5 w-5 animate-spin" />
-        <p>Loading providers...</p>
+        <p>Loading provider settings...</p>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         {Array.from({ length: 2 }).map((_, index) => (
@@ -340,7 +343,7 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
       <div className="space-y-1">
         <p className="font-medium">Unable to load providers.</p>
         <p className="text-sm text-muted-foreground">
-          Retry after the adapter or OpenWrt RPC bridge is available again.
+          Retry after the OpenWrt service or RPC bridge is available again.
         </p>
       </div>
       <Button type="button" variant="outline" onClick={onRetry}>
@@ -366,19 +369,18 @@ function EmptyState({
       </div>
       <div className="space-y-1">
         <p className="font-medium">
-          No providers saved for {SHARED_PROVIDER_APP_PRESENTATION[appId].label}{" "}
-          yet.
+          No {SHARED_PROVIDER_APP_PRESENTATION[appId].label} providers saved.
         </p>
         <p className="max-w-md text-sm text-muted-foreground">
           {canAdd
-            ? "Choose a preset or enter a custom endpoint, then save your first provider from the dedicated add panel."
-            : "This adapter exposes providers for this app without add support."}
+            ? "Save a provider to start routing this app through the router."
+            : "This router can show saved providers here, but adding a provider is unavailable."}
         </p>
       </div>
       {canAdd ? (
         <Button type="button" onClick={onAdd}>
           <Plus className="h-4 w-4" />
-          Create provider
+          Add provider
         </Button>
       ) : null}
     </div>
@@ -398,10 +400,9 @@ function SearchEmptyState({
         <AlertCircle className="h-5 w-5" />
       </div>
       <div className="space-y-1">
-        <p className="font-medium">No providers match "{searchQuery}".</p>
+        <p className="font-medium">No saved providers match "{searchQuery}".</p>
         <p className="text-sm text-muted-foreground">
-          Search only filters the current browser view. Clear it to show the
-          full provider list again.
+          Clear the search to review every saved provider again.
         </p>
       </div>
       <Button type="button" variant="outline" onClick={onClear}>
@@ -864,10 +865,10 @@ export function SharedProviderManager({
         >
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="space-y-2">
-              <CardTitle className="text-xl">Provider manager</CardTitle>
+              <CardTitle className="text-xl">Provider settings</CardTitle>
               <CardDescription className="max-w-2xl">
-                Manage Claude, Codex, and Gemini providers through the shared
-                OpenWrt-compatible React slice.
+                Manage saved providers for Claude, Codex, and Gemini from one
+                shared OpenWrt surface.
               </CardDescription>
             </div>
             <div
@@ -938,7 +939,7 @@ export function SharedProviderManager({
               </div>
               <div className="mt-3 space-y-1">
                 <p className="text-lg font-semibold text-foreground">
-                  {currentPresentation.label} saved providers
+                  Provider settings
                 </p>
                 <p className="text-sm text-muted-foreground">
                   {getProviderRegionDescription(
@@ -963,16 +964,16 @@ export function SharedProviderManager({
                 Active route
               </p>
               <p className="mt-3 text-base font-semibold text-foreground">
-                {currentActiveProvider
-                  ? `Current provider: ${getSharedProviderDisplayName(
-                      currentActiveProvider,
-                    )}`
+                  {currentActiveProvider
+                    ? `Current provider: ${getSharedProviderDisplayName(
+                        currentActiveProvider,
+                      )}`
                   : "No active provider selected"}
               </p>
               <p className="mt-2 text-sm text-muted-foreground">
                 {currentActiveProvider
                   ? currentActiveProvider.baseUrl || "Base URL unavailable"
-                  : "Activate a saved provider to pin the route used by the current app."}
+                  : "Activate a saved provider to route requests for this app."}
               </p>
             </section>
           </div>
@@ -984,6 +985,8 @@ export function SharedProviderManager({
                 "ccswitch-openwrt-shell-alert",
                 notice.tone === "success" &&
                   "border-emerald-500/30 bg-emerald-500/5 text-emerald-950 dark:text-emerald-100",
+                notice.tone === "warning" &&
+                  "border-amber-500/30 bg-amber-500/10 text-amber-950 dark:text-amber-100",
               )}
             >
               {notice.tone === "success" ? (
@@ -1146,11 +1149,11 @@ export function SharedProviderManager({
           <DialogHeader className="space-y-3 border-b-0 bg-transparent pb-0">
             <DialogTitle className="flex items-center gap-2 text-lg font-semibold">
               <AlertCircle className="h-5 w-5 text-destructive" />
-              Delete {currentPresentation.label} provider
+              Delete provider
             </DialogTitle>
             <DialogDescription className="text-sm leading-relaxed">
               {pendingDelete
-                ? `Remove ${getSharedProviderDisplayName(pendingDelete)} from the saved ${currentPresentation.label} providers on this router.`
+                ? `Delete ${getSharedProviderDisplayName(pendingDelete)} from the saved ${currentPresentation.label} providers on this router.`
                 : ""}
             </DialogDescription>
           </DialogHeader>

@@ -62,8 +62,8 @@ describe("SharedProviderCard", () => {
       />,
     );
 
-    expect(screen.getByText("Active")).toBeInTheDocument();
-    expect(screen.getByText("Secret stored")).toBeInTheDocument();
+    expect(screen.getByText("Active provider")).toBeInTheDocument();
+    expect(screen.getByText("Stored secret")).toBeInTheDocument();
     expect(screen.getByText("Preset: OpenRouter")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Edit Alpha" }),
@@ -107,7 +107,7 @@ describe("SharedProviderCard", () => {
     expect(
       screen.queryByRole("button", { name: "Delete Beta" }),
     ).not.toBeInTheDocument();
-    expect(screen.queryByText("Secret stored")).not.toBeInTheDocument();
+    expect(screen.queryByText("Stored secret")).not.toBeInTheDocument();
   });
 
   it("surfaces busy semantics on the active action controls", () => {
