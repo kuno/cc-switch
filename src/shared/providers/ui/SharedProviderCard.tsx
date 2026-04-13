@@ -38,6 +38,11 @@ export function SharedProviderCard({
     : actionVisibility.edit
       ? "edit"
       : null;
+  const providerMeta = [
+    provider.tokenConfigured ? "Stored secret" : null,
+    presetLabel ? `Preset: ${presetLabel}` : null,
+    provider.providerId ? `Provider ID ${provider.providerId}` : null,
+  ].filter((value): value is string => Boolean(value));
 
   return (
     <article
@@ -55,93 +60,79 @@ export function SharedProviderCard({
           appPresentation.accentBarClassName,
         )}
       />
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0 flex-1 space-y-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0 space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="truncate text-lg font-semibold">
-                  {providerName}
-                </h3>
-                {provider.active ? (
-                  <span
-                    className={cn(
-                      "rounded-full px-2.5 py-1 text-xs font-medium",
-                      appPresentation.chipClassName,
-                    )}
-                  >
-                    Active provider
-                  </span>
-                ) : null}
-                {provider.tokenConfigured ? (
-                  <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
-                    Stored secret
-                  </span>
-                ) : null}
-                {presetLabel ? (
-                  <span className="rounded-full border border-border-default px-2.5 py-1 text-xs font-medium text-muted-foreground">
-                    Preset: {presetLabel}
-                  </span>
-                ) : null}
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Saved provider settings and actions for this route.
-              </p>
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div className="min-w-0 space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="truncate text-lg font-semibold">{providerName}</h3>
+              {provider.active ? (
+                <span
+                  className={cn(
+                    "rounded-full px-2.5 py-1 text-xs font-medium",
+                    appPresentation.chipClassName,
+                  )}
+                >
+                  Active provider
+                </span>
+              ) : null}
             </div>
-            <span
-              className={cn(
-                "rounded-full px-3 py-1 text-xs font-semibold",
-                appPresentation.chipClassName,
-              )}
-            >
-              {appPresentation.label}
-            </span>
-          </div>
-
-          <div className="grid gap-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(240px,0.8fr)]">
-            <div className="ccswitch-openwrt-group rounded-2xl border border-border-default/70 bg-muted/20 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                Base URL
-              </p>
-              <p className="mt-2 break-all text-sm font-medium text-foreground">
-                {provider.baseUrl || "-"}
-              </p>
-            </div>
-            <dl className="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-1">
-              <div className="ccswitch-openwrt-stat-card rounded-2xl border border-border-default/70 bg-background p-4">
-                <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                  Model
-                </dt>
-                <dd className="mt-2 break-all font-medium text-foreground">
-                  {provider.model || "-"}
-                </dd>
-              </div>
-              <div className="ccswitch-openwrt-stat-card rounded-2xl border border-border-default/70 bg-background p-4">
-                <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                  Token field
-                </dt>
-                <dd className="mt-2 break-all font-medium text-foreground">
-                  {provider.tokenField}
-                </dd>
-              </div>
-              <div className="ccswitch-openwrt-stat-card rounded-2xl border border-border-default/70 bg-background p-4 sm:col-span-2 xl:col-span-1">
-                <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                  Provider ID
-                </dt>
-                <dd className="mt-2 break-all font-medium text-foreground">
-                  {provider.providerId || "-"}
-                </dd>
-              </div>
-            </dl>
-          </div>
-
-          {provider.notes ? (
-            <p className="ccswitch-openwrt-inline-note rounded-2xl border border-border-default/70 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
-              {provider.notes}
+            <p className="text-sm text-muted-foreground">
+              Saved provider settings and actions for this route.
             </p>
-          ) : null}
+            {providerMeta.length > 0 ? (
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                {providerMeta.map((item) => (
+                  <span key={item}>{item}</span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <span
+            className={cn(
+              "w-fit rounded-full px-3 py-1 text-xs font-semibold",
+              appPresentation.chipClassName,
+            )}
+          >
+            {appPresentation.label}
+          </span>
         </div>
-        <div className="flex shrink-0 flex-wrap gap-2 lg:w-40 lg:flex-col lg:items-stretch">
+
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+          <div className="ccswitch-openwrt-group rounded-2xl border border-border-default/70 bg-muted/20 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              Base URL
+            </p>
+            <p className="mt-2 break-all text-sm font-medium text-foreground">
+              {provider.baseUrl || "-"}
+            </p>
+          </div>
+          <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-1">
+            <div className="ccswitch-openwrt-stat-card rounded-2xl border border-border-default/70 bg-background p-4">
+              <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                Model
+              </dt>
+              <dd className="mt-2 break-all font-medium text-foreground">
+                {provider.model || "-"}
+              </dd>
+            </div>
+            <div className="ccswitch-openwrt-stat-card rounded-2xl border border-border-default/70 bg-background p-4">
+              <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                Token field
+              </dt>
+              <dd className="mt-2 break-all font-medium text-foreground">
+                {provider.tokenField}
+              </dd>
+            </div>
+          </dl>
+        </div>
+
+        {provider.notes ? (
+          <p className="ccswitch-openwrt-inline-note rounded-2xl border border-border-default/70 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+            {provider.notes}
+          </p>
+        ) : null}
+
+        <div className="flex flex-wrap gap-2 border-t border-border-default/70 pt-4">
           {actionVisibility.edit ? (
             <Button
               type="button"

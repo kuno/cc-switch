@@ -861,9 +861,9 @@ export function SharedProviderManager({
         <CardHeader
           data-ccswitch-region="provider-header"
           data-ccswitch-layout="embedded-stack"
-          className="ccswitch-openwrt-page-header gap-4 border-b border-border-default bg-gradient-to-br from-background via-background to-muted/30 p-4 sm:p-5"
+          className="ccswitch-openwrt-page-header gap-5 border-b border-border-default bg-gradient-to-br from-background via-background to-muted/30 p-4 sm:p-5"
         >
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div className="space-y-2">
               <CardTitle className="text-xl">Provider settings</CardTitle>
               <CardDescription className="max-w-2xl">
@@ -911,7 +911,7 @@ export function SharedProviderManager({
           <div
             data-ccswitch-region="provider-summary-grid"
             data-ccswitch-layout="stack-to-split"
-            className="grid gap-3"
+            className="grid gap-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]"
           >
             <section
               data-ccswitch-region="provider-summary"
@@ -931,15 +931,10 @@ export function SharedProviderManager({
                     {state.providers.length} saved
                   </span>
                 ) : null}
-                <span className="rounded-full border border-border-default bg-background px-3 py-1 text-xs font-medium text-muted-foreground">
-                  {capabilities.requiresServiceRestart
-                    ? "Restart required after changes"
-                    : "Changes apply immediately"}
-                </span>
               </div>
               <div className="mt-3 space-y-1">
                 <p className="text-lg font-semibold text-foreground">
-                  Provider settings
+                  {currentPresentation.label} provider routing
                 </p>
                 <p className="text-sm text-muted-foreground">
                   {getProviderRegionDescription(
@@ -949,6 +944,26 @@ export function SharedProviderManager({
                   )}
                 </p>
               </div>
+              <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-border-default/70 bg-muted/20 px-4 py-3">
+                  <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                    Saved providers
+                  </dt>
+                  <dd className="mt-2 text-base font-semibold text-foreground">
+                    {state ? state.providers.length : "—"}
+                  </dd>
+                </div>
+                <div className="rounded-2xl border border-border-default/70 bg-muted/20 px-4 py-3">
+                  <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                    Change window
+                  </dt>
+                  <dd className="mt-2 text-sm font-medium text-foreground">
+                    {capabilities.requiresServiceRestart
+                      ? "Restart after provider updates"
+                      : "Provider changes apply immediately"}
+                  </dd>
+                </div>
+              </dl>
             </section>
 
             <section
@@ -964,10 +979,10 @@ export function SharedProviderManager({
                 Active route
               </p>
               <p className="mt-3 text-base font-semibold text-foreground">
-                  {currentActiveProvider
-                    ? `Current provider: ${getSharedProviderDisplayName(
-                        currentActiveProvider,
-                      )}`
+                {currentActiveProvider
+                  ? `Current provider: ${getSharedProviderDisplayName(
+                      currentActiveProvider,
+                    )}`
                   : "No active provider selected"}
               </p>
               <p className="mt-2 text-sm text-muted-foreground">
@@ -975,6 +990,11 @@ export function SharedProviderManager({
                   ? currentActiveProvider.baseUrl || "Base URL unavailable"
                   : "Activate a saved provider to route requests for this app."}
               </p>
+              {currentActiveProvider?.providerId ? (
+                <p className="mt-3 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                  Provider ID: {currentActiveProvider.providerId}
+                </p>
+              ) : null}
             </section>
           </div>
 
