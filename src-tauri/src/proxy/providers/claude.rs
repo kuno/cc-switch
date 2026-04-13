@@ -435,14 +435,6 @@ pub fn transform_claude_request_for_api_format(
                 body,
                 preserve_reasoning_content,
             )?;
-            // Inject prompt_cache_key only if explicitly configured in meta
-            if let Some(key) = provider
-                .meta
-                .as_ref()
-                .and_then(|m| m.prompt_cache_key.as_deref())
-            {
-                result["prompt_cache_key"] = serde_json::json!(key);
-            }
             // 流式请求必须注入 stream_options.include_usage，否则 OpenAI 兼容上游
             // 不在 SSE 末尾吐 usage → 转换出的 Anthropic message_delta 全 0 →
             // 整笔 input/output/cache 漏记（与 Codex Responses→Chat 路径同源）。
