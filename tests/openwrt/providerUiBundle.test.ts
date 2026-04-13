@@ -787,7 +787,15 @@ describe("OpenWrt provider UI bundle", () => {
       repoRoot,
       "openwrt/provider-ui-dist/ccswitch-provider-ui.js",
     );
+    const stagedStylesheetPath = path.resolve(
+      repoRoot,
+      "openwrt/provider-ui-dist/ccswitch-provider-ui.css",
+    );
     const stagedOutputPath = path.join(outputDir, "ccswitch-provider-ui.js");
+    const stagedStylesheetOutputPath = path.join(
+      outputDir,
+      "ccswitch-provider-ui.css",
+    );
     const luciMakefile = readFileSync(
       path.resolve(repoRoot, "openwrt/luci-app-ccswitch/Makefile"),
       "utf8",
@@ -800,23 +808,29 @@ describe("OpenWrt provider UI bundle", () => {
       path.resolve(repoRoot, "vite.config.ts"),
       "utf8",
     );
-    const stagedBundleSource = readFileSync(stagedBundlePath, "utf8");
-
     execFileSync("sh", [helperPath, "--output-dir", outputDir], {
       cwd: repoRoot,
     });
 
     expect(existsSync(stagedBundlePath)).toBe(true);
+    expect(existsSync(stagedStylesheetPath)).toBe(true);
     expect(existsSync(stagedOutputPath)).toBe(true);
+    expect(existsSync(stagedStylesheetOutputPath)).toBe(true);
+    const stagedBundleSource = readFileSync(stagedBundlePath, "utf8");
+    const stagedStylesheetSource = readFileSync(stagedStylesheetPath, "utf8");
     const bundleSource = readFileSync(stagedOutputPath, "utf8");
+    const stylesheetSource = readFileSync(stagedStylesheetOutputPath, "utf8");
 
     expect(bundleSource).toBe(stagedBundleSource);
+    expect(stylesheetSource).toBe(stagedStylesheetSource);
     expect(stagedBundleSource).toContain("__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__");
     expect(stagedBundleSource).toContain("providerManager");
     expect(stagedBundleSource).toContain("Add provider");
     expect(stagedBundleSource).toContain("Secret stored");
     expect(stagedBundleSource).toContain("Provider ID");
     expect(stagedBundleSource).toContain("cc-switch service");
+    expect(stagedStylesheetSource).toContain(":root");
+    expect(stagedStylesheetSource).toContain(".bg-background");
     expect(stagedBundleSource).not.toContain("process.env.NODE_ENV");
     expect(stagedBundleSource).not.toContain("Shared provider bundle loaded.");
     expect(stagedBundleSource).not.toContain(
@@ -840,14 +854,27 @@ describe("OpenWrt provider UI bundle", () => {
       "openwrt/prepare-provider-ui-bundle.sh",
     );
     const explicitBundlePath = path.join(sourceDir, "explicit-real-bundle.js");
+    const explicitStylesheetPath = path.join(sourceDir, "explicit-real-bundle.css");
     const stagedBundlePath = path.resolve(
       repoRoot,
       "openwrt/provider-ui-dist/ccswitch-provider-ui.js",
     );
+    const stagedStylesheetPath = path.resolve(
+      repoRoot,
+      "openwrt/provider-ui-dist/ccswitch-provider-ui.css",
+    );
     const stagedOutputPath = path.join(outputDir, "ccswitch-provider-ui.js");
+    const stagedStylesheetOutputPath = path.join(
+      outputDir,
+      "ccswitch-provider-ui.css",
+    );
     const stagedBundleExisted = existsSync(stagedBundlePath);
+    const stagedStylesheetExisted = existsSync(stagedStylesheetPath);
     const stagedBundleBefore = stagedBundleExisted
       ? readFileSync(stagedBundlePath, "utf8")
+      : null;
+    const stagedStylesheetBefore = stagedStylesheetExisted
+      ? readFileSync(stagedStylesheetPath, "utf8")
       : null;
     const explicitBundleSource = [
       "globalThis.__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__ = {",
@@ -856,8 +883,10 @@ describe("OpenWrt provider UI bundle", () => {
       "};",
       "",
     ].join("\n");
+    const explicitStylesheetSource = ":root { --ccswitch-explicit-bundle: 1; }\n";
 
     writeFileSync(explicitBundlePath, explicitBundleSource, "utf8");
+    writeFileSync(explicitStylesheetPath, explicitStylesheetSource, "utf8");
 
     execFileSync("sh", [helperPath, "--output-dir", outputDir], {
       cwd: repoRoot,
@@ -868,7 +897,11 @@ describe("OpenWrt provider UI bundle", () => {
     });
 
     expect(existsSync(stagedOutputPath)).toBe(true);
+    expect(existsSync(stagedStylesheetOutputPath)).toBe(true);
     expect(readFileSync(stagedOutputPath, "utf8")).toBe(explicitBundleSource);
+    expect(readFileSync(stagedStylesheetOutputPath, "utf8")).toBe(
+      explicitStylesheetSource,
+    );
     expect(readFileSync(stagedOutputPath, "utf8")).toContain(
       "providerManager: true",
     );
@@ -876,6 +909,13 @@ describe("OpenWrt provider UI bundle", () => {
       expect(readFileSync(stagedBundlePath, "utf8")).toBe(stagedBundleBefore);
     } else {
       expect(existsSync(stagedBundlePath)).toBe(false);
+    }
+    if (stagedStylesheetExisted) {
+      expect(readFileSync(stagedStylesheetPath, "utf8")).toBe(
+        stagedStylesheetBefore,
+      );
+    } else {
+      expect(existsSync(stagedStylesheetPath)).toBe(false);
     }
   });
 });
