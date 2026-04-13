@@ -332,11 +332,11 @@ describe("SharedRuntimeSurface", () => {
     const { unmount } = renderSurface(emptyAdapter);
 
     expect(
-      await screen.findByText("No runtime status available yet."),
+      await screen.findByText("No runtime status available."),
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "The backend did not return a runtime snapshot for this router.",
+        "Refresh to load the latest service status and provider health for this router.",
       ),
     ).toBeInTheDocument();
 
@@ -351,18 +351,18 @@ describe("SharedRuntimeSurface", () => {
     renderSurface(errorAdapter);
 
     expect(
-      await screen.findByText("Unable to load runtime status."),
+      await screen.findByText("Could not load runtime status."),
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Check the OpenWrt RPC bridge and retry once the daemon is reachable again.",
+        "Retry after the OpenWrt service or RPC bridge is available again.",
       ),
     ).toBeInTheDocument();
     expect(screen.getByText("rpc bridge offline")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
     expect(
       screen
-        .getByText("Unable to load runtime status.")
+        .getByText("Could not load runtime status.")
         .closest(".ccswitch-openwrt-state-shell--warning"),
     ).not.toBeNull();
     expect(
@@ -686,7 +686,7 @@ describe("SharedRuntimeSurface", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByRole("heading", { name: "Runtime Surface" }),
+        screen.getByRole("heading", { name: "Runtime status" }),
       ).toBeInTheDocument(),
     );
     expect(
@@ -695,7 +695,9 @@ describe("SharedRuntimeSurface", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Refresh status" }));
 
-    const refreshNoteTitle = await screen.findByText("Latest refresh failed");
+    const refreshNoteTitle = await screen.findByText(
+      "Refresh failed. Showing the last available status.",
+    );
     expect(refreshNoteTitle).toBeInTheDocument();
     expect(screen.getByText("refresh bridge offline")).toBeInTheDocument();
     expect(
