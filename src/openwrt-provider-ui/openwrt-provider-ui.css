@@ -360,8 +360,14 @@ body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-state-shell--warning {
   );
 }
 
+html.dark
+  body.ccswitch-openwrt-provider-ui-theme
+  .ccswitch-openwrt-inline-note--warning,
 body.ccswitch-openwrt-provider-ui-theme.dark
   .ccswitch-openwrt-inline-note--warning,
+html.dark
+  body.ccswitch-openwrt-provider-ui-theme
+  .ccswitch-openwrt-state-shell--warning,
 body.ccswitch-openwrt-provider-ui-theme.dark
   .ccswitch-openwrt-state-shell--warning {
   background: linear-gradient(180deg, hsl(34 42% 18%), hsl(34 40% 16% / 0.9));
