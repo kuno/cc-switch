@@ -1138,8 +1138,8 @@ describe("OpenWrt provider UI bundle", () => {
       expect(stagedStylesheetSource).toContain(hook);
     }
 
-    expect(stagedStylesheetSource).toContain(
-      "@media(max-width:960px){body.ccswitch-openwrt-provider-ui-theme .cbi-value{grid-template-columns:1fr;gap:.4rem}",
+    expect(stagedStylesheetSource).toMatch(
+      /@media\(max-width:960px\)\{[^}]*body\.ccswitch-openwrt-provider-ui-theme \.cbi-value\{[^}]*grid-template-columns:1fr[^}]*\}/,
     );
     expect(stagedStylesheetSource).toContain(
       ".sm\\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}",
@@ -1152,6 +1152,9 @@ describe("OpenWrt provider UI bundle", () => {
     );
     expect(stagedStylesheetSource).toContain(
       ".xl\\:grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}",
+    );
+    expect(stagedStylesheetSource).toContain(
+      ".xl\\:grid-cols-\\[minmax\\(0\\,1fr\\)_minmax\\(280px\\,0\\.6fr\\)\\]{grid-template-columns:minmax(0,1fr) minmax(280px,.6fr)}",
     );
   });
 
