@@ -350,6 +350,14 @@ describe("OpenWrt settings shared-provider shell", () => {
 
     const statusResult = await transport.getRuntimeStatus();
     const appStatusResult = await transport.getAppRuntimeStatus("codex");
+    const availableProvidersResult =
+      await transport.getAvailableFailoverProviders("codex");
+    const addResult = await transport.addToFailoverQueue("codex", "provider-a");
+    const removeResult = await transport.removeFromFailoverQueue(
+      "codex",
+      "provider-a",
+    );
+    const toggleResult = await transport.setAutoFailoverEnabled("codex", true);
 
     expect(statusResult).toMatchObject({
       args: [],
@@ -364,6 +372,38 @@ describe("OpenWrt settings shared-provider shell", () => {
         method: "get_app_runtime_status",
         object: "ccswitch",
         params: ["app"],
+      },
+    });
+    expect(availableProvidersResult).toMatchObject({
+      args: ["codex"],
+      spec: {
+        method: "get_available_failover_providers",
+        object: "ccswitch",
+        params: ["app"],
+      },
+    });
+    expect(addResult).toMatchObject({
+      args: ["codex", "provider-a"],
+      spec: {
+        method: "add_to_failover_queue",
+        object: "ccswitch",
+        params: ["app", "provider_id"],
+      },
+    });
+    expect(removeResult).toMatchObject({
+      args: ["codex", "provider-a"],
+      spec: {
+        method: "remove_from_failover_queue",
+        object: "ccswitch",
+        params: ["app", "provider_id"],
+      },
+    });
+    expect(toggleResult).toMatchObject({
+      args: ["codex", true],
+      spec: {
+        method: "set_auto_failover_enabled",
+        object: "ccswitch",
+        params: ["app", "enabled"],
       },
     });
   });

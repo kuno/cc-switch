@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import type { SharedRuntimeFailoverQueueEntry } from "../domain";
 import {
@@ -12,11 +13,16 @@ export function SharedRuntimeFailoverQueuePreview({
   maxVisible,
   emptyLabel = "No failover providers queued.",
   className,
+  renderEntryActions,
 }: {
   queue: SharedRuntimeFailoverQueueEntry[];
   maxVisible?: number;
   emptyLabel?: string;
   className?: string;
+  renderEntryActions?: (
+    entry: SharedRuntimeFailoverQueueEntry,
+    index: number,
+  ) => ReactNode;
 }) {
   const orderedQueue = sortSharedRuntimeFailoverQueue(queue);
   const visibleQueue =
@@ -68,7 +74,10 @@ export function SharedRuntimeFailoverQueuePreview({
                 {entry.providerId}
               </p>
             </div>
-            <SharedRuntimeHealthBadge health={entry.health} />
+            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+              <SharedRuntimeHealthBadge health={entry.health} />
+              {renderEntryActions ? renderEntryActions(entry, index) : null}
+            </div>
           </div>
 
           {entry.health.observed ? (

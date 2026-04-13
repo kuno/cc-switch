@@ -232,6 +232,34 @@ var callGetAppRuntimeStatus = rpc.declare({
 	expect: { '': {} }
 });
 
+var callGetAvailableFailoverProviders = rpc.declare({
+	object: 'ccswitch',
+	method: 'get_available_failover_providers',
+	params: ['app'],
+	expect: { '': {} }
+});
+
+var callAddToFailoverQueue = rpc.declare({
+	object: 'ccswitch',
+	method: 'add_to_failover_queue',
+	params: ['app', 'provider_id'],
+	expect: { '': {} }
+});
+
+var callRemoveFromFailoverQueue = rpc.declare({
+	object: 'ccswitch',
+	method: 'remove_from_failover_queue',
+	params: ['app', 'provider_id'],
+	expect: { '': {} }
+});
+
+var callSetAutoFailoverEnabled = rpc.declare({
+	object: 'ccswitch',
+	method: 'set_auto_failover_enabled',
+	params: ['app', 'enabled'],
+	expect: { '': {} }
+});
+
 var callListProviders = rpc.declare({
 	object: 'ccswitch',
 	method: 'list_providers',
@@ -1877,6 +1905,18 @@ return view.extend({
 			},
 			getAppRuntimeStatus: function (appId) {
 				return L.resolveDefault(callGetAppRuntimeStatus(appId), { ok: false });
+			},
+			getAvailableFailoverProviders: function (appId) {
+				return L.resolveDefault(callGetAvailableFailoverProviders(appId), { ok: false });
+			},
+			addToFailoverQueue: function (appId, providerId) {
+				return L.resolveDefault(callAddToFailoverQueue(appId, providerId), { ok: false });
+			},
+			removeFromFailoverQueue: function (appId, providerId) {
+				return L.resolveDefault(callRemoveFromFailoverQueue(appId, providerId), { ok: false });
+			},
+			setAutoFailoverEnabled: function (appId, enabled) {
+				return L.resolveDefault(callSetAutoFailoverEnabled(appId, enabled), { ok: false });
 			}
 		};
 	},
