@@ -1,6 +1,8 @@
 import type {
   SharedProviderAppId,
+  SharedProviderCapabilities,
   SharedProviderEditorPayload,
+  SharedProviderState,
 } from "@/shared/providers/domain";
 
 export interface OpenWrtRpcResult {
@@ -74,4 +76,23 @@ export interface OpenWrtProviderTransport {
     providerId: string,
   ): Promise<OpenWrtRpcResult>;
   restartService(): Promise<OpenWrtRpcResult>;
+}
+
+export type OpenWrtProviderMutationKind = "save" | "activate" | "delete";
+
+export interface OpenWrtProviderMutationEvent {
+  appId: SharedProviderAppId;
+  mutation: OpenWrtProviderMutationKind;
+  providerId: string | null;
+  serviceRunning: boolean;
+  restartRequired: boolean;
+  providerState: SharedProviderState;
+  capabilities: SharedProviderCapabilities;
+}
+
+export interface OpenWrtProviderRuntimeHooks {
+  getServiceRunning?(): boolean | Promise<boolean>;
+  onProviderMutation?(
+    event: OpenWrtProviderMutationEvent,
+  ): void | Promise<void>;
 }
