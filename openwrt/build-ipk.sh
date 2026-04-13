@@ -34,6 +34,7 @@ ARCH_ALIAS=""
 RUST_TARGET=""
 OPKG_ARCH=""
 BINARY=""
+BINARY_EXPLICIT=0
 
 usage() {
 	cat <<EOF
@@ -102,6 +103,7 @@ parse_args() {
 				shift
 				[ "$#" -gt 0 ] || die "--binary requires a value"
 				BINARY="$1"
+				BINARY_EXPLICIT=1
 				;;
 			--dist-dir)
 				shift
@@ -198,6 +200,20 @@ Build it first with:
 	[ -f "$LUCI_SRC/root/usr/share/luci/menu.d/luci-app-ccswitch.json" ] || die "missing LuCI menu file"
 	[ -f "$LUCI_SRC/htdocs/luci-static/resources/view/ccswitch/settings.js" ] || die "missing LuCI settings view"
 	[ -f "$OPENWRT_PROVIDER_UI_ASSET" ] || die "missing OpenWrt provider UI bundle"
+}
+
+build_daemon_binary() {
+	if [ "$BINARY_EXPLICIT" -eq 1 ]; then
+		return
+	fi
+
+	require_command cargo
+
+	echo "Building fresh cc-switch daemon binary for $RUST_TARGET"
+	(
+		cd "$PROJECT_DIR/proxy-daemon"
+		cargo build --release --target "$RUST_TARGET"
+	)
 }
 
 assert_static_binary() {
@@ -491,6 +507,7 @@ parse_args "$@"
 resolve_target
 validate_package_metadata
 ensure_openwrt_provider_ui_asset
+build_daemon_binary
 assert_inputs
 assert_static_binary
 setup_tar_flags
