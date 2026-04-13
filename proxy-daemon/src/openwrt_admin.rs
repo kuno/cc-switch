@@ -394,7 +394,6 @@ pub async fn add_to_failover_queue(
             )
         })?;
 
-    sync_failover_target_after_queue_update(db, app_type, profile).await?;
     build_app_runtime_status(db, app_type).await
 }
 
@@ -416,7 +415,6 @@ pub async fn remove_from_failover_queue(
             )
         })?;
 
-    sync_failover_target_after_queue_update(db, app_type, profile).await?;
     build_app_runtime_status(db, app_type).await
 }
 
@@ -426,11 +424,9 @@ pub async fn set_auto_failover_enabled(
     enabled: bool,
 ) -> anyhow::Result<OpenWrtAppRuntimeStatusView> {
     let profile = openwrt_app_profile(app_type)?;
-    let queue_head_provider_id = if enabled {
-        Some(ensure_failover_queue_ready_for_enable(db, app_type, profile).await?)
-    } else {
-        None
-    };
+    if enabled {
+        ensure_failover_queue_ready_for_enable(db, app_type, profile).await?;
+    }
 
     let mut config = load_proxy_config_for_app(db, profile).await?;
     config.auto_failover_enabled = enabled;
@@ -440,10 +436,6 @@ pub async fn set_auto_failover_enabled(
             profile.app_id
         )
     })?;
-
-    if let Some(queue_head_provider_id) = queue_head_provider_id.as_deref() {
-        set_active_provider_id(db, app_type, profile, Some(queue_head_provider_id))?;
-    }
 
     build_app_runtime_status(db, app_type).await
 }
@@ -841,29 +833,6 @@ async fn prevent_empty_failover_queue_while_enabled(
     }
 
     Ok(())
-}
-
-async fn sync_failover_target_after_queue_update(
-    db: &Database,
-    app_type: &AppType,
-    profile: OpenWrtAppProfile,
-) -> anyhow::Result<()> {
-    let config = load_proxy_config_for_app(db, profile).await?;
-    if !config.auto_failover_enabled {
-        return Ok(());
-    }
-
-    let queue = load_failover_queue(db, profile)?;
-    let queue_head_provider_id = queue
-        .first()
-        .map(|entry| entry.provider_id.as_str())
-        .ok_or_else(|| {
-            anyhow!(
-                "{} auto failover requires at least one queued provider",
-                profile.app_id
-            )
-        })?;
-    set_active_provider_id(db, app_type, profile, Some(queue_head_provider_id))
 }
 
 fn build_provider_health_view(
@@ -2460,13 +2429,32 @@ mod tests {
             sample_payload("Provider C", "secret-c"),
         )
         .expect("create provider c");
+        activate_claude_provider(&db, "provider-a").expect("activate provider a");
+        add_to_failover_queue(&db, &AppType::Claude, "provider-a")
+            .await
+            .expect("queue provider a");
+        set_auto_failover_enabled(&db, &AppType::Claude, true)
+            .await
+            .expect("enable auto failover");
 
         let queued = add_to_failover_queue(&db, &AppType::Claude, "provider-b")
             .await
             .expect("queue provider b");
 
-        assert_eq!(queued.failover_queue_depth, 1);
-        assert_eq!(queued.failover_queue[0].provider_id, "provider-b");
+        assert_eq!(queued.failover_queue_depth, 2);
+        assert_eq!(queued.failover_queue[0].provider_id, "provider-a");
+        assert_eq!(queued.failover_queue[1].provider_id, "provider-b");
+        assert_eq!(queued.active_provider_id.as_deref(), Some("provider-a"));
+        assert_eq!(
+            crate::settings::get_current_provider(&AppType::Claude).as_deref(),
+            Some("provider-a")
+        );
+        assert_eq!(
+            db.get_current_provider(CLAUDE_APP_TYPE)
+                .expect("load current provider after queue add")
+                .as_deref(),
+            Some("provider-a")
+        );
 
         let available_after_add = get_available_failover_providers(&db, &AppType::Claude)
             .expect("list available providers after add");
@@ -2474,7 +2462,7 @@ mod tests {
             .iter()
             .filter_map(|provider| provider.provider_id.as_deref())
             .collect::<Vec<_>>();
-        assert_eq!(available_ids_after_add, vec!["provider-a", "provider-c"]);
+        assert_eq!(available_ids_after_add, vec!["provider-c"]);
 
         let mut updated_payload = sample_payload("Provider B Updated", "");
         updated_payload.provider_id = Some("provider-b".to_string());
@@ -2484,8 +2472,9 @@ mod tests {
         let queue_after_update = db
             .get_failover_queue(CLAUDE_APP_TYPE)
             .expect("queue after provider update");
-        assert_eq!(queue_after_update.len(), 1);
-        assert_eq!(queue_after_update[0].provider_id, "provider-b");
+        assert_eq!(queue_after_update.len(), 2);
+        assert_eq!(queue_after_update[0].provider_id, "provider-a");
+        assert_eq!(queue_after_update[1].provider_id, "provider-b");
 
         db.update_provider_health(
             "provider-b",
@@ -2500,7 +2489,19 @@ mod tests {
             .await
             .expect("remove provider b from queue");
 
-        assert_eq!(removed.failover_queue_depth, 0);
+        assert_eq!(removed.failover_queue_depth, 1);
+        assert_eq!(removed.failover_queue[0].provider_id, "provider-a");
+        assert_eq!(removed.active_provider_id.as_deref(), Some("provider-a"));
+        assert_eq!(
+            crate::settings::get_current_provider(&AppType::Claude).as_deref(),
+            Some("provider-a")
+        );
+        assert_eq!(
+            db.get_current_provider(CLAUDE_APP_TYPE)
+                .expect("load current provider after queue removal")
+                .as_deref(),
+            Some("provider-a")
+        );
 
         let available_after_remove = get_available_failover_providers(&db, &AppType::Claude)
             .expect("list available providers after remove");
@@ -2508,10 +2509,7 @@ mod tests {
             .iter()
             .filter_map(|provider| provider.provider_id.as_deref())
             .collect::<Vec<_>>();
-        assert_eq!(
-            available_ids_after_remove,
-            vec!["provider-a", "provider-b", "provider-c"]
-        );
+        assert_eq!(available_ids_after_remove, vec!["provider-b", "provider-c"]);
 
         let health_records = db
             .list_provider_health_records(CLAUDE_APP_TYPE)
@@ -2558,7 +2556,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     #[serial]
-    async fn set_auto_failover_enabled_switches_active_provider_to_queue_head() {
+    async fn set_auto_failover_enabled_preserves_active_provider_when_queue_head_differs() {
         let _env = TestEnv::new();
         let db = Database::memory().expect("db");
 
@@ -2584,16 +2582,16 @@ mod tests {
             .expect("enable auto failover");
 
         assert!(enabled.auto_failover_enabled);
-        assert_eq!(enabled.active_provider_id.as_deref(), Some("provider-a"));
+        assert_eq!(enabled.active_provider_id.as_deref(), Some("provider-b"));
         assert_eq!(
             crate::settings::get_current_provider(&AppType::Claude).as_deref(),
-            Some("provider-a")
+            Some("provider-b")
         );
         assert_eq!(
             db.get_current_provider(CLAUDE_APP_TYPE)
                 .expect("load database current provider")
                 .as_deref(),
-            Some("provider-a")
+            Some("provider-b")
         );
     }
 
