@@ -1,5 +1,6 @@
 import {
   type FormEvent,
+  type KeyboardEvent,
   useDeferredValue,
   useEffect,
   useLayoutEffect,
@@ -437,6 +438,13 @@ export function SharedProviderManager({
     null,
   );
   const [notice, setNotice] = useState<Notice | null>(null);
+  const appSwitchRefs = useRef<
+    Partial<Record<SharedProviderAppId, HTMLButtonElement | null>>
+  >({});
+  const editorInitialFocusRef = useRef<HTMLInputElement | null>(null);
+  const deleteCancelButtonRef = useRef<HTMLButtonElement | null>(null);
+  const editorRestoreFocusRef = useRef<HTMLElement | null>(null);
+  const deleteRestoreFocusRef = useRef<HTMLElement | null>(null);
   const queryClient = useQueryClient();
   const currentApp = selectedApp ?? internalApp;
   const currentAppRef = useRef(currentApp);
@@ -482,6 +490,7 @@ export function SharedProviderManager({
         resetEditorForApp(variables.appId);
         setPendingDelete(null);
         setNotice(buildSuccessNotice(event, shellState));
+        restoreFocus(editorRestoreFocusRef, () => getCurrentAppSwitchButton());
       }
 
       if (variables.requiresServiceRestart) {
@@ -559,6 +568,7 @@ export function SharedProviderManager({
 
         setPendingDelete(null);
         setNotice(buildSuccessNotice(event, shellState));
+        restoreFocus(deleteRestoreFocusRef, () => getCurrentAppSwitchButton());
       }
 
       if (variables.requiresServiceRestart) {
@@ -603,6 +613,46 @@ export function SharedProviderManager({
     state?.providers.find((provider) => provider.active) ?? null;
   const isRefreshing = stateQuery.isFetching || capabilitiesQuery.isFetching;
 
+  function getCurrentAppSwitchButton(appId: SharedProviderAppId = currentApp) {
+    return appSwitchRefs.current[appId] ?? null;
+  }
+
+  function rememberFocusTarget(targetRef: typeof editorRestoreFocusRef) {
+    const activeElement = document.activeElement;
+    targetRef.current =
+      activeElement instanceof HTMLElement ? activeElement : null;
+  }
+
+  function focusElement(element: HTMLElement | null | undefined) {
+    if (!element || !element.isConnected) {
+      return false;
+    }
+
+    const candidate = element as HTMLElement & { disabled?: boolean };
+    if (candidate.disabled) {
+      return false;
+    }
+
+    element.focus();
+    return true;
+  }
+
+  function restoreFocus(
+    targetRef: typeof editorRestoreFocusRef,
+    fallback?: () => HTMLElement | null,
+  ) {
+    const target = targetRef.current;
+    targetRef.current = null;
+
+    queueMicrotask(() => {
+      if (focusElement(target)) {
+        return;
+      }
+
+      focusElement(fallback?.() ?? null);
+    });
+  }
+
   useLayoutEffect(() => {
     if (previousAppRef.current === currentApp) {
       return;
@@ -646,6 +696,7 @@ export function SharedProviderManager({
 
     const nextPresetId = getDefaultPresetId(currentApp);
 
+    rememberFocusTarget(editorRestoreFocusRef);
     setPendingDelete(null);
     setEditingProvider(null);
     setSelectedPresetId(nextPresetId);
@@ -660,6 +711,7 @@ export function SharedProviderManager({
 
     const presetId = inferSharedProviderPresetId(currentApp, provider);
 
+    rememberFocusTarget(editorRestoreFocusRef);
     setPendingDelete(null);
     setEditingProvider(provider);
     setSelectedPresetId(presetId);
@@ -672,6 +724,8 @@ export function SharedProviderManager({
       return;
     }
 
+    editorRestoreFocusRef.current = null;
+    deleteRestoreFocusRef.current = null;
     resetEditorForApp(appId);
     setPendingDelete(null);
     setNotice(null);
@@ -681,6 +735,49 @@ export function SharedProviderManager({
     }
 
     onSelectedAppChange?.(appId);
+  }
+
+  function handleAppSwitchKeyDown(
+    event: KeyboardEvent<HTMLButtonElement>,
+    sourceAppId: SharedProviderAppId,
+  ) {
+    if (isMutating) {
+      return;
+    }
+
+    const currentIndex = appIds.indexOf(sourceAppId);
+    let nextAppId: SharedProviderAppId | null = null;
+
+    switch (event.key) {
+      case "ArrowRight":
+      case "ArrowDown":
+        nextAppId = appIds[(currentIndex + 1) % appIds.length] ?? null;
+        break;
+      case "ArrowLeft":
+      case "ArrowUp":
+        nextAppId =
+          appIds[(currentIndex - 1 + appIds.length) % appIds.length] ?? null;
+        break;
+      case "Home":
+        nextAppId = appIds[0] ?? null;
+        break;
+      case "End":
+        nextAppId = appIds[appIds.length - 1] ?? null;
+        break;
+      default:
+        return;
+    }
+
+    event.preventDefault();
+
+    if (!nextAppId || nextAppId === sourceAppId) {
+      return;
+    }
+
+    handleAppChange(nextAppId);
+    queueMicrotask(() => {
+      getCurrentAppSwitchButton(nextAppId)?.focus();
+    });
   }
 
   function handleSearchChange(value: string) {
@@ -753,6 +850,7 @@ export function SharedProviderManager({
     <div
       data-ccswitch-region="provider-surface"
       data-ccswitch-layout="embedded-stack"
+      aria-busy={isRefreshing || isMutating}
       className={cn(
         "ccswitch-openwrt-page-section ccswitch-openwrt-page-section--providers space-y-3",
         className,
@@ -776,15 +874,21 @@ export function SharedProviderManager({
               data-ccswitch-region="provider-app-switch"
               data-ccswitch-layout="wrap-row"
               className="flex flex-wrap gap-2"
+              aria-label="Provider apps"
             >
               {appIds.map((appId) => {
                 const active = appId === currentApp;
                 const appPresentation = SHARED_PROVIDER_APP_PRESENTATION[appId];
+                const tabId = `shared-provider-tab-${appId}`;
+                const panelId = `shared-provider-panel-${appId}`;
 
                 return (
                   <button
                     key={appId}
                     type="button"
+                    ref={(element) => {
+                      appSwitchRefs.current[appId] = element;
+                    }}
                     className={cn(
                       "rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors",
                       "ccswitch-openwrt-app-switch",
@@ -793,9 +897,13 @@ export function SharedProviderManager({
                         : "border-border-default bg-background text-muted-foreground hover:bg-accent hover:text-foreground",
                       isMutating && "cursor-not-allowed opacity-50",
                     )}
+                    id={tabId}
+                    aria-controls={panelId}
+                    aria-selected={active}
                     aria-pressed={active}
                     disabled={isMutating}
                     onClick={() => handleAppChange(appId)}
+                    onKeyDown={(event) => handleAppSwitchKeyDown(event, appId)}
                   >
                     {appPresentation.label}
                   </button>
@@ -895,6 +1003,7 @@ export function SharedProviderManager({
         </CardHeader>
 
         <CardContent
+          id={`shared-provider-panel-${currentApp}`}
           data-ccswitch-region="provider-body"
           data-ccswitch-layout="embedded-stack"
           className="space-y-3 p-4 pt-4 sm:p-5"
@@ -979,7 +1088,10 @@ export function SharedProviderManager({
                               capabilities.requiresServiceRestart,
                           });
                         }}
-                        onDelete={() => setPendingDelete(provider)}
+                        onDelete={() => {
+                          rememberFocusTarget(deleteRestoreFocusRef);
+                          setPendingDelete(provider);
+                        }}
                       />
                     );
                   })}
@@ -1004,9 +1116,11 @@ export function SharedProviderManager({
         supportsPresets={capabilities.supportsPresets}
         supportsBlankSecretPreserve={capabilities.supportsBlankSecretPreserve}
         hasStoredSecret={Boolean(editingProvider?.tokenConfigured)}
+        initialFocusRef={editorInitialFocusRef}
         onOpenChange={(open) => {
           if (!open && !saveMutation.isPending) {
             resetEditorForApp(currentApp);
+            restoreFocus(editorRestoreFocusRef, () => getCurrentAppSwitchButton());
           }
         }}
         onPresetChange={handlePresetChange}
@@ -1019,6 +1133,7 @@ export function SharedProviderManager({
         onOpenChange={(open) => {
           if (!open && !deleteMutation.isPending) {
             setPendingDelete(null);
+            restoreFocus(deleteRestoreFocusRef, () => getCurrentAppSwitchButton());
           }
         }}
       >
@@ -1026,23 +1141,36 @@ export function SharedProviderManager({
           className="ccswitch-openwrt-provider-ui-dialog ccswitch-openwrt-dialog-shell max-w-sm"
           overlayClassName="ccswitch-openwrt-provider-ui-overlay"
           zIndex="alert"
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            deleteCancelButtonRef.current?.focus();
+          }}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+          }}
         >
           <DialogHeader className="space-y-3 border-b-0 bg-transparent pb-0">
             <DialogTitle className="flex items-center gap-2 text-lg font-semibold">
               <AlertCircle className="h-5 w-5 text-destructive" />
-              Delete provider?
+              Delete {currentPresentation.label} provider
             </DialogTitle>
             <DialogDescription className="text-sm leading-relaxed">
               {pendingDelete
-                ? `${getSharedProviderDisplayName(pendingDelete)} will be removed from ${currentPresentation.label}.`
+                ? `Remove ${getSharedProviderDisplayName(pendingDelete)} from the saved ${currentPresentation.label} providers on this router.`
                 : ""}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="flex gap-2 border-t-0 bg-transparent pt-2 sm:justify-end">
             <Button
+              ref={deleteCancelButtonRef}
               type="button"
               variant="outline"
-              onClick={() => setPendingDelete(null)}
+              onClick={() => {
+                setPendingDelete(null);
+                restoreFocus(deleteRestoreFocusRef, () =>
+                  getCurrentAppSwitchButton(),
+                );
+              }}
               disabled={deleteMutation.isPending}
             >
               Cancel

@@ -395,23 +395,21 @@ describe("SharedRuntimeSurface", () => {
     const claudeCard = getAppCard("Claude");
 
     await waitFor(() =>
-      expect(codexCard.getByRole("button", { name: "Add to queue" })).toBeEnabled(),
+      expect(
+        codexCard.getByRole("button", { name: "Add to queue" }),
+      ).toBeEnabled(),
     );
 
     fireEvent.click(codexCard.getByRole("button", { name: "Add to queue" }));
 
     await waitFor(() => {
-      expect(
-        codexCard.getByRole("button", { name: "Add to queue" }),
-      ).toBeDisabled();
+      expect(codexCard.getByRole("button", { name: "Add to queue" })).toBeDisabled();
       expect(
         codexCard.getByRole("switch", { name: "Codex auto-failover" }),
       ).toBeDisabled();
     });
 
-    expect(
-      claudeCard.getByRole("button", { name: "Add to queue" }),
-    ).toBeEnabled();
+    expect(claudeCard.getByRole("button", { name: "Add to queue" })).toBeEnabled();
     expect(
       claudeCard.getByRole("switch", { name: "Claude auto-failover" }),
     ).toBeEnabled();
@@ -419,9 +417,7 @@ describe("SharedRuntimeSurface", () => {
     addDeferred.resolve();
 
     await waitFor(() =>
-      expect(
-        codexCard.getByRole("button", { name: "Add to queue" }),
-      ).toBeEnabled(),
+      expect(codexCard.getByRole("button", { name: "Add to queue" })).toBeEnabled(),
     );
   });
 
