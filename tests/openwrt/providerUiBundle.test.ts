@@ -97,7 +97,9 @@ function createTransport(
   };
 }
 
-function createRuntimeTransport(): OpenWrtRuntimeTransport {
+function createRuntimeTransport(
+  overrides: Partial<OpenWrtRuntimeTransport> = {},
+): OpenWrtRuntimeTransport {
   return {
     failoverControlsAvailable: false,
     getRuntimeStatus: vi.fn().mockResolvedValue({
@@ -207,6 +209,7 @@ function createRuntimeTransport(): OpenWrtRuntimeTransport {
     setAutoFailoverEnabled: vi
       .fn()
       .mockResolvedValue({ ok: false, error: "method not found" }),
+    ...overrides,
   };
 }
 
@@ -359,6 +362,102 @@ describe("OpenWrt provider UI bundle", () => {
     expect(transport.addToFailoverQueue).not.toHaveBeenCalled();
     expect(transport.removeFromFailoverQueue).not.toHaveBeenCalled();
     expect(transport.setAutoFailoverEnabled).not.toHaveBeenCalled();
+
+    await act(async () => {
+      if (typeof handle === "function") {
+        handle();
+      } else if (handle && typeof handle.unmount === "function") {
+        handle.unmount();
+      }
+    });
+
+    expect(target.textContent).toBe("");
+    target.remove();
+  });
+
+  it("mounts interactive runtime controls when the transport advertises phase 8 support", async () => {
+    const globalScope = globalThis as typeof globalThis & {
+      [OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY]?: OpenWrtSharedProviderBundleApi;
+    };
+    const api = globalScope[OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY];
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    const transport = createRuntimeTransport({
+      failoverControlsAvailable: true,
+      getAvailableFailoverProviders: vi.fn().mockImplementation(async (appId) => ({
+        ok: true,
+        providers_json: JSON.stringify({
+          activeProviderId: `${appId}-primary`,
+          providers: {
+            [`${appId}-backup`]: {
+              active: false,
+              configured: true,
+              model:
+                appId === "claude"
+                  ? "claude-haiku-4-5"
+                  : appId === "codex"
+                    ? "gpt-5.4-mini"
+                    : "gemini-2.5-flash",
+              name:
+                appId === "claude"
+                  ? "Claude Backup"
+                  : appId === "codex"
+                    ? "Codex Backup"
+                    : "Gemini Backup",
+              providerId: `${appId}-backup`,
+              tokenConfigured: true,
+              tokenField:
+                appId === "claude"
+                  ? "ANTHROPIC_AUTH_TOKEN"
+                  : appId === "codex"
+                    ? "OPENAI_API_KEY"
+                    : "GEMINI_API_KEY",
+            },
+          },
+        }),
+      })),
+      addToFailoverQueue: vi.fn().mockResolvedValue({ ok: true }),
+      removeFromFailoverQueue: vi.fn().mockResolvedValue({ ok: true }),
+      setAutoFailoverEnabled: vi.fn().mockResolvedValue({ ok: true }),
+    });
+
+    let handle:
+      | void
+      | (() => void)
+      | {
+          unmount(): void;
+        };
+
+    await act(async () => {
+      handle = await api?.mountRuntimeSurface({
+        target,
+        transport,
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() =>
+      expect(
+        within(target).getByRole("switch", { name: "Claude auto-failover" }),
+      ).toBeInTheDocument(),
+    );
+
+    expect(target).toHaveTextContent("Failover controls");
+    expect(
+      within(target).getAllByRole("button", { name: "Add to queue" }).length,
+    ).toBeGreaterThan(0);
+
+    fireEvent.click(
+      within(target).getByRole("switch", { name: "Claude auto-failover" }),
+    );
+
+    await waitFor(() =>
+      expect(transport.setAutoFailoverEnabled).toHaveBeenCalledWith(
+        "claude",
+        false,
+      ),
+    );
+    expect(transport.getAvailableFailoverProviders).toHaveBeenCalledWith("claude");
 
     await act(async () => {
       if (typeof handle === "function") {
