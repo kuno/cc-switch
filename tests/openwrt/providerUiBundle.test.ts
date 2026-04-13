@@ -1,5 +1,10 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { act, fireEvent, waitFor, within } from "@testing-library/react";
@@ -175,7 +180,14 @@ describe("OpenWrt provider UI bundle", () => {
     expect(
       within(target).getByText("No providers saved for Claude yet."),
     ).toBeInTheDocument();
+    expect(target.textContent).not.toContain("Shared provider bundle loaded.");
+    expect(target.textContent).not.toContain(
+      "Waiting for the shared provider manager implementation.",
+    );
     expect(shell.showMessage).not.toHaveBeenCalled();
+    expect(transport.listProviders).toHaveBeenCalledWith("claude");
+    expect(transport.listSavedProviders).toHaveBeenCalledWith("claude");
+    expect(transport.getActiveProvider).toHaveBeenCalledWith("claude");
 
     await act(async () => {
       fireEvent.click(within(target).getByRole("button", { name: "Codex" }));
@@ -187,6 +199,9 @@ describe("OpenWrt provider UI bundle", () => {
         within(target).getByText("No providers saved for Codex yet."),
       ).toBeInTheDocument(),
     );
+    expect(transport.listProviders).toHaveBeenCalledWith("codex");
+    expect(transport.listSavedProviders).toHaveBeenCalledWith("codex");
+    expect(transport.getActiveProvider).toHaveBeenCalledWith("codex");
 
     await act(async () => {
       if (typeof handle === "function") {
@@ -299,7 +314,7 @@ describe("OpenWrt provider UI bundle", () => {
     expect(rerender).toHaveBeenCalledTimes(3);
   });
 
-  it("stages the same bundle asset for standalone and feed builds", () => {
+  it("ships the committed staged real bundle and copies it unchanged for package assembly", () => {
     const repoRoot = process.cwd();
     const outputDir = mkdtempSync(
       path.join(os.tmpdir(), "ccswitch-openwrt-ui-"),
@@ -321,10 +336,11 @@ describe("OpenWrt provider UI bundle", () => {
       path.resolve(repoRoot, "openwrt/build-ipk.sh"),
       "utf8",
     );
-
-    execFileSync("pnpm", ["build:openwrt-provider-ui"], {
-      cwd: repoRoot,
-    });
+    const viteConfig = readFileSync(
+      path.resolve(repoRoot, "vite.config.ts"),
+      "utf8",
+    );
+    const stagedBundleSource = readFileSync(stagedBundlePath, "utf8");
 
     execFileSync("sh", [helperPath, "--output-dir", outputDir], {
       cwd: repoRoot,
@@ -334,15 +350,75 @@ describe("OpenWrt provider UI bundle", () => {
     expect(existsSync(stagedOutputPath)).toBe(true);
     const bundleSource = readFileSync(stagedOutputPath, "utf8");
 
-    expect(bundleSource).toContain("__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__");
-    expect(bundleSource).toContain("providerManager");
-    expect(bundleSource).not.toContain("StepFun");
-    expect(bundleSource).not.toContain("KAT-Coder");
-    expect(bundleSource).not.toContain("GitHub Copilot");
-    expect(bundleSource).not.toContain("Codex (ChatGPT Plus/Pro)");
-    expect(bundleSource).not.toContain("AWS Bedrock (AKSK)");
-    expect(bundleSource).not.toContain("AWS Bedrock (API Key)");
+    expect(bundleSource).toBe(stagedBundleSource);
+    expect(stagedBundleSource).toContain("__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__");
+    expect(stagedBundleSource).toContain("providerManager");
+    expect(stagedBundleSource).toContain("Provider manager");
+    expect(stagedBundleSource).toContain("cc-switch service");
+    expect(stagedBundleSource).not.toContain("Shared provider bundle loaded.");
+    expect(stagedBundleSource).not.toContain(
+      "Waiting for the shared provider manager implementation.",
+    );
+    expect(stagedBundleSource).not.toContain("StepFun");
+    expect(stagedBundleSource).not.toContain("KAT-Coder");
+    expect(stagedBundleSource).not.toContain("GitHub Copilot");
+    expect(stagedBundleSource).not.toContain("Codex (ChatGPT Plus/Pro)");
+    expect(stagedBundleSource).not.toContain("AWS Bedrock (AKSK)");
+    expect(stagedBundleSource).not.toContain("AWS Bedrock (API Key)");
     expect(luciMakefile).toContain("prepare-provider-ui-bundle.sh");
     expect(buildIpkScript).toContain("prepare-provider-ui-bundle.sh");
+    expect(viteConfig).toContain("openwrt/provider-ui-dist");
+  });
+
+  it("copies an explicit real bundle without mutating the canonical staged artifact", () => {
+    const repoRoot = process.cwd();
+    const sourceDir = mkdtempSync(
+      path.join(os.tmpdir(), "ccswitch-openwrt-ui-src-"),
+    );
+    const outputDir = mkdtempSync(
+      path.join(os.tmpdir(), "ccswitch-openwrt-ui-"),
+    );
+    const helperPath = path.resolve(
+      repoRoot,
+      "openwrt/prepare-provider-ui-bundle.sh",
+    );
+    const explicitBundlePath = path.join(sourceDir, "explicit-real-bundle.js");
+    const stagedBundlePath = path.resolve(
+      repoRoot,
+      "openwrt/provider-ui-dist/ccswitch-provider-ui.js",
+    );
+    const stagedOutputPath = path.join(outputDir, "ccswitch-provider-ui.js");
+    const stagedBundleExisted = existsSync(stagedBundlePath);
+    const stagedBundleBefore = stagedBundleExisted
+      ? readFileSync(stagedBundlePath, "utf8")
+      : null;
+    const explicitBundleSource = [
+      "globalThis.__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__ = {",
+      "  capabilities: { providerManager: true },",
+      "  mount() { return { unmount() {} }; },",
+      "};",
+      "",
+    ].join("\n");
+
+    writeFileSync(explicitBundlePath, explicitBundleSource, "utf8");
+
+    execFileSync("sh", [helperPath, "--output-dir", outputDir], {
+      cwd: repoRoot,
+      env: {
+        ...process.env,
+        CCSWITCH_OPENWRT_PROVIDER_UI_BUNDLE: explicitBundlePath,
+      },
+    });
+
+    expect(existsSync(stagedOutputPath)).toBe(true);
+    expect(readFileSync(stagedOutputPath, "utf8")).toBe(explicitBundleSource);
+    expect(readFileSync(stagedOutputPath, "utf8")).toContain(
+      "providerManager: true",
+    );
+    if (stagedBundleExisted) {
+      expect(readFileSync(stagedBundlePath, "utf8")).toBe(stagedBundleBefore);
+    } else {
+      expect(existsSync(stagedBundlePath)).toBe(false);
+    }
   });
 });

@@ -330,7 +330,29 @@ describe("OpenWrt settings shared-provider shell", () => {
     );
   });
 
-  it("keeps the fallback LuCI provider manager active when the bundle is only a placeholder", async () => {
+  it("keeps the fallback LuCI provider manager active when the cutover gate disables the real bundle", async () => {
+    const { settings, storage } = loadSettingsView();
+    const uiState = settings.createUiState(false, "claude");
+    const statusNodes = settings.createStatusPanel(uiState);
+    const shellNodes = settings.createProviderShell(uiState, statusNodes);
+    const loadSharedProviderBundle = vi.fn();
+
+    storage.set("ccswitch-openwrt-provider-ui-cutover-mode", "fallback");
+    settings.loadSharedProviderBundle = loadSharedProviderBundle;
+
+    await settings.mountSharedProviderUi(uiState, statusNodes, shellNodes);
+
+    expect(loadSharedProviderBundle).not.toHaveBeenCalled();
+    expect(uiState.bundleStatus).toBe("fallback");
+    expect(statusNodes.bundleValue.textContent).toBe("Fallback");
+    expect(shellNodes.mountRoot.textContent).toContain("Claude Providers");
+    expect(shellNodes.mountRoot.textContent).toContain("Configure Provider");
+    expect(shellNodes.mountRoot.textContent).toContain(
+      "Phase 5 cutover gate",
+    );
+  });
+
+  it("keeps the fallback LuCI provider manager active when the bundle regresses below the real provider-manager contract", async () => {
     const { settings } = loadSettingsView();
     const uiState = settings.createUiState(false, "claude");
     const statusNodes = settings.createStatusPanel(uiState);
@@ -350,7 +372,7 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(shellNodes.mountRoot.textContent).toContain("Claude Providers");
     expect(shellNodes.mountRoot.textContent).toContain("Configure Provider");
     expect(shellNodes.mountRoot.textContent).toContain(
-      "LuCI fallback provider manager",
+      "without provider-manager support",
     );
   });
 

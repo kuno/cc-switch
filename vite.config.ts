@@ -9,7 +9,7 @@ const openWrtProviderUiEntry = path.resolve(
 );
 const openWrtProviderUiOutDir = path.resolve(
   __dirname,
-  "openwrt/luci-app-ccswitch/htdocs/luci-static/resources/ccswitch/provider-ui",
+  "openwrt/provider-ui-dist",
 );
 
 export default defineConfig(({ command }) => {
