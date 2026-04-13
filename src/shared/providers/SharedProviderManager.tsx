@@ -944,26 +944,6 @@ export function SharedProviderManager({
                   )}
                 </p>
               </div>
-              <dl className="mt-4 grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl border border-border-default/70 bg-muted/20 px-4 py-3">
-                  <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                    Saved providers
-                  </dt>
-                  <dd className="mt-2 text-base font-semibold text-foreground">
-                    {state ? state.providers.length : "—"}
-                  </dd>
-                </div>
-                <div className="rounded-2xl border border-border-default/70 bg-muted/20 px-4 py-3">
-                  <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                    Change window
-                  </dt>
-                  <dd className="mt-2 text-sm font-medium text-foreground">
-                    {capabilities.requiresServiceRestart
-                      ? "Restart after provider updates"
-                      : "Provider changes apply immediately"}
-                  </dd>
-                </div>
-              </dl>
             </section>
 
             <section
