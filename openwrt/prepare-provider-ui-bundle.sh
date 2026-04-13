@@ -31,7 +31,7 @@ copy_bundle() {
 	cp "$src" "$dest"
 }
 
-sync_bundle() {
+stage_bundle() {
 	src="$1"
 
 	[ -f "$src" ] || die "bundle source does not exist: $src"
@@ -53,6 +53,11 @@ Resolution order:
   2. staged bundle under openwrt/provider-ui-dist/
   3. existing emitted bundle under luci-app-ccswitch/htdocs/...
   4. build via `pnpm build:openwrt-provider-ui`
+
+Note:
+  An explicit CCSWITCH_OPENWRT_PROVIDER_UI_BUNDLE is copied only to the
+  requested output directory. It does not overwrite the canonical staged
+  bundle under openwrt/provider-ui-dist/.
 EOF
 }
 
@@ -79,7 +84,7 @@ if [ -z "$OUTPUT_DIR" ]; then
 fi
 
 if [ -n "$EXPLICIT_BUNDLE" ]; then
-	sync_bundle "$EXPLICIT_BUNDLE"
+	copy_bundle "$EXPLICIT_BUNDLE" "$OUTPUT_DIR"
 	exit 0
 fi
 
@@ -89,7 +94,7 @@ if [ -f "$STAGED_BUNDLE" ]; then
 fi
 
 if [ -f "$EMITTED_BUNDLE" ]; then
-	sync_bundle "$EMITTED_BUNDLE"
+	stage_bundle "$EMITTED_BUNDLE"
 	exit 0
 fi
 
