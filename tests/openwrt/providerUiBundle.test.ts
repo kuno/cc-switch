@@ -897,6 +897,137 @@ describe("OpenWrt provider UI bundle", () => {
     shellRoot.remove();
   });
 
+  it("keeps editor and delete dialogs inside the OpenWrt body portal without creating host-owned controls", async () => {
+    const globalScope = globalThis as typeof globalThis & {
+      [OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY]?: OpenWrtSharedProviderBundleApi;
+    };
+    const api = globalScope[OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY];
+    const shellRoot = document.createElement("div");
+    const providerRoot = document.createElement("div");
+    const transport = createTransport({
+      claude: createProviderState("claude", [
+        {
+          active: true,
+          baseUrl: "https://claude-primary.example.com",
+          model: "claude-sonnet-4-5",
+          name: "Claude Primary",
+          providerId: "claude-primary",
+          tokenConfigured: true,
+          tokenField: "ANTHROPIC_AUTH_TOKEN",
+        },
+        {
+          active: false,
+          baseUrl: "https://claude-backup.example.com",
+          model: "claude-haiku-4-5",
+          name: "Claude Backup",
+          providerId: "claude-backup",
+          tokenConfigured: false,
+          tokenField: "ANTHROPIC_API_KEY",
+        },
+      ]),
+    });
+
+    providerRoot.id = "ccswitch-shared-provider-ui-root";
+    shellRoot.appendChild(providerRoot);
+    document.body.appendChild(shellRoot);
+
+    const shell = {
+      clearMessage: vi.fn(),
+      getSelectedApp: vi.fn().mockReturnValue("claude" satisfies SharedProviderAppId),
+      getServiceStatus: vi.fn().mockReturnValue({ isRunning: true }),
+      refreshServiceStatus: vi.fn().mockResolvedValue({ isRunning: true }),
+      restartService: vi.fn().mockResolvedValue({ isRunning: true }),
+      setSelectedApp: vi.fn().mockImplementation((appId: SharedProviderAppId) => appId),
+      subscribe: vi.fn().mockReturnValue(vi.fn()),
+      showMessage: vi.fn(),
+    };
+
+    let providerHandle:
+      | void
+      | (() => void)
+      | {
+          unmount(): void;
+        };
+
+    await act(async () => {
+      providerHandle = await api?.mount({
+        appId: "claude",
+        serviceStatus: { isRunning: true },
+        shell,
+        target: providerRoot,
+        transport,
+      });
+    });
+
+    await waitFor(() =>
+      expect(
+        within(providerRoot).getByRole("button", { name: "Edit Claude Primary" }),
+      ).toBeInTheDocument(),
+    );
+
+    await act(async () => {
+      fireEvent.click(
+        within(providerRoot).getByRole("button", { name: "Edit Claude Primary" }),
+      );
+    });
+
+    const editDialog = await within(document.body).findByRole("dialog", {
+      name: "Edit provider",
+    });
+
+    expect(editDialog).toHaveClass("ccswitch-openwrt-provider-ui-dialog");
+    expect(shellRoot.contains(editDialog)).toBe(false);
+    expect(
+      document.body.querySelector(".ccswitch-openwrt-provider-ui-overlay"),
+    ).not.toBeNull();
+    expect(within(editDialog).queryByRole("button", { name: /restart/i })).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(within(editDialog).getByRole("button", { name: "Cancel" }));
+    });
+
+    await waitFor(() =>
+      expect(
+        document.body.querySelector(".ccswitch-openwrt-provider-ui-dialog"),
+      ).toBeNull(),
+    );
+
+    await act(async () => {
+      fireEvent.click(
+        within(providerRoot).getByRole("button", { name: "Delete Claude Backup" }),
+      );
+    });
+
+    const deleteDialog = await within(document.body).findByRole("dialog", {
+      name: "Delete provider?",
+    });
+
+    expect(deleteDialog).toHaveClass("ccswitch-openwrt-provider-ui-dialog");
+    expect(deleteDialog).toHaveClass("max-w-sm");
+    expect(shellRoot.contains(deleteDialog)).toBe(false);
+    expect(
+      document.body.querySelectorAll(".ccswitch-openwrt-provider-ui-overlay"),
+    ).toHaveLength(1);
+    expect(within(deleteDialog).queryByRole("button", { name: /restart/i })).toBeNull();
+
+    await act(async () => {
+      if (typeof providerHandle === "function") {
+        providerHandle();
+      } else if (providerHandle && typeof providerHandle.unmount === "function") {
+        providerHandle.unmount();
+      }
+    });
+
+    expect(providerRoot.textContent).toBe("");
+    expect(
+      document.body.querySelector(".ccswitch-openwrt-provider-ui-dialog"),
+    ).toBeNull();
+    expect(
+      document.body.querySelector(".ccswitch-openwrt-provider-ui-overlay"),
+    ).toBeNull();
+    shellRoot.remove();
+  });
+
   it("updates shell messaging and restart state for save, activate, and delete mutations", () => {
     const rerender = vi.fn();
     let restartState = {
@@ -1101,6 +1232,12 @@ describe("OpenWrt provider UI bundle", () => {
     expect(stagedStylesheetSource).toMatch(
       /#ccswitch-shared-provider-ui-root\s+:focus-visible,\s*#ccswitch-shared-runtime-surface-root\s+:focus-visible,\s*body\.ccswitch-openwrt-provider-ui-theme\s+\.ccswitch-openwrt-provider-ui-dialog\s+:focus-visible/,
     );
+    expect(stagedStylesheetSource).toMatch(
+      /body\.ccswitch-openwrt-provider-ui-theme\s+\.ccswitch-openwrt-provider-ui-dialog\{[^}]*width:min\(calc\(100vw - 1\.5rem\),72rem\)[^}]*max-width:calc\(100vw - 1\.5rem\)[^}]*max-height:min\(calc\(100dvh - 1\.5rem\),60rem\)[^}]*overflow:hidden/,
+    );
+    expect(stagedStylesheetSource).toMatch(
+      /body\.ccswitch-openwrt-provider-ui-theme\s+\.ccswitch-openwrt-provider-ui-dialog>form\{max-height:inherit\}/,
+    );
     expect(stagedStylesheetSource).toContain(".bg-background");
     expect(stagedStylesheetSource).not.toContain("color-scheme:light");
     expect(stagedStylesheetSource).not.toContain("scrollbar-width:none");
@@ -1157,6 +1294,9 @@ describe("OpenWrt provider UI bundle", () => {
     );
     expect(stagedStylesheetSource).toContain(
       '@media(min-width:1080px){#ccswitch-shared-provider-ui-root [data-ccswitch-layout=stack-to-split]{grid-template-columns:minmax(0,1.05fr) minmax(18rem,.7fr)}}',
+    );
+    expect(stagedStylesheetSource).toMatch(
+      /@media\(max-width:720px\)\{[^}]*body\.ccswitch-openwrt-provider-ui-theme \.ccswitch-openwrt-provider-ui-dialog\{[^}]*width:min\(calc\(100vw - 1rem\),72rem\)[^}]*max-width:calc\(100vw - 1rem\)[^}]*max-height:calc\(100dvh - 1rem\)[^}]*border-radius:1\.2rem[^}]*\}/,
     );
   });
 
