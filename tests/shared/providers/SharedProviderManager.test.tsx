@@ -511,12 +511,12 @@ describe("SharedProviderManager", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Retry after the adapter or OpenWrt RPC bridge is available again.",
+        "Retry after the OpenWrt service or RPC bridge is available again.",
       ),
     ).toBeInTheDocument();
     expect(
       screen
-        .getByText("Unable to load providers.")
+        .getByText("Could not load provider settings.")
         .closest(".ccswitch-openwrt-state-shell--warning"),
     ).not.toBeNull();
 
@@ -675,16 +675,16 @@ describe("SharedProviderManager", () => {
         />,
       );
 
-      await screen.findByText("No providers saved for Claude yet.");
+      await screen.findByText("No Claude providers saved.");
 
       await user.click(
-        screen.getByRole("button", {
+        screen.getAllByRole("button", {
           name: "Add provider",
-        }),
+        })[0]!,
       );
 
       const addDialog = await screen.findByRole("dialog", {
-        name: "Add Claude provider",
+        name: "Save Claude provider",
       });
       const addDialogScope = within(addDialog);
 

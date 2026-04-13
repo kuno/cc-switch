@@ -515,7 +515,7 @@ describe("OpenWrt settings shared-provider shell", () => {
     const providerShell = shellNodes.mountRoot.closest("section");
 
     expect(statusNodes.summaryValue.textContent).toBe(
-      "Provider changes are saved in the shared editor. Use the LuCI restart control to apply them on the running service.",
+      "Provider changes are saved. Restart the service to apply provider changes.",
     );
     expect(shellNodes.root.className).toBe("ccswitch-host-shell-stack");
     expect(shellChildren).toHaveLength(2);
@@ -527,10 +527,10 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(shellText).toContain("Runtime Status");
     expect(shellText).toContain("Provider Manager");
     expect(shellText).toContain(
-      "Service settings, outbound proxy controls, and restart actions remain in the LuCI shell.",
+      "The shared OpenWrt bundle mounts the read-only runtime and failover panel here. Service settings, outbound proxy controls, and restart actions stay in LuCI.",
     );
     expect(shellText).toContain(
-      "Service settings, outbound proxy controls, status, and restart actions stay above in the LuCI host shell.",
+      "Service settings, outbound proxy controls, status, and restart actions stay in the LuCI shell.",
     );
     expect(shellNodes.sharedChromeRoot?.querySelectorAll(".ccswitch-host-actions")).toHaveLength(
       1,
@@ -654,10 +654,10 @@ describe("OpenWrt settings shared-provider shell", () => {
     await settings.mountSharedProviderUi(uiState, statusNodes, shellNodes);
 
     expect(shellNodes.runtimeMountRoot.textContent).toContain(
-      "without runtime-surface support",
+      "missing runtime-panel support",
     );
     expect(shellNodes.mountRoot.textContent).not.toContain(
-      "without runtime-surface support",
+      "missing runtime-panel support",
     );
     expect(mount).toHaveBeenCalledTimes(1);
     expect(uiState.bundleStatus).toBe("ready");
@@ -712,7 +712,7 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(shellNodes.mountRoot.textContent).toContain("bundle missing");
     expect(shellNodes.mountRoot.textContent).toContain("Configure Provider");
     expect(statusNodes.summaryValue.textContent).toContain(
-      "failed to load or mount",
+      "shared provider panel failed to load",
     );
   });
 
@@ -733,13 +733,15 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(uiState.fallbackReason).toBe(
       SHARED_PROVIDER_UI_FALLBACK_REASON_GATE_DISABLED,
     );
-    expect(uiState.bundleError).toContain("Phase 5 cutover gate");
+    expect(uiState.bundleError).toContain("disabled for this browser by the local cutover setting");
     expect(statusNodes.bundleValue.textContent).toBe("Fallback");
     expect(shellNodes.mountRoot.textContent).toContain("Claude Providers");
     expect(shellNodes.mountRoot.textContent).toContain("Configure Provider");
-    expect(shellNodes.mountRoot.textContent).toContain("Phase 5 cutover gate");
+    expect(shellNodes.mountRoot.textContent).toContain(
+      "disabled for this browser by the local cutover setting",
+    );
     expect(statusNodes.summaryValue.textContent).toContain(
-      "explicitly disabled by the Phase 5 cutover gate",
+      "shared provider panel is disabled for this browser",
     );
   });
 
@@ -762,15 +764,15 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(uiState.fallbackReason).toBe(
       SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_REGRESSION,
     );
-    expect(uiState.bundleError).toContain("without provider-manager support");
+    expect(uiState.bundleError).toContain("without provider-panel support");
     expect(statusNodes.bundleValue.textContent).toBe("Fallback");
     expect(shellNodes.mountRoot.textContent).toContain("Claude Providers");
     expect(shellNodes.mountRoot.textContent).toContain("Configure Provider");
     expect(shellNodes.mountRoot.textContent).toContain(
-      "without provider-manager support",
+      "without provider-panel support",
     );
     expect(statusNodes.summaryValue.textContent).toContain(
-      "without provider-manager support",
+      "missing provider-panel support",
     );
   });
 
@@ -800,7 +802,7 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(shellNodes.mountRoot.textContent).toContain("Codex Providers");
     expect(shellNodes.mountRoot.textContent).toContain("mount regression");
     expect(statusNodes.summaryValue.textContent).toContain(
-      "failed to load or mount",
+      "shared provider panel failed to load",
     );
   });
 

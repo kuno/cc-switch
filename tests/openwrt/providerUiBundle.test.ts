@@ -393,7 +393,7 @@ describe("OpenWrt provider UI bundle", () => {
       await Promise.resolve();
     });
     await waitFor(() =>
-      expect(within(target).getByText("Runtime Surface")).toBeInTheDocument(),
+      expect(within(target).getByText("Runtime status")).toBeInTheDocument(),
     );
 
     expect(target).toHaveTextContent("Service Summary");
@@ -653,12 +653,12 @@ describe("OpenWrt provider UI bundle", () => {
     expect(claudePrimaryCard).toHaveTextContent(/Provider ID\s*claude-primary/);
     expect(claudePrimaryCard).toHaveTextContent("Pinned for router traffic");
     expect(
-      within(claudePrimaryCard as HTMLElement).getByText("Active", {
+      within(claudePrimaryCard as HTMLElement).getByText("Active provider", {
         selector: "span",
       }),
     ).toBeInTheDocument();
     expect(
-      within(claudePrimaryCard as HTMLElement).getByText("Secret stored", {
+      within(claudePrimaryCard as HTMLElement).getByText("Stored secret", {
         selector: "span",
       }),
     ).toBeInTheDocument();
@@ -673,7 +673,7 @@ describe("OpenWrt provider UI bundle", () => {
       }),
     ).toBeEnabled();
     expect(
-      within(claudeBackupCard as HTMLElement).queryByText("Secret stored", {
+      within(claudeBackupCard as HTMLElement).queryByText("Stored secret", {
         selector: "span",
       }),
     ).not.toBeInTheDocument();
@@ -824,7 +824,7 @@ describe("OpenWrt provider UI bundle", () => {
 
     await waitFor(() =>
       expect(
-        within(runtimeRoot).getByText("Runtime Surface"),
+        within(runtimeRoot).getByText("Runtime status"),
       ).toBeInTheDocument(),
     );
     await waitFor(() =>
@@ -998,7 +998,7 @@ describe("OpenWrt provider UI bundle", () => {
     });
 
     const editDialog = await within(document.body).findByRole("dialog", {
-      name: "Edit Claude provider",
+      name: "Update Claude provider",
     });
 
     expect(editDialog).toHaveClass("ccswitch-openwrt-provider-ui-dialog");
@@ -1025,7 +1025,7 @@ describe("OpenWrt provider UI bundle", () => {
     });
 
     const deleteDialog = await within(document.body).findByRole("dialog", {
-      name: "Delete Claude provider",
+      name: "Delete provider",
     });
 
     expect(deleteDialog).toHaveClass("ccswitch-openwrt-provider-ui-dialog");
@@ -1115,7 +1115,7 @@ describe("OpenWrt provider UI bundle", () => {
       inFlight: true,
     });
     expect(shell.showMessage).toHaveBeenLastCalledWith(
-      "success",
+      "info",
       "Saved Provider was saved. Restart the service to apply provider changes.",
     );
 
@@ -1170,7 +1170,7 @@ describe("OpenWrt provider UI bundle", () => {
       inFlight: true,
     });
     expect(shell.showMessage).toHaveBeenLastCalledWith(
-      "success",
+      "info",
       "provider-delete was deleted. Restart the service to apply provider changes.",
     );
     expect(rerender).toHaveBeenCalledTimes(3);
@@ -1245,7 +1245,7 @@ describe("OpenWrt provider UI bundle", () => {
     );
     expect(stagedBundleSource).toContain("providerManager");
     expect(stagedBundleSource).toContain("Add provider");
-    expect(stagedBundleSource).toContain("Secret stored");
+    expect(stagedBundleSource).toContain("Stored secret");
     expect(stagedBundleSource).toContain("Provider ID");
     expect(stagedBundleSource).toContain("cc-switch service");
     expect(stagedStylesheetSource).toContain(
