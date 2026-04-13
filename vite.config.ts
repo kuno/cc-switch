@@ -15,6 +15,11 @@ const openWrtProviderUiOutDir = path.resolve(
 export default defineConfig(({ command }) => {
   const buildTarget = process.env.CCSWITCH_BUILD_TARGET;
   const isOpenWrtProviderUiBuild = buildTarget === "openwrt-provider-ui";
+  const define = isOpenWrtProviderUiBuild
+    ? {
+        "process.env.NODE_ENV": JSON.stringify("production"),
+      }
+    : undefined;
 
   return {
     root: isOpenWrtProviderUiBuild ? "." : "src",
@@ -57,6 +62,7 @@ export default defineConfig(({ command }) => {
         "@": path.resolve(__dirname, "./src"),
       },
     },
+    define,
     clearScreen: false,
     envPrefix: ["VITE_", "TAURI_"],
   };

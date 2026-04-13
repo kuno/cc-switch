@@ -355,6 +355,7 @@ describe("OpenWrt provider UI bundle", () => {
     expect(stagedBundleSource).toContain("providerManager");
     expect(stagedBundleSource).toContain("Provider manager");
     expect(stagedBundleSource).toContain("cc-switch service");
+    expect(stagedBundleSource).not.toContain("process.env.NODE_ENV");
     expect(stagedBundleSource).not.toContain("Shared provider bundle loaded.");
     expect(stagedBundleSource).not.toContain(
       "Waiting for the shared provider manager implementation.",
