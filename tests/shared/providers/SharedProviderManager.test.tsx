@@ -1,4 +1,4 @@
-import type { ReactElement } from "react";
+import { type ReactElement, useState } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -97,6 +97,27 @@ function renderManager(ui: ReactElement) {
     ...render(
       <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>,
     ),
+  };
+}
+
+function cloneState(state: SharedProviderState): SharedProviderState {
+  return {
+    phase2Available: state.phase2Available,
+    activeProviderId: state.activeProviderId,
+    activeProvider: { ...state.activeProvider },
+    providers: state.providers.map((provider) => ({ ...provider })),
+  };
+}
+
+function createDeferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((resolver) => {
+    resolve = resolver;
+  });
+
+  return {
+    promise,
+    resolve,
   };
 }
 
@@ -217,6 +238,65 @@ function createMutableAdapter(initialState: {
   });
 
   return adapter;
+}
+
+function createSaveRaceAdapter() {
+  const states: Record<SharedProviderAppId, SharedProviderState> = {
+    claude: buildState("claude", [], null),
+    codex: buildState("codex", [], null),
+    gemini: buildState("gemini", [], null),
+  };
+  const saveDeferred = createDeferred();
+
+  const adapter = createAdapter({
+    listProviderState: vi.fn(async (appId: SharedProviderAppId) =>
+      cloneState(states[appId]),
+    ),
+    saveProvider: vi.fn(
+      async (appId: SharedProviderAppId, draft: SharedProviderEditorPayload) => {
+        await saveDeferred.promise;
+        states[appId] = buildState(
+          appId,
+          [
+            createProvider({
+              providerId: "provider-1",
+              name: draft.name,
+              baseUrl: draft.baseUrl,
+              tokenField: draft.tokenField,
+              tokenConfigured: Boolean(draft.token),
+              tokenMasked: draft.token ? "********new" : "",
+              model: draft.model,
+              notes: draft.notes,
+              active: false,
+            }),
+          ],
+          null,
+        );
+      },
+    ),
+  });
+
+  return {
+    adapter,
+    resolveSave: saveDeferred.resolve,
+  };
+}
+
+function ControlledSelectionHarness({
+  adapter,
+}: {
+  adapter: ProviderPlatformAdapter;
+}) {
+  const [selectedApp, setSelectedApp] = useState<SharedProviderAppId>("claude");
+
+  return (
+    <>
+      <button type="button" onClick={() => setSelectedApp("codex")}>
+        External switch to Codex
+      </button>
+      <SharedProviderManager adapter={adapter} selectedApp={selectedApp} />
+    </>
+  );
 }
 
 describe("SharedProviderManager", () => {
@@ -357,6 +437,49 @@ describe("SharedProviderManager", () => {
     expect(screen.getByText("Router preset")).toBeInTheDocument();
   });
 
+  it("ignores stale save completions after the selected app changes", async () => {
+    const { adapter, resolveSave } = createSaveRaceAdapter();
+    const { user } = renderManager(
+      <ControlledSelectionHarness adapter={adapter} />,
+    );
+
+    await screen.findByText("No providers saved for Claude yet.");
+    expect(screen.getByLabelText("Provider name")).toHaveValue(
+      "Claude Official",
+    );
+
+    await user.type(screen.getByLabelText("API token"), "secret-token");
+    await user.click(screen.getByRole("button", { name: "Save provider" }));
+
+    expect(screen.getByRole("button", { name: "Codex" })).toBeDisabled();
+
+    await user.click(
+      screen.getByRole("button", { name: "External switch to Codex" }),
+    );
+
+    expect(
+      await screen.findByText("No providers saved for Codex yet."),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByLabelText("Provider name")).toHaveValue(
+        "OpenAI Official",
+      ),
+    );
+
+    resolveSave();
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Provider name")).not.toBeDisabled(),
+    );
+    expect(screen.getByLabelText("Provider name")).toHaveValue(
+      "OpenAI Official",
+    );
+    expect(screen.getByLabelText("Base URL")).toHaveValue(
+      "https://api.openai.com/v1",
+    );
+    expect(screen.queryByText("Provider saved.")).not.toBeInTheDocument();
+  });
+
   it("activates and deletes saved providers", async () => {
     const adapter = createMutableAdapter({
       codex: buildState(
@@ -409,5 +532,49 @@ describe("SharedProviderManager", () => {
       expect(adapter.deleteProvider).toHaveBeenCalledWith("codex", "alpha"),
     );
     expect(screen.queryByText("Alpha")).not.toBeInTheDocument();
+  });
+
+  it("removes add and edit entry points when the adapter disables them", async () => {
+    const adapter = createAdapter({
+      listProviderState: vi.fn().mockResolvedValue(
+        buildState(
+          "claude",
+          [
+            createProvider({
+              providerId: "alpha",
+              name: "Alpha",
+              baseUrl: "https://alpha.example.com",
+            }),
+          ],
+          "alpha",
+        ),
+      ),
+      getCapabilities: vi.fn().mockResolvedValue({
+        canAdd: false,
+        canEdit: false,
+        canDelete: true,
+        canActivate: true,
+        supportsPresets: true,
+        supportsBlankSecretPreserve: true,
+        requiresServiceRestart: true,
+      } satisfies SharedProviderCapabilities),
+    });
+
+    renderManager(<SharedProviderManager adapter={adapter} />);
+
+    expect(await screen.findByText("Alpha")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Add provider" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit Alpha" })).toBeDisabled();
+    expect(
+      screen.queryByRole("button", { name: "Save provider" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Provider name")).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "This adapter exposes Claude providers without add/edit support.",
+      ),
+    ).toBeInTheDocument();
   });
 });

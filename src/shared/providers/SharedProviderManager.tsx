@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useId, useState } from "react";
+import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -320,7 +320,13 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
   );
 }
 
-function EmptyState({ appId }: { appId: SharedProviderAppId }) {
+function EmptyState({
+  appId,
+  canAdd,
+}: {
+  appId: SharedProviderAppId;
+  canAdd: boolean;
+}) {
   return (
     <div className="flex min-h-40 flex-col items-center justify-center gap-3 rounded-lg border border-dashed px-6 text-center">
       <Plus className="h-6 w-6 text-muted-foreground" />
@@ -329,8 +335,9 @@ function EmptyState({ appId }: { appId: SharedProviderAppId }) {
           No providers saved for {APP_META[appId].label} yet.
         </p>
         <p className="text-sm text-muted-foreground">
-          Choose a preset or enter a custom endpoint and save your first
-          provider.
+          {canAdd
+            ? "Choose a preset or enter a custom endpoint and save your first provider."
+            : "This adapter does not allow adding new providers for this app."}
         </p>
       </div>
     </div>
@@ -365,9 +372,12 @@ export function SharedProviderManager({
   const [notice, setNotice] = useState<Notice | null>(null);
   const queryClient = useQueryClient();
   const currentApp = selectedApp ?? internalApp;
+  const currentAppRef = useRef(currentApp);
   const presets = getSharedProviderPresets(currentApp);
   const tokenFieldOptions = TOKEN_FIELD_OPTIONS[currentApp];
   const fieldIdPrefix = useId();
+
+  currentAppRef.current = currentApp;
 
   useEffect(() => {
     const nextPresetId = getDefaultPresetId(currentApp);
@@ -387,6 +397,20 @@ export function SharedProviderManager({
     queryKey: capabilitiesQueryKey(currentApp),
     queryFn: () => adapter.getCapabilities(currentApp),
   });
+  const canEditProviders =
+    capabilitiesQuery.data?.canEdit ?? FALLBACK_CAPABILITIES.canEdit;
+
+  useEffect(() => {
+    if (!editingProvider || capabilitiesQuery.data == null || canEditProviders) {
+      return;
+    }
+
+    const nextPresetId = getDefaultPresetId(currentApp);
+    setEditingProvider(null);
+    setPendingDelete(null);
+    setSelectedPresetId(nextPresetId);
+    setDraft(createDraftFromPreset(currentApp, nextPresetId));
+  }, [canEditProviders, currentApp, editingProvider, capabilitiesQuery.data]);
 
   const saveMutation = useMutation({
     mutationFn: async (variables: SaveMutationVariables) => {
@@ -405,21 +429,29 @@ export function SharedProviderManager({
         requiresServiceRestart: variables.requiresServiceRestart,
       };
       const nextPresetId = getDefaultPresetId(variables.appId);
+      const isCurrentApp = currentAppRef.current === variables.appId;
 
       await queryClient.invalidateQueries({
         queryKey: stateQueryKey(variables.appId),
       });
-      setEditingProvider(null);
-      setPendingDelete(null);
-      setSelectedPresetId(nextPresetId);
-      setDraft(createDraftFromPreset(variables.appId, nextPresetId));
-      setNotice(buildSuccessNotice(event, shellState));
+
+      if (isCurrentApp) {
+        setEditingProvider(null);
+        setPendingDelete(null);
+        setSelectedPresetId(nextPresetId);
+        setDraft(createDraftFromPreset(variables.appId, nextPresetId));
+        setNotice(buildSuccessNotice(event, shellState));
+      }
 
       if (variables.requiresServiceRestart) {
         onRestartRequired?.(event);
       }
     },
-    onError: (error) => {
+    onError: (error, variables) => {
+      if (currentAppRef.current !== variables.appId) {
+        return;
+      }
+
       setNotice(buildErrorNotice("Save", error));
     },
   });
@@ -440,13 +472,20 @@ export function SharedProviderManager({
       await queryClient.invalidateQueries({
         queryKey: stateQueryKey(variables.appId),
       });
-      setNotice(buildSuccessNotice(event, shellState));
+
+      if (currentAppRef.current === variables.appId) {
+        setNotice(buildSuccessNotice(event, shellState));
+      }
 
       if (variables.requiresServiceRestart) {
         onRestartRequired?.(event);
       }
     },
-    onError: (error) => {
+    onError: (error, variables) => {
+      if (currentAppRef.current !== variables.appId) {
+        return;
+      }
+
       setNotice(buildErrorNotice("Activate", error));
     },
   });
@@ -464,33 +503,44 @@ export function SharedProviderManager({
         requiresServiceRestart: variables.requiresServiceRestart,
       };
       const nextPresetId = getDefaultPresetId(variables.appId);
+      const isCurrentApp = currentAppRef.current === variables.appId;
 
       await queryClient.invalidateQueries({
         queryKey: stateQueryKey(variables.appId),
       });
 
-      if (
-        editingProvider?.providerId &&
-        editingProvider.providerId === variables.providerId
-      ) {
-        setEditingProvider(null);
-        setSelectedPresetId(nextPresetId);
-        setDraft(createDraftFromPreset(variables.appId, nextPresetId));
-      }
+      if (isCurrentApp) {
+        if (
+          editingProvider?.providerId &&
+          editingProvider.providerId === variables.providerId
+        ) {
+          setEditingProvider(null);
+          setSelectedPresetId(nextPresetId);
+          setDraft(createDraftFromPreset(variables.appId, nextPresetId));
+        }
 
-      setPendingDelete(null);
-      setNotice(buildSuccessNotice(event, shellState));
+        setPendingDelete(null);
+        setNotice(buildSuccessNotice(event, shellState));
+      }
 
       if (variables.requiresServiceRestart) {
         onRestartRequired?.(event);
       }
     },
-    onError: (error) => {
+    onError: (error, variables) => {
+      if (currentAppRef.current !== variables.appId) {
+        return;
+      }
+
       setNotice(buildErrorNotice("Delete", error));
     },
   });
 
   function handleAppChange(appId: SharedProviderAppId) {
+    if (isMutating) {
+      return;
+    }
+
     if (selectedApp == null) {
       setInternalApp(appId);
     }
@@ -514,6 +564,10 @@ export function SharedProviderManager({
   }
 
   function handleEdit(provider: SharedProviderView) {
+    if (!canEditProviders || isMutating) {
+      return;
+    }
+
     const presetId = inferSharedProviderPresetId(currentApp, provider);
 
     setPendingDelete(null);
@@ -531,8 +585,21 @@ export function SharedProviderManager({
 
     const trimmed = trimDraft(draft);
     const capabilities = capabilitiesQuery.data ?? FALLBACK_CAPABILITIES;
+    const canSubmit = editingProvider ? capabilities.canEdit : capabilities.canAdd;
 
     setNotice(null);
+
+    if (!canSubmit) {
+      setNotice({
+        tone: "error",
+        title: editingProvider ? "Edit unavailable." : "Add unavailable.",
+        description: editingProvider
+          ? `This adapter does not allow editing ${APP_META[currentApp].label} providers.`
+          : `This adapter does not allow adding ${APP_META[currentApp].label} providers.`,
+      });
+      return;
+    }
+
     saveMutation.mutate({
       appId: currentApp,
       providerId: editingProvider?.providerId ?? undefined,
@@ -570,6 +637,26 @@ export function SharedProviderManager({
     saveMutation.isPending ||
     activateMutation.isPending ||
     deleteMutation.isPending;
+  const canAddProviders = capabilities.canAdd;
+  const canManageCurrentForm = editingProvider
+    ? capabilities.canEdit
+    : canAddProviders;
+  const showEditorForm = editingProvider
+    ? capabilities.canEdit
+    : canAddProviders;
+  const editorTitle = editingProvider
+    ? "Edit provider"
+    : canAddProviders
+      ? "Add provider"
+      : "Provider access";
+  const editorDescription = editingProvider
+    ? `Update ${getProviderDisplayName(editingProvider)} for ${APP_META[currentApp].label}.`
+    : canAddProviders
+      ? `Create a saved provider for ${APP_META[currentApp].label}.`
+      : hasProviders && capabilities.canEdit
+        ? `Adding saved providers for ${APP_META[currentApp].label} is disabled. Select an existing provider to edit it.`
+        : `${APP_META[currentApp].label} providers are read-only for this adapter.`;
+  const formDisabled = saveMutation.isPending || !canManageCurrentForm;
 
   return (
     <div className={cn("space-y-4", className)}>
@@ -595,8 +682,10 @@ export function SharedProviderManager({
                       active
                         ? APP_META[appId].accentClassName
                         : "border-border-default bg-background text-muted-foreground hover:bg-accent hover:text-foreground",
+                      isMutating && "cursor-not-allowed opacity-50",
                     )}
                     aria-pressed={active}
+                    disabled={isMutating}
                     onClick={() => handleAppChange(appId)}
                   >
                     {APP_META[appId].label}
@@ -635,7 +724,7 @@ export function SharedProviderManager({
               </CardTitle>
               <p className="text-sm text-muted-foreground">
                 {state.phase2Available
-                  ? "List, activate, edit, and delete saved providers."
+                  ? "Use the operations supported by this adapter to manage saved providers."
                   : "Legacy provider bridge detected. Compatibility mode is active for this app."}
               </p>
             </div>
@@ -661,10 +750,12 @@ export function SharedProviderManager({
                 )}
                 Refresh
               </Button>
-              <Button type="button" onClick={resetForm}>
-                <Plus className="h-4 w-4" />
-                Add provider
-              </Button>
+              {canAddProviders ? (
+                <Button type="button" onClick={resetForm} disabled={isMutating}>
+                  <Plus className="h-4 w-4" />
+                  Add provider
+                </Button>
+              ) : null}
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -695,7 +786,9 @@ export function SharedProviderManager({
                         });
                       }}
                       disabled={
-                        deleteMutation.isPending || !pendingDelete.providerId
+                        deleteMutation.isPending ||
+                        !pendingDelete.providerId ||
+                        !capabilities.canDelete
                       }
                     >
                       {deleteMutation.isPending ? (
@@ -719,7 +812,7 @@ export function SharedProviderManager({
             ) : null}
 
             {!hasProviders ? (
-              <EmptyState appId={currentApp} />
+              <EmptyState appId={currentApp} canAdd={canAddProviders} />
             ) : (
               <div className="space-y-3">
                 {state.providers.map((provider) => {
@@ -849,192 +942,197 @@ export function SharedProviderManager({
 
         <Card>
           <CardHeader className="space-y-1">
-            <CardTitle className="text-lg">
-              {editingProvider ? "Edit provider" : "Add provider"}
-            </CardTitle>
-            <p className="text-sm text-muted-foreground">
-              {editingProvider
-                ? `Update ${getProviderDisplayName(editingProvider)} for ${APP_META[currentApp].label}.`
-                : `Create a saved provider for ${APP_META[currentApp].label}.`}
-            </p>
+            <CardTitle className="text-lg">{editorTitle}</CardTitle>
+            <p className="text-sm text-muted-foreground">{editorDescription}</p>
           </CardHeader>
           <CardContent>
-            <form className="space-y-4" onSubmit={handleSubmit}>
-              <div className="space-y-2">
-                <Label htmlFor={`${fieldIdPrefix}-preset`}>Preset</Label>
-                <select
-                  id={`${fieldIdPrefix}-preset`}
-                  className={FIELD_CLASS_NAME}
-                  value={selectedPresetId}
-                  onChange={(event) => handlePresetChange(event.target.value)}
-                  disabled={!capabilities.supportsPresets || saveMutation.isPending}
-                >
-                  <option value="custom">Custom</option>
-                  {presets.map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.label}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-xs text-muted-foreground">
-                  {selectedPreset
-                    ? selectedPreset.description || getGenericPresetDescription()
-                    : "Custom mode keeps the current fields editable without applying a preset."}
-                </p>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
+            {showEditorForm ? (
+              <form className="space-y-4" onSubmit={handleSubmit}>
                 <div className="space-y-2">
-                  <Label htmlFor={`${fieldIdPrefix}-name`}>Provider name</Label>
-                  <Input
-                    id={`${fieldIdPrefix}-name`}
-                    value={draft.name}
-                    onChange={(event) =>
-                      setDraft((currentDraft) => ({
-                        ...currentDraft,
-                        name: event.target.value,
-                      }))
-                    }
-                    required
-                    disabled={
-                      saveMutation.isPending ||
-                      (editingProvider ? !capabilities.canEdit : !capabilities.canAdd)
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor={`${fieldIdPrefix}-model`}>Model</Label>
-                  <Input
-                    id={`${fieldIdPrefix}-model`}
-                    value={draft.model}
-                    onChange={(event) =>
-                      setDraft((currentDraft) => ({
-                        ...currentDraft,
-                        model: event.target.value,
-                      }))
-                    }
-                    placeholder="Optional model override"
-                    disabled={saveMutation.isPending}
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor={`${fieldIdPrefix}-base-url`}>Base URL</Label>
-                <Input
-                  id={`${fieldIdPrefix}-base-url`}
-                  value={draft.baseUrl}
-                  onChange={(event) =>
-                    setDraft((currentDraft) => ({
-                      ...currentDraft,
-                      baseUrl: event.target.value,
-                    }))
-                  }
-                  required
-                  disabled={saveMutation.isPending}
-                />
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor={`${fieldIdPrefix}-token-field`}>
-                    Token field
-                  </Label>
+                  <Label htmlFor={`${fieldIdPrefix}-preset`}>Preset</Label>
                   <select
-                    id={`${fieldIdPrefix}-token-field`}
+                    id={`${fieldIdPrefix}-preset`}
                     className={FIELD_CLASS_NAME}
-                    value={draft.tokenField}
-                    onChange={(event) =>
-                      setDraft((currentDraft) => ({
-                        ...currentDraft,
-                        tokenField: event.target
-                          .value as SharedProviderEditorPayload["tokenField"],
-                      }))
-                    }
-                    disabled={saveMutation.isPending}
+                    value={selectedPresetId}
+                    onChange={(event) => handlePresetChange(event.target.value)}
+                    disabled={!capabilities.supportsPresets || formDisabled}
                   >
-                    {tokenFieldOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
+                    <option value="custom">Custom</option>
+                    {presets.map((preset) => (
+                      <option key={preset.id} value={preset.id}>
+                        {preset.label}
                       </option>
                     ))}
                   </select>
+                  <p className="text-xs text-muted-foreground">
+                    {selectedPreset
+                      ? selectedPreset.description ||
+                        getGenericPresetDescription()
+                      : "Custom mode keeps the current fields editable without applying a preset."}
+                  </p>
                 </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor={`${fieldIdPrefix}-name`}>Provider name</Label>
+                    <Input
+                      id={`${fieldIdPrefix}-name`}
+                      value={draft.name}
+                      onChange={(event) =>
+                        setDraft((currentDraft) => ({
+                          ...currentDraft,
+                          name: event.target.value,
+                        }))
+                      }
+                      required
+                      disabled={formDisabled}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={`${fieldIdPrefix}-model`}>Model</Label>
+                    <Input
+                      id={`${fieldIdPrefix}-model`}
+                      value={draft.model}
+                      onChange={(event) =>
+                        setDraft((currentDraft) => ({
+                          ...currentDraft,
+                          model: event.target.value,
+                        }))
+                      }
+                      placeholder="Optional model override"
+                      disabled={formDisabled}
+                    />
+                  </div>
+                </div>
+
                 <div className="space-y-2">
-                  <Label htmlFor={`${fieldIdPrefix}-token`}>API token</Label>
+                  <Label htmlFor={`${fieldIdPrefix}-base-url`}>Base URL</Label>
                   <Input
-                    id={`${fieldIdPrefix}-token`}
-                    type="password"
-                    value={draft.token}
+                    id={`${fieldIdPrefix}-base-url`}
+                    value={draft.baseUrl}
                     onChange={(event) =>
                       setDraft((currentDraft) => ({
                         ...currentDraft,
-                        token: event.target.value,
+                        baseUrl: event.target.value,
                       }))
                     }
-                    placeholder={
-                      editingProvider && capabilities.supportsBlankSecretPreserve
-                        ? "Leave blank to keep the stored secret"
-                        : "Enter the secret for this provider"
-                    }
-                    required={
-                      !editingProvider || !capabilities.supportsBlankSecretPreserve
-                    }
-                    disabled={saveMutation.isPending}
+                    required
+                    disabled={formDisabled}
                   />
-                  {editingProvider &&
-                  capabilities.supportsBlankSecretPreserve &&
-                  editingProvider.tokenConfigured ? (
-                    <p className="text-xs text-muted-foreground">
-                      Leave the token blank to preserve the stored secret.
-                    </p>
-                  ) : null}
                 </div>
-              </div>
 
-              <div className="space-y-2">
-                <Label htmlFor={`${fieldIdPrefix}-notes`}>Notes</Label>
-                <Textarea
-                  id={`${fieldIdPrefix}-notes`}
-                  value={draft.notes}
-                  onChange={(event) =>
-                    setDraft((currentDraft) => ({
-                      ...currentDraft,
-                      notes: event.target.value,
-                    }))
-                  }
-                  placeholder="Optional notes for this provider"
-                  disabled={saveMutation.isPending}
-                />
-              </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor={`${fieldIdPrefix}-token-field`}>
+                      Token field
+                    </Label>
+                    <select
+                      id={`${fieldIdPrefix}-token-field`}
+                      className={FIELD_CLASS_NAME}
+                      value={draft.tokenField}
+                      onChange={(event) =>
+                        setDraft((currentDraft) => ({
+                          ...currentDraft,
+                          tokenField: event.target
+                            .value as SharedProviderEditorPayload["tokenField"],
+                        }))
+                      }
+                      disabled={formDisabled}
+                    >
+                      {tokenFieldOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={`${fieldIdPrefix}-token`}>API token</Label>
+                    <Input
+                      id={`${fieldIdPrefix}-token`}
+                      type="password"
+                      value={draft.token}
+                      onChange={(event) =>
+                        setDraft((currentDraft) => ({
+                          ...currentDraft,
+                          token: event.target.value,
+                        }))
+                      }
+                      placeholder={
+                        editingProvider && capabilities.supportsBlankSecretPreserve
+                          ? "Leave blank to keep the stored secret"
+                          : "Enter the secret for this provider"
+                      }
+                      required={
+                        !editingProvider ||
+                        !capabilities.supportsBlankSecretPreserve
+                      }
+                      disabled={formDisabled}
+                    />
+                    {editingProvider &&
+                    capabilities.supportsBlankSecretPreserve &&
+                    editingProvider.tokenConfigured ? (
+                      <p className="text-xs text-muted-foreground">
+                        Leave the token blank to preserve the stored secret.
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
 
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="submit"
-                  disabled={
-                    saveMutation.isPending ||
-                    (editingProvider ? !capabilities.canEdit : !capabilities.canAdd)
-                  }
-                >
-                  {saveMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : editingProvider ? (
-                    <RotateCw className="h-4 w-4" />
-                  ) : (
-                    <Plus className="h-4 w-4" />
-                  )}
-                  {editingProvider ? "Update provider" : "Save provider"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={resetForm}
-                  disabled={saveMutation.isPending}
-                >
-                  {editingProvider ? "Cancel edit" : "Reset form"}
-                </Button>
-              </div>
-            </form>
+                <div className="space-y-2">
+                  <Label htmlFor={`${fieldIdPrefix}-notes`}>Notes</Label>
+                  <Textarea
+                    id={`${fieldIdPrefix}-notes`}
+                    value={draft.notes}
+                    onChange={(event) =>
+                      setDraft((currentDraft) => ({
+                        ...currentDraft,
+                        notes: event.target.value,
+                      }))
+                    }
+                    placeholder="Optional notes for this provider"
+                    disabled={formDisabled}
+                  />
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <Button type="submit" disabled={formDisabled}>
+                    {saveMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : editingProvider ? (
+                      <RotateCw className="h-4 w-4" />
+                    ) : (
+                      <Plus className="h-4 w-4" />
+                    )}
+                    {editingProvider ? "Update provider" : "Save provider"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={resetForm}
+                    disabled={saveMutation.isPending}
+                  >
+                    {editingProvider ? "Cancel edit" : "Reset form"}
+                  </Button>
+                </div>
+              </form>
+            ) : (
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>
+                  {capabilities.canEdit
+                    ? "Adding providers is unavailable."
+                    : "Provider editing is unavailable."}
+                </AlertTitle>
+                <AlertDescription>
+                  {capabilities.canEdit
+                    ? hasProviders
+                      ? `This adapter does not allow adding new ${APP_META[currentApp].label} providers. Select a saved provider to edit it instead.`
+                      : `This adapter does not allow adding new ${APP_META[currentApp].label} providers.`
+                    : `This adapter exposes ${APP_META[currentApp].label} providers without add/edit support.`}
+                </AlertDescription>
+              </Alert>
+            )}
           </CardContent>
         </Card>
       </div>
