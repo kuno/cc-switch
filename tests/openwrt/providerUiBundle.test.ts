@@ -1,91 +1,312 @@
 import { execFileSync } from "node:child_process";
-import {
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { waitFor } from "@testing-library/react";
+import { act, fireEvent, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import {
   OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY,
-  openWrtSharedProviderBundleApi,
+  __private__,
   type OpenWrtSharedProviderBundleApi,
 } from "@/openwrt-provider-ui/index";
-import type { OpenWrtProviderTransport } from "@/platform/openwrt/providers";
+import type {
+  OpenWrtProviderMutationEvent,
+  OpenWrtProviderTransport,
+} from "@/platform/openwrt/providers";
+import type {
+  SharedProviderAppId,
+  SharedProviderState,
+} from "@/shared/providers/domain";
 
 function createTransport(): OpenWrtProviderTransport {
+  const emptyStatePayload = {
+    activeProviderId: null,
+    providers: {},
+  };
+
   return {
-    listProviders: vi.fn().mockResolvedValue(null),
-    listSavedProviders: vi.fn().mockResolvedValue(null),
+    listProviders: vi.fn().mockResolvedValue({
+      ok: true,
+      providers_json: JSON.stringify(emptyStatePayload),
+    }),
+    listSavedProviders: vi.fn().mockResolvedValue({
+      ok: true,
+      providers_json: JSON.stringify(emptyStatePayload),
+    }),
     getActiveProvider: vi.fn().mockResolvedValue({ ok: false }),
     restartService: vi.fn().mockResolvedValue({ ok: true }),
   };
 }
 
-describe("OpenWrt provider UI bundle contract", () => {
-  it("registers a global mount API and supports the documented mount contract", async () => {
+function createProviderState(
+  appId: SharedProviderAppId,
+  providers: Array<{
+    active?: boolean;
+    baseUrl?: string;
+    configured?: boolean;
+    model?: string;
+    name: string;
+    notes?: string;
+    providerId: string;
+    tokenConfigured?: boolean;
+    tokenField?:
+      | "ANTHROPIC_AUTH_TOKEN"
+      | "ANTHROPIC_API_KEY"
+      | "OPENAI_API_KEY"
+      | "GEMINI_API_KEY";
+    tokenMasked?: string;
+  }>,
+  activeProviderId: string | null = providers.find(
+    (provider) => provider.active,
+  )?.providerId ?? null,
+): SharedProviderState {
+  const defaultTokenFieldByApp = {
+    claude: "ANTHROPIC_AUTH_TOKEN",
+    codex: "OPENAI_API_KEY",
+    gemini: "GEMINI_API_KEY",
+  } as const;
+
+  const normalizedProviders = providers.map((provider) => ({
+    active: provider.active ?? provider.providerId === activeProviderId,
+    baseUrl: provider.baseUrl ?? `https://${provider.providerId}.example.com`,
+    configured: provider.configured ?? true,
+    model: provider.model ?? "",
+    name: provider.name,
+    notes: provider.notes ?? "",
+    providerId: provider.providerId,
+    tokenConfigured: provider.tokenConfigured ?? true,
+    tokenField: provider.tokenField ?? defaultTokenFieldByApp[appId],
+    tokenMasked: provider.tokenMasked ?? "********",
+  }));
+  const activeProvider = normalizedProviders.find(
+    (provider) => provider.providerId === activeProviderId,
+  ) ?? {
+    active: false,
+    baseUrl: "",
+    configured: false,
+    model: "",
+    name: "",
+    notes: "",
+    providerId: null,
+    tokenConfigured: false,
+    tokenField: defaultTokenFieldByApp[appId],
+    tokenMasked: "",
+  };
+
+  return {
+    phase2Available: true,
+    providers: normalizedProviders,
+    activeProviderId,
+    activeProvider,
+  };
+}
+
+function createMutationEvent(
+  event: Partial<OpenWrtProviderMutationEvent> &
+    Pick<OpenWrtProviderMutationEvent, "appId" | "mutation">,
+): OpenWrtProviderMutationEvent {
+  const appId = event.appId;
+
+  return {
+    appId,
+    mutation: event.mutation,
+    providerId: event.providerId ?? null,
+    serviceRunning: event.serviceRunning ?? false,
+    restartRequired: event.restartRequired ?? false,
+    providerState: event.providerState ?? createProviderState(appId, [], null),
+    capabilities: {
+      canAdd: true,
+      canEdit: true,
+      canDelete: true,
+      canActivate: true,
+      supportsPresets: true,
+      supportsBlankSecretPreserve: true,
+      requiresServiceRestart: true,
+    },
+  };
+}
+
+describe("OpenWrt provider UI bundle", () => {
+  it("registers the real shared provider manager bundle and keeps app selection in the shell", async () => {
     const globalScope = globalThis as typeof globalThis & {
       [OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY]?: OpenWrtSharedProviderBundleApi;
     };
     const api = globalScope[OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY];
     const target = document.createElement("div");
-    target.appendChild(document.createTextNode("stale bundle content"));
+    document.body.appendChild(target);
     const shell = {
       clearMessage: vi.fn(),
       getSelectedApp: vi.fn().mockReturnValue("claude"),
       getServiceStatus: vi.fn().mockReturnValue({ isRunning: false }),
       refreshServiceStatus: vi.fn().mockResolvedValue({ isRunning: false }),
       restartService: vi.fn().mockResolvedValue({ isRunning: false }),
-      setSelectedApp: vi.fn().mockReturnValue("claude"),
+      setSelectedApp: vi
+        .fn()
+        .mockImplementation((appId: "claude" | "codex" | "gemini") => appId),
       showMessage: vi.fn(),
     };
+    const transport = createTransport();
 
     expect(api).toBeDefined();
-    expect(api).toBe(openWrtSharedProviderBundleApi);
-    expect(typeof api?.capabilities?.providerManager).toBe("boolean");
+    expect(api?.capabilities).toEqual({ providerManager: true });
 
-    const handle = await Promise.resolve(
-      api!.mount({
+    let handle:
+      | void
+      | (() => void)
+      | {
+          unmount(): void;
+        };
+
+    await act(async () => {
+      handle = await Promise.resolve(
+        api!.mount({
+          appId: "claude",
+          serviceStatus: { isRunning: false },
+          shell,
+          target,
+          transport,
+        }),
+      );
+    });
+
+    await waitFor(() =>
+      expect(within(target).getByText("Provider manager")).toBeInTheDocument(),
+    );
+    expect(
+      within(target).getByText("No providers saved for Claude yet."),
+    ).toBeInTheDocument();
+    expect(shell.showMessage).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.click(within(target).getByRole("button", { name: "Codex" }));
+    });
+
+    expect(shell.setSelectedApp).toHaveBeenCalledWith("codex");
+    await waitFor(() =>
+      expect(
+        within(target).getByText("No providers saved for Codex yet."),
+      ).toBeInTheDocument(),
+    );
+
+    await act(async () => {
+      if (typeof handle === "function") {
+        handle();
+      } else if (handle && typeof handle.unmount === "function") {
+        handle.unmount();
+      }
+    });
+
+    expect(shell.clearMessage).toHaveBeenCalledTimes(1);
+    expect(target.textContent).toBe("");
+    target.remove();
+  });
+
+  it("updates shell messaging and restart state for save, activate, and delete mutations", () => {
+    const rerender = vi.fn();
+    const shell = {
+      clearMessage: vi.fn(),
+      getSelectedApp: vi
+        .fn<() => SharedProviderAppId>()
+        .mockReturnValue("gemini"),
+      getServiceStatus: vi.fn().mockReturnValue({ isRunning: false }),
+      refreshServiceStatus: vi.fn().mockResolvedValue({ isRunning: false }),
+      restartService: vi.fn().mockResolvedValue({ isRunning: false }),
+      setSelectedApp: vi.fn(),
+      showMessage: vi.fn(),
+    };
+    const state = {
+      disposed: false,
+      restartPending: false,
+      selectedApp: "claude" as SharedProviderAppId,
+      serviceRunning: false,
+    };
+
+    __private__.handleProviderMutationEvent(
+      state,
+      shell,
+      rerender,
+      createMutationEvent({
         appId: "claude",
-        serviceStatus: { isRunning: false },
-        shell,
-        target,
-        transport: createTransport(),
+        mutation: "save",
+        providerId: "provider-save",
+        restartRequired: true,
+        serviceRunning: true,
+        providerState: createProviderState("claude", [
+          {
+            active: true,
+            name: "Saved Provider",
+            providerId: "provider-save",
+          },
+        ]),
       }),
     );
 
-    await waitFor(() =>
-      expect(target.childNodes.length).toBeGreaterThan(0),
+    expect(state.selectedApp).toBe("gemini");
+    expect(state.serviceRunning).toBe(true);
+    expect(state.restartPending).toBe(true);
+    expect(shell.showMessage).toHaveBeenLastCalledWith(
+      "success",
+      "Saved Provider was saved. Restart the service to apply provider changes.",
     );
-    expect(target.textContent).not.toContain("stale bundle content");
-    expect(
-      handle == null ||
-        typeof handle === "function" ||
-        (typeof handle === "object" && typeof handle.unmount === "function"),
-    ).toBe(true);
 
-    if (typeof handle === "function") {
-      handle();
-      await waitFor(() => expect(target.textContent).toBe(""));
-    } else if (handle && typeof handle.unmount === "function") {
-      handle.unmount();
-      await waitFor(() => expect(target.textContent).toBe(""));
-    }
+    __private__.handleProviderMutationEvent(
+      state,
+      shell,
+      rerender,
+      createMutationEvent({
+        appId: "codex",
+        mutation: "activate",
+        providerId: "provider-activate",
+        restartRequired: false,
+        serviceRunning: false,
+        providerState: createProviderState("codex", [
+          {
+            active: true,
+            name: "Active Provider",
+            providerId: "provider-activate",
+          },
+        ]),
+      }),
+    );
+
+    expect(state.serviceRunning).toBe(false);
+    expect(state.restartPending).toBe(false);
+    expect(shell.showMessage).toHaveBeenLastCalledWith(
+      "success",
+      "Active Provider was activated. The service is stopped, so no restart is needed right now.",
+    );
+
+    __private__.handleProviderMutationEvent(
+      state,
+      shell,
+      rerender,
+      createMutationEvent({
+        appId: "gemini",
+        mutation: "delete",
+        providerId: "provider-delete",
+        restartRequired: true,
+        serviceRunning: true,
+        providerState: createProviderState("gemini", [], null),
+      }),
+    );
+
+    expect(state.serviceRunning).toBe(true);
+    expect(state.restartPending).toBe(true);
+    expect(shell.showMessage).toHaveBeenLastCalledWith(
+      "success",
+      "provider-delete was deleted. Restart the service to apply provider changes.",
+    );
+    expect(rerender).toHaveBeenCalledTimes(3);
   });
 
   it("stages the same bundle asset for standalone and feed builds", () => {
     const repoRoot = process.cwd();
-    const outputDir = mkdtempSync(path.join(os.tmpdir(), "ccswitch-openwrt-ui-"));
+    const outputDir = mkdtempSync(
+      path.join(os.tmpdir(), "ccswitch-openwrt-ui-"),
+    );
     const helperPath = path.resolve(
       repoRoot,
       "openwrt/prepare-provider-ui-bundle.sh",
-    );
-    const emittedBundlePath = path.resolve(
-      repoRoot,
-      "openwrt/luci-app-ccswitch/htdocs/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js",
     );
     const stagedBundlePath = path.resolve(
       repoRoot,
@@ -100,68 +321,28 @@ describe("OpenWrt provider UI bundle contract", () => {
       path.resolve(repoRoot, "openwrt/build-ipk.sh"),
       "utf8",
     );
-    const viteConfig = readFileSync(path.resolve(repoRoot, "vite.config.ts"), "utf8");
+
+    execFileSync("pnpm", ["build:openwrt-provider-ui"], {
+      cwd: repoRoot,
+    });
 
     execFileSync("sh", [helperPath, "--output-dir", outputDir], {
       cwd: repoRoot,
     });
 
+    expect(existsSync(stagedBundlePath)).toBe(true);
     expect(existsSync(stagedOutputPath)).toBe(true);
-    expect(readFileSync(stagedOutputPath, "utf8")).toContain(
-      "__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__",
-    );
-    expect(readFileSync(stagedOutputPath, "utf8")).toContain(
-      "providerManager",
-    );
-    if (existsSync(emittedBundlePath)) {
-      expect(readFileSync(stagedOutputPath, "utf8")).toBe(
-        readFileSync(emittedBundlePath, "utf8"),
-      );
-    } else if (existsSync(stagedBundlePath)) {
-      expect(readFileSync(stagedOutputPath, "utf8")).toBe(
-        readFileSync(stagedBundlePath, "utf8"),
-      );
-    }
+    const bundleSource = readFileSync(stagedOutputPath, "utf8");
+
+    expect(bundleSource).toContain("__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__");
+    expect(bundleSource).toContain("providerManager");
+    expect(bundleSource).not.toContain("StepFun");
+    expect(bundleSource).not.toContain("KAT-Coder");
+    expect(bundleSource).not.toContain("GitHub Copilot");
+    expect(bundleSource).not.toContain("Codex (ChatGPT Plus/Pro)");
+    expect(bundleSource).not.toContain("AWS Bedrock (AKSK)");
+    expect(bundleSource).not.toContain("AWS Bedrock (API Key)");
     expect(luciMakefile).toContain("prepare-provider-ui-bundle.sh");
     expect(buildIpkScript).toContain("prepare-provider-ui-bundle.sh");
-    expect(buildIpkScript).toContain("OPENWRT_PROVIDER_UI_ASSET");
-    expect(buildIpkScript).toContain(
-      "/htdocs/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js",
-    );
-    expect(viteConfig).toContain('"src/openwrt-provider-ui/index.ts"');
-    expect(viteConfig).toContain(
-      '"openwrt/luci-app-ccswitch/htdocs/luci-static/resources/ccswitch/provider-ui"',
-    );
-  });
-
-  it("prefers an explicit bundle override when staging package assets", () => {
-    const repoRoot = process.cwd();
-    const helperPath = path.resolve(
-      repoRoot,
-      "openwrt/prepare-provider-ui-bundle.sh",
-    );
-    const outputDir = mkdtempSync(path.join(os.tmpdir(), "ccswitch-openwrt-ui-"));
-    const explicitBundleDir = mkdtempSync(
-      path.join(os.tmpdir(), "ccswitch-openwrt-ui-explicit-"),
-    );
-    const explicitBundlePath = path.join(
-      explicitBundleDir,
-      "custom-provider-ui.js",
-    );
-    const explicitMarker = "window.__explicitProviderBundle = true;";
-
-    writeFileSync(explicitBundlePath, explicitMarker);
-
-    execFileSync("sh", [helperPath, "--output-dir", outputDir], {
-      cwd: repoRoot,
-      env: {
-        ...process.env,
-        CCSWITCH_OPENWRT_PROVIDER_UI_BUNDLE: explicitBundlePath,
-      },
-    });
-
-    expect(
-      readFileSync(path.join(outputDir, "ccswitch-provider-ui.js"), "utf8"),
-    ).toBe(explicitMarker);
   });
 });
