@@ -471,7 +471,9 @@ describe("SharedProviderManager", () => {
       "responsive-grid",
     );
     expect(providerCardGrid).toHaveClass("grid");
-    expect(providerCardGrid).toContainElement(screen.getByText("Claude Primary"));
+    expect(providerCardGrid).toContainElement(
+      screen.getByText("Claude Primary"),
+    );
     expect(
       summaryGrid?.querySelector('[data-ccswitch-region="provider-summary"]'),
     ).toBeTruthy();
@@ -683,13 +685,8 @@ describe("SharedProviderManager", () => {
     ).toBeGreaterThan(0);
 
     await user.clear(dialogScope.getByLabelText("Provider name"));
-    await user.type(
-      dialogScope.getByLabelText("Provider name"),
-      "Router edge",
-    );
-    await user.click(
-      dialogScope.getByRole("button", { name: /Custom draft/ }),
-    );
+    await user.type(dialogScope.getByLabelText("Provider name"), "Router edge");
+    await user.click(dialogScope.getByRole("button", { name: /Custom draft/ }));
 
     expect(dialogScope.getByLabelText("Provider name")).toHaveValue(
       "Router edge",
@@ -766,9 +763,7 @@ describe("SharedProviderManager", () => {
       ).not.toBeInTheDocument(),
     );
 
-    await user.click(
-      screen.getByRole("button", { name: "Edit Claude Empty" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Edit Claude Empty" }));
 
     const emptySecretDialog = await screen.findByRole("dialog", {
       name: "Edit Claude provider",
@@ -849,6 +844,128 @@ describe("SharedProviderManager", () => {
     expect(screen.getByText("Alpha")).toBeInTheDocument();
     expect(screen.getByText("Gateway edge")).toBeInTheDocument();
     expect(adapter.saveProvider).not.toHaveBeenCalled();
+  });
+
+  it("keeps keyboard app switching, dialog close, and search clearing on explicit roles and labels", async () => {
+    const adapter = createMutableAdapter({
+      claude: buildState(
+        "claude",
+        [
+          createProvider({
+            providerId: "claude-primary",
+            name: "Claude Primary",
+            baseUrl: "https://api.anthropic.com",
+            tokenField: "ANTHROPIC_AUTH_TOKEN",
+            active: true,
+          }),
+        ],
+        "claude-primary",
+      ),
+      codex: buildState(
+        "codex",
+        [
+          createProvider({
+            providerId: "alpha",
+            name: "Alpha",
+            baseUrl: "https://alpha.example.com/v1",
+            tokenField: "OPENAI_API_KEY",
+            notes: "LAN route",
+            active: true,
+          }),
+          createProvider({
+            providerId: "beta",
+            name: "Beta",
+            baseUrl: "https://beta.example.com/v1",
+            tokenField: "OPENAI_API_KEY",
+          }),
+        ],
+        "alpha",
+      ),
+    });
+    const { user } = renderManager(
+      <SharedProviderManager adapter={adapter} defaultApp="claude" />,
+    );
+
+    expect(await screen.findByText("Claude Primary")).toBeInTheDocument();
+
+    const codexButton = screen.getByRole("button", { name: "Codex" });
+    codexButton.focus();
+    expect(codexButton).toHaveFocus();
+
+    await user.keyboard("[Space]");
+
+    expect(await screen.findByText("Alpha")).toBeInTheDocument();
+    expect(codexButton).toHaveAttribute("aria-pressed", "true");
+
+    const searchInput = screen.getByLabelText("Search providers");
+    await user.type(searchInput, "LAN route");
+
+    expect(
+      await screen.findByText('Showing 1 result for "LAN route" out of 2.'),
+    ).toBeInTheDocument();
+
+    const clearSearchButton = screen.getByRole("button", {
+      name: "Clear search",
+    });
+    clearSearchButton.focus();
+    expect(clearSearchButton).toHaveFocus();
+
+    await user.keyboard("[Enter]");
+
+    await waitFor(() => expect(searchInput).toHaveValue(""));
+    await waitFor(() =>
+      expect(screen.queryByText(/Showing 1 result/)).not.toBeInTheDocument(),
+    );
+
+    const deleteButton = screen.getByRole("button", { name: "Delete Alpha" });
+    deleteButton.focus();
+    expect(deleteButton).toHaveFocus();
+
+    await user.keyboard("[Enter]");
+
+    const deleteDialog = await screen.findByRole("dialog", {
+      name: "Delete provider?",
+    });
+    expect(deleteDialog).toHaveAccessibleDescription(
+      "Alpha will be removed from Codex.",
+    );
+    expect(
+      within(deleteDialog).getByRole("button", { name: "Cancel" }),
+    ).toHaveFocus();
+
+    await user.keyboard("[Escape]");
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Delete provider?" }),
+      ).not.toBeInTheDocument(),
+    );
+
+    const addProviderButton = screen.getByRole("button", {
+      name: "Add provider",
+    });
+    addProviderButton.focus();
+    expect(addProviderButton).toHaveFocus();
+
+    await user.keyboard("[Enter]");
+
+    const addDialog = await screen.findByRole("dialog", {
+      name: "Add provider",
+    });
+    expect(addDialog).toHaveAccessibleDescription(
+      "Create a saved Codex provider from a grouped preset or a custom endpoint draft.",
+    );
+    expect(
+      within(addDialog).getByLabelText("Provider name"),
+    ).toBeInTheDocument();
+
+    await user.keyboard("[Escape]");
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Add provider" }),
+      ).not.toBeInTheDocument(),
+    );
   });
 
   it("closes draft state on app switch and resets the add panel to the next app", async () => {

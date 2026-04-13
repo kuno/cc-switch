@@ -289,7 +289,9 @@ function renderSurface(adapter: RuntimeSurfacePlatformAdapter) {
 }
 
 function getAppCard(appLabel: "Claude" | "Codex" | "Gemini") {
-  return within(screen.getByRole("region", { name: `${appLabel} runtime card` }));
+  return within(
+    screen.getByRole("region", { name: `${appLabel} runtime card` }),
+  );
 }
 
 describe("SharedRuntimeSurface", () => {
@@ -481,6 +483,72 @@ describe("SharedRuntimeSurface", () => {
       expect(
         claudeCard.getByText("Auto-failover disabled"),
       ).toBeInTheDocument(),
+    );
+  });
+
+  it("keeps keyboard-triggered failover toggles behind explicit switch semantics", async () => {
+    const initialState = createRuntimeSurfaceState();
+    const updatedState = createRuntimeSurfaceState();
+    updatedState.apps = updatedState.apps.map((app) =>
+      app.app === "claude"
+        ? {
+            ...app,
+            autoFailoverEnabled: false,
+          }
+        : app,
+    );
+    const toggleDeferred = createDeferred<void>();
+    const adapter = createControlAdapter(
+      {
+        setAutoFailoverEnabled: vi
+          .fn()
+          .mockImplementation(() => toggleDeferred.promise),
+      },
+      [initialState, updatedState],
+    );
+    const user = userEvent.setup();
+
+    renderSurface(adapter);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("region", { name: "Claude runtime card" }),
+      ).toBeInTheDocument(),
+    );
+
+    const claudeCard = getAppCard("Claude");
+    const toggle = claudeCard.getByRole("switch", {
+      name: "Claude auto-failover",
+    });
+
+    toggle.focus();
+    expect(toggle).toHaveFocus();
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+
+    await user.keyboard("[Space]");
+
+    await waitFor(() =>
+      expect(adapter.setAutoFailoverEnabled).toHaveBeenCalledWith(
+        "claude",
+        false,
+      ),
+    );
+    expect(toggle).toBeDisabled();
+    expect(claudeCard.getByText("Updating...")).toBeInTheDocument();
+
+    toggleDeferred.resolve();
+
+    await waitFor(() =>
+      expect(
+        getAppCard("Claude").getByText("Auto-failover disabled"),
+      ).toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(
+        getAppCard("Claude").getByRole("switch", {
+          name: "Claude auto-failover",
+        }),
+      ).toHaveAttribute("aria-checked", "false"),
     );
   });
 
