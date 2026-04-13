@@ -367,7 +367,7 @@ describe("OpenWrt settings shared-provider shell", () => {
     );
     const toggleResult = await transport.setAutoFailoverEnabled("codex", true);
 
-    expect(transport.failoverControlsAvailable).toBe(false);
+    expect(transport.failoverControlsAvailable).toBe(true);
 
     expect(statusResult).toMatchObject({
       args: [],
@@ -467,7 +467,7 @@ describe("OpenWrt settings shared-provider shell", () => {
       expect.objectContaining({
         target: shellNodes.runtimeMountRoot,
         transport: expect.objectContaining({
-          failoverControlsAvailable: false,
+          failoverControlsAvailable: true,
           getRuntimeStatus: expect.any(Function),
           getAppRuntimeStatus: expect.any(Function),
         }),

@@ -1900,7 +1900,7 @@ return view.extend({
 
 	createRuntimeTransport: function () {
 		return {
-			failoverControlsAvailable: false,
+			failoverControlsAvailable: true,
 			getRuntimeStatus: function () {
 				return L.resolveDefault(callGetRuntimeStatus(), { ok: false });
 			},
