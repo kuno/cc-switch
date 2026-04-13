@@ -495,7 +495,7 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(shellNodes.messageRoot.style.display).toBe("");
   });
 
-  it("keeps LuCI restart ownership and unified shell copy in the page chrome", () => {
+  it("builds one LuCI host shell with shared runtime and provider mount sections plus a single restart owner", () => {
     const { settings } = loadSettingsView("claude");
     const uiState = settings.createUiState(true, "claude");
 
@@ -506,6 +506,7 @@ describe("OpenWrt settings shared-provider shell", () => {
     const shellNodes = settings.createProviderShell(uiState, statusNodes);
     const shellText = shellNodes.root.textContent ?? "";
     const combinedText = `${statusNodes.root.textContent ?? ""} ${shellText}`.toLowerCase();
+    const shellChildren = Array.from(shellNodes.root.children);
     const restartButtons = Array.from(
       shellNodes.root.querySelectorAll("button"),
     ).map((button) => button.textContent?.trim());
@@ -513,6 +514,11 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(statusNodes.summaryValue.textContent).toBe(
       "Provider changes are saved in the shared editor. Use the LuCI restart control to apply them on the running service.",
     );
+    expect(shellNodes.root.className).toBe("cbi-section");
+    expect(shellChildren).toHaveLength(3);
+    expect(shellChildren[0]).toBe(shellNodes.sharedChromeRoot);
+    expect(shellChildren[1].className).toBe("cbi-section");
+    expect(shellChildren[2].className).toBe("cbi-section");
     expect(shellText).toContain("Runtime Status");
     expect(shellText).toContain("Provider Manager");
     expect(shellText).toContain(
@@ -521,7 +527,20 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(shellText).toContain(
       "Service settings and outbound proxy controls remain above in the LuCI shell. Provider management mounts below after this page renders.",
     );
+    expect(shellNodes.sharedChromeRoot?.querySelectorAll(".cbi-page-actions")).toHaveLength(
+      1,
+    );
+    expect(shellNodes.sharedChromeRoot?.contains(shellNodes.restartButton)).toBe(true);
     expect(restartButtons).toEqual(["Restart Service"]);
+    expect(shellNodes.runtimeMountRoot.id).toBe("ccswitch-shared-runtime-surface-root");
+    expect(shellNodes.mountRoot.id).toBe("ccswitch-shared-provider-ui-root");
+    expect(shellNodes.runtimeMountRoot.getAttribute("style")).toContain(
+      "margin-top:1rem",
+    );
+    expect(shellNodes.mountRoot.getAttribute("style")).toContain("margin-top:1rem");
+    expect(shellChildren[1].contains(shellNodes.runtimeMountRoot)).toBe(true);
+    expect(shellChildren[2].contains(shellNodes.mountRoot)).toBe(true);
+    expect(shellNodes.root.querySelector("main, nav, aside, [role='navigation']")).toBeNull();
 
     for (const phrase of FORBIDDEN_DESKTOP_SHELL_PHRASES) {
       expect(combinedText).not.toContain(phrase);
