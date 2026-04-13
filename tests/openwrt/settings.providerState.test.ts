@@ -59,13 +59,21 @@ type ProviderMountOptions = {
 
 type RuntimeMountOptions = {
   target: HTMLElement;
-  transport: Record<string, (...args: unknown[]) => Promise<unknown>>;
+  transport: {
+    failoverControlsAvailable?: boolean;
+    getRuntimeStatus(): Promise<unknown>;
+    getAppRuntimeStatus(appId: AppId): Promise<unknown>;
+    getAvailableFailoverProviders(appId: AppId): Promise<unknown>;
+    addToFailoverQueue(appId: AppId, providerId: string): Promise<unknown>;
+    removeFromFailoverQueue(appId: AppId, providerId: string): Promise<unknown>;
+    setAutoFailoverEnabled(appId: AppId, enabled: boolean): Promise<unknown>;
+  };
 };
 
 type SettingsView = {
   createProviderShell(uiState: UiState, statusNodes: StatusNodes): ShellNodes;
   createProviderTransport(): Record<string, (...args: unknown[]) => Promise<unknown>>;
-  createRuntimeTransport(): Record<string, (...args: unknown[]) => Promise<unknown>>;
+  createRuntimeTransport(): RuntimeMountOptions["transport"];
   createShellBridge(
     uiState: UiState,
     statusNodes: StatusNodes,
@@ -359,6 +367,8 @@ describe("OpenWrt settings shared-provider shell", () => {
     );
     const toggleResult = await transport.setAutoFailoverEnabled("codex", true);
 
+    expect(transport.failoverControlsAvailable).toBe(false);
+
     expect(statusResult).toMatchObject({
       args: [],
       spec: {
@@ -457,6 +467,7 @@ describe("OpenWrt settings shared-provider shell", () => {
       expect.objectContaining({
         target: shellNodes.runtimeMountRoot,
         transport: expect.objectContaining({
+          failoverControlsAvailable: false,
           getRuntimeStatus: expect.any(Function),
           getAppRuntimeStatus: expect.any(Function),
         }),

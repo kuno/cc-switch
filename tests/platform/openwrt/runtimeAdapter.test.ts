@@ -301,6 +301,7 @@ describe("OpenWrt runtime adapter", () => {
 
   it("normalizes Phase 8 failover-control methods only when the transport supports them", async () => {
     const transport = createTransport({
+      failoverControlsAvailable: true,
       getAvailableFailoverProviders: vi.fn().mockResolvedValue({
         ok: true,
         list_json: JSON.stringify({
@@ -357,6 +358,34 @@ describe("OpenWrt runtime adapter", () => {
       "codex",
       true,
     );
+  });
+
+  it("keeps the adapter read-only when the shell exposes stubs but capability is disabled", () => {
+    const transport = createTransport({
+      failoverControlsAvailable: false,
+      getAvailableFailoverProviders: vi
+        .fn()
+        .mockResolvedValue({ ok: false, error: "method not found" }),
+      addToFailoverQueue: vi
+        .fn()
+        .mockResolvedValue({ ok: false, error: "method not found" }),
+      removeFromFailoverQueue: vi
+        .fn()
+        .mockResolvedValue({ ok: false, error: "method not found" }),
+      setAutoFailoverEnabled: vi
+        .fn()
+        .mockResolvedValue({ ok: false, error: "method not found" }),
+    });
+    const adapter = createOpenWrtRuntimeAdapter(transport);
+
+    expect(adapter.getAvailableFailoverProviders).toBeUndefined();
+    expect(adapter.addToFailoverQueue).toBeUndefined();
+    expect(adapter.removeFromFailoverQueue).toBeUndefined();
+    expect(adapter.setAutoFailoverEnabled).toBeUndefined();
+    expect(transport.getAvailableFailoverProviders).not.toHaveBeenCalled();
+    expect(transport.addToFailoverQueue).not.toHaveBeenCalled();
+    expect(transport.removeFromFailoverQueue).not.toHaveBeenCalled();
+    expect(transport.setAutoFailoverEnabled).not.toHaveBeenCalled();
   });
 
   it("keeps the adapter read-only when Phase 8 transport methods are absent", () => {
