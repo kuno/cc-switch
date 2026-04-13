@@ -1117,7 +1117,9 @@ export function SharedProviderManager({
         onOpenChange={(open) => {
           if (!open && !saveMutation.isPending) {
             resetEditorForApp(currentApp);
-            restoreFocus(editorRestoreFocusRef, () => getCurrentAppSwitchButton());
+            restoreFocus(editorRestoreFocusRef, () =>
+              getCurrentAppSwitchButton(),
+            );
           }
         }}
         onPresetChange={handlePresetChange}
@@ -1130,12 +1132,14 @@ export function SharedProviderManager({
         onOpenChange={(open) => {
           if (!open && !deleteMutation.isPending) {
             setPendingDelete(null);
-            restoreFocus(deleteRestoreFocusRef, () => getCurrentAppSwitchButton());
+            restoreFocus(deleteRestoreFocusRef, () =>
+              getCurrentAppSwitchButton(),
+            );
           }
         }}
       >
         <DialogContent
-          className="ccswitch-openwrt-provider-ui-dialog ccswitch-openwrt-dialog-shell max-w-sm"
+          className="ccswitch-openwrt-provider-ui-dialog ccswitch-openwrt-provider-ui-dialog--compact ccswitch-openwrt-dialog-shell max-w-sm overflow-hidden p-0"
           overlayClassName="ccswitch-openwrt-provider-ui-overlay"
           zIndex="alert"
           onOpenAutoFocus={(event) => {
@@ -1146,18 +1150,20 @@ export function SharedProviderManager({
             event.preventDefault();
           }}
         >
-          <DialogHeader className="space-y-3 border-b-0 bg-transparent pb-0">
+          <DialogHeader className="space-y-3 border-b border-border-default bg-gradient-to-br from-background via-background to-muted/30">
             <DialogTitle className="flex items-center gap-2 text-lg font-semibold">
               <AlertCircle className="h-5 w-5 text-destructive" />
               Delete provider
             </DialogTitle>
+          </DialogHeader>
+          <div className="min-h-0 px-6 py-4" data-ccswitch-dialog-scroll-region>
             <DialogDescription className="text-sm leading-relaxed">
               {pendingDelete
                 ? `Delete ${getSharedProviderDisplayName(pendingDelete)} from the saved ${currentPresentation.label} providers on this router.`
                 : ""}
             </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="flex gap-2 border-t-0 bg-transparent pt-2 sm:justify-end">
+          </div>
+          <DialogFooter className="flex gap-2 border-t border-border-default bg-muted/20 sm:justify-end">
             <Button
               ref={deleteCancelButtonRef}
               type="button"
