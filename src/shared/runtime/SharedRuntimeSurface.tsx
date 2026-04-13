@@ -127,12 +127,18 @@ export function SharedRuntimeSurface({
 
   return (
     <section
+      data-ccswitch-region="runtime-surface"
+      data-ccswitch-layout="embedded-stack"
       className={cn(
-        "ccswitch-openwrt-page-section ccswitch-openwrt-page-section--runtime space-y-6",
+        "ccswitch-openwrt-page-section ccswitch-openwrt-page-section--runtime space-y-5",
         className,
       )}
     >
-      <div className="ccswitch-openwrt-page-header flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div
+        data-ccswitch-region="runtime-header"
+        data-ccswitch-layout="stack-to-row"
+        className="ccswitch-openwrt-page-header flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"
+      >
         <div className="space-y-1.5">
           <h2 className="text-2xl font-semibold tracking-tight">
             Runtime Surface
@@ -171,13 +177,23 @@ export function SharedRuntimeSurface({
         />
       ) : null}
 
-      <div className="space-y-4">
-        <SharedRuntimeServiceSummaryCard
-          service={runtimeSurface.service}
-          runtime={runtimeSurface.runtime}
-        />
+      <div
+        data-ccswitch-region="runtime-body"
+        data-ccswitch-layout="embedded-stack"
+        className="space-y-3"
+      >
+        <div data-ccswitch-region="runtime-summary">
+          <SharedRuntimeServiceSummaryCard
+            service={runtimeSurface.service}
+            runtime={runtimeSurface.runtime}
+          />
+        </div>
 
-        <div className="grid gap-4 xl:grid-cols-3">
+        <div
+          data-ccswitch-region="runtime-app-grid"
+          data-ccswitch-layout="responsive-grid"
+          className="grid gap-3"
+        >
           {orderedApps.map((status) => (
             <SharedRuntimeAppCard
               key={status.app}
