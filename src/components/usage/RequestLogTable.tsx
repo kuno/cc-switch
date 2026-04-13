@@ -35,7 +35,6 @@ interface RequestLogTableProps {
   refreshIntervalMs: number;
   onRangeChange?: (range: UsageRangeSelection) => void;
 }
-
 export function RequestLogTable({
   range,
   rangeLabel,
