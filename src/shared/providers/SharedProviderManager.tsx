@@ -879,8 +879,6 @@ export function SharedProviderManager({
               {appIds.map((appId) => {
                 const active = appId === currentApp;
                 const appPresentation = SHARED_PROVIDER_APP_PRESENTATION[appId];
-                const tabId = `shared-provider-tab-${appId}`;
-                const panelId = `shared-provider-panel-${appId}`;
 
                 return (
                   <button
@@ -897,9 +895,6 @@ export function SharedProviderManager({
                         : "border-border-default bg-background text-muted-foreground hover:bg-accent hover:text-foreground",
                       isMutating && "cursor-not-allowed opacity-50",
                     )}
-                    id={tabId}
-                    aria-controls={panelId}
-                    aria-selected={active}
                     aria-pressed={active}
                     disabled={isMutating}
                     onClick={() => handleAppChange(appId)}
@@ -1003,7 +998,6 @@ export function SharedProviderManager({
         </CardHeader>
 
         <CardContent
-          id={`shared-provider-panel-${currentApp}`}
           data-ccswitch-region="provider-body"
           data-ccswitch-layout="embedded-stack"
           className="space-y-3 p-4 pt-4 sm:p-5"
