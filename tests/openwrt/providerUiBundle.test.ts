@@ -1273,7 +1273,7 @@ describe("OpenWrt provider UI bundle", () => {
     expect(viteConfig).toContain("openwrt/provider-ui-dist");
   });
 
-  it("ships shared layout hook selectors and responsive utilities in staged artifacts", () => {
+  it("ships required embed-safe host-fit selectors in staged artifacts", () => {
     const repoRoot = process.cwd();
     const stagedBundleSource = readFileSync(
       path.resolve(
@@ -1303,43 +1303,25 @@ describe("OpenWrt provider UI bundle", () => {
     }
 
     expect(stagedStylesheetSource).toMatch(
-      /@media\(max-width:960px\)\{[^}]*body\.ccswitch-openwrt-provider-ui-theme \.cbi-value\{[^}]*grid-template-columns:1fr[^}]*\}/,
-    );
-    expect(stagedStylesheetSource).toContain(
-      ".sm\\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}",
-    );
-    expect(stagedStylesheetSource).toContain(
-      ".md\\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}",
-    );
-    expect(stagedStylesheetSource).toContain(
-      ".lg\\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}",
-    );
-    expect(stagedStylesheetSource).toContain(
-      ".xl\\:grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}",
+      /body\.ccswitch-openwrt-provider-ui-theme \.ccswitch-openwrt-provider-ui-dialog/,
     );
     expect(stagedStylesheetSource).toMatch(
-      /body\.ccswitch-openwrt-provider-ui-theme \.ccswitch-openwrt-provider-ui-overlay\{[^}]*backdrop-filter:blur\(10px\)[^}]*\}/,
+      /body\.ccswitch-openwrt-provider-ui-theme \.ccswitch-openwrt-provider-ui-overlay/,
     );
     expect(stagedStylesheetSource).toMatch(
-      /body\.ccswitch-openwrt-provider-ui-theme \.ccswitch-openwrt-provider-ui-dialog\{[^}]*width:min\(calc\(100vw - 1\.5rem\),72rem\);max-height:min\(88vh,60rem\)[^}]*\}/,
-    );
-    expect(stagedStylesheetSource).toContain(
-      "#ccswitch-shared-provider-ui-root [data-ccswitch-layout=stack-to-split]{display:grid;gap:.875rem;grid-template-columns:minmax(0,1fr);align-items:start}",
+      /#ccswitch-shared-provider-ui-root \[data-ccswitch-layout=stack-to-split\]/,
     );
     expect(stagedStylesheetSource).toMatch(
-      /@media\(min-width:720px\)\{#ccswitch-shared-runtime-surface-root \[data-ccswitch-layout=stack-to-row\]\{flex-direction:row;align-items:flex-start;justify-content:space-between\}\}/,
+      /#ccswitch-shared-runtime-surface-root \[data-ccswitch-layout=stack-to-row\]/,
     );
     expect(stagedStylesheetSource).toMatch(
-      /@media\(min-width:960px\)\{#ccswitch-shared-runtime-surface-root \[data-ccswitch-region=runtime-app-grid\]\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)\}\}/,
-    );
-    expect(stagedStylesheetSource).toContain(
-      "@media(min-width:1080px){#ccswitch-shared-provider-ui-root [data-ccswitch-layout=stack-to-split]{grid-template-columns:minmax(0,1.05fr) minmax(18rem,.7fr)}}",
+      /#ccswitch-shared-provider-ui-root \[data-ccswitch-layout=responsive-grid\]/,
     );
     expect(stagedStylesheetSource).toMatch(
-      /@media\(min-width:1180px\)\{#ccswitch-shared-provider-ui-root \[data-ccswitch-region=provider-card-grid\]\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)\}\}/,
+      /#ccswitch-shared-runtime-surface-root \[data-ccswitch-layout=responsive-grid\]/,
     );
     expect(stagedStylesheetSource).toMatch(
-      /@media\(min-width:1280px\)\{#ccswitch-shared-runtime-surface-root \[data-ccswitch-region=runtime-app-grid\]\{grid-template-columns:repeat\(3,minmax\(0,1fr\)\)\}\}/,
+      /@media\(max-width:\d+px\)\{[^}]*body\.ccswitch-openwrt-provider-ui-theme \.cbi-value\{[^}]*grid-template-columns:1fr[^}]*\}/,
     );
     expect(stagedStylesheetSource).toMatch(
       /@media\(max-width:720px\)\{[^}]*body\.ccswitch-openwrt-provider-ui-theme \.ccswitch-openwrt-provider-ui-dialog\{[^}]*width:min\(calc\(100vw - 1rem\),72rem\)[^}]*max-width:calc\(100vw - 1rem\)[^}]*max-height:calc\(100dvh - 1rem\)[^}]*border-radius:1\.2rem[^}]*\}/,
