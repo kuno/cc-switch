@@ -152,7 +152,7 @@ var APP_OPTIONS = [
 		label: 'Claude',
 		providerLabel: _('Claude Providers'),
 		activeProviderLabel: _('Active Claude Provider'),
-		manageDescription: _('Manage saved Claude-compatible providers for OpenWrt while keeping the existing service and outbound proxy controls above unchanged.'),
+		manageDescription: _('Manage saved Claude-compatible providers for this router. Service settings, outbound proxy routing, and restart actions stay in LuCI.'),
 		baseUrlDescription: _('Claude-compatible API endpoint.'),
 		baseUrlPlaceholder: 'https://api.anthropic.com',
 		tokenDescription: _('Choose which Anthropic token env key this provider should use.'),
@@ -160,8 +160,8 @@ var APP_OPTIONS = [
 		tokenFieldChoices: [DEFAULT_TOKEN_FIELD, ALT_TOKEN_FIELD],
 		modelDescription: _('Optional. Leave blank to avoid a forced model override.'),
 		modelPlaceholder: _('Optional model override'),
-		summaryRunning: _('Claude traffic will use the active saved provider together with the current outbound proxy settings.'),
-		summaryInactive: _('Add a Claude-compatible provider below, then activate one when you are ready to route Claude traffic through it.'),
+		summaryRunning: _('The active Claude provider is ready to route traffic with the current outbound proxy settings.'),
+		summaryInactive: _('Save a Claude-compatible provider below, then activate it when you are ready to route Claude traffic.'),
 		newProviderExample: _('Example: Claude Provider'),
 		editorNameDescription: _('Display name for this Claude-compatible provider.'),
 		tokenRequiredMessage: _('Token is required for the first save.'),
@@ -172,7 +172,7 @@ var APP_OPTIONS = [
 		label: 'Codex',
 		providerLabel: _('Codex Providers'),
 		activeProviderLabel: _('Active Codex Provider'),
-		manageDescription: _('Manage saved Codex / OpenAI Responses providers for OpenWrt while keeping the existing service and outbound proxy controls above unchanged.'),
+		manageDescription: _('Manage saved Codex / OpenAI Responses providers for this router. Service settings, outbound proxy routing, and restart actions stay in LuCI.'),
 		baseUrlDescription: _('OpenAI-compatible Responses endpoint for Codex traffic.'),
 		baseUrlPlaceholder: 'https://api.openai.com/v1',
 		tokenDescription: _('Codex providers use OPENAI_API_KEY.'),
@@ -180,8 +180,8 @@ var APP_OPTIONS = [
 		tokenFieldChoices: [CODEX_TOKEN_FIELD],
 		modelDescription: _('Optional. Leave blank to keep the current or default Codex model.'),
 		modelPlaceholder: 'gpt-5.4',
-		summaryRunning: _('Codex traffic will use the active saved provider together with the current outbound proxy settings.'),
-		summaryInactive: _('Add a Codex provider below, then activate one when you are ready to route Codex traffic through it.'),
+		summaryRunning: _('The active Codex provider is ready to route traffic with the current outbound proxy settings.'),
+		summaryInactive: _('Save a Codex provider below, then activate it when you are ready to route Codex traffic.'),
 		newProviderExample: _('Example: Codex Provider'),
 		editorNameDescription: _('Display name for this Codex provider.'),
 		tokenRequiredMessage: _('API key is required for the first save.'),
@@ -192,7 +192,7 @@ var APP_OPTIONS = [
 		label: 'Gemini',
 		providerLabel: _('Gemini Providers'),
 		activeProviderLabel: _('Active Gemini Provider'),
-		manageDescription: _('Manage saved Gemini-compatible providers for OpenWrt while keeping the existing service and outbound proxy controls above unchanged.'),
+		manageDescription: _('Manage saved Gemini-compatible providers for this router. Service settings, outbound proxy routing, and restart actions stay in LuCI.'),
 		baseUrlDescription: _('Gemini-compatible API endpoint.'),
 		baseUrlPlaceholder: 'https://generativelanguage.googleapis.com/v1beta',
 		tokenDescription: _('Gemini providers use GEMINI_API_KEY. This can also hold OAuth access-token JSON when needed.'),
@@ -200,8 +200,8 @@ var APP_OPTIONS = [
 		tokenFieldChoices: [GEMINI_TOKEN_FIELD],
 		modelDescription: _('Optional. Leave blank to keep the current or default Gemini model.'),
 		modelPlaceholder: 'gemini-3.1-pro',
-		summaryRunning: _('Gemini traffic will use the active saved provider together with the current outbound proxy settings.'),
-		summaryInactive: _('Add a Gemini provider below, then activate one when you are ready to route Gemini traffic through it.'),
+		summaryRunning: _('The active Gemini provider is ready to route traffic with the current outbound proxy settings.'),
+		summaryInactive: _('Save a Gemini provider below, then activate it when you are ready to route Gemini traffic.'),
 		newProviderExample: _('Example: Gemini Provider'),
 		editorNameDescription: _('Display name for this Gemini provider.'),
 		tokenRequiredMessage: _('Credential is required for the first save.'),
@@ -1057,12 +1057,12 @@ return view.extend({
 			this.createSectionIntro(
 				_('OpenWrt Host Shell'),
 				_('Open CC Switch'),
-				_('Keep router-owned service settings, outbound proxy controls, status, and restart actions in LuCI while the shared runtime and provider surfaces mount below as one product page.')
+				_('Use LuCI for router service settings, outbound proxy routing, status, and restart actions while the shared runtime and provider panels load below.')
 			),
 			E('div', { 'class': 'ccswitch-host-chip-row' }, [
 				E('span', { 'class': 'ccswitch-host-chip' }, [_('Service and proxy settings stay in LuCI')]),
-				E('span', { 'class': 'ccswitch-host-chip' }, [_('Restart authority stays in LuCI')]),
-				E('span', { 'class': 'ccswitch-host-chip' }, [_('Shared runtime and provider surfaces mount below')])
+				E('span', { 'class': 'ccswitch-host-chip' }, [_('Restart stays in LuCI')]),
+				E('span', { 'class': 'ccswitch-host-chip' }, [_('Shared runtime and provider panels load below')])
 			])
 		]);
 	},
@@ -1085,7 +1085,7 @@ return view.extend({
 			this.createSectionIntro(
 				_('LuCI Router Controls'),
 				_('Service Settings'),
-				_('These router-backed controls keep LuCI ownership for service enablement, listen address, listen port, outbound proxy routing, and log level while following the same page rhythm as the shared runtime and provider areas.')
+				_('These router-backed controls keep LuCI in charge of service enablement, listen address, listen port, outbound proxy routing, and log level.')
 			)
 		]);
 
@@ -1156,7 +1156,7 @@ return view.extend({
 			this.createSectionIntro(
 				_('Router Overview'),
 				_('Service and Routing'),
-				_('Track the LuCI-owned service state, the selected CLI app, and whether the shared browser bundle is active before you make provider changes.')
+				_('Track the service state, selected app, and shared bundle status before you change providers.')
 			),
 			E('div', { 'class': 'ccswitch-host-status-grid' }, [
 				this.createStatusMetric(_('Service'), serviceValue),
@@ -1231,23 +1231,23 @@ return view.extend({
 		}
 
 		if (uiState.bundleStatus === 'error')
-			summaryText = _('The shared provider manager failed to load or mount, so the guarded LuCI fallback provider manager is active below.');
+			summaryText = _('LuCI fallback mode is active because the shared provider panel failed to load.');
 		else if (uiState.bundleStatus === 'fallback' &&
 			uiState.fallbackReason === SHARED_PROVIDER_UI_FALLBACK_REASON_GATE_DISABLED)
-			summaryText = _('The shared provider manager is explicitly disabled by the Phase 5 cutover gate, so the guarded LuCI fallback provider manager is active below.');
+			summaryText = _('LuCI fallback mode is active because the shared provider panel is disabled for this browser.');
 		else if (uiState.bundleStatus === 'fallback' &&
 			uiState.fallbackReason === SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_REGRESSION)
-			summaryText = _('The shared provider bundle loaded without provider-manager support, so the guarded LuCI fallback provider manager is active below.');
+			summaryText = _('LuCI fallback mode is active because the shared bundle is missing provider-panel support.');
 		else if (uiState.bundleStatus === 'fallback')
-			summaryText = _('The guarded LuCI fallback provider manager is active below.');
+			summaryText = _('LuCI fallback mode is active below.');
 		else if (uiState.bundleStatus === 'ready' && uiState.restartInFlight)
-			summaryText = _('The LuCI shell is restarting the service now to apply provider changes.');
+			summaryText = _('LuCI is restarting the service to apply provider changes.');
 		else if (uiState.bundleStatus === 'ready' && uiState.restartPending)
-			summaryText = _('Provider changes are saved in the shared editor. Use the LuCI restart control to apply them on the running service.');
+			summaryText = _('Provider changes are saved. Restart the service to apply provider changes.');
 		else if (uiState.bundleStatus === 'ready')
 			summaryText = uiState.isRunning
-				? _('Provider changes may require a service restart while the router proxy is running.')
-				: _('Provider changes will take effect when the router proxy starts.');
+				? _('Provider changes can be saved now. Restart the service if you want them applied while it is running.')
+				: _('Provider changes will apply when the service starts.');
 		else if (!providerState.phase2Available)
 			summaryText = activeProvider.configured
 				? _('This build is using the Phase 1 active-provider bridge. Multi-provider actions will appear after the backend Phase 2 RPCs land.')
@@ -1255,7 +1255,7 @@ return view.extend({
 		else if (activeProvider.configured)
 			summaryText = appMeta.summaryRunning;
 		else if (providerState.providers.length)
-			summaryText = _('Saved providers are available, but none is active yet. Activate one below when you are ready to switch routing.');
+			summaryText = _('Saved providers are available, but none is active yet. Activate one below when you are ready to route traffic through it.');
 		else
 			summaryText = appMeta.summaryInactive;
 
@@ -1299,7 +1299,7 @@ return view.extend({
 					this.createSectionIntro(
 						_('Shared Runtime'),
 						_('Runtime Status'),
-						_('The shared OpenWrt browser bundle mounts a read-only runtime and failover surface here. Service settings, outbound proxy controls, and restart actions remain in the LuCI shell.')
+						_('The shared OpenWrt bundle mounts the read-only runtime and failover panel here. Service settings, outbound proxy controls, and restart actions stay in LuCI.')
 					),
 					runtimeMountRoot
 				]),
@@ -1307,10 +1307,10 @@ return view.extend({
 					this.createSectionIntro(
 						_('Shared Provider Surface'),
 						_('Provider Manager'),
-						_('The shared OpenWrt browser bundle is the primary provider-manager path below. The LuCI fallback provider manager remains available only when the Phase 5 cutover gate disables the real bundle or the bundle fails router verification.')
+						_('The shared OpenWrt bundle mounts the main provider panel here. LuCI fallback mode stays available only if the shared bundle is unavailable or fails compatibility checks.')
 					),
 					E('p', { 'class': 'ccswitch-host-shell-note' }, [
-						_('Service settings, outbound proxy controls, status, and restart actions stay above in the LuCI host shell.')
+						_('Service settings, outbound proxy controls, status, and restart actions stay in the LuCI shell.')
 					]),
 					mountRoot
 				])
@@ -1322,7 +1322,7 @@ return view.extend({
 		sharedChromeRoot.appendChild(this.createSectionIntro(
 			_('LuCI Ownership'),
 			_('Router Integration'),
-			_('LuCI remains the owner for service restart, router-facing status, and the OpenWrt-specific controls above. The shared runtime and provider surfaces align visually below without taking over those host responsibilities.')
+			_('LuCI stays responsible for service restart, router status, and the OpenWrt-specific controls above. The shared runtime and provider panels align with that shell below.')
 		));
 		sharedChromeRoot.appendChild(E('div', { 'class': 'ccswitch-host-actions' }, [restartButton]));
 		messageRoot.appendChild(messageText);
@@ -1694,7 +1694,7 @@ return view.extend({
 				!uiState.providerState.phase2Available ? this.renderCompatibilityNotice() : E('div', { 'class': 'ccswitch-host-inline-banner', 'hidden': 'hidden' }),
 				this.renderManagerActions(uiState, root, statusNodes),
 				E('p', { 'class': 'ccswitch-host-shell-note' }, [
-					_('This guarded LuCI fallback stays available for router verification whenever the shared bundle is gated off or fails contract checks.')
+					_('LuCI fallback mode stays available here if the shared bundle is unavailable or fails compatibility checks.')
 				]),
 				this.renderProviderList(uiState, root, statusNodes),
 				this.renderEditorSection(uiState, root, statusNodes)
@@ -2466,7 +2466,7 @@ return view.extend({
 			if (!this.bundleProvidesRuntimeSurface(api)) {
 				this.showRuntimeSurfaceFallback(
 					shellNodes.runtimeMountRoot,
-					_('The shared provider bundle loaded without runtime-surface support, so the OpenWrt runtime panel cannot mount until the bundle contract is restored.')
+					_('The shared bundle is missing runtime-panel support, so the OpenWrt runtime panel cannot load here.')
 				);
 				return;
 			}
@@ -2501,7 +2501,7 @@ return view.extend({
 					statusNodes,
 					shellNodes,
 					'info',
-					_('The shared provider manager is explicitly disabled by the Phase 5 cutover gate, so the guarded LuCI fallback provider manager remains active for router verification.'),
+					_('The shared provider panel is disabled for this browser by the local cutover setting, so LuCI fallback mode remains active for router verification.'),
 					'fallback',
 					SHARED_PROVIDER_UI_FALLBACK_REASON_GATE_DISABLED
 				);
@@ -2525,7 +2525,7 @@ return view.extend({
 						statusNodes,
 						shellNodes,
 						'error',
-						_('The shared provider bundle loaded without provider-manager support, so the guarded LuCI fallback provider manager remains active until the blocking regression is fixed.'),
+						_('The shared bundle loaded without provider-panel support, so LuCI fallback mode remains active until that bundle contract is fixed.'),
 						'fallback',
 						SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_REGRESSION
 					);

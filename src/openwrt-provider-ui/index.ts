@@ -237,6 +237,12 @@ function buildMutationShellMessage(
   return `${providerName} was ${verb}. Changes are available immediately.`;
 }
 
+function getMutationShellMessageKind(
+  event: OpenWrtProviderMutationEvent,
+): OpenWrtShellMessageKind {
+  return event.restartRequired ? "info" : "success";
+}
+
 function buildSharedProviderShellState(
   state: OpenWrtProviderManagerMountState,
 ): SharedProviderShellState {
@@ -294,7 +300,10 @@ function handleProviderMutationEvent(
   state.serviceRunning = event.serviceRunning;
   state.restartPending = nextRestartState.pending;
   state.restartInFlight = nextRestartState.inFlight;
-  shell.showMessage("success", buildMutationShellMessage(event));
+  shell.showMessage(
+    getMutationShellMessageKind(event),
+    buildMutationShellMessage(event),
+  );
   rerender();
 }
 
@@ -418,6 +427,7 @@ export const __private__ = {
   acquireThemeLease,
   buildMutationShellMessage,
   buildSharedProviderShellState,
+  getMutationShellMessageKind,
   getShellRestartState,
   getProviderNameFromMutation,
   handleProviderMutationEvent,
