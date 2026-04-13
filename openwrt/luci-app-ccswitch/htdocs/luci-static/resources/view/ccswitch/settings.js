@@ -707,7 +707,7 @@ return view.extend({
 		for (i = 0; i < APP_OPTIONS.length; i++) {
 			select.appendChild(E('option', {
 				'value': APP_OPTIONS[i].id,
-				'selected': APP_OPTIONS[i].id === uiState.selectedApp
+				'selected': APP_OPTIONS[i].id === uiState.selectedApp ? 'selected' : null
 			}, [APP_OPTIONS[i].label]));
 		}
 
@@ -904,7 +904,7 @@ return view.extend({
 		appMeta.tokenFieldChoices.forEach(function (choice) {
 			tokenFieldSelect.appendChild(E('option', {
 				'value': choice,
-				'selected': payload.tokenField === choice || (!payload.tokenField && choice === appMeta.tokenFieldChoices[0])
+				'selected': payload.tokenField === choice || (!payload.tokenField && choice === appMeta.tokenFieldChoices[0]) ? 'selected' : null
 			}, [choice]));
 		});
 
