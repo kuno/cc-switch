@@ -33,82 +33,118 @@ export function SharedProviderCard({
 }: SharedProviderCardProps) {
   const providerName = getSharedProviderDisplayName(provider);
   const appPresentation = SHARED_PROVIDER_APP_PRESENTATION[appId];
+  const primaryAction = actionVisibility.activate
+    ? "activate"
+    : actionVisibility.edit
+      ? "edit"
+      : null;
 
   return (
     <article
       className={cn(
-        "rounded-2xl border p-4 transition-all",
+        "group relative overflow-hidden rounded-[22px] border bg-card p-4 shadow-sm transition-all sm:p-5",
         provider.active
           ? appPresentation.activeCardClassName
-          : "border-border-default bg-card hover:border-border-active hover:shadow-sm",
+          : "border-border-default hover:border-border-active hover:shadow-md",
       )}
     >
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0 space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-base font-semibold">{providerName}</h3>
-            {provider.active ? (
-              <span
-                className={cn(
-                  "rounded-full px-2.5 py-1 text-xs font-medium",
-                  appPresentation.chipClassName,
-                )}
-              >
-                Active
-              </span>
-            ) : null}
-            {provider.tokenConfigured ? (
-              <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
-                Secret stored
-              </span>
-            ) : null}
-            {presetLabel ? (
-              <span className="rounded-full border border-border-default px-2.5 py-1 text-xs font-medium text-muted-foreground">
-                Preset: {presetLabel}
-              </span>
-            ) : null}
+      <div
+        className={cn(
+          "absolute inset-x-0 top-0 h-1 opacity-70 transition-opacity group-hover:opacity-100",
+          appPresentation.accentBarClassName,
+        )}
+      />
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0 flex-1 space-y-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0 space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="truncate text-lg font-semibold">
+                  {providerName}
+                </h3>
+                {provider.active ? (
+                  <span
+                    className={cn(
+                      "rounded-full px-2.5 py-1 text-xs font-medium",
+                      appPresentation.chipClassName,
+                    )}
+                  >
+                    Active
+                  </span>
+                ) : null}
+                {provider.tokenConfigured ? (
+                  <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                    Secret stored
+                  </span>
+                ) : null}
+                {presetLabel ? (
+                  <span className="rounded-full border border-border-default px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                    Preset: {presetLabel}
+                  </span>
+                ) : null}
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Saved provider details and actions for this route.
+              </p>
+            </div>
+            <span
+              className={cn(
+                "rounded-full px-3 py-1 text-xs font-semibold",
+                appPresentation.chipClassName,
+              )}
+            >
+              {appPresentation.label}
+            </span>
           </div>
-          <dl className="grid gap-3 text-sm sm:grid-cols-2">
-            <div className="min-w-0">
-              <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+
+          <div className="grid gap-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(240px,0.8fr)]">
+            <div className="rounded-2xl border border-border-default/70 bg-muted/20 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                 Base URL
-              </dt>
-              <dd className="truncate font-medium">
+              </p>
+              <p className="mt-2 break-all text-sm font-medium text-foreground">
                 {provider.baseUrl || "-"}
-              </dd>
+              </p>
             </div>
-            <div className="min-w-0">
-              <dt className="text-xs uppercase tracking-wide text-muted-foreground">
-                Model
-              </dt>
-              <dd className="truncate font-medium">{provider.model || "-"}</dd>
-            </div>
-            <div className="min-w-0">
-              <dt className="text-xs uppercase tracking-wide text-muted-foreground">
-                Token field
-              </dt>
-              <dd className="truncate font-medium">{provider.tokenField}</dd>
-            </div>
-            <div className="min-w-0">
-              <dt className="text-xs uppercase tracking-wide text-muted-foreground">
-                Provider ID
-              </dt>
-              <dd className="truncate font-medium">
-                {provider.providerId || "-"}
-              </dd>
-            </div>
-          </dl>
+            <dl className="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-1">
+              <div className="rounded-2xl border border-border-default/70 bg-background p-4">
+                <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                  Model
+                </dt>
+                <dd className="mt-2 break-all font-medium text-foreground">
+                  {provider.model || "-"}
+                </dd>
+              </div>
+              <div className="rounded-2xl border border-border-default/70 bg-background p-4">
+                <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                  Token field
+                </dt>
+                <dd className="mt-2 break-all font-medium text-foreground">
+                  {provider.tokenField}
+                </dd>
+              </div>
+              <div className="rounded-2xl border border-border-default/70 bg-background p-4 sm:col-span-2 xl:col-span-1">
+                <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                  Provider ID
+                </dt>
+                <dd className="mt-2 break-all font-medium text-foreground">
+                  {provider.providerId || "-"}
+                </dd>
+              </div>
+            </dl>
+          </div>
+
           {provider.notes ? (
-            <p className="rounded-xl bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+            <p className="rounded-2xl border border-border-default/70 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
               {provider.notes}
             </p>
           ) : null}
         </div>
-        <div className="flex flex-wrap gap-2 lg:justify-end">
+        <div className="flex shrink-0 flex-wrap gap-2 lg:w-40 lg:flex-col lg:items-stretch">
           {actionVisibility.edit ? (
             <Button
               type="button"
-              variant="outline"
+              variant={primaryAction === "edit" ? "default" : "outline"}
               onClick={onEdit}
               disabled={isBusy}
               aria-label={`Edit ${providerName}`}
@@ -120,7 +156,7 @@ export function SharedProviderCard({
           {actionVisibility.activate ? (
             <Button
               type="button"
-              variant="outline"
+              variant="default"
               onClick={onActivate}
               disabled={isBusy}
               aria-label={`Activate ${providerName}`}
