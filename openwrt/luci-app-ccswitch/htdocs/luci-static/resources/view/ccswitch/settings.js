@@ -10,120 +10,108 @@ var ALT_TOKEN_FIELD = 'ANTHROPIC_API_KEY';
 var CODEX_TOKEN_FIELD = 'OPENAI_API_KEY';
 var GEMINI_TOKEN_FIELD = 'GEMINI_API_KEY';
 var APP_STORAGE_KEY = 'ccswitch-openwrt-selected-app';
-var CLAUDE_PRESETS = [
-	{
-		id: 'claude-official',
-		label: _('Claude Official'),
-		providerName: 'Claude Official',
-		baseUrl: 'https://api.anthropic.com',
-		tokenField: DEFAULT_TOKEN_FIELD,
-		model: '',
-		description: _('Official Anthropic Claude endpoint.')
-	},
-	{
-		id: 'claude-deepseek',
-		label: 'DeepSeek',
-		providerName: 'DeepSeek',
-		baseUrl: 'https://api.deepseek.com/anthropic',
-		tokenField: DEFAULT_TOKEN_FIELD,
-		model: 'DeepSeek-V3.2',
-		description: _('DeepSeek Claude-compatible endpoint.')
-	},
-	{
-		id: 'claude-kimi',
-		label: 'Kimi',
-		providerName: 'Kimi',
-		baseUrl: 'https://api.moonshot.cn/anthropic',
-		tokenField: DEFAULT_TOKEN_FIELD,
-		model: 'kimi-k2.5',
-		description: _('Moonshot Kimi Claude-compatible endpoint.')
-	},
-	{
-		id: 'claude-minimax',
-		label: 'MiniMax',
-		providerName: 'MiniMax',
-		baseUrl: 'https://api.minimaxi.com/anthropic',
-		tokenField: DEFAULT_TOKEN_FIELD,
-		model: 'MiniMax-M2.7',
-		description: _('MiniMax Claude-compatible endpoint.')
-	}
-];
-var CODEX_PRESETS = [
-	{
-		id: 'codex-openai-official',
-		label: _('OpenAI Official'),
-		providerName: 'OpenAI Official',
-		baseUrl: 'https://api.openai.com/v1',
-		tokenField: CODEX_TOKEN_FIELD,
-		model: 'gpt-5.4',
-		description: _('Official OpenAI Responses endpoint for Codex.')
-	},
-	{
-		id: 'codex-azure-openai',
-		label: _('Azure OpenAI'),
-		providerName: 'Azure OpenAI',
-		baseUrl: 'https://YOUR_RESOURCE_NAME.openai.azure.com/openai',
-		tokenField: CODEX_TOKEN_FIELD,
-		model: 'gpt-5.4',
-		description: _('Azure OpenAI Codex endpoint template. Replace YOUR_RESOURCE_NAME before saving.')
-	},
-	{
-		id: 'codex-openrouter',
-		label: 'OpenRouter',
-		providerName: 'OpenRouter',
-		baseUrl: 'https://openrouter.ai/api/v1',
-		tokenField: CODEX_TOKEN_FIELD,
-		model: 'gpt-5.4',
-		description: _('OpenRouter Responses-compatible endpoint for Codex.')
-	},
-	{
-		id: 'codex-packycode',
-		label: 'PackyCode',
-		providerName: 'PackyCode',
-		baseUrl: 'https://www.packyapi.com/v1',
-		tokenField: CODEX_TOKEN_FIELD,
-		model: 'gpt-5.4',
-		description: _('PackyCode Codex-compatible endpoint.')
-	}
-];
-var GEMINI_PRESETS = [
-	{
-		id: 'gemini-google-official',
-		label: _('Google Official'),
-		providerName: 'Google Official',
-		baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
-		tokenField: GEMINI_TOKEN_FIELD,
-		model: 'gemini-3.1-pro',
-		description: _('Official Google Gemini API endpoint.')
-	},
-	{
-		id: 'gemini-openrouter',
-		label: 'OpenRouter',
-		providerName: 'OpenRouter',
-		baseUrl: 'https://openrouter.ai/api',
-		tokenField: GEMINI_TOKEN_FIELD,
-		model: 'gemini-3.1-pro',
-		description: _('OpenRouter Gemini-compatible endpoint.')
-	},
-	{
-		id: 'gemini-packycode',
-		label: 'PackyCode',
-		providerName: 'PackyCode',
-		baseUrl: 'https://www.packyapi.com',
-		tokenField: GEMINI_TOKEN_FIELD,
-		model: 'gemini-3.1-pro',
-		description: _('PackyCode Gemini-compatible endpoint.')
-	},
-	{
-		id: 'gemini-ctok',
-		label: 'CTok.ai',
-		providerName: 'CTok.ai',
-		baseUrl: 'https://api.ctok.ai/v1beta',
-		tokenField: GEMINI_TOKEN_FIELD,
-		model: 'gemini-3.1-pro',
-		description: _('CTok Gemini-compatible endpoint.')
-	}
-];
+
+function createPreset(id, providerName, baseUrl, tokenField, model, options) {
+	var meta = options || {};
+
+	return {
+		id: id,
+		label: meta.label || providerName,
+		providerName: providerName,
+		baseUrl: baseUrl,
+		tokenField: tokenField,
+		model: model || '',
+		description: meta.description || ''
+	};
+}
+
+/*
+ * Mirrors the desktop preset catalog, limited to providers that fit the
+ * OpenWrt CRUD payload: { name, baseUrl, tokenField, model }.
+ */
+var PRESET_CATALOG = {
+	claude: [
+		createPreset('claude-official', 'Claude Official', 'https://api.anthropic.com', DEFAULT_TOKEN_FIELD, '', {
+			label: _('Claude Official'),
+			description: _('Official Anthropic Claude endpoint.')
+		}),
+		createPreset('claude-deepseek', 'DeepSeek', 'https://api.deepseek.com/anthropic', DEFAULT_TOKEN_FIELD, 'DeepSeek-V3.2'),
+		createPreset('claude-zhipu-glm', 'Zhipu GLM', 'https://open.bigmodel.cn/api/anthropic', DEFAULT_TOKEN_FIELD, 'glm-5'),
+		createPreset('claude-zhipu-glm-en', 'Zhipu GLM en', 'https://api.z.ai/api/anthropic', DEFAULT_TOKEN_FIELD, 'glm-5'),
+		createPreset('claude-bailian', 'Bailian', 'https://dashscope.aliyuncs.com/apps/anthropic', DEFAULT_TOKEN_FIELD, ''),
+		createPreset('claude-bailian-coding', 'Bailian For Coding', 'https://coding.dashscope.aliyuncs.com/apps/anthropic', DEFAULT_TOKEN_FIELD, ''),
+		createPreset('claude-kimi', 'Kimi', 'https://api.moonshot.cn/anthropic', DEFAULT_TOKEN_FIELD, 'kimi-k2.5'),
+		createPreset('claude-kimi-coding', 'Kimi For Coding', 'https://api.kimi.com/coding/', DEFAULT_TOKEN_FIELD, ''),
+		createPreset('claude-modelscope', 'ModelScope', 'https://api-inference.modelscope.cn', DEFAULT_TOKEN_FIELD, 'ZhipuAI/GLM-5'),
+		createPreset('claude-longcat', 'Longcat', 'https://api.longcat.chat/anthropic', DEFAULT_TOKEN_FIELD, 'LongCat-Flash-Chat'),
+		createPreset('claude-minimax', 'MiniMax', 'https://api.minimaxi.com/anthropic', DEFAULT_TOKEN_FIELD, 'MiniMax-M2.7'),
+		createPreset('claude-minimax-en', 'MiniMax en', 'https://api.minimax.io/anthropic', DEFAULT_TOKEN_FIELD, 'MiniMax-M2.7'),
+		createPreset('claude-doubaoseed', 'DouBaoSeed', 'https://ark.cn-beijing.volces.com/api/coding', DEFAULT_TOKEN_FIELD, 'doubao-seed-2-0-code-preview-latest'),
+		createPreset('claude-bailing', 'BaiLing', 'https://api.tbox.cn/api/anthropic', DEFAULT_TOKEN_FIELD, 'Ling-2.5-1T'),
+		createPreset('claude-aihubmix', 'AiHubMix', 'https://aihubmix.com', ALT_TOKEN_FIELD, ''),
+		createPreset('claude-siliconflow', 'SiliconFlow', 'https://api.siliconflow.cn', DEFAULT_TOKEN_FIELD, 'Pro/MiniMaxAI/MiniMax-M2.7'),
+		createPreset('claude-siliconflow-en', 'SiliconFlow en', 'https://api.siliconflow.com', DEFAULT_TOKEN_FIELD, 'MiniMaxAI/MiniMax-M2.7'),
+		createPreset('claude-dmxapi', 'DMXAPI', 'https://www.dmxapi.cn', DEFAULT_TOKEN_FIELD, ''),
+		createPreset('claude-packycode', 'PackyCode', 'https://www.packyapi.com', DEFAULT_TOKEN_FIELD, ''),
+		createPreset('claude-cubence', 'Cubence', 'https://api.cubence.com', DEFAULT_TOKEN_FIELD, ''),
+		createPreset('claude-aigocode', 'AIGoCode', 'https://api.aigocode.com', DEFAULT_TOKEN_FIELD, ''),
+		createPreset('claude-rightcode', 'RightCode', 'https://www.right.codes/claude', DEFAULT_TOKEN_FIELD, ''),
+		createPreset('claude-aicodemirror', 'AICodeMirror', 'https://api.aicodemirror.com/api/claudecode', DEFAULT_TOKEN_FIELD, ''),
+		createPreset('claude-aicoding', 'AICoding', 'https://api.aicoding.sh', DEFAULT_TOKEN_FIELD, ''),
+		createPreset('claude-crazyrouter', 'CrazyRouter', 'https://crazyrouter.com', DEFAULT_TOKEN_FIELD, ''),
+		createPreset('claude-sssaicode', 'SSSAiCode', 'https://node-hk.sssaicode.com/api', DEFAULT_TOKEN_FIELD, ''),
+		createPreset('claude-compshare', 'Compshare', 'https://api.modelverse.cn', DEFAULT_TOKEN_FIELD, ''),
+		createPreset('claude-micu', 'Micu', 'https://www.openclaudecode.cn', DEFAULT_TOKEN_FIELD, ''),
+		createPreset('claude-x-code-api', 'X-Code API', 'https://x-code.cc', DEFAULT_TOKEN_FIELD, ''),
+		createPreset('claude-ctok', 'CTok.ai', 'https://api.ctok.ai', DEFAULT_TOKEN_FIELD, ''),
+		createPreset('claude-openrouter', 'OpenRouter', 'https://openrouter.ai/api', DEFAULT_TOKEN_FIELD, 'anthropic/claude-sonnet-4.6'),
+		createPreset('claude-novita-ai', 'Novita AI', 'https://api.novita.ai/anthropic', DEFAULT_TOKEN_FIELD, 'zai-org/glm-5'),
+		createPreset('claude-xiaomi-mimo', 'Xiaomi MiMo', 'https://api.xiaomimimo.com/anthropic', DEFAULT_TOKEN_FIELD, 'mimo-v2-pro')
+	],
+	codex: [
+		createPreset('codex-openai-official', 'OpenAI Official', 'https://api.openai.com/v1', CODEX_TOKEN_FIELD, 'gpt-5.4', {
+			label: _('OpenAI Official'),
+			description: _('Official OpenAI Responses endpoint for Codex.')
+		}),
+		createPreset('codex-azure-openai', 'Azure OpenAI', 'https://YOUR_RESOURCE_NAME.openai.azure.com/openai', CODEX_TOKEN_FIELD, 'gpt-5.4', {
+			label: _('Azure OpenAI'),
+			description: _('Azure OpenAI Codex endpoint template. Replace YOUR_RESOURCE_NAME before saving.')
+		}),
+		createPreset('codex-aihubmix', 'AiHubMix', 'https://aihubmix.com/v1', CODEX_TOKEN_FIELD, 'gpt-5.4'),
+		createPreset('codex-dmxapi', 'DMXAPI', 'https://www.dmxapi.cn/v1', CODEX_TOKEN_FIELD, 'gpt-5.4'),
+		createPreset('codex-packycode', 'PackyCode', 'https://www.packyapi.com/v1', CODEX_TOKEN_FIELD, 'gpt-5.4'),
+		createPreset('codex-cubence', 'Cubence', 'https://api.cubence.com/v1', CODEX_TOKEN_FIELD, 'gpt-5.4'),
+		createPreset('codex-aigocode', 'AIGoCode', 'https://api.aigocode.com', CODEX_TOKEN_FIELD, 'gpt-5.4'),
+		createPreset('codex-rightcode', 'RightCode', 'https://right.codes/codex/v1', CODEX_TOKEN_FIELD, 'gpt-5.4'),
+		createPreset('codex-aicodemirror', 'AICodeMirror', 'https://api.aicodemirror.com/api/codex/backend-api/codex', CODEX_TOKEN_FIELD, 'gpt-5.4'),
+		createPreset('codex-aicoding', 'AICoding', 'https://api.aicoding.sh', CODEX_TOKEN_FIELD, 'gpt-5.4'),
+		createPreset('codex-crazyrouter', 'CrazyRouter', 'https://crazyrouter.com/v1', CODEX_TOKEN_FIELD, 'gpt-5.4'),
+		createPreset('codex-sssaicode', 'SSSAiCode', 'https://node-hk.sssaicode.com/api/v1', CODEX_TOKEN_FIELD, 'gpt-5.4'),
+		createPreset('codex-compshare', 'Compshare', 'https://api.modelverse.cn/v1', CODEX_TOKEN_FIELD, 'gpt-5.4'),
+		createPreset('codex-micu', 'Micu', 'https://www.openclaudecode.cn/v1', CODEX_TOKEN_FIELD, 'gpt-5.4'),
+		createPreset('codex-x-code-api', 'X-Code API', 'https://x-code.cc/v1', CODEX_TOKEN_FIELD, 'gpt-5.4'),
+		createPreset('codex-ctok', 'CTok.ai', 'https://api.ctok.ai/v1', CODEX_TOKEN_FIELD, 'gpt-5.4'),
+		createPreset('codex-openrouter', 'OpenRouter', 'https://openrouter.ai/api/v1', CODEX_TOKEN_FIELD, 'gpt-5.4')
+	],
+	gemini: [
+		createPreset('gemini-google-official', 'Google Official', 'https://generativelanguage.googleapis.com/v1beta', GEMINI_TOKEN_FIELD, 'gemini-3.1-pro', {
+			label: _('Google Official'),
+			description: _('Official Google Gemini API endpoint.')
+		}),
+		createPreset('gemini-packycode', 'PackyCode', 'https://www.packyapi.com', GEMINI_TOKEN_FIELD, 'gemini-3.1-pro'),
+		createPreset('gemini-cubence', 'Cubence', 'https://api.cubence.com', GEMINI_TOKEN_FIELD, 'gemini-3.1-pro'),
+		createPreset('gemini-aigocode', 'AIGoCode', 'https://api.aigocode.com', GEMINI_TOKEN_FIELD, 'gemini-3.1-pro'),
+		createPreset('gemini-aicodemirror', 'AICodeMirror', 'https://api.aicodemirror.com/api/gemini', GEMINI_TOKEN_FIELD, 'gemini-3.1-pro'),
+		createPreset('gemini-aicoding', 'AICoding', 'https://api.aicoding.sh', GEMINI_TOKEN_FIELD, 'gemini-3.1-pro'),
+		createPreset('gemini-crazyrouter', 'CrazyRouter', 'https://crazyrouter.com', GEMINI_TOKEN_FIELD, 'gemini-3.1-pro'),
+		createPreset('gemini-sssaicode', 'SSSAiCode', 'https://node-hk.sssaicode.com/api', GEMINI_TOKEN_FIELD, 'gemini-3.1-pro'),
+		createPreset('gemini-ctok', 'CTok.ai', 'https://api.ctok.ai/v1beta', GEMINI_TOKEN_FIELD, 'gemini-3.1-pro'),
+		createPreset('gemini-openrouter', 'OpenRouter', 'https://openrouter.ai/api', GEMINI_TOKEN_FIELD, 'gemini-3.1-pro')
+	]
+};
+var CLAUDE_PRESETS = PRESET_CATALOG.claude;
+var CODEX_PRESETS = PRESET_CATALOG.codex;
+var GEMINI_PRESETS = PRESET_CATALOG.gemini;
 var APP_OPTIONS = [
 	{
 		id: 'claude',

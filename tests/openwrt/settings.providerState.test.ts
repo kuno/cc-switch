@@ -24,6 +24,28 @@ type ProviderState = {
 
 type SettingsView = {
   emptyProviderView(): ProviderView;
+  getPresetOptions(appId: string): Array<{
+    id: string;
+    providerName: string;
+    baseUrl: string;
+    tokenField: string;
+    model: string;
+  }>;
+  inferPresetIdFromPayload(
+    appId: string,
+    payload: Partial<Pick<ProviderView, "baseUrl" | "tokenField">>,
+  ): string;
+  applyPresetToInputs(
+    appId: string,
+    presetId: string,
+    refs: {
+      nameInput: { value: string };
+      baseUrlInput: { value: string };
+      tokenFieldSelect: { value: string };
+      modelInput: { value: string };
+      presetDescriptionNode: { textContent: string };
+    },
+  ): void;
   normalizeProviderView(
     provider: Record<string, unknown>,
     fallbackId: string | null,
@@ -43,7 +65,16 @@ function loadSettingsView(): SettingsView {
     ),
     "utf8",
   );
-  const factory = new Function("view", "form", "uci", "rpc", "ui", source);
+  const factory = new Function(
+    "view",
+    "form",
+    "uci",
+    "rpc",
+    "ui",
+    "_",
+    "localStorage",
+    source,
+  );
 
   return factory(
     {
@@ -59,6 +90,13 @@ function loadSettingsView(): SettingsView {
       },
     },
     {},
+    (value: string) => value,
+    {
+      getItem() {
+        return null;
+      },
+      setItem() {},
+    },
   ) as SettingsView;
 }
 
@@ -80,6 +118,76 @@ function makeActiveHint(
 
 describe("LuCI provider state parsing", () => {
   const settingsView = loadSettingsView();
+
+  it("exposes the expanded desktop-aligned preset catalog for all OpenWrt apps", () => {
+    expect(settingsView.getPresetOptions("claude")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "claude-zhipu-glm" }),
+        expect.objectContaining({ id: "claude-aihubmix", tokenField: "ANTHROPIC_API_KEY" }),
+        expect.objectContaining({ id: "claude-xiaomi-mimo", model: "mimo-v2-pro" }),
+      ]),
+    );
+    expect(settingsView.getPresetOptions("codex")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "codex-aihubmix" }),
+        expect.objectContaining({ id: "codex-sssaicode" }),
+        expect.objectContaining({ id: "codex-openrouter" }),
+      ]),
+    );
+    expect(settingsView.getPresetOptions("gemini")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "gemini-aicoding" }),
+        expect.objectContaining({ id: "gemini-sssaicode" }),
+        expect.objectContaining({ id: "gemini-openrouter" }),
+      ]),
+    );
+  });
+
+  it("autofills preset metadata and infers matching presets from saved payloads", () => {
+    const refs = {
+      nameInput: { value: "" },
+      baseUrlInput: { value: "" },
+      tokenFieldSelect: { value: "" },
+      modelInput: { value: "" },
+      presetDescriptionNode: { textContent: "" },
+    };
+
+    settingsView.applyPresetToInputs("claude", "claude-aihubmix", refs);
+    expect(refs.nameInput.value).toBe("AiHubMix");
+    expect(refs.baseUrlInput.value).toBe("https://aihubmix.com");
+    expect(refs.tokenFieldSelect.value).toBe("ANTHROPIC_API_KEY");
+    expect(refs.modelInput.value).toBe("");
+    expect(
+      settingsView.inferPresetIdFromPayload("claude", {
+        baseUrl: "https://aihubmix.com/",
+        tokenField: "ANTHROPIC_API_KEY",
+      }),
+    ).toBe("claude-aihubmix");
+
+    settingsView.applyPresetToInputs("codex", "codex-sssaicode", refs);
+    expect(refs.nameInput.value).toBe("SSSAiCode");
+    expect(refs.baseUrlInput.value).toBe("https://node-hk.sssaicode.com/api/v1");
+    expect(refs.tokenFieldSelect.value).toBe("OPENAI_API_KEY");
+    expect(refs.modelInput.value).toBe("gpt-5.4");
+    expect(
+      settingsView.inferPresetIdFromPayload("codex", {
+        baseUrl: "https://node-hk.sssaicode.com/api/v1/",
+        tokenField: "OPENAI_API_KEY",
+      }),
+    ).toBe("codex-sssaicode");
+
+    settingsView.applyPresetToInputs("gemini", "gemini-aicoding", refs);
+    expect(refs.nameInput.value).toBe("AICoding");
+    expect(refs.baseUrlInput.value).toBe("https://api.aicoding.sh");
+    expect(refs.tokenFieldSelect.value).toBe("GEMINI_API_KEY");
+    expect(refs.modelInput.value).toBe("gemini-3.1-pro");
+    expect(
+      settingsView.inferPresetIdFromPayload("gemini", {
+        baseUrl: "https://api.aicoding.sh/",
+        tokenField: "GEMINI_API_KEY",
+      }),
+    ).toBe("gemini-aicoding");
+  });
 
   it("preserves item-level active when phase 2 omits the top-level activeProviderId", () => {
     const state = settingsView.parsePhase2ProviderState(
