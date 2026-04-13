@@ -641,6 +641,7 @@ return view.extend({
 		]);
 
 		this.updateStatusPanel({
+			providerTitle: providerTitle,
 			serviceValue: serviceValue,
 			providerValue: providerValue,
 			savedCountValue: savedCountValue,
