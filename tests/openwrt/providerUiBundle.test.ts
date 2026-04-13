@@ -314,7 +314,7 @@ describe("OpenWrt provider UI bundle", () => {
     expect(rerender).toHaveBeenCalledTimes(3);
   });
 
-  it("stages the same bundle asset for standalone and feed builds", () => {
+  it("ships the committed staged real bundle and copies it unchanged for package assembly", () => {
     const repoRoot = process.cwd();
     const outputDir = mkdtempSync(
       path.join(os.tmpdir(), "ccswitch-openwrt-ui-"),
@@ -340,10 +340,7 @@ describe("OpenWrt provider UI bundle", () => {
       path.resolve(repoRoot, "vite.config.ts"),
       "utf8",
     );
-
-    execFileSync("pnpm", ["build:openwrt-provider-ui"], {
-      cwd: repoRoot,
-    });
+    const stagedBundleSource = readFileSync(stagedBundlePath, "utf8");
 
     execFileSync("sh", [helperPath, "--output-dir", outputDir], {
       cwd: repoRoot,
@@ -353,21 +350,21 @@ describe("OpenWrt provider UI bundle", () => {
     expect(existsSync(stagedOutputPath)).toBe(true);
     const bundleSource = readFileSync(stagedOutputPath, "utf8");
 
-    expect(bundleSource).toBe(readFileSync(stagedBundlePath, "utf8"));
-    expect(bundleSource).toContain("__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__");
-    expect(bundleSource).toContain("providerManager");
-    expect(bundleSource).toContain("Provider manager");
-    expect(bundleSource).toContain("cc-switch service");
-    expect(bundleSource).not.toContain("Shared provider bundle loaded.");
-    expect(bundleSource).not.toContain(
+    expect(bundleSource).toBe(stagedBundleSource);
+    expect(stagedBundleSource).toContain("__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__");
+    expect(stagedBundleSource).toContain("providerManager");
+    expect(stagedBundleSource).toContain("Provider manager");
+    expect(stagedBundleSource).toContain("cc-switch service");
+    expect(stagedBundleSource).not.toContain("Shared provider bundle loaded.");
+    expect(stagedBundleSource).not.toContain(
       "Waiting for the shared provider manager implementation.",
     );
-    expect(bundleSource).not.toContain("StepFun");
-    expect(bundleSource).not.toContain("KAT-Coder");
-    expect(bundleSource).not.toContain("GitHub Copilot");
-    expect(bundleSource).not.toContain("Codex (ChatGPT Plus/Pro)");
-    expect(bundleSource).not.toContain("AWS Bedrock (AKSK)");
-    expect(bundleSource).not.toContain("AWS Bedrock (API Key)");
+    expect(stagedBundleSource).not.toContain("StepFun");
+    expect(stagedBundleSource).not.toContain("KAT-Coder");
+    expect(stagedBundleSource).not.toContain("GitHub Copilot");
+    expect(stagedBundleSource).not.toContain("Codex (ChatGPT Plus/Pro)");
+    expect(stagedBundleSource).not.toContain("AWS Bedrock (AKSK)");
+    expect(stagedBundleSource).not.toContain("AWS Bedrock (API Key)");
     expect(luciMakefile).toContain("prepare-provider-ui-bundle.sh");
     expect(buildIpkScript).toContain("prepare-provider-ui-bundle.sh");
     expect(viteConfig).toContain("openwrt/provider-ui-dist");
