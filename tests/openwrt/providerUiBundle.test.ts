@@ -301,6 +301,19 @@ function createMutationEvent(
   };
 }
 
+const FORBIDDEN_DESKTOP_SHELL_PHRASES = [
+  "title bar",
+  "window chrome",
+  "system tray",
+  "tray icon",
+  "desktop shell",
+  "menu bar",
+  "taskbar",
+  "dock",
+  "window controls",
+  "sidebar navigation",
+] as const;
+
 describe("OpenWrt provider UI bundle", () => {
   it("registers the runtime-surface capability and mounts a read-only runtime panel", async () => {
     const globalScope = globalThis as typeof globalThis & {
@@ -354,6 +367,9 @@ describe("OpenWrt provider UI bundle", () => {
     expect(target).toHaveTextContent("Failover queue preview");
     expect(target).not.toHaveTextContent("Failover controls");
     expect(target).not.toHaveTextContent("Add to queue");
+    expect(
+      within(target).queryByRole("button", { name: /restart/i }),
+    ).not.toBeInTheDocument();
     expect(transport.getRuntimeStatus).toHaveBeenCalledOnce();
     expect(transport.getAppRuntimeStatus).toHaveBeenCalledWith("claude");
     expect(transport.getAppRuntimeStatus).toHaveBeenCalledWith("codex");
@@ -626,6 +642,9 @@ describe("OpenWrt provider UI bundle", () => {
     expect(
       within(target).queryByRole("button", { name: /failover/i }),
     ).not.toBeInTheDocument();
+    expect(
+      within(target).queryByRole("button", { name: /restart/i }),
+    ).not.toBeInTheDocument();
     expect(target.textContent).not.toContain("Shared provider bundle loaded.");
     expect(target.textContent).not.toContain(
       "Waiting for the shared provider manager implementation.",
@@ -897,6 +916,23 @@ describe("OpenWrt provider UI bundle", () => {
     expect(luciMakefile).toContain("prepare-provider-ui-bundle.sh");
     expect(buildIpkScript).toContain("prepare-provider-ui-bundle.sh");
     expect(viteConfig).toContain("openwrt/provider-ui-dist");
+  });
+
+  it("keeps the staged OpenWrt bundle free of desktop-shell metaphors", () => {
+    const repoRoot = process.cwd();
+    const stagedBundleSource = readFileSync(
+      path.resolve(repoRoot, "openwrt/provider-ui-dist/ccswitch-provider-ui.js"),
+      "utf8",
+    ).toLowerCase();
+    const stagedStylesheetSource = readFileSync(
+      path.resolve(repoRoot, "openwrt/provider-ui-dist/ccswitch-provider-ui.css"),
+      "utf8",
+    ).toLowerCase();
+
+    for (const phrase of FORBIDDEN_DESKTOP_SHELL_PHRASES) {
+      expect(stagedBundleSource).not.toContain(phrase);
+      expect(stagedStylesheetSource).not.toContain(phrase);
+    }
   });
 
   it("copies an explicit real bundle without mutating the canonical staged artifact", () => {

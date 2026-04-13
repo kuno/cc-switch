@@ -125,6 +125,18 @@ const SHARED_PROVIDER_UI_FALLBACK_REASON_GATE_DISABLED = "gate-disabled";
 const SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_FAILURE = "bundle-failure";
 const SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_REGRESSION =
   "bundle-regression";
+const FORBIDDEN_DESKTOP_SHELL_PHRASES = [
+  "title bar",
+  "window chrome",
+  "system tray",
+  "tray icon",
+  "desktop shell",
+  "menu bar",
+  "taskbar",
+  "dock",
+  "window controls",
+  "sidebar navigation",
+] as const;
 
 function createElement(
   tag: string,
@@ -481,6 +493,39 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(statusNodes.appValue.textContent).toBe("Gemini");
     expect(shellNodes.messageText.textContent).toBe("Restart required.");
     expect(shellNodes.messageRoot.style.display).toBe("");
+  });
+
+  it("keeps LuCI restart ownership and unified shell copy in the page chrome", () => {
+    const { settings } = loadSettingsView("claude");
+    const uiState = settings.createUiState(true, "claude");
+
+    uiState.bundleStatus = "ready";
+    uiState.restartPending = true;
+
+    const statusNodes = settings.createStatusPanel(uiState);
+    const shellNodes = settings.createProviderShell(uiState, statusNodes);
+    const shellText = shellNodes.root.textContent ?? "";
+    const combinedText = `${statusNodes.root.textContent ?? ""} ${shellText}`.toLowerCase();
+    const restartButtons = Array.from(
+      shellNodes.root.querySelectorAll("button"),
+    ).map((button) => button.textContent?.trim());
+
+    expect(statusNodes.summaryValue.textContent).toBe(
+      "Provider changes are saved in the shared editor. Use the LuCI restart control to apply them on the running service.",
+    );
+    expect(shellText).toContain("Runtime Status");
+    expect(shellText).toContain("Provider Manager");
+    expect(shellText).toContain(
+      "Service settings, outbound proxy controls, and restart actions remain in the LuCI shell.",
+    );
+    expect(shellText).toContain(
+      "Service settings and outbound proxy controls remain above in the LuCI shell. Provider management mounts below after this page renders.",
+    );
+    expect(restartButtons).toEqual(["Restart Service"]);
+
+    for (const phrase of FORBIDDEN_DESKTOP_SHELL_PHRASES) {
+      expect(combinedText).not.toContain(phrase);
+    }
   });
 
   it("mounts the runtime surface above the provider manager through a separate bundle contract", async () => {
