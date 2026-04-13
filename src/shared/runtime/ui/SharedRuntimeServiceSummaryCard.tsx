@@ -49,12 +49,6 @@ export function SharedRuntimeServiceSummaryCard({
   runtime: SharedRuntimeProxyStatus;
 }) {
   const hasLiveTelemetry = hasSharedRuntimeLiveTelemetry(service, runtime);
-  const telemetrySourceLabel =
-    service.statusSource === "live-status"
-      ? "Live"
-      : service.statusSource === "config-fallback"
-        ? "Fallback"
-        : getSharedRuntimeStatusSourceLabel(service.statusSource);
 
   return (
     <Card className="ccswitch-openwrt-surface-card rounded-3xl border-border-default bg-card/95 shadow-sm">
@@ -93,24 +87,14 @@ export function SharedRuntimeServiceSummaryCard({
           <p className="mt-2 text-lg font-semibold text-foreground">
             {formatSharedRuntimeListenEndpoint(service)}
           </p>
-          <dl className="mt-4 grid gap-3 sm:grid-cols-2">
-            <div className="rounded-2xl border border-border-default/70 bg-muted/20 px-4 py-3">
-              <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                Proxy mode
-              </dt>
-              <dd className="mt-2 text-sm font-medium text-foreground">
-                {service.proxyEnabled ? "Proxy enabled" : "Proxy disabled"}
-              </dd>
-            </div>
-            <div className="rounded-2xl border border-border-default/70 bg-muted/20 px-4 py-3">
-              <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                Telemetry source
-              </dt>
-              <dd className="mt-2 text-sm font-medium text-foreground">
-                {telemetrySourceLabel}
-              </dd>
-            </div>
-          </dl>
+          <div className="mt-4 rounded-2xl border border-border-default/70 bg-muted/20 px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              Proxy mode
+            </p>
+            <p className="mt-2 text-sm font-medium text-foreground">
+              {service.proxyEnabled ? "Proxy enabled" : "Proxy disabled"}
+            </p>
+          </div>
         </div>
         {hasLiveTelemetry ? (
           <div className="rounded-2xl border border-border-default bg-background/80 p-4">
