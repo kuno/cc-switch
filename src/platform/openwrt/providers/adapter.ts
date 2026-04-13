@@ -95,6 +95,16 @@ function isCompatibilityRpcFailure(
   );
 }
 
+function hasRpcFailureDetails(
+  result: OpenWrtRpcResult | null | undefined,
+): boolean {
+  return Boolean(
+    result &&
+      (typeof result.error === "string" ||
+        (result.ok === false && typeof result.message === "string")),
+  );
+}
+
 async function invokeRpcCandidates(
   candidates: RpcCandidate[],
   missingMessage: string,
@@ -202,14 +212,40 @@ function buildCapabilities(
   };
 }
 
-async function resolveProviderStateResponse<T>(
-  call: () => Promise<T | null | undefined>,
-  fallback: T,
-): Promise<T> {
+async function resolveProviderStateResponse(
+  call: () => Promise<OpenWrtRpcResult | null | undefined>,
+  fallback: OpenWrtRpcResult | null,
+  options: {
+    compatibilityFallback: boolean;
+    missingMessage: string;
+  },
+): Promise<OpenWrtRpcResult | null> {
   try {
-    return (await call()) ?? fallback;
-  } catch {
-    return fallback;
+    const result = await call();
+
+    if (hasRpcFailureDetails(result)) {
+      if (
+        options.compatibilityFallback &&
+        isCompatibilityRpcFailure(result)
+      ) {
+        return fallback;
+      }
+
+      throw new Error(rpcFailureMessage(result) ?? options.missingMessage);
+    }
+
+    return result ?? fallback;
+  } catch (error) {
+    if (
+      options.compatibilityFallback &&
+      isCompatibilityRpcFailure(error as Error)
+    ) {
+      return fallback;
+    }
+
+    throw new Error(
+      rpcFailureMessage(error as Error) ?? options.missingMessage,
+    );
   }
 }
 
@@ -218,14 +254,25 @@ async function loadProviderState(
   appId: SharedProviderAppId,
 ): Promise<SharedProviderState> {
   const [listResponse, savedResponse, activeResponse] = await Promise.all([
-    resolveProviderStateResponse(() => transport.listProviders(appId), null),
+    resolveProviderStateResponse(() => transport.listProviders(appId), null, {
+      compatibilityFallback: true,
+      missingMessage: "Failed to load Phase 2 providers.",
+    }),
     resolveProviderStateResponse(
       () => transport.listSavedProviders(appId),
       null,
+      {
+        compatibilityFallback: true,
+        missingMessage: "Failed to load saved providers.",
+      },
     ),
     resolveProviderStateResponse(
       () => transport.getActiveProvider(appId),
       { ok: false },
+      {
+        compatibilityFallback: false,
+        missingMessage: "Failed to load active provider.",
+      },
     ),
   ]);
   const activeProvider = parseActiveProviderResponse(activeResponse, appId);
@@ -243,55 +290,11 @@ async function invokePhase2Upsert(
   provider: SharedProviderEditorPayload,
   providerId?: string,
 ): Promise<void> {
-  if (providerId) {
-    await invokeRpcCandidates(
-      [
-        {
-          compatibilityFallback: true,
-          call: () =>
-            Promise.resolve(
-              transport.upsertProviderByProviderId?.(
-                appId,
-                providerId,
-                provider,
-              ),
-            ),
-        },
-        {
-          compatibilityFallback: true,
-          call: () =>
-            Promise.resolve(
-              transport.upsertProviderById?.(appId, providerId, provider),
-            ),
-        },
-      ],
-      "The Phase 2 provider save RPC is not available in this build.",
-    );
-    return;
-  }
+  const missingMessage = "The Phase 2 provider save RPC is not available in this build.";
 
-  try {
-    await invokeRpcCandidates(
-      [
-        {
-          compatibilityFallback: true,
-          call: () =>
-            Promise.resolve(transport.upsertProvider?.(appId, provider)),
-        },
-        {
-          compatibilityFallback: true,
-          call: () =>
-            Promise.resolve(transport.saveProvider?.(appId, provider)),
-        },
-      ],
-      "The Phase 2 provider save RPC is not available in this build.",
-    );
-  } catch (error) {
-    if (
-      !transport.upsertActiveProvider ||
-      !isCompatibilityRpcFailure(error as Error)
-    ) {
-      throw error;
+  async function invokePhase1Upsert(): Promise<void> {
+    if (!transport.upsertActiveProvider) {
+      throw new Error(missingMessage);
     }
 
     const result = await transport.upsertActiveProvider(appId, provider);
@@ -302,6 +305,62 @@ async function invokePhase2Upsert(
       );
     }
   }
+
+  if (providerId) {
+    const candidates: RpcCandidate[] = [];
+
+    if (transport.upsertProviderByProviderId) {
+      candidates.push({
+        compatibilityFallback: true,
+        call: () =>
+          transport.upsertProviderByProviderId!(appId, providerId, provider),
+      });
+    }
+
+    if (transport.upsertProviderById) {
+      candidates.push({
+        compatibilityFallback: true,
+        call: () => transport.upsertProviderById!(appId, providerId, provider),
+      });
+    }
+
+    await invokeRpcCandidates(
+      candidates,
+      missingMessage,
+    );
+    return;
+  }
+
+  const createCandidates: RpcCandidate[] = [];
+
+  if (transport.upsertProvider) {
+    createCandidates.push({
+      compatibilityFallback: true,
+      call: () => transport.upsertProvider!(appId, provider),
+    });
+  }
+
+  if (transport.saveProvider) {
+    createCandidates.push({
+      compatibilityFallback: true,
+      call: () => transport.saveProvider!(appId, provider),
+    });
+  }
+
+  if (createCandidates.length === 0) {
+    await invokePhase1Upsert();
+    return;
+  }
+
+  try {
+    await invokeRpcCandidates(createCandidates, missingMessage);
+  } catch (error) {
+    if (!isCompatibilityRpcFailure(error as Error)) {
+      throw error;
+    }
+
+    await invokePhase1Upsert();
+  }
 }
 
 async function invokePhase2Delete(
@@ -309,21 +368,24 @@ async function invokePhase2Delete(
   appId: SharedProviderAppId,
   providerId: string,
 ): Promise<void> {
+  const candidates: RpcCandidate[] = [];
+
+  if (transport.deleteProviderByProviderId) {
+    candidates.push({
+      compatibilityFallback: true,
+      call: () => transport.deleteProviderByProviderId!(appId, providerId),
+    });
+  }
+
+  if (transport.deleteProviderById) {
+    candidates.push({
+      compatibilityFallback: true,
+      call: () => transport.deleteProviderById!(appId, providerId),
+    });
+  }
+
   await invokeRpcCandidates(
-    [
-      {
-        compatibilityFallback: true,
-        call: () =>
-          Promise.resolve(
-            transport.deleteProviderByProviderId?.(appId, providerId),
-          ),
-      },
-      {
-        compatibilityFallback: true,
-        call: () =>
-          Promise.resolve(transport.deleteProviderById?.(appId, providerId)),
-      },
-    ],
+    candidates,
     "The Phase 2 provider delete RPC is not available in this build.",
   );
 }
@@ -333,33 +395,38 @@ async function invokePhase2Activate(
   appId: SharedProviderAppId,
   providerId: string,
 ): Promise<void> {
+  const candidates: RpcCandidate[] = [];
+
+  if (transport.activateProviderByProviderId) {
+    candidates.push({
+      compatibilityFallback: true,
+      call: () => transport.activateProviderByProviderId!(appId, providerId),
+    });
+  }
+
+  if (transport.activateProviderById) {
+    candidates.push({
+      compatibilityFallback: true,
+      call: () => transport.activateProviderById!(appId, providerId),
+    });
+  }
+
+  if (transport.switchProviderByProviderId) {
+    candidates.push({
+      compatibilityFallback: true,
+      call: () => transport.switchProviderByProviderId!(appId, providerId),
+    });
+  }
+
+  if (transport.switchProviderById) {
+    candidates.push({
+      compatibilityFallback: true,
+      call: () => transport.switchProviderById!(appId, providerId),
+    });
+  }
+
   await invokeRpcCandidates(
-    [
-      {
-        compatibilityFallback: true,
-        call: () =>
-          Promise.resolve(
-            transport.activateProviderByProviderId?.(appId, providerId),
-          ),
-      },
-      {
-        compatibilityFallback: true,
-        call: () =>
-          Promise.resolve(transport.activateProviderById?.(appId, providerId)),
-      },
-      {
-        compatibilityFallback: true,
-        call: () =>
-          Promise.resolve(
-            transport.switchProviderByProviderId?.(appId, providerId),
-          ),
-      },
-      {
-        compatibilityFallback: true,
-        call: () =>
-          Promise.resolve(transport.switchProviderById?.(appId, providerId)),
-      },
-    ],
+    candidates,
     "The Phase 2 provider activate RPC is not available in this build.",
   );
 }
