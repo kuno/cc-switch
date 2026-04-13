@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { RefreshCcw, Search, X } from "lucide-react";
 import type { SharedProviderAppId } from "../domain";
 import { Button } from "@/components/ui/button";
@@ -30,15 +31,20 @@ export function SharedProviderToolbar({
   onRefresh,
   onAddProvider,
 }: SharedProviderToolbarProps) {
+  const searchFieldId = useId();
   const appLabel = SHARED_PROVIDER_APP_PRESENTATION[appId].label;
   const appPresentation = SHARED_PROVIDER_APP_PRESENTATION[appId];
   const normalizedSearchQuery = searchQuery.trim();
   const searchSummary = normalizedSearchQuery
     ? `Showing ${visibleCount} ${visibleCount === 1 ? "result" : "results"} for "${normalizedSearchQuery}" out of ${totalCount}.`
     : null;
+  const toolbarBusy = disabled || isRefreshing;
 
   return (
-    <div className="ccswitch-openwrt-group ccswitch-openwrt-toolbar space-y-4 rounded-2xl border border-border-default/80 bg-gradient-to-br from-background via-background to-muted/30 p-4 shadow-sm">
+    <div
+      className="ccswitch-openwrt-group ccswitch-openwrt-toolbar space-y-4 rounded-2xl border border-border-default/80 bg-gradient-to-br from-background via-background to-muted/30 p-4 shadow-sm"
+      aria-busy={toolbarBusy}
+    >
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -70,6 +76,7 @@ export function SharedProviderToolbar({
             variant="outline"
             onClick={onRefresh}
             disabled={disabled || isRefreshing}
+            aria-busy={isRefreshing}
           >
             <RefreshCcw
               className={cn("h-4 w-4", isRefreshing && "animate-spin")}
@@ -88,6 +95,7 @@ export function SharedProviderToolbar({
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
+            id={searchFieldId}
             aria-label="Search providers"
             className="ccswitch-openwrt-field h-11 rounded-xl border-border-default/80 bg-background/90 pl-9 pr-10"
             value={searchQuery}
@@ -99,11 +107,13 @@ export function SharedProviderToolbar({
             <button
               type="button"
               aria-label="Clear search"
+              aria-controls={searchFieldId}
               className={cn(
                 "absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground",
                 disabled && "pointer-events-none opacity-50",
               )}
               onClick={() => onSearchQueryChange("")}
+              disabled={disabled || searchDisabled}
             >
               <X className="h-4 w-4" />
             </button>

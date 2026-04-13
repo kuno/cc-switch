@@ -1,4 +1,4 @@
-import { type FormEvent, type ReactNode, useId } from "react";
+import { type FormEvent, type ReactNode, type RefObject, useId } from "react";
 import {
   CheckCircle2,
   FileText,
@@ -53,6 +53,7 @@ interface SharedProviderEditorPanelProps {
   supportsPresets: boolean;
   supportsBlankSecretPreserve: boolean;
   hasStoredSecret: boolean;
+  initialFocusRef?: RefObject<HTMLInputElement>;
   onOpenChange: (open: boolean) => void;
   onPresetChange: (presetId: string) => void;
   onDraftChange: (draft: SharedProviderEditorPayload) => void;
@@ -149,6 +150,7 @@ export function SharedProviderEditorPanel({
   supportsPresets,
   supportsBlankSecretPreserve,
   hasStoredSecret,
+  initialFocusRef,
   onOpenChange,
   onPresetChange,
   onDraftChange,
@@ -157,7 +159,8 @@ export function SharedProviderEditorPanel({
   const fieldIdPrefix = useId();
   const appPresentation = SHARED_PROVIDER_APP_PRESENTATION[appId];
   const appLabel = appPresentation.label;
-  const title = mode === "edit" ? "Edit provider" : "Add provider";
+  const title =
+    mode === "edit" ? `Edit ${appLabel} provider` : `Add ${appLabel} provider`;
   const description =
     mode === "edit"
       ? `Update the saved ${appLabel} provider draft and close the panel when you are done.`
@@ -168,6 +171,13 @@ export function SharedProviderEditorPanel({
       <DialogContent
         className="ccswitch-openwrt-provider-ui-dialog ccswitch-openwrt-dialog-shell max-w-6xl overflow-hidden p-0"
         zIndex="alert"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          initialFocusRef?.current?.focus();
+        }}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+        }}
       >
         <DialogHeader className="border-b border-border-default bg-gradient-to-br from-background via-background to-muted/40">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -337,6 +347,7 @@ export function SharedProviderEditorPanel({
                       </Label>
                       <Input
                         id={`${fieldIdPrefix}-name`}
+                        ref={initialFocusRef}
                         value={draft.name}
                         onChange={(event) =>
                           onDraftChange({

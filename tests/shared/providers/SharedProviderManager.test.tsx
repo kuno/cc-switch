@@ -290,7 +290,7 @@ function createSaveRaceAdapter() {
 }
 
 describe("SharedProviderManager", () => {
-  it("shows loading, empty state, and app switching", async () => {
+  it("shows loading, empty state, and keyboard app switching", async () => {
     let resolveProviders!: (value: SharedProviderState) => void;
     const providerPromise = new Promise<SharedProviderState>((resolve) => {
       resolveProviders = resolve;
@@ -317,12 +317,78 @@ describe("SharedProviderManager", () => {
       await screen.findByText("No providers saved for Claude yet."),
     ).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Codex" }));
+    const claudeTab = screen.getByRole("button", { name: "Claude" });
+
+    claudeTab.focus();
+    await user.keyboard("{ArrowRight}");
 
     expect(onSelectedAppChange).toHaveBeenCalledWith("codex");
+    expect(screen.getByRole("button", { name: "Codex" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
     expect(
       await screen.findByText("No providers saved for Codex yet."),
     ).toBeInTheDocument();
+  });
+
+  it("restores focus for keyboard-opened editor and delete dialogs", async () => {
+    const adapter = createMutableAdapter({
+      claude: buildState(
+        "claude",
+        [
+          createProvider({
+            providerId: "alpha",
+            name: "Alpha",
+            baseUrl: "https://alpha.example.com",
+          }),
+        ],
+        "alpha",
+      ),
+    });
+    const { user } = renderManager(
+      <SharedProviderManager adapter={adapter} defaultApp="claude" />,
+    );
+
+    await screen.findByText("Alpha");
+
+    const addButton = screen.getByRole("button", { name: "Add provider" });
+    addButton.focus();
+    await user.keyboard("{Enter}");
+
+    const addDialog = await screen.findByRole("dialog", {
+      name: "Add Claude provider",
+    });
+    expect(within(addDialog).getByLabelText("Provider name")).toHaveFocus();
+
+    await user.keyboard("{Escape}");
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Add Claude provider" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(addButton).toHaveFocus();
+
+    const deleteButton = screen.getByRole("button", { name: "Delete Alpha" });
+    deleteButton.focus();
+    await user.keyboard("{Enter}");
+
+    const deleteDialog = await screen.findByRole("dialog", {
+      name: "Delete Claude provider",
+    });
+    expect(
+      within(deleteDialog).getByRole("button", { name: "Cancel" }),
+    ).toHaveFocus();
+
+    await user.keyboard("{Escape}");
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Delete Claude provider" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(deleteButton).toHaveFocus();
   });
 
   it("exposes stable layout hooks for the embedded provider surface", async () => {
@@ -420,7 +486,7 @@ describe("SharedProviderManager", () => {
     );
 
     const deleteDialog = await screen.findByRole("dialog", {
-      name: "Delete provider?",
+      name: "Delete Claude provider",
     });
 
     expect(deleteDialog).toHaveClass("ccswitch-openwrt-dialog-shell");
@@ -469,7 +535,7 @@ describe("SharedProviderManager", () => {
     await user.click(screen.getByRole("button", { name: "Add provider" }));
 
     const addDialog = await screen.findByRole("dialog", {
-      name: "Add provider",
+      name: "Add Claude provider",
     });
     const addDialogScope = within(addDialog);
 
@@ -492,7 +558,7 @@ describe("SharedProviderManager", () => {
     ).toBeInTheDocument();
     await waitFor(() =>
       expect(
-        screen.queryByRole("dialog", { name: "Add provider" }),
+        screen.queryByRole("dialog", { name: "Add Claude provider" }),
       ).not.toBeInTheDocument(),
     );
     expect(adapter.saveProvider).toHaveBeenCalledWith(
@@ -522,7 +588,7 @@ describe("SharedProviderManager", () => {
     );
 
     const editDialog = await screen.findByRole("dialog", {
-      name: "Edit provider",
+      name: "Edit Claude provider",
     });
     const editDialogScope = within(editDialog);
 
@@ -548,7 +614,7 @@ describe("SharedProviderManager", () => {
     );
     await waitFor(() =>
       expect(
-        screen.queryByRole("dialog", { name: "Edit provider" }),
+        screen.queryByRole("dialog", { name: "Edit Claude provider" }),
       ).not.toBeInTheDocument(),
     );
     expect(onRestartRequired).toHaveBeenCalledTimes(2);
@@ -566,7 +632,9 @@ describe("SharedProviderManager", () => {
     await screen.findByText("No providers saved for Codex yet.");
     await user.click(screen.getByRole("button", { name: "Add provider" }));
 
-    const dialog = await screen.findByRole("dialog", { name: "Add provider" });
+    const dialog = await screen.findByRole("dialog", {
+      name: "Add Codex provider",
+    });
     const dialogScope = within(dialog);
 
     expect(dialogScope.getByText("Preset browser")).toBeInTheDocument();
@@ -662,7 +730,7 @@ describe("SharedProviderManager", () => {
     );
 
     const storedSecretDialog = await screen.findByRole("dialog", {
-      name: "Edit provider",
+      name: "Edit Claude provider",
     });
     const storedSecretScope = within(storedSecretDialog);
 
@@ -684,7 +752,7 @@ describe("SharedProviderManager", () => {
 
     await waitFor(() =>
       expect(
-        screen.queryByRole("dialog", { name: "Edit provider" }),
+        screen.queryByRole("dialog", { name: "Edit Claude provider" }),
       ).not.toBeInTheDocument(),
     );
 
@@ -693,7 +761,7 @@ describe("SharedProviderManager", () => {
     );
 
     const emptySecretDialog = await screen.findByRole("dialog", {
-      name: "Edit provider",
+      name: "Edit Claude provider",
     });
     const emptySecretScope = within(emptySecretDialog);
 
@@ -759,7 +827,11 @@ describe("SharedProviderManager", () => {
     expect(screen.getByText("Alpha")).toBeInTheDocument();
     expect(screen.queryByText("Gateway edge")).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Clear search" }));
+    const clearSearchButton = screen.getByRole("button", {
+      name: "Clear search",
+    });
+    clearSearchButton.focus();
+    await user.keyboard("{Enter}");
 
     await waitFor(() =>
       expect(screen.queryByText(/Showing 1 result/)).not.toBeInTheDocument(),
@@ -783,7 +855,7 @@ describe("SharedProviderManager", () => {
     await user.click(screen.getByRole("button", { name: "Add provider" }));
 
     const claudeDialog = await screen.findByRole("dialog", {
-      name: "Add provider",
+      name: "Add Claude provider",
     });
     await user.clear(within(claudeDialog).getByLabelText("Provider name"));
     await user.type(
@@ -802,14 +874,14 @@ describe("SharedProviderManager", () => {
     ).toBeInTheDocument();
     await waitFor(() =>
       expect(
-        screen.queryByRole("dialog", { name: "Add provider" }),
+        screen.queryByRole("dialog", { name: "Add Claude provider" }),
       ).not.toBeInTheDocument(),
     );
 
     await user.click(screen.getByRole("button", { name: "Add provider" }));
 
     const codexDialog = await screen.findByRole("dialog", {
-      name: "Add provider",
+      name: "Add Codex provider",
     });
     const codexDialogScope = within(codexDialog);
 
@@ -849,7 +921,7 @@ describe("SharedProviderManager", () => {
     );
 
     const addDialog = await screen.findByRole("dialog", {
-      name: "Add provider",
+      name: "Add Claude provider",
     });
     await user.clear(within(addDialog).getByLabelText("Provider name"));
     await user.type(
@@ -869,7 +941,7 @@ describe("SharedProviderManager", () => {
         within(container).getByRole("button", { name: "Codex" }),
       ).toHaveAttribute("aria-pressed", "true");
       expect(
-        screen.queryByRole("dialog", { name: "Add provider" }),
+        screen.queryByRole("dialog", { name: "Add Claude provider" }),
       ).not.toBeInTheDocument();
       expect(
         screen.queryByDisplayValue("Unsaved Claude"),
@@ -884,16 +956,18 @@ describe("SharedProviderManager", () => {
 
   it("ignores stale save completions after the selected app changes", async () => {
     const { adapter, resolveSave } = createSaveRaceAdapter();
-    const { user, rerender, queryClient } = renderManager(
+    const { user, rerender, queryClient, container } = renderManager(
       <SharedProviderManager adapter={adapter} selectedApp="claude" />,
     );
 
     await screen.findByText("No providers saved for Claude yet.");
 
-    await user.click(screen.getByRole("button", { name: "Add provider" }));
+    await user.click(
+      within(container).getAllByRole("button", { name: "Add provider" })[0]!,
+    );
 
     const addDialog = await screen.findByRole("dialog", {
-      name: "Add provider",
+      name: "Add Claude provider",
     });
     const addDialogScope = within(addDialog);
 
@@ -917,7 +991,7 @@ describe("SharedProviderManager", () => {
     ).toBeInTheDocument();
     await waitFor(() =>
       expect(
-        screen.queryByRole("dialog", { name: "Add provider" }),
+        screen.queryByRole("dialog", { name: "Add Claude provider" }),
       ).not.toBeInTheDocument(),
     );
 
@@ -925,15 +999,17 @@ describe("SharedProviderManager", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByRole("button", { name: "Add provider" }),
+        within(container).getAllByRole("button", { name: "Add provider" })[0],
       ).toBeEnabled(),
     );
     expect(screen.queryByText("Provider saved.")).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Add provider" }));
+    await user.click(
+      within(container).getAllByRole("button", { name: "Add provider" })[0]!,
+    );
 
     const codexDialog = await screen.findByRole("dialog", {
-      name: "Add provider",
+      name: "Add Codex provider",
     });
     const codexDialogScope = within(codexDialog);
 
@@ -1028,12 +1104,16 @@ describe("SharedProviderManager", () => {
     renderManager(<SharedProviderManager adapter={adapter} />);
 
     expect(await screen.findByText("Alpha")).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Add provider" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Edit Alpha" }),
-    ).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "Add provider" }),
+      ).not.toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "Edit Alpha" }),
+      ).not.toBeInTheDocument(),
+    );
     expect(screen.queryByText("Save provider")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Provider name")).not.toBeInTheDocument();
     expect(
