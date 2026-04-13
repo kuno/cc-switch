@@ -1,6 +1,10 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import {
+  getSharedProviderPresets,
+  inferSharedProviderPresetId,
+} from "@/shared/providers/domain";
 
 type AppId = "claude" | "codex" | "gemini";
 
@@ -268,6 +272,20 @@ describe("LuCI provider state parsing", () => {
     expectExpandedPresetCatalog(settingsView, "codex");
     expectExpandedPresetCatalog(settingsView, "gemini");
 
+    (["claude", "codex", "gemini"] as AppId[]).forEach((appId) => {
+      expect(settingsView.getPresetOptions(appId)).toEqual(
+        getSharedProviderPresets(appId).map((preset) => ({
+          id: preset.id,
+          label: preset.label,
+          providerName: preset.providerName,
+          baseUrl: preset.baseUrl,
+          tokenField: preset.tokenField,
+          model: preset.model,
+          description: preset.description,
+        })),
+      );
+    });
+
     expect(settingsView.getPresetOptions("claude")).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: "claude-zhipu-glm" }),
@@ -343,14 +361,28 @@ describe("LuCI provider state parsing", () => {
         tokenField: "ANTHROPIC_API_KEY",
       }),
     ).toBe("claude-aihubmix");
+    expect(
+      inferSharedProviderPresetId("claude", {
+        baseUrl: "https://aihubmix.com/",
+        tokenField: "ANTHROPIC_API_KEY",
+      }),
+    ).toBe("claude-aihubmix");
 
     settingsView.applyPresetToInputs("codex", "codex-sssaicode", refs);
     expect(refs.nameInput.value).toBe("SSSAiCode");
-    expect(refs.baseUrlInput.value).toBe("https://node-hk.sssaicode.com/api/v1");
+    expect(refs.baseUrlInput.value).toBe(
+      "https://node-hk.sssaicode.com/api/v1",
+    );
     expect(refs.tokenFieldSelect.value).toBe("OPENAI_API_KEY");
     expect(refs.modelInput.value).toBe("gpt-5.4");
     expect(
       settingsView.inferPresetIdFromPayload("codex", {
+        baseUrl: "https://node-hk.sssaicode.com/api/v1/",
+        tokenField: "OPENAI_API_KEY",
+      }),
+    ).toBe("codex-sssaicode");
+    expect(
+      inferSharedProviderPresetId("codex", {
         baseUrl: "https://node-hk.sssaicode.com/api/v1/",
         tokenField: "OPENAI_API_KEY",
       }),
@@ -363,6 +395,12 @@ describe("LuCI provider state parsing", () => {
     expect(refs.modelInput.value).toBe("gemini-3.1-pro");
     expect(
       settingsView.inferPresetIdFromPayload("gemini", {
+        baseUrl: "https://api.aicoding.sh/",
+        tokenField: "GEMINI_API_KEY",
+      }),
+    ).toBe("gemini-aicoding");
+    expect(
+      inferSharedProviderPresetId("gemini", {
         baseUrl: "https://api.aicoding.sh/",
         tokenField: "GEMINI_API_KEY",
       }),
@@ -382,8 +420,14 @@ describe("LuCI provider state parsing", () => {
 
     expect(state?.activeProviderId).toBe("alpha");
     expect(state?.activeProvider.providerId).toBe("alpha");
-    expect(state?.providers.find((provider) => provider.providerId === "alpha")?.active).toBe(true);
-    expect(state?.providers.find((provider) => provider.providerId === "beta")?.active).toBe(false);
+    expect(
+      state?.providers.find((provider) => provider.providerId === "alpha")
+        ?.active,
+    ).toBe(true);
+    expect(
+      state?.providers.find((provider) => provider.providerId === "beta")
+        ?.active,
+    ).toBe(false);
   });
 
   it("preserves item-level is_current ahead of the phase 1 hint", () => {
@@ -399,7 +443,10 @@ describe("LuCI provider state parsing", () => {
 
     expect(state?.activeProviderId).toBe("beta");
     expect(state?.activeProvider.providerId).toBe("beta");
-    expect(state?.providers.find((provider) => provider.providerId === "beta")?.active).toBe(true);
+    expect(
+      state?.providers.find((provider) => provider.providerId === "beta")
+        ?.active,
+    ).toBe(true);
   });
 
   it("keeps the phase 1 hint fallback when phase 2 provides no active flags", () => {
@@ -415,6 +462,9 @@ describe("LuCI provider state parsing", () => {
 
     expect(state?.activeProviderId).toBe("beta");
     expect(state?.activeProvider.providerId).toBe("beta");
-    expect(state?.providers.find((provider) => provider.providerId === "beta")?.active).toBe(true);
+    expect(
+      state?.providers.find((provider) => provider.providerId === "beta")
+        ?.active,
+    ).toBe(true);
   });
 });
