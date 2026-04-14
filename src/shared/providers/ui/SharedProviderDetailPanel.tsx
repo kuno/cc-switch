@@ -3,6 +3,7 @@ import {
   ArrowDown,
   ArrowUp,
   CheckCircle2,
+  Copy,
   KeyRound,
   Loader2,
   Pencil,
@@ -44,6 +45,7 @@ interface SharedProviderDetailPanelProps {
   onAutoFailoverEnabledChange?: (enabled: boolean) => void;
   onReorderFailoverQueue?: (providerIds: string[]) => void;
   onSetMaxRetries?: (value: number) => void;
+  onDuplicate?: () => void;
   onEdit?: () => void;
   onActivate?: () => void;
 }
@@ -158,6 +160,7 @@ export function SharedProviderDetailPanel({
   onAutoFailoverEnabledChange,
   onReorderFailoverQueue,
   onSetMaxRetries,
+  onDuplicate,
   onEdit,
   onActivate,
 }: SharedProviderDetailPanelProps) {
@@ -235,6 +238,18 @@ export function SharedProviderDetailPanel({
           </div>
 
           <div className="flex flex-wrap gap-2">
+            {actionVisibility.duplicate ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onDuplicate}
+                disabled={isBusy}
+                aria-label={`Duplicate selected ${providerName}`}
+              >
+                <Copy className="h-4 w-4" />
+                Duplicate
+              </Button>
+            ) : null}
             {actionVisibility.edit ? (
               <Button type="button" onClick={onEdit} disabled={isBusy}>
                 <Pencil className="h-4 w-4" />

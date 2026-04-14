@@ -1423,6 +1423,89 @@ describe("SharedProviderManager", () => {
     expect(screen.queryByText("Alpha")).not.toBeInTheDocument();
   });
 
+  it("duplicates a provider into a seeded add draft and saves it through the create path", async () => {
+    const adapter = createMutableAdapter({
+      codex: buildState(
+        "codex",
+        [
+          createProvider({
+            providerId: "alpha",
+            name: "Alpha",
+            baseUrl: "https://alpha.example.com/v1",
+            tokenField: "OPENAI_API_KEY",
+            tokenConfigured: true,
+            model: "gpt-5.4",
+            notes: "Primary route",
+            active: true,
+          }),
+          createProvider({
+            providerId: "alpha-copy",
+            name: "Alpha copy",
+            baseUrl: "https://alpha-copy.example.com/v1",
+            tokenField: "OPENAI_API_KEY",
+            tokenConfigured: false,
+            model: "gpt-5.4-mini",
+            active: false,
+          }),
+        ],
+        "alpha",
+      ),
+    });
+    const { user } = renderManager(
+      <SharedProviderManager adapter={adapter} defaultApp="codex" />,
+    );
+
+    await screen.findByRole("button", { name: "Edit Alpha" });
+
+    await user.click(screen.getByRole("button", { name: "Duplicate Alpha" }));
+
+    const duplicateDialog = await screen.findByRole("dialog", {
+      name: "Save Codex provider",
+    });
+    const duplicateDialogScope = within(duplicateDialog);
+
+    expect(duplicateDialogScope.getByLabelText("Provider name")).toHaveValue(
+      "Alpha copy 2",
+    );
+    expect(duplicateDialogScope.getByLabelText("Base URL")).toHaveValue(
+      "https://alpha.example.com/v1",
+    );
+    expect(duplicateDialogScope.getByLabelText("Model")).toHaveValue("gpt-5.4");
+    expect(duplicateDialogScope.getByLabelText("Notes")).toHaveValue(
+      "Primary route",
+    );
+    expect(duplicateDialogScope.getByLabelText("API token")).toHaveValue("");
+    expect(
+      duplicateDialogScope.queryByText(
+        "Leave the token blank to preserve the stored secret.",
+      ),
+    ).not.toBeInTheDocument();
+
+    await user.type(
+      duplicateDialogScope.getByLabelText("API token"),
+      "duplicate-secret",
+    );
+    await user.click(
+      duplicateDialogScope.getByRole("button", { name: "Save provider" }),
+    );
+
+    await waitFor(() =>
+      expect(adapter.saveProvider).toHaveBeenLastCalledWith(
+        "codex",
+        expect.objectContaining({
+          name: "Alpha copy 2",
+          baseUrl: "https://alpha.example.com/v1",
+          tokenField: "OPENAI_API_KEY",
+          token: "duplicate-secret",
+          model: "gpt-5.4",
+          notes: "Primary route",
+        }),
+        undefined,
+      ),
+    );
+    expect(await screen.findByText("Alpha copy 2")).toBeInTheDocument();
+  });
+
   it("hides unsupported add and edit entry points when the adapter disables them", async () => {
     const adapter = createAdapter({
       listProviderState: vi.fn().mockResolvedValue(

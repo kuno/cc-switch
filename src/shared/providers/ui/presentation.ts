@@ -111,6 +111,7 @@ export const SHARED_PROVIDER_TOKEN_FIELD_OPTIONS: Record<
 };
 
 export interface SharedProviderCardActionVisibility {
+  duplicate: boolean;
   edit: boolean;
   activate: boolean;
   delete: boolean;
@@ -198,6 +199,7 @@ export function getSharedProviderCardActionVisibility(
   provider: SharedProviderView,
 ): SharedProviderCardActionVisibility {
   return {
+    duplicate: capabilities.canAdd,
     edit: capabilities.canEdit,
     activate:
       capabilities.canActivate &&

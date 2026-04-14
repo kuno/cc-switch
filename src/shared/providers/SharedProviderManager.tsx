@@ -223,6 +223,47 @@ function createDraftFromProvider(
   };
 }
 
+function createDuplicateProviderName(
+  providerName: string,
+  providers: SharedProviderView[],
+): string {
+  const baseName = providerName.trim() || "Provider";
+  const copyBaseName = `${baseName} copy`;
+  const existingNames = new Set(
+    providers
+      .map((provider) => provider.name.trim().toLowerCase())
+      .filter(Boolean),
+  );
+
+  if (!existingNames.has(copyBaseName.toLowerCase())) {
+    return copyBaseName;
+  }
+
+  let suffix = 2;
+  let candidate = `${copyBaseName} ${suffix}`;
+
+  while (existingNames.has(candidate.toLowerCase())) {
+    suffix += 1;
+    candidate = `${copyBaseName} ${suffix}`;
+  }
+
+  return candidate;
+}
+
+function createDuplicateDraftFromProvider(
+  provider: SharedProviderView,
+  providers: SharedProviderView[],
+): SharedProviderEditorPayload {
+  return {
+    ...createDraftFromProvider(provider),
+    name: createDuplicateProviderName(
+      getSharedProviderDisplayName(provider),
+      providers,
+    ),
+    token: "",
+  };
+}
+
 function getMutationVerb(action: SharedProviderMutationAction): string {
   if (action === "saved") {
     return "saved";
@@ -887,6 +928,21 @@ export function SharedProviderManager({
     setIsEditorOpen(true);
   }
 
+  function openDuplicateEditor(provider: SharedProviderView) {
+    if (!capabilities.canAdd || isMutating || state == null) {
+      return;
+    }
+
+    const presetId = inferSharedProviderPresetId(currentApp, provider);
+
+    rememberFocusTarget(editorRestoreFocusRef);
+    setPendingDelete(null);
+    setEditingProvider(null);
+    setSelectedPresetId(presetId);
+    setDraft(createDuplicateDraftFromProvider(provider, state.providers));
+    setIsEditorOpen(true);
+  }
+
   function handleAppChange(appId: SharedProviderAppId) {
     if (isMutating) {
       return;
@@ -1310,6 +1366,7 @@ export function SharedProviderManager({
                             provider.providerId === selectedProvider?.providerId
                           }
                           onSelect={() => handleSelectProvider(provider)}
+                          onDuplicate={() => openDuplicateEditor(provider)}
                           onEdit={() => openEditEditor(provider)}
                           onActivate={() => {
                             if (!provider.providerId) {
@@ -1373,6 +1430,7 @@ export function SharedProviderManager({
                       onAutoFailoverEnabledChange={handleAutoFailoverChange}
                       onReorderFailoverQueue={handleFailoverQueueReorder}
                       onSetMaxRetries={handleMaxRetriesSave}
+                      onDuplicate={() => openDuplicateEditor(selectedProvider)}
                       onEdit={() => openEditEditor(selectedProvider)}
                       onActivate={() => {
                         if (!selectedProvider.providerId) {
