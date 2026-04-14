@@ -1017,7 +1017,7 @@ describe("SharedProviderManager", () => {
       <SharedProviderManager adapter={adapter} defaultApp="codex" />,
     );
 
-    expect(await screen.findByText("Alpha")).toBeInTheDocument();
+    expect(await screen.findByText("Current provider: Alpha")).toBeInTheDocument();
     expect(screen.getByText("Gateway edge")).toBeInTheDocument();
 
     const searchInput = screen.getByLabelText("Search providers");
@@ -1036,7 +1036,7 @@ describe("SharedProviderManager", () => {
     expect(
       await screen.findByText('Showing 1 result for "LAN route" out of 2.'),
     ).toBeInTheDocument();
-    expect(screen.getByText("Alpha")).toBeInTheDocument();
+    expect(screen.getAllByText("Alpha").length).toBeGreaterThan(0);
     expect(screen.queryByText("Gateway edge")).not.toBeInTheDocument();
 
     const clearSearchButton = screen.getByRole("button", {
@@ -1048,7 +1048,7 @@ describe("SharedProviderManager", () => {
     await waitFor(() =>
       expect(screen.queryByText(/Showing 1 result/)).not.toBeInTheDocument(),
     );
-    expect(screen.getByText("Alpha")).toBeInTheDocument();
+    expect(screen.getAllByText("Alpha").length).toBeGreaterThan(0);
     expect(screen.getByText("Gateway edge")).toBeInTheDocument();
     expect(adapter.saveProvider).not.toHaveBeenCalled();
   });
@@ -1101,7 +1101,7 @@ describe("SharedProviderManager", () => {
 
     await user.keyboard("[Space]");
 
-    expect(await screen.findByText("Alpha")).toBeInTheDocument();
+    expect((await screen.findAllByText("Alpha")).length).toBeGreaterThan(0);
     expect(codexButton).toHaveAttribute("aria-pressed", "true");
 
     const searchInput = screen.getByLabelText("Search providers");
@@ -1388,7 +1388,7 @@ describe("SharedProviderManager", () => {
       <SharedProviderManager adapter={adapter} defaultApp="codex" />,
     );
 
-    expect(await screen.findByText("Alpha")).toBeInTheDocument();
+    expect((await screen.findAllByText("Alpha")).length).toBeGreaterThan(0);
     expect(screen.getByText("Beta")).toBeInTheDocument();
 
     const activateBetaButton = screen.getByRole("button", {
@@ -1549,7 +1549,7 @@ describe("SharedProviderManager", () => {
       <SharedProviderManager adapter={adapter} />,
     );
 
-    expect(await screen.findByText("Alpha")).toBeInTheDocument();
+    expect((await screen.findAllByText("Alpha")).length).toBeGreaterThan(0);
     await waitFor(() =>
       expect(
         within(container).queryByRole("button", { name: "Add provider" }),

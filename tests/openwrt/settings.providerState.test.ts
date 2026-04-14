@@ -67,6 +67,11 @@ type RuntimeMountOptions = {
 
 type SettingsView = {
   createProviderShell(uiState: UiState, statusNodes: StatusNodes): ShellNodes;
+  createSharedProviderMountOptions(
+    uiState: UiState,
+    statusNodes: StatusNodes,
+    shellNodes: ShellNodes,
+  ): ProviderMountOptions;
   createProviderTransport(): Record<string, (...args: unknown[]) => Promise<unknown>>;
   createRuntimeTransport(): RuntimeMountOptions["transport"];
   createShellBridge(

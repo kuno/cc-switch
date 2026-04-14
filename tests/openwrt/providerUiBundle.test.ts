@@ -16,6 +16,7 @@ import type {
 import type { OpenWrtRuntimeTransport } from "@/platform/openwrt/runtime";
 import type {
   SharedProviderAppId,
+  SharedProviderEditorPayload,
   SharedProviderState,
 } from "@/shared/providers/domain";
 
@@ -102,7 +103,14 @@ function createTransport(
         ) => Promise<ReturnType<typeof createActiveProviderResponse>>
       >()
       .mockImplementation(async (appId) => createActiveProviderResponse(appId)),
-    upsertProvider: vi.fn().mockImplementation(async (appId, provider) => {
+    upsertProvider: vi
+      .fn<
+        (
+          appId: SharedProviderAppId,
+          provider: SharedProviderEditorPayload,
+        ) => Promise<{ ok: true }>
+      >()
+      .mockImplementation(async (appId, provider) => {
       const state = getProviderState(appId);
       const nextProviderId =
         provider.name.toLowerCase().replace(/\s+/g, "-") || `${appId}-provider`;
@@ -110,7 +118,20 @@ function createTransport(
       providerStates[appId] = createProviderState(
         appId,
         [
-          ...state.providers,
+          ...state.providers.map((existingProvider) => ({
+            active: existingProvider.active,
+            baseUrl: existingProvider.baseUrl,
+            configured: existingProvider.configured,
+            model: existingProvider.model,
+            name: existingProvider.name,
+            notes: existingProvider.notes,
+            providerId:
+              existingProvider.providerId ??
+              existingProvider.name.toLowerCase().replace(/\s+/g, "-"),
+            tokenConfigured: existingProvider.tokenConfigured,
+            tokenField: existingProvider.tokenField,
+            tokenMasked: existingProvider.tokenMasked,
+          })),
           {
             active: false,
             baseUrl: provider.baseUrl,
