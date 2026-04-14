@@ -18,6 +18,7 @@ var SHARED_PROVIDER_UI_SCRIPT_ID = 'ccswitch-openwrt-shared-provider-ui-bundle';
 var SHARED_PROVIDER_UI_STYLE_ID = 'ccswitch-openwrt-shared-provider-ui-styles';
 var HOST_PAGE_STYLE_ID = 'ccswitch-openwrt-host-page-shell-styles';
 var STATIC_PROTOTYPE_STYLE_ID = 'ccswitch-openwrt-static-prototype-styles';
+var STATIC_PROTOTYPE_MIN_HEIGHT = 960;
 var SHARED_PROVIDER_UI_BUNDLE_PATH = '/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js';
 var SHARED_PROVIDER_UI_STYLE_PATH = '/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.css';
 var OPENWRT_B23_STATIC_PROTOTYPE_MODE = true;
@@ -418,18 +419,18 @@ return view.extend({
 		var frame = E('iframe', {
 			'src': prototypeSrc,
 			'title': _('CC Switch OpenWrt prototype'),
-			'style': 'display:block;width:100%;min-height:2200px;border:0;border-radius:28px;background:#fff;overflow:hidden;'
+			'style': 'display:block;width:100%;min-height:' + String(STATIC_PROTOTYPE_MIN_HEIGHT) + 'px;border:0;border-radius:28px;background:#fff;overflow:hidden;'
 		});
 		var syncHeight = function () {
 			try {
 				var doc = frame.contentWindow && frame.contentWindow.document;
 				var bodyHeight = doc && doc.body ? doc.body.scrollHeight : 0;
 				var rootHeight = doc && doc.documentElement ? doc.documentElement.scrollHeight : 0;
-				var nextHeight = Math.max(bodyHeight, rootHeight, 1200);
+				var nextHeight = Math.max(bodyHeight, rootHeight, STATIC_PROTOTYPE_MIN_HEIGHT);
 
 				frame.style.height = nextHeight + 'px';
 			} catch (e) {
-				frame.style.height = '2200px';
+				frame.style.height = String(STATIC_PROTOTYPE_MIN_HEIGHT) + 'px';
 			}
 		};
 		var postWorkspaceData = function () {
@@ -462,6 +463,7 @@ return view.extend({
 				syncHeight();
 			}, 50);
 			window.setTimeout(syncHeight, 300);
+			window.setTimeout(syncHeight, 1000);
 		});
 
 		wrapper.appendChild(frame);

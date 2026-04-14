@@ -16,6 +16,7 @@ LUCI_SRC="$SCRIPT_DIR/luci-app-ccswitch"
 OPENWRT_PROVIDER_UI_ASSET="$LUCI_SRC/htdocs/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js"
 OPENWRT_PROVIDER_UI_STYLESHEET="$LUCI_SRC/htdocs/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.css"
 OPENWRT_PROTOTYPE_UI_DIR="$LUCI_SRC/htdocs/luci-static/resources/ccswitch/prototype"
+OPENWRT_PROTOTYPE_B24_UI_DIR="$LUCI_SRC/htdocs/luci-static/resources/ccswitch/prototype-b24"
 PREPARE_PROVIDER_UI_BUNDLE="$SCRIPT_DIR/prepare-provider-ui-bundle.sh"
 
 read_make_var() {
@@ -466,6 +467,10 @@ build_luci_package() {
 		"$data_dir/www/luci-static/resources/ccswitch/provider-ui" \
 		"$data_dir/www/luci-static/resources/ccswitch/prototype"
 
+	if [ -d "$OPENWRT_PROTOTYPE_B24_UI_DIR" ]; then
+		mkdir -p "$data_dir/www/luci-static/resources/ccswitch/prototype-b24"
+	fi
+
 	emit_control_file \
 		"$control_dir/control" \
 		"luci-app-cc-switch" \
@@ -499,6 +504,9 @@ build_luci_package() {
 		"$OPENWRT_PROVIDER_UI_STYLESHEET" \
 		"$data_dir/www/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.css"
 	cp -R "$OPENWRT_PROTOTYPE_UI_DIR/." "$data_dir/www/luci-static/resources/ccswitch/prototype/"
+	if [ -d "$OPENWRT_PROTOTYPE_B24_UI_DIR" ]; then
+		cp -R "$OPENWRT_PROTOTYPE_B24_UI_DIR/." "$data_dir/www/luci-static/resources/ccswitch/prototype-b24/"
+	fi
 
 	rm -f "$output"
 	build_ipk "$control_dir" "$data_dir" "$output"
