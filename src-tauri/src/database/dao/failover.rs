@@ -70,6 +70,63 @@ impl Database {
         Ok(())
     }
 
+    /// 重排故障转移队列顺序
+    pub fn reorder_failover_queue(
+        &self,
+        app_type: &str,
+        provider_ids: &[String],
+    ) -> Result<(), AppError> {
+        let current_queue = self.get_failover_queue(app_type)?;
+
+        if current_queue.len() != provider_ids.len() {
+            return Err(AppError::Database(
+                "failover queue reorder must include every queued provider exactly once"
+                    .to_string(),
+            ));
+        }
+
+        let mut current_ids = current_queue
+            .iter()
+            .map(|entry| entry.provider_id.clone())
+            .collect::<Vec<_>>();
+        let mut next_ids = provider_ids.to_vec();
+        current_ids.sort();
+        next_ids.sort();
+
+        if current_ids != next_ids {
+            return Err(AppError::Database(
+                "failover queue reorder received a provider set that does not match the current queue"
+                    .to_string(),
+            ));
+        }
+
+        let mut conn = lock_conn!(self.conn);
+        let tx = conn
+            .transaction()
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        for (index, provider_id) in provider_ids.iter().enumerate() {
+            let updated = tx
+                .execute(
+                    "UPDATE providers
+                     SET sort_index = ?3
+                     WHERE id = ?1 AND app_type = ?2 AND in_failover_queue = 1",
+                    rusqlite::params![provider_id, app_type, index as i32],
+                )
+                .map_err(|e| AppError::Database(e.to_string()))?;
+
+            if updated != 1 {
+                return Err(AppError::Database(format!(
+                    "failed to reorder queued provider {provider_id}"
+                )));
+            }
+        }
+
+        tx.commit().map_err(|e| AppError::Database(e.to_string()))?;
+
+        Ok(())
+    }
+
     /// 从故障转移队列中移除供应商
     pub fn remove_from_failover_queue(
         &self,

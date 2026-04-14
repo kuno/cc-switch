@@ -243,6 +243,13 @@ var callGetAvailableFailoverProviders = rpc.declare({
 	expect: { '': {} }
 });
 
+var callGetProviderFailover = rpc.declare({
+	object: 'ccswitch',
+	method: 'get_provider_failover',
+	params: ['app', 'provider_id'],
+	expect: { '': {} }
+});
+
 var callAddToFailoverQueue = rpc.declare({
 	object: 'ccswitch',
 	method: 'add_to_failover_queue',
@@ -261,6 +268,20 @@ var callSetAutoFailoverEnabled = rpc.declare({
 	object: 'ccswitch',
 	method: 'set_auto_failover_enabled',
 	params: ['app', 'enabled'],
+	expect: { '': {} }
+});
+
+var callReorderFailoverQueue = rpc.declare({
+	object: 'ccswitch',
+	method: 'reorder_failover_queue',
+	params: ['app', 'provider_ids'],
+	expect: { '': {} }
+});
+
+var callSetMaxRetries = rpc.declare({
+	object: 'ccswitch',
+	method: 'set_max_retries',
+	params: ['app', 'value'],
 	expect: { '': {} }
 });
 
@@ -2010,6 +2031,9 @@ return view.extend({
 			getActiveProvider: function (appId) {
 				return L.resolveDefault(callGetActiveProvider(appId), { ok: false });
 			},
+			getProviderFailoverState: function (appId, providerId) {
+				return L.resolveDefault(callGetProviderFailover(appId, providerId), { ok: false });
+			},
 			upsertProvider: function (appId, provider) {
 				return L.resolveDefault(callUpsertProvider(appId, provider), { ok: false });
 			},
@@ -2042,6 +2066,21 @@ return view.extend({
 			},
 			switchProviderById: function (appId, providerId) {
 				return L.resolveDefault(callSwitchProviderById(appId, providerId), { ok: false });
+			},
+			addToFailoverQueue: function (appId, providerId) {
+				return L.resolveDefault(callAddToFailoverQueue(appId, providerId), { ok: false });
+			},
+			removeFromFailoverQueue: function (appId, providerId) {
+				return L.resolveDefault(callRemoveFromFailoverQueue(appId, providerId), { ok: false });
+			},
+			setAutoFailoverEnabled: function (appId, enabled) {
+				return L.resolveDefault(callSetAutoFailoverEnabled(appId, enabled), { ok: false });
+			},
+			reorderFailoverQueue: function (appId, providerIds) {
+				return L.resolveDefault(callReorderFailoverQueue(appId, providerIds), { ok: false });
+			},
+			setMaxRetries: function (appId, value) {
+				return L.resolveDefault(callSetMaxRetries(appId, value), { ok: false });
 			},
 			restartService: function () {
 				return L.resolveDefault(callRestartService(), { ok: false });
