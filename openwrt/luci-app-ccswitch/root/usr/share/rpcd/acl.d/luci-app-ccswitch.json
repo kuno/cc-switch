@@ -13,8 +13,7 @@
 					"get_host_config",
 					"get_runtime_status",
 					"get_app_runtime_status",
-					"get_available_failover_providers",
-					"get_available_providers_for_failover"
+					"get_available_failover_providers"
 				]
 			}
 		},

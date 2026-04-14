@@ -499,16 +499,6 @@ return {
 			}
 		},
 
-		get_available_providers_for_failover: {
-			args: {
-				app: 'claude'
-			},
-
-			call: function(request) {
-				return getAvailableFailoverProviders(request.args.app);
-			}
-		},
-
 		upsert_provider: {
 			args: {
 				app: 'claude',
