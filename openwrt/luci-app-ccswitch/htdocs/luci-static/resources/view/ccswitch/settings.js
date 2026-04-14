@@ -21,8 +21,8 @@ var STATIC_PROTOTYPE_STYLE_ID = 'ccswitch-openwrt-static-prototype-styles';
 var STATIC_PROTOTYPE_MIN_HEIGHT = 960;
 var SHARED_PROVIDER_UI_BUNDLE_PATH = '/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js';
 var SHARED_PROVIDER_UI_STYLE_PATH = '/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.css';
-var OPENWRT_B23_STATIC_PROTOTYPE_MODE = true;
-var OPENWRT_B23_STATIC_PROTOTYPE_PATH = '/luci-static/resources/ccswitch/prototype/index.html';
+var OPENWRT_STATIC_PROTOTYPE_MODE = true;
+var OPENWRT_STATIC_PROTOTYPE_PATH = '/luci-static/resources/ccswitch/prototype-b24/index.html';
 var SHARED_PROVIDER_UI_FALLBACK_REASON_GATE_DISABLED = 'gate-disabled';
 var SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_FAILURE = 'bundle-failure';
 var SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_REGRESSION = 'bundle-regression';
@@ -392,7 +392,7 @@ return view.extend({
 	handleReset: null,
 
 	load: function () {
-		if (OPENWRT_B23_STATIC_PROTOTYPE_MODE)
+		if (OPENWRT_STATIC_PROTOTYPE_MODE)
 			return Promise.all([
 				uci.load('ccswitch'),
 				L.resolveDefault(callServiceList('ccswitch'), {}),
@@ -410,7 +410,7 @@ return view.extend({
 	renderStaticPrototype: function (data) {
 		var bindings = this.getStaticPrototypeBindings(data || []);
 		var workspaceData = this.buildStaticPrototypeWorkspaceData(data || []);
-		var prototypeSrc = OPENWRT_B23_STATIC_PROTOTYPE_PATH + '?' + this.buildStaticPrototypeQuery(bindings);
+		var prototypeSrc = OPENWRT_STATIC_PROTOTYPE_PATH + '?' + this.buildStaticPrototypeQuery(bindings);
 		var existingStyle = document.getElementById(STATIC_PROTOTYPE_STYLE_ID);
 		var wrapper = E('div', {
 			'id': 'ccswitch-static-prototype-shell',
@@ -2958,7 +2958,7 @@ return view.extend({
 		},
 
 		render: function (data) {
-			if (OPENWRT_B23_STATIC_PROTOTYPE_MODE)
+			if (OPENWRT_STATIC_PROTOTYPE_MODE)
 				return Promise.resolve(this.renderStaticPrototype(data));
 
 			var selectedApp = this.getSelectedApp();
