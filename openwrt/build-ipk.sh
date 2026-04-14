@@ -205,6 +205,7 @@ Build it first with:
 	[ -f "$OPENWRT_PROVIDER_UI_ASSET" ] || die "missing OpenWrt provider UI bundle"
 	[ -f "$OPENWRT_PROVIDER_UI_STYLESHEET" ] || die "missing OpenWrt provider UI stylesheet"
 	[ -f "$OPENWRT_PROTOTYPE_UI_DIR/index.html" ] || die "missing OpenWrt prototype index asset"
+	[ -f "$OPENWRT_PROTOTYPE_B24_UI_DIR/index.html" ] || die "missing OpenWrt B2.4 prototype index asset"
 }
 
 build_daemon_binary() {
@@ -465,11 +466,8 @@ build_luci_package() {
 		"$data_dir/usr/share/luci/menu.d" \
 		"$data_dir/www/luci-static/resources/view/ccswitch" \
 		"$data_dir/www/luci-static/resources/ccswitch/provider-ui" \
-		"$data_dir/www/luci-static/resources/ccswitch/prototype"
-
-	if [ -d "$OPENWRT_PROTOTYPE_B24_UI_DIR" ]; then
-		mkdir -p "$data_dir/www/luci-static/resources/ccswitch/prototype-b24"
-	fi
+		"$data_dir/www/luci-static/resources/ccswitch/prototype" \
+		"$data_dir/www/luci-static/resources/ccswitch/prototype-b24"
 
 	emit_control_file \
 		"$control_dir/control" \
@@ -504,9 +502,7 @@ build_luci_package() {
 		"$OPENWRT_PROVIDER_UI_STYLESHEET" \
 		"$data_dir/www/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.css"
 	cp -R "$OPENWRT_PROTOTYPE_UI_DIR/." "$data_dir/www/luci-static/resources/ccswitch/prototype/"
-	if [ -d "$OPENWRT_PROTOTYPE_B24_UI_DIR" ]; then
-		cp -R "$OPENWRT_PROTOTYPE_B24_UI_DIR/." "$data_dir/www/luci-static/resources/ccswitch/prototype-b24/"
-	fi
+	cp -R "$OPENWRT_PROTOTYPE_B24_UI_DIR/." "$data_dir/www/luci-static/resources/ccswitch/prototype-b24/"
 
 	rm -f "$output"
 	build_ipk "$control_dir" "$data_dir" "$output"

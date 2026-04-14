@@ -8,7 +8,7 @@ type DomNode = Element | DocumentFragment | null;
 
 const PROTOTYPE_PATH = path.resolve(
   process.cwd(),
-  "docs/openwrt-b23-artifacts/prototype/index.html",
+  "docs/openwrt-b24-artifacts/prototype/index.html",
 );
 
 let activeDom: JSDOMInstance | null = null;
@@ -17,7 +17,7 @@ function loadPrototype(search = "") {
   const dom = new JSDOM(readFileSync(PROTOTYPE_PATH, "utf8"), {
     pretendToBeVisual: true,
     runScripts: "dangerously",
-    url: `https://example.test/openwrt-b23-artifacts/prototype/index.html${search}`,
+    url: `https://example.test/openwrt-b24-artifacts/prototype/index.html${search}`,
   });
 
   activeDom = dom;
@@ -27,6 +27,36 @@ function loadPrototype(search = "") {
 function normalizeText(node: unknown) {
 	const candidate = node as DomNode;
 	return candidate?.textContent?.replace(/\s+/g, " ").trim() ?? "";
+}
+
+function normalizeValue(node: Element | null) {
+  if (node && "value" in node) {
+    const value = (node as Element & { value?: string }).value;
+
+    if (typeof value === "string") {
+      return value.trim();
+    }
+  }
+
+  return normalizeText(node);
+}
+
+function normalizeWithValues(node: Element | null) {
+  const text = normalizeText(node);
+  const values = Array.from(
+    node?.querySelectorAll("input, select, textarea") ?? [],
+  )
+    .map((element) => normalizeValue(element))
+    .filter(Boolean)
+    .join(" ");
+
+  return `${text} ${values}`.replace(/\s+/g, " ").trim();
+}
+
+function expectContainsParts(haystack: string, parts: string[]) {
+  parts.forEach((part) => {
+    expect(haystack).toContain(part);
+  });
 }
 
 function click(dom: JSDOMInstance, element: unknown) {
@@ -138,6 +168,8 @@ describe("OpenWrt static prototype contract", () => {
     await settle(dom);
 
     const { document } = dom.window;
+    const fieldGridSnapshot = () =>
+      normalizeWithValues(document.getElementById("fieldGrid"));
 
     expect(normalizeText(document.getElementById("daemonStatusText"))).toBe(
       "Running",
@@ -148,17 +180,23 @@ describe("OpenWrt static prototype contract", () => {
     expect(normalizeText(document.getElementById("listenEndpointValue"))).toBe(
       "10.0.0.5:18443",
     );
-    expect(normalizeText(document.getElementById("httpProxyValue"))).toBe(
+    expect(normalizeValue(document.getElementById("listenAddressValue"))).toBe(
+      "10.0.0.5",
+    );
+    expect(normalizeValue(document.getElementById("listenPortValue"))).toBe(
+      "18443",
+    );
+    expect(normalizeValue(document.getElementById("httpProxyValue"))).toBe(
       "http://router-http.internal:7890",
     );
-    expect(normalizeText(document.getElementById("httpsProxyValue"))).toBe(
+    expect(normalizeValue(document.getElementById("httpsProxyValue"))).toBe(
       "http://router-https.internal:7890",
     );
-    expect(normalizeText(document.getElementById("proxyEnabledValue"))).toBe(
-      "Off",
+    expect(normalizeText(document.getElementById("serviceLabelValue"))).toBe(
+      "Router daemon",
     );
-    expect(normalizeText(document.getElementById("loggingValue"))).toBe(
-      "Debug",
+    expect(normalizeValue(document.getElementById("loggingValue"))).toBe(
+      "debug",
     );
 
     expect(document.querySelectorAll(".provider-row")).toHaveLength(1);
@@ -171,32 +209,32 @@ describe("OpenWrt static prototype contract", () => {
     expect(normalizeText(document.getElementById("editorSubtitle"))).toBe(
       "General provider settings for the Codex workspace",
     );
-    expect(normalizeText(document.getElementById("fieldGrid"))).toContain(
-      "Provider name OpenAI Official",
-    );
-    expect(normalizeText(document.getElementById("fieldGrid"))).toContain(
-      "Notes Pinned live route",
-    );
-    expect(normalizeText(document.getElementById("fieldGrid"))).toContain(
-      "Base URL https://api.openai.com/v1",
-    );
+    expectContainsParts(fieldGridSnapshot(), [
+      "Provider name",
+      "OpenAI Official",
+      "Notes",
+      "Pinned live route",
+      "Base URL",
+      "https://api.openai.com/v1",
+    ]);
 
     click(dom, getDetailTab(dom, "Endpoint"));
     await settle(dom);
 
-    expect(normalizeText(document.getElementById("fieldGrid"))).toContain(
-      "Credential status sk-live-...789",
-    );
+    expectContainsParts(fieldGridSnapshot(), [
+      "Credential status",
+      "sk-live-...789",
+    ]);
 
     click(dom, getDetailTab(dom, "Model"));
     await settle(dom);
 
-    expect(normalizeText(document.getElementById("fieldGrid"))).toContain(
-      "Token field OPENAI_API_KEY",
-    );
-    expect(normalizeText(document.getElementById("fieldGrid"))).toContain(
-      "Model gpt-5.4",
-    );
+    expectContainsParts(fieldGridSnapshot(), [
+      "Token field",
+      "OPENAI_API_KEY",
+      "Model",
+      "gpt-5.4",
+    ]);
 
     click(dom, getWorkspaceButton(dom, "Credentials"));
     await settle(dom);
@@ -204,29 +242,28 @@ describe("OpenWrt static prototype contract", () => {
     expect(normalizeText(document.getElementById("editorSubtitle"))).toBe(
       "Credential settings for the Codex workspace",
     );
-    expect(normalizeText(document.getElementById("fieldGrid"))).toContain(
-      "Secret policy Blank preserves stored secret",
-    );
-    expect(normalizeText(document.getElementById("fieldGrid"))).toContain(
-      "Primary env key OPENAI_API_KEY · sk-live-...789",
-    );
+    expectContainsParts(fieldGridSnapshot(), [
+      "Secret policy",
+      "Blank preserves stored secret",
+      "Primary env key",
+      "OPENAI_API_KEY",
+      "sk-live-...789",
+    ]);
 
     click(dom, getDetailTab(dom, "Endpoint"));
     await settle(dom);
 
-    expect(normalizeText(document.getElementById("fieldGrid"))).toContain(
-      "Base URL env https://api.openai.com/v1",
-    );
-    expect(normalizeText(document.getElementById("fieldGrid"))).toContain(
-      "Model env gpt-5.4",
-    );
+    expectContainsParts(fieldGridSnapshot(), [
+      "Base URL env",
+      "https://api.openai.com/v1",
+      "Model env",
+      "gpt-5.4",
+    ]);
 
     click(dom, getDetailTab(dom, "Notes"));
     await settle(dom);
 
-    expect(normalizeText(document.getElementById("fieldGrid"))).toContain(
-      "Notes Pinned live route",
-    );
+    expectContainsParts(fieldGridSnapshot(), ["Notes", "Pinned live route"]);
 
     click(dom, getWorkspaceButton(dom, "Failover"));
     await settle(dom);
@@ -237,72 +274,66 @@ describe("OpenWrt static prototype contract", () => {
     expect(normalizeText(document.getElementById("summaryCard"))).toContain(
       "Failover status Enabled · 2 queued · position 8",
     );
-    expect(normalizeText(document.getElementById("fieldGrid"))).toContain(
-      "Provider ID codex-primary",
-    );
-    expect(normalizeText(document.getElementById("fieldGrid"))).toContain(
-      "Queue membership Queued",
-    );
-    expect(normalizeText(document.getElementById("fieldGrid"))).toContain(
-      "Queue position 8",
-    );
-    expect(normalizeText(document.getElementById("fieldGrid"))).toContain(
-      "Queue sort index 7",
-    );
-    expect(normalizeText(document.getElementById("fieldGrid"))).toContain(
-      "Queue depth 2",
-    );
-    expect(normalizeText(document.getElementById("fieldGrid"))).toContain(
-      "Queue order 1. Live Failover Backup · standby · healthy · sort 1",
-    );
-    expect(normalizeText(document.getElementById("fieldGrid"))).not.toContain(
+    expectContainsParts(fieldGridSnapshot(), [
+      "Provider ID",
+      "codex-primary",
+      "Queue membership",
+      "Queued",
+      "Queue position",
+      "8",
+      "Queue sort index",
+      "7",
+      "Queue depth",
+      "2",
+      "Queue order",
+      "Live Failover Backup",
+      "standby",
+      "healthy",
+      "sort 1",
+    ]);
+    expect(fieldGridSnapshot()).not.toContain(
       "Placeholder",
     );
 
     click(dom, getDetailTab(dom, "Health"));
     await settle(dom);
 
-    expect(normalizeText(document.getElementById("fieldGrid"))).toContain(
-      "Provider health Unhealthy",
-    );
-    expect(normalizeText(document.getElementById("fieldGrid"))).toContain(
-      "Health observed Yes",
-    );
-    expect(normalizeText(document.getElementById("fieldGrid"))).toContain(
-      "Consecutive failures 3",
-    );
+    expectContainsParts(fieldGridSnapshot(), [
+      "Provider health",
+      "Unhealthy",
+      "Health observed",
+      "Yes",
+      "Consecutive failures",
+      "3",
+    ]);
 
     click(dom, getDetailTab(dom, "Policy"));
     await settle(dom);
 
-    expect(normalizeText(document.getElementById("fieldGrid"))).toContain(
-      "Proxy enabled Disabled",
-    );
-    expect(normalizeText(document.getElementById("fieldGrid"))).toContain(
-      "Auto failover Enabled",
-    );
-    expect(normalizeText(document.getElementById("fieldGrid"))).toContain(
-      "Max retries 9",
-    );
-    expect(normalizeText(document.getElementById("fieldGrid"))).toContain(
-      "Active provider ID live-active-provider-id",
-    );
+    expectContainsParts(fieldGridSnapshot(), [
+      "Proxy enabled",
+      "Disabled",
+      "Auto failover",
+      "Enabled",
+      "Max retries",
+      "9",
+      "Active provider ID",
+      "live-active-provider-id",
+    ]);
 
     click(dom, getDetailTab(dom, "Notes"));
     await settle(dom);
 
-    expect(normalizeText(document.getElementById("fieldGrid"))).toContain(
-      "Last success 2026-04-13T07:59:00Z",
-    );
-    expect(normalizeText(document.getElementById("fieldGrid"))).toContain(
-      "Last failure 2026-04-13T08:00:00Z",
-    );
-    expect(normalizeText(document.getElementById("fieldGrid"))).toContain(
-      "Last error live-failover-last-error",
-    );
-    expect(normalizeText(document.getElementById("fieldGrid"))).toContain(
-      "Runtime updated 2026-04-13T08:01:00Z",
-    );
+    expectContainsParts(fieldGridSnapshot(), [
+      "Last success",
+      "2026-04-13T07:59:00Z",
+      "Last failure",
+      "2026-04-13T08:00:00Z",
+      "Last error",
+      "live-failover-last-error",
+      "Runtime updated",
+      "2026-04-13T08:01:00Z",
+    ]);
   });
 
   it("keeps Add, Duplicate, and Save actions explicitly mock-local", async () => {
