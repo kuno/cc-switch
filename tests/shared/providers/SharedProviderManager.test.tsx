@@ -350,7 +350,7 @@ describe("SharedProviderManager", () => {
       <SharedProviderManager adapter={adapter} defaultApp="claude" />,
     );
 
-    await screen.findByText("Alpha");
+    await screen.findByRole("button", { name: "Edit Alpha" });
 
     const addButton = screen.getAllByRole("button", {
       name: "Add provider",
@@ -421,7 +421,7 @@ describe("SharedProviderManager", () => {
       <SharedProviderManager adapter={adapter} defaultApp="claude" />,
     );
 
-    await screen.findByText("Claude Primary");
+    await screen.findByRole("button", { name: "Edit Claude Primary" });
 
     const providerSurface = container.querySelector(
       '[data-ccswitch-region="provider-surface"]',
@@ -450,6 +450,9 @@ describe("SharedProviderManager", () => {
     const providerCardGrid = providerSurface?.querySelector(
       '[data-ccswitch-region="provider-card-grid"]',
     );
+    const providerDetailPanel = providerSurface?.querySelector(
+      '[data-ccswitch-region="provider-detail-panel"]',
+    );
 
     expect(providerHeader).toHaveAttribute(
       "data-ccswitch-layout",
@@ -473,8 +476,11 @@ describe("SharedProviderManager", () => {
       "responsive-grid",
     );
     expect(providerCardGrid).toHaveClass("grid");
+    expect(providerDetailPanel).not.toBeNull();
     expect(providerCardGrid).toContainElement(
-      screen.getByText("Claude Primary"),
+      screen.getByRole("button", { name: "Edit Claude Primary" }).closest(
+        "article",
+      ),
     );
     expect(
       summaryGrid?.querySelector('[data-ccswitch-region="provider-summary"]'),
@@ -738,14 +744,12 @@ describe("SharedProviderManager", () => {
     expect(dialogScope.getByText("Platform templates")).toBeInTheDocument();
     expect(dialogScope.getByText("Compatible gateways")).toBeInTheDocument();
     expect(
-      dialogScope.getByRole("heading", { name: "Identity" }),
+      dialogScope.getByRole("heading", { name: "General" }),
     ).toBeInTheDocument();
     expect(
-      dialogScope.getByRole("heading", { name: "Endpoint & auth" }),
+      dialogScope.getByRole("heading", { name: "Credentials" }),
     ).toBeInTheDocument();
-    expect(
-      dialogScope.getByRole("heading", { name: "Optional notes" }),
-    ).toBeInTheDocument();
+    expect(dialogScope.getByLabelText("Notes")).toBeInTheDocument();
     expect(dialogScope.getByLabelText("Provider name")).toHaveValue(
       "OpenAI Official",
     );

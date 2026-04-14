@@ -47,6 +47,7 @@ import type {
 } from "./managerTypes";
 import {
   SharedProviderCard,
+  SharedProviderDetailPanel,
   SharedProviderEditorPanel,
   SharedProviderToolbar,
 } from "./ui";
@@ -121,6 +122,25 @@ function stateQueryKey(appId: SharedProviderAppId) {
 
 function capabilitiesQueryKey(appId: SharedProviderAppId) {
   return ["shared-provider-manager", "capabilities", appId] as const;
+}
+
+function createSelectedProviderState(): Record<SharedProviderAppId, string | null> {
+  return {
+    claude: null,
+    codex: null,
+    gemini: null,
+  };
+}
+
+function createDetailTabState(): Record<
+  SharedProviderAppId,
+  "general" | "credentials"
+> {
+  return {
+    claude: "general",
+    codex: "general",
+    gemini: "general",
+  };
 }
 
 function getErrorMessage(error: unknown): string {
@@ -426,6 +446,10 @@ export function SharedProviderManager({
   const [internalApp, setInternalApp] =
     useState<SharedProviderAppId>(initialApp);
   const [searchByApp, setSearchByApp] = useState(createSearchState);
+  const [selectedProviderByApp, setSelectedProviderByApp] = useState(
+    createSelectedProviderState,
+  );
+  const [detailTabByApp, setDetailTabByApp] = useState(createDetailTabState);
   const [selectedPresetId, setSelectedPresetId] = useState<string>(
     getDefaultPresetId(initialApp),
   );
@@ -612,6 +636,14 @@ export function SharedProviderManager({
   const currentPresentation = SHARED_PROVIDER_APP_PRESENTATION[currentApp];
   const currentActiveProvider =
     state?.providers.find((provider) => provider.active) ?? null;
+  const selectedProvider =
+    (state &&
+      filteredProviders.find(
+        (provider) => provider.providerId === selectedProviderByApp[currentApp],
+      )) ??
+    currentActiveProvider ??
+    filteredProviders[0] ??
+    null;
   const isRefreshing = stateQuery.isFetching || capabilitiesQuery.isFetching;
 
   function getCurrentAppSwitchButton(appId: SharedProviderAppId = currentApp) {
@@ -680,6 +712,29 @@ export function SharedProviderManager({
 
     resetEditorForApp(currentApp);
   }, [capabilitiesQuery.data, currentApp, editingProvider, isEditorOpen]);
+
+  useEffect(() => {
+    if (state == null) {
+      return;
+    }
+
+    const currentSelection = selectedProviderByApp[currentApp];
+    const hasCurrentSelection = state.providers.some(
+      (provider) => provider.providerId === currentSelection,
+    );
+
+    if (hasCurrentSelection) {
+      return;
+    }
+
+    const fallbackProvider =
+      state.providers.find((provider) => provider.active) ?? state.providers[0];
+
+    setSelectedProviderByApp((currentSelectionByApp) => ({
+      ...currentSelectionByApp,
+      [currentApp]: fallbackProvider?.providerId ?? null,
+    }));
+  }, [currentApp, selectedProviderByApp, state]);
 
   function resetEditorForApp(appId: SharedProviderAppId) {
     const nextPresetId = getDefaultPresetId(appId);
@@ -790,6 +845,13 @@ export function SharedProviderManager({
 
   function clearSearch() {
     handleSearchChange("");
+  }
+
+  function handleSelectProvider(provider: SharedProviderView) {
+    setSelectedProviderByApp((currentSelectionByApp) => ({
+      ...currentSelectionByApp,
+      [currentApp]: provider.providerId,
+    }));
   }
 
   function handlePresetChange(nextPresetId: string) {
@@ -1040,58 +1102,104 @@ export function SharedProviderManager({
                   onClear={clearSearch}
                 />
               ) : (
-                <div
-                  data-ccswitch-region="provider-card-grid"
-                  data-ccswitch-layout="responsive-grid"
-                  className="grid gap-3"
-                >
-                  {filteredProviders.map((provider) => {
-                    const matchedPreset = getSharedProviderMatchedPreset(
-                      currentApp,
-                      provider,
-                    );
+                <div className="grid gap-4 xl:grid-cols-[minmax(320px,0.88fr)_minmax(0,1.12fr)]">
+                  <div
+                    data-ccswitch-region="provider-card-grid"
+                    data-ccswitch-layout="responsive-grid"
+                    className="grid gap-3"
+                  >
+                    {filteredProviders.map((provider) => {
+                      const matchedPreset = getSharedProviderMatchedPreset(
+                        currentApp,
+                        provider,
+                      );
 
-                    return (
-                      <SharedProviderCard
-                        key={
-                          provider.providerId ??
-                          getSharedProviderDisplayName(provider)
-                        }
-                        appId={currentApp}
-                        provider={provider}
-                        presetLabel={matchedPreset?.label ?? null}
-                        actionVisibility={getSharedProviderCardActionVisibility(
-                          capabilities,
-                          provider,
-                        )}
-                        isBusy={isMutating}
-                        isActivatePending={
-                          activateMutation.isPending &&
-                          activateMutation.variables?.providerId ===
-                            provider.providerId
-                        }
-                        onEdit={() => openEditEditor(provider)}
-                        onActivate={() => {
-                          if (!provider.providerId) {
-                            return;
+                      return (
+                        <SharedProviderCard
+                          key={
+                            provider.providerId ??
+                            getSharedProviderDisplayName(provider)
                           }
+                          appId={currentApp}
+                          provider={provider}
+                          presetLabel={matchedPreset?.label ?? null}
+                          actionVisibility={getSharedProviderCardActionVisibility(
+                            capabilities,
+                            provider,
+                          )}
+                          isBusy={isMutating}
+                          isActivatePending={
+                            activateMutation.isPending &&
+                            activateMutation.variables?.providerId ===
+                              provider.providerId
+                          }
+                          selected={
+                            Boolean(provider.providerId) &&
+                            provider.providerId === selectedProvider?.providerId
+                          }
+                          onSelect={() => handleSelectProvider(provider)}
+                          onEdit={() => openEditEditor(provider)}
+                          onActivate={() => {
+                            if (!provider.providerId) {
+                              return;
+                            }
 
-                          activateMutation.mutate({
-                            appId: currentApp,
-                            providerId: provider.providerId,
-                            providerName:
-                              getSharedProviderDisplayName(provider),
-                            requiresServiceRestart:
-                              capabilities.requiresServiceRestart,
-                          });
-                        }}
-                        onDelete={() => {
-                          rememberFocusTarget(deleteRestoreFocusRef);
-                          setPendingDelete(provider);
-                        }}
-                      />
-                    );
-                  })}
+                            activateMutation.mutate({
+                              appId: currentApp,
+                              providerId: provider.providerId,
+                              providerName:
+                                getSharedProviderDisplayName(provider),
+                              requiresServiceRestart:
+                                capabilities.requiresServiceRestart,
+                            });
+                          }}
+                          onDelete={() => {
+                            rememberFocusTarget(deleteRestoreFocusRef);
+                            setPendingDelete(provider);
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
+
+                  {selectedProvider ? (
+                    <SharedProviderDetailPanel
+                      appId={currentApp}
+                      provider={selectedProvider}
+                      detailTab={detailTabByApp[currentApp]}
+                      actionVisibility={getSharedProviderCardActionVisibility(
+                        capabilities,
+                        selectedProvider,
+                      )}
+                      isBusy={isMutating}
+                      isActivatePending={
+                        activateMutation.isPending &&
+                        activateMutation.variables?.providerId ===
+                          selectedProvider.providerId
+                      }
+                      onDetailTabChange={(tab) =>
+                        setDetailTabByApp((currentTabs) => ({
+                          ...currentTabs,
+                          [currentApp]: tab,
+                        }))
+                      }
+                      onEdit={() => openEditEditor(selectedProvider)}
+                      onActivate={() => {
+                        if (!selectedProvider.providerId) {
+                          return;
+                        }
+
+                        activateMutation.mutate({
+                          appId: currentApp,
+                          providerId: selectedProvider.providerId,
+                          providerName:
+                            getSharedProviderDisplayName(selectedProvider),
+                          requiresServiceRestart:
+                            capabilities.requiresServiceRestart,
+                        });
+                      }}
+                    />
+                  ) : null}
                 </div>
               )}
             </>
