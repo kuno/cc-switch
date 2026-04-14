@@ -340,12 +340,6 @@ function getElementClassName(element: Element): string {
     : "";
 }
 
-function hasClassToken(root: ParentNode, token: string): boolean {
-  return Array.from(root.querySelectorAll("*")).some((element) =>
-    getElementClassName(element).split(/\s+/).includes(token),
-  );
-}
-
 describe("OpenWrt provider UI bundle", () => {
   beforeEach(() => {
     document.body.classList.remove("ccswitch-openwrt-provider-ui-theme");
@@ -628,12 +622,16 @@ describe("OpenWrt provider UI bundle", () => {
         within(target).getByRole("button", { name: "Edit Claude Primary" }),
       ).toBeInTheDocument(),
     );
-    const claudePrimaryCard = within(target)
-      .getByText("Claude Primary")
-      .closest("article");
-    const claudeBackupCard = within(target)
-      .getByText("Claude Backup")
-      .closest("article");
+    const providerCards = target.querySelectorAll("article");
+    const claudePrimaryCard = Array.from(providerCards).find((card) =>
+      card.textContent?.includes("Claude Primary"),
+    );
+    const claudeBackupCard = Array.from(providerCards).find((card) =>
+      card.textContent?.includes("Claude Backup"),
+    );
+    const claudeDetailPanel = target.querySelector(
+      '[data-ccswitch-region="provider-detail-panel"]',
+    );
 
     expect(
       within(target).getByRole("button", { name: "Claude" }),
@@ -643,22 +641,23 @@ describe("OpenWrt provider UI bundle", () => {
     ).toBeInTheDocument();
     expect(claudePrimaryCard).not.toBeNull();
     expect(claudeBackupCard).not.toBeNull();
-    expect(claudePrimaryCard).toHaveTextContent(
+    expect(claudeDetailPanel).not.toBeNull();
+    expect(claudeDetailPanel).toHaveTextContent(
       /Base URL\s*https:\/\/claude-primary\.example\.com/,
     );
-    expect(claudePrimaryCard).toHaveTextContent(/Model\s*claude-sonnet-4-5/);
-    expect(claudePrimaryCard).toHaveTextContent(
+    expect(claudeDetailPanel).toHaveTextContent(/Model\s*claude-sonnet-4-5/);
+    expect(claudeDetailPanel).toHaveTextContent(
       /Token field\s*ANTHROPIC_AUTH_TOKEN/,
     );
-    expect(claudePrimaryCard).toHaveTextContent(/Provider ID\s*claude-primary/);
-    expect(claudePrimaryCard).toHaveTextContent("Pinned for router traffic");
+    expect(claudeDetailPanel).toHaveTextContent(/Provider ID\s*claude-primary/);
+    expect(claudeDetailPanel).toHaveTextContent("Pinned for router traffic");
     expect(
-      within(claudePrimaryCard as HTMLElement).getByText("Active provider", {
+      within(claudeDetailPanel as HTMLElement).getByText("Active route", {
         selector: "span",
       }),
     ).toBeInTheDocument();
     expect(
-      within(claudePrimaryCard as HTMLElement).getByText("Stored secret", {
+      within(claudeDetailPanel as HTMLElement).getByText("Stored secret", {
         selector: "span",
       }),
     ).toBeInTheDocument();
@@ -716,20 +715,24 @@ describe("OpenWrt provider UI bundle", () => {
         within(target).getByRole("button", { name: "Edit Codex Primary" }),
       ).toBeInTheDocument(),
     );
-    const codexPrimaryCard = within(target)
-      .getByText("Codex Primary")
-      .closest("article");
+    const codexPrimaryCard = Array.from(target.querySelectorAll("article")).find(
+      (card) => card.textContent?.includes("Codex Primary"),
+    );
+    const codexDetailPanel = target.querySelector(
+      '[data-ccswitch-region="provider-detail-panel"]',
+    );
 
     expect(
       within(target).getByRole("button", { name: "Codex" }),
     ).toHaveAttribute("aria-pressed", "true");
     expect(codexPrimaryCard).not.toBeNull();
-    expect(codexPrimaryCard).toHaveTextContent(
+    expect(codexDetailPanel).not.toBeNull();
+    expect(codexDetailPanel).toHaveTextContent(
       /Base URL\s*https:\/\/codex-primary\.example\.com\/v1/,
     );
-    expect(codexPrimaryCard).toHaveTextContent(/Model\s*gpt-5\.4/);
-    expect(codexPrimaryCard).toHaveTextContent(/Token field\s*OPENAI_API_KEY/);
-    expect(codexPrimaryCard).toHaveTextContent(/Provider ID\s*codex-primary/);
+    expect(codexDetailPanel).toHaveTextContent(/Model\s*gpt-5\.4/);
+    expect(codexDetailPanel).toHaveTextContent(/Token field\s*OPENAI_API_KEY/);
+    expect(codexDetailPanel).toHaveTextContent(/Provider ID\s*codex-primary/);
     expect(transport.listProviders).toHaveBeenCalledWith("codex");
     expect(transport.listSavedProviders).toHaveBeenCalledWith("codex");
     expect(transport.getActiveProvider).toHaveBeenCalledWith("codex");
@@ -867,7 +870,16 @@ describe("OpenWrt provider UI bundle", () => {
     expect(
       providerRoot.querySelector(".ccswitch-openwrt-provider-card"),
     ).not.toBeNull();
-    expect(hasClassToken(providerRoot, "sm:grid-cols-2")).toBe(true);
+    expect(
+      providerRoot.querySelector('[data-ccswitch-region="provider-detail-panel"]'),
+    ).not.toBeNull();
+    expect(
+      Array.from(providerRoot.querySelectorAll("*")).some((element) =>
+        getElementClassName(element).includes(
+          "xl:grid-cols-[minmax(320px,0.88fr)_minmax(0,1.12fr)]",
+        ),
+      ),
+    ).toBe(true);
     expect(
       providerRoot.querySelector(
         '[data-ccswitch-region="provider-summary-grid"][data-ccswitch-layout="stack-to-split"]',

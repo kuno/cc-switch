@@ -1,7 +1,6 @@
 import { type FormEvent, type ReactNode, type RefObject, useId } from "react";
 import {
   CheckCircle2,
-  FileText,
   KeyRound,
   Layers3,
   Link2,
@@ -345,8 +344,8 @@ export function SharedProviderEditorPanel({
 
                 <EditorSection
                   icon={Layers3}
-                  title="Identity"
-                  description="Name the saved provider and optionally pin a model default for this router."
+                  title="General"
+                  description="Set the provider name, optional model default, and saved notes used by this router."
                 >
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
@@ -382,12 +381,27 @@ export function SharedProviderEditorPanel({
                         disabled={disabled}
                       />
                     </div>
+                    <div className="space-y-2 sm:col-span-2">
+                      <Label htmlFor={`${fieldIdPrefix}-notes`}>Notes</Label>
+                      <Textarea
+                        id={`${fieldIdPrefix}-notes`}
+                        value={draft.notes}
+                        onChange={(event) =>
+                          onDraftChange({
+                            ...draft,
+                            notes: event.target.value,
+                          })
+                        }
+                        placeholder="Optional notes for this provider"
+                        disabled={disabled}
+                      />
+                    </div>
                   </div>
                 </EditorSection>
 
                 <EditorSection
                   icon={Link2}
-                  title="Endpoint & auth"
+                  title="Credentials"
                   description="Configure the base URL, token field, and secret handling used by this provider."
                 >
                   <div className="space-y-2">
@@ -481,28 +495,6 @@ export function SharedProviderEditorPanel({
                       </div>
                     </div>
                   ) : null}
-                </EditorSection>
-
-                <EditorSection
-                  icon={FileText}
-                  title="Optional notes"
-                  description="Capture why this provider exists or how it should be used on this device."
-                >
-                  <div className="space-y-2">
-                    <Label htmlFor={`${fieldIdPrefix}-notes`}>Notes</Label>
-                    <Textarea
-                      id={`${fieldIdPrefix}-notes`}
-                      value={draft.notes}
-                      onChange={(event) =>
-                        onDraftChange({
-                          ...draft,
-                          notes: event.target.value,
-                        })
-                      }
-                      placeholder="Optional notes for this provider"
-                      disabled={disabled}
-                    />
-                  </div>
                 </EditorSection>
               </div>
             </div>
