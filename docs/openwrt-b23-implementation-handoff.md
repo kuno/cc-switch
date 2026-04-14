@@ -24,6 +24,16 @@ These artifacts were produced on the shared workstation for review and reference
 - Clickable prototype: `/Volumes/tmp/cc-switch-clickable-b23/index.html`
 - Design rationale: `/Volumes/tmp/cc-switch-design-options/option-b23-rationale.txt`
 
+## Repo-Tracked Artifacts
+
+The PR also includes stable copies of the final `B2.3` artifacts:
+
+- `docs/openwrt-b23-artifacts/option-b23-light.png`
+- `docs/openwrt-b23-artifacts/option-b23-dark.png`
+- `docs/openwrt-b23-artifacts/option-b23-rationale.txt`
+- `docs/openwrt-b23-artifacts/prototype/index.html`
+- `docs/openwrt-b23-artifacts/prototype/icons/`
+
 ## UI Structure
 
 ### Page shell
