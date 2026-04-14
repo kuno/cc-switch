@@ -1008,7 +1008,6 @@ impl RequestForwarder {
             if self.copilot_optimizer_config.strip_thinking {
                 mapped_body = super::copilot_optimizer::strip_thinking_blocks(mapped_body);
             }
-
             // 4. Warmup 小模型降级
             if self.copilot_optimizer_config.warmup_downgrade && classification.is_warmup {
                 log::info!(
