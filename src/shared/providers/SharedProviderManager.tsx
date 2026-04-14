@@ -1354,6 +1354,11 @@ export function SharedProviderManager({
                           actionVisibility={getSharedProviderCardActionVisibility(
                             capabilities,
                             provider,
+                            {
+                              selected:
+                                provider.providerId ===
+                                selectedProvider?.providerId,
+                            },
                           )}
                           isBusy={isMutating}
                           isActivatePending={
