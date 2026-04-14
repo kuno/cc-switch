@@ -1203,7 +1203,7 @@
             <div class="sidebar-head">Providers</div>
             <div class="search-row">
               <input class="search" id="providerSearch" placeholder="Search provider or endpoint" />
-              <div class="chip">All</div>
+              <button class="chip" id="providerFilterReset" type="button">All</button>
             </div>
             <div class="provider-list" id="providerList"></div>
           </aside>
@@ -1668,6 +1668,7 @@
         editorSaveButton: document.querySelectorAll(".action-row button")[1],
         footerSaveButton: document.querySelectorAll(".footer-actions .primary")[0],
         providerSearch: document.getElementById("providerSearch"),
+        providerFilterReset: document.getElementById("providerFilterReset"),
         restartChip: document.getElementById("restartChip"),
       };
 
@@ -2339,6 +2340,12 @@
 
       els.providerSearch.addEventListener("input", (event) => {
         state.providerFilter = event.target.value || "";
+        state.selectedProvider = 0;
+        render();
+      });
+
+      els.providerFilterReset.addEventListener("click", () => {
+        resetProviderFilter();
         state.selectedProvider = 0;
         render();
       });
