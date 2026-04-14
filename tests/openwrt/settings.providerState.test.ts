@@ -20,23 +20,17 @@ type UiState = {
 };
 
 type StatusNodes = {
-  appValue: HTMLElement;
-  bundleValue: HTMLElement;
+  messageRoot: HTMLElement;
+  messageText: HTMLElement;
+  restartButton: HTMLButtonElement;
   root: HTMLElement;
   serviceValue: HTMLElement;
   summaryValue: HTMLElement;
-  providerTitle?: HTMLElement;
-  providerValue?: HTMLElement;
-  savedCountValue?: HTMLElement;
 };
 
 type ShellNodes = {
-  sharedChromeRoot?: HTMLElement;
-  messageRoot: HTMLElement;
-  messageText: HTMLElement;
   runtimeMountRoot: HTMLElement;
   mountRoot: HTMLElement;
-  restartButton: HTMLButtonElement;
   root: HTMLElement;
 };
 
@@ -296,6 +290,30 @@ beforeEach(() => {
 });
 
 describe("OpenWrt settings shared-provider shell", () => {
+  it("keeps the host shell explicitly split between sparse LuCI controls and the provider workspace", () => {
+    const source = readFileSync(
+      path.resolve(
+        process.cwd(),
+        "openwrt/luci-app-ccswitch/htdocs/luci-static/resources/view/ccswitch/settings.js",
+      ),
+      "utf8",
+    );
+
+    expect(source).toContain("ccswitch-host-top-block");
+    expect(source).toContain("ccswitch-host-bottom-block");
+    expect(source).toContain("_('Router Service')");
+    expect(source).toContain("_('Restart Framing')");
+    expect(source).toContain("_('Workspace Surface')");
+    expect(source).toContain(
+      "_('Keep truthful router-backed service settings, service status, and restart actions in LuCI. The provider workspace is isolated below as the main product surface.')",
+    );
+
+    expect(source).not.toContain("_('Router Overview')");
+    expect(source).not.toContain("_('Selected Application')");
+    expect(source).not.toContain("_('Saved Providers')");
+    expect(source).not.toContain("_('Routing Summary')");
+  });
+
   it("keeps selected-app persistence in the LuCI shell and exposes the fixed bundle and stylesheet paths", () => {
     const { settings, localStorage } = loadSettingsView("gemini");
 
@@ -491,9 +509,8 @@ describe("OpenWrt settings shared-provider shell", () => {
       "ccswitch-openwrt-selected-app",
       "gemini",
     );
-    expect(statusNodes.appValue.textContent).toBe("Gemini");
-    expect(shellNodes.messageText.textContent).toBe("Restart required.");
-    expect(shellNodes.messageRoot.style.display).toBe("");
+    expect(statusNodes.messageText.textContent).toBe("Restart required.");
+    expect(statusNodes.messageRoot.style.display).toBe("");
   });
 
   it("builds one LuCI host shell with shared runtime and provider mount sections plus a single restart owner", () => {
@@ -508,22 +525,19 @@ describe("OpenWrt settings shared-provider shell", () => {
     const shellText = shellNodes.root.textContent ?? "";
     const combinedText = `${statusNodes.root.textContent ?? ""} ${shellText}`.toLowerCase();
     const shellChildren = Array.from(shellNodes.root.children);
-    const restartButtons = Array.from(
+    const workspaceButtons = Array.from(
       shellNodes.root.querySelectorAll("button"),
     ).map((button) => button.textContent?.trim());
     const runtimeShell = shellNodes.runtimeMountRoot.closest("section");
     const providerShell = shellNodes.mountRoot.closest("section");
 
     expect(statusNodes.summaryValue.textContent).toBe(
-      "Provider changes are saved. Restart the service to apply provider changes.",
+      "Provider changes are saved. Restart in LuCI when you want them applied.",
     );
-    expect(shellNodes.root.className).toBe("ccswitch-host-shell-stack");
+    expect(shellNodes.root.className).toBe("ccswitch-host-workspace-stack");
     expect(shellChildren).toHaveLength(2);
-    expect(shellChildren[0]).toBe(shellNodes.sharedChromeRoot);
+    expect(shellChildren[0]).toHaveTextContent("Workspace Surface");
     expect(shellChildren[1].className).toBe("ccswitch-host-shell-grid");
-    expect(shellNodes.sharedChromeRoot?.className).toContain(
-      "ccswitch-host-shell-chrome",
-    );
     expect(shellText).toContain("Runtime Status");
     expect(shellText).toContain("Provider Manager");
     expect(shellText).toContain(
@@ -532,11 +546,11 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(shellText).toContain(
       "Service settings, outbound proxy controls, status, and restart actions stay in the LuCI shell.",
     );
-    expect(shellNodes.sharedChromeRoot?.querySelectorAll(".ccswitch-host-actions")).toHaveLength(
+    expect(statusNodes.root.querySelectorAll(".ccswitch-host-actions")).toHaveLength(
       1,
     );
-    expect(shellNodes.sharedChromeRoot?.contains(shellNodes.restartButton)).toBe(true);
-    expect(restartButtons).toEqual(["Restart Service"]);
+    expect(statusNodes.root.contains(statusNodes.restartButton)).toBe(true);
+    expect(workspaceButtons).toEqual([]);
     expect(shellNodes.runtimeMountRoot.id).toBe("ccswitch-shared-runtime-surface-root");
     expect(shellNodes.mountRoot.id).toBe("ccswitch-shared-provider-ui-root");
     expect(shellNodes.runtimeMountRoot.className).toBe(
@@ -551,8 +565,8 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(providerShell?.className).toBe(
       "ccswitch-host-surface ccswitch-host-provider-shell",
     );
-    expect(shellChildren[1].contains(shellNodes.runtimeMountRoot)).toBe(true);
-    expect(shellChildren[1].contains(shellNodes.mountRoot)).toBe(true);
+    expect(runtimeShell?.contains(shellNodes.runtimeMountRoot)).toBe(true);
+    expect(providerShell?.contains(shellNodes.mountRoot)).toBe(true);
     expect(shellNodes.root.querySelector("main, nav, aside, [role='navigation']")).toBeNull();
 
     for (const phrase of FORBIDDEN_DESKTOP_SHELL_PHRASES) {
@@ -597,7 +611,7 @@ describe("OpenWrt settings shared-provider shell", () => {
       "@media (max-width:1120px){#ccswitch-host-page-shell .ccswitch-host-shell-grid,#ccswitch-host-page-shell .ccswitch-host-settings-grid{grid-template-columns:minmax(0,1fr)}#ccswitch-host-page-shell .ccswitch-host-section-title{font-size:1.18rem}}",
     );
     expect(styleText).toContain(
-      "@media (max-width:820px){#ccswitch-host-page-shell .ccswitch-host-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}#ccswitch-host-page-shell .ccswitch-host-map .cbi-value{grid-template-columns:minmax(0,1fr);row-gap:.4rem}#ccswitch-host-page-shell .ccswitch-host-surface{padding:.95rem}#ccswitch-host-page-shell .ccswitch-host-shared-mount,#ccswitch-host-page-shell #ccswitch-shared-provider-ui-root,#ccswitch-host-page-shell #ccswitch-shared-runtime-surface-root{margin-top:.75rem}}",
+      "@media (max-width:820px){#ccswitch-host-page-shell .ccswitch-host-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}#ccswitch-host-page-shell .ccswitch-host-map .cbi-value{grid-template-columns:minmax(0,1fr);row-gap:.4rem}#ccswitch-host-page-shell .ccswitch-host-surface{padding:.95rem}#ccswitch-host-page-shell .ccswitch-host-service-row{grid-template-columns:minmax(0,1fr)}#ccswitch-host-page-shell .ccswitch-host-shared-mount,#ccswitch-host-page-shell #ccswitch-shared-provider-ui-root,#ccswitch-host-page-shell #ccswitch-shared-runtime-surface-root{margin-top:.75rem}}",
     );
     expect(styleText).toContain(
       "@media (max-width:640px){#ccswitch-host-page-shell .ccswitch-host-status-grid{grid-template-columns:minmax(0,1fr)}#ccswitch-host-page-shell .ccswitch-host-actions,#ccswitch-host-page-shell .ccswitch-host-map .cbi-page-actions,#ccswitch-host-page-shell .ccswitch-host-fallback-card-header,#ccswitch-host-page-shell .ccswitch-host-fallback-card-actions{flex-direction:column;align-items:stretch}#ccswitch-host-page-shell .ccswitch-host-actions .cbi-button,#ccswitch-host-page-shell .ccswitch-host-map .cbi-page-actions .cbi-button{width:100%}}",
@@ -699,7 +713,6 @@ describe("OpenWrt settings shared-provider shell", () => {
     );
     expect(mount).toHaveBeenCalledTimes(1);
     expect(uiState.bundleStatus).toBe("ready");
-    expect(statusNodes.bundleValue.textContent).toBe("Ready");
   });
 
   it("keeps the LuCI shell functional when the shared bundle fails to load", async () => {
@@ -719,13 +732,10 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(uiState.fallbackReason).toBe(
       SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_FAILURE,
     );
-    expect(statusNodes.bundleValue.textContent).toBe("Unavailable");
     expect(shellNodes.mountRoot.textContent).toContain("Claude Providers");
     expect(shellNodes.mountRoot.textContent).toContain("bundle missing");
     expect(shellNodes.mountRoot.textContent).toContain("Configure Provider");
-    expect(statusNodes.summaryValue.textContent).toContain(
-      "shared provider panel failed to load",
-    );
+    expect(statusNodes.messageText.textContent).toContain("bundle missing");
   });
 
   it("keeps the guarded LuCI fallback active when the cutover gate disables the real bundle", async () => {
@@ -746,13 +756,12 @@ describe("OpenWrt settings shared-provider shell", () => {
       SHARED_PROVIDER_UI_FALLBACK_REASON_GATE_DISABLED,
     );
     expect(uiState.bundleError).toContain("disabled for this browser by the local cutover setting");
-    expect(statusNodes.bundleValue.textContent).toBe("Fallback");
     expect(shellNodes.mountRoot.textContent).toContain("Claude Providers");
     expect(shellNodes.mountRoot.textContent).toContain("Configure Provider");
     expect(shellNodes.mountRoot.textContent).toContain(
       "disabled for this browser by the local cutover setting",
     );
-    expect(statusNodes.summaryValue.textContent).toContain(
+    expect(statusNodes.messageText.textContent).toContain(
       "shared provider panel is disabled for this browser",
     );
   });
@@ -777,14 +786,13 @@ describe("OpenWrt settings shared-provider shell", () => {
       SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_REGRESSION,
     );
     expect(uiState.bundleError).toContain("without provider-panel support");
-    expect(statusNodes.bundleValue.textContent).toBe("Fallback");
     expect(shellNodes.mountRoot.textContent).toContain("Claude Providers");
     expect(shellNodes.mountRoot.textContent).toContain("Configure Provider");
     expect(shellNodes.mountRoot.textContent).toContain(
       "without provider-panel support",
     );
-    expect(statusNodes.summaryValue.textContent).toContain(
-      "missing provider-panel support",
+    expect(statusNodes.messageText.textContent).toContain(
+      "without provider-panel support",
     );
   });
 
@@ -810,12 +818,9 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(uiState.fallbackReason).toBe(
       SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_FAILURE,
     );
-    expect(statusNodes.bundleValue.textContent).toBe("Unavailable");
     expect(shellNodes.mountRoot.textContent).toContain("Codex Providers");
     expect(shellNodes.mountRoot.textContent).toContain("mount regression");
-    expect(statusNodes.summaryValue.textContent).toContain(
-      "shared provider panel failed to load",
-    );
+    expect(statusNodes.messageText.textContent).toContain("mount regression");
   });
 
   it("treats an omitted providerManager capability as the real-bundle path", async () => {
@@ -834,8 +839,6 @@ describe("OpenWrt settings shared-provider shell", () => {
 
     expect(uiState.bundleStatus).toBe("ready");
     expect(uiState.fallbackReason).toBeNull();
-    expect(statusNodes.bundleValue.textContent).toBe("Ready");
-    expect(statusNodes.providerValue?.textContent).toBe("Managed by shared UI");
     expect(mount).toHaveBeenCalledTimes(1);
     expect(shellNodes.mountRoot.textContent).not.toContain(
       "LuCI fallback provider manager",

@@ -870,6 +870,125 @@ describe("SharedProviderManager", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("keeps selected-provider General and Credentials panes aligned to the chosen card", async () => {
+    const adapter = createMutableAdapter({
+      claude: buildState(
+        "claude",
+        [
+          createProvider({
+            providerId: "claude-primary",
+            name: "Claude Primary",
+            baseUrl: "https://api.anthropic.com",
+            tokenField: "ANTHROPIC_AUTH_TOKEN",
+            tokenConfigured: true,
+            tokenMasked: "sk-ant-****",
+            model: "claude-sonnet-4-5",
+            notes: "Primary route",
+            active: true,
+          }),
+          createProvider({
+            providerId: "claude-backup",
+            name: "Claude Backup",
+            baseUrl: "https://gateway.example.com",
+            tokenField: "ANTHROPIC_API_KEY",
+            tokenConfigured: false,
+            tokenMasked: "",
+            model: "",
+            notes: "",
+          }),
+        ],
+        "claude-primary",
+      ),
+    });
+    const { user } = renderManager(
+      <SharedProviderManager adapter={adapter} defaultApp="claude" />,
+    );
+
+    await screen.findByText("Claude Primary");
+
+    const detailPanel = document.querySelector(
+      '[data-ccswitch-region="provider-detail-panel"]',
+    ) as HTMLElement | null;
+
+    expect(detailPanel).not.toBeNull();
+    expect(detailPanel).toHaveTextContent("Claude Primary");
+    expect(detailPanel).toHaveTextContent("General provider settings");
+    expect(detailPanel).toHaveTextContent("Primary route");
+    expect(detailPanel).toHaveTextContent("Stored secret");
+
+    await user.click(screen.getByRole("tab", { name: "Credentials" }));
+
+    expect(screen.getByRole("tab", { name: "Credentials" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(detailPanel).toHaveTextContent("Secret-safe reads only");
+    expect(detailPanel).toHaveTextContent(
+      "Blank preserves the stored secret during edits.",
+    );
+    expect(detailPanel).toHaveTextContent("sk-ant-****");
+    expect(detailPanel).not.toHaveTextContent("No stored secret");
+
+    await user.click(screen.getByText("Claude Backup"));
+
+    expect(detailPanel).toHaveTextContent("Claude Backup");
+    expect(detailPanel).toHaveTextContent("No stored secret");
+    expect(detailPanel).toHaveTextContent(
+      "Add a token in the editor to store credentials for this provider.",
+    );
+    expect(detailPanel).not.toHaveTextContent("Stored secret detected");
+  });
+
+  it("lets focused provider action buttons handle Enter without reselecting the card", async () => {
+    const adapter = createMutableAdapter({
+      claude: buildState(
+        "claude",
+        [
+          createProvider({
+            providerId: "claude-primary",
+            name: "Claude Primary",
+            baseUrl: "https://api.anthropic.com",
+            tokenField: "ANTHROPIC_AUTH_TOKEN",
+            active: true,
+          }),
+          createProvider({
+            providerId: "claude-backup",
+            name: "Claude Backup",
+            baseUrl: "https://gateway.example.com",
+            tokenField: "ANTHROPIC_API_KEY",
+          }),
+        ],
+        "claude-primary",
+      ),
+    });
+    const { user } = renderManager(
+      <SharedProviderManager adapter={adapter} defaultApp="claude" />,
+    );
+
+    await screen.findByText("Claude Backup");
+    await user.click(screen.getByText("Claude Backup"));
+
+    const detailPanel = document.querySelector(
+      '[data-ccswitch-region="provider-detail-panel"]',
+    ) as HTMLElement | null;
+    const deleteButton = screen.getByRole("button", {
+      name: "Delete Claude Primary",
+    });
+
+    expect(detailPanel).toHaveTextContent("Claude Backup");
+
+    deleteButton.focus();
+    await user.keyboard("{Enter}");
+
+    const deleteDialog = await screen.findByRole("dialog", {
+      name: "Delete provider",
+    });
+
+    expect(deleteDialog).toBeInTheDocument();
+    expect(detailPanel).toHaveTextContent("Claude Backup");
+    expect(detailPanel).not.toHaveTextContent("Claude Primary");
+  });
+
   it("filters providers locally by provider fields and matched preset labels", async () => {
     const adapter = createAdapter({
       listProviderState: vi.fn().mockResolvedValue(
