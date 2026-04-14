@@ -879,9 +879,11 @@ describe("OpenWrt settings shared-provider shell", () => {
     );
 
     expect(source).toContain('id="providerSearch"');
+    expect(source).toContain('id="providerFilterReset"');
     expect(source).toContain("function filteredProviders(app)");
     expect(source).toContain("function resetProviderFilter()");
     expect(source).toContain("resetProviderFilter();");
+    expect(source).toContain('els.providerFilterReset.addEventListener("click"');
     expect(source).toContain("providerFilter: \"\"");
     expect(source).toContain("Stop stays unsupported in this prototype shell");
     expect(source).toContain('class="chip non-live"');
@@ -1190,10 +1192,10 @@ describe("OpenWrt settings shared-provider shell", () => {
         target: shellNodes.mountRoot,
         transport: expect.objectContaining({
           listProviders: expect.any(Function),
-          restartService: expect.any(Function),
         }),
       }),
     );
+    expect("restartService" in mount.mock.calls[0]?.[0]?.transport).toBe(false);
 
     settings.teardownSharedProviderUi(uiState);
 
