@@ -1,4 +1,6 @@
 import "./openwrt-provider-ui.css";
+import { createElement } from "react";
+import { createRoot } from "react-dom/client";
 import {
   createOpenWrtProviderAdapter,
   type OpenWrtProviderMutationEvent,
@@ -22,36 +24,15 @@ import type {
   SharedProviderAppId,
   SharedProviderView,
 } from "@/shared/providers/domain";
+import { OpenWrtPageShell } from "./OpenWrtPageShell";
+import type {
+  OpenWrtSharedProviderShellApi,
+  OpenWrtShellMessageKind,
+  OpenWrtSharedPageMountOptions,
+} from "./pageTypes";
 
 export const OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY =
   "__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__";
-
-export type OpenWrtShellMessageKind = "success" | "error" | "info";
-
-export interface OpenWrtSharedProviderShellApi {
-  getSelectedApp(): SharedProviderAppId;
-  setSelectedApp(appId: SharedProviderAppId): SharedProviderAppId;
-  getServiceStatus(): {
-    isRunning: boolean;
-  };
-  getRestartState?(): {
-    pending: boolean;
-    inFlight: boolean;
-  };
-  setRestartState?(state: {
-    pending?: boolean;
-    inFlight?: boolean;
-  }): void;
-  subscribe?(listener: () => void): () => void;
-  refreshServiceStatus(): Promise<{
-    isRunning: boolean;
-  }>;
-  showMessage(kind: OpenWrtShellMessageKind, text: string): void;
-  clearMessage(): void;
-  restartService(): Promise<{
-    isRunning: boolean;
-  }>;
-}
 
 export interface OpenWrtSharedProviderMountOptions {
   target: HTMLElement;
@@ -69,6 +50,7 @@ export interface OpenWrtSharedRuntimeMountOptions {
 }
 
 export interface OpenWrtSharedProviderBundleCapabilities {
+  pageShell: boolean;
   providerManager: boolean;
   runtimeSurface: boolean;
 }
@@ -84,6 +66,13 @@ export interface OpenWrtSharedProviderBundleApi {
     | Promise<void | (() => void) | { unmount(): void }>;
   mountRuntimeSurface(
     options: OpenWrtSharedRuntimeMountOptions,
+  ):
+    | void
+    | (() => void)
+    | { unmount(): void }
+    | Promise<void | (() => void) | { unmount(): void }>;
+  mountPage(
+    options: OpenWrtSharedPageMountOptions,
   ):
     | void
     | (() => void)
@@ -408,8 +397,31 @@ function mountOpenWrtSharedRuntimeSurface(
   });
 }
 
+function mountOpenWrtPageShell(options: OpenWrtSharedPageMountOptions) {
+  return withThemeLease((releaseThemeLease) => {
+    const root = createRoot(options.target);
+
+    clearTarget(options.target);
+    root.render(
+      createElement(OpenWrtPageShell, {
+        options,
+      }),
+    );
+
+    return {
+      unmount() {
+        root.unmount();
+        clearTarget(options.target);
+        releaseThemeLease();
+        options.shell.clearMessage();
+      },
+    };
+  });
+}
+
 const api: OpenWrtSharedProviderBundleApi = {
   capabilities: {
+    pageShell: true,
     providerManager: true,
     runtimeSurface: true,
   },
@@ -418,6 +430,9 @@ const api: OpenWrtSharedProviderBundleApi = {
   },
   mountRuntimeSurface(options) {
     return mountOpenWrtSharedRuntimeSurface(options);
+  },
+  mountPage(options) {
+    return mountOpenWrtPageShell(options);
   },
 };
 
@@ -431,6 +446,7 @@ export const __private__ = {
   getShellRestartState,
   getProviderNameFromMutation,
   handleProviderMutationEvent,
+  mountOpenWrtPageShell,
   mountOpenWrtSharedRuntimeSurface,
   syncStateFromShell,
   withThemeLease,
@@ -439,3 +455,13 @@ export const __private__ = {
 (globalThis as OpenWrtSharedProviderGlobal)[
   OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY
 ] = api;
+
+export type {
+  OpenWrtHostConfigPayload,
+  OpenWrtHostState,
+  OpenWrtPageMessage,
+  OpenWrtSharedPageMountOptions,
+  OpenWrtSharedPageShellApi,
+  OpenWrtSharedProviderShellApi,
+  OpenWrtShellMessageKind,
+} from "./pageTypes";

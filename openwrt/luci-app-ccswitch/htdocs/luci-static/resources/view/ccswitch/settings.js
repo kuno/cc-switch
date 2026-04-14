@@ -21,7 +21,7 @@ var STATIC_PROTOTYPE_STYLE_ID = 'ccswitch-openwrt-static-prototype-styles';
 var STATIC_PROTOTYPE_MIN_HEIGHT = 960;
 var SHARED_PROVIDER_UI_BUNDLE_PATH = '/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js';
 var SHARED_PROVIDER_UI_STYLE_PATH = '/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.css';
-var OPENWRT_STATIC_PROTOTYPE_MODE = true;
+var OPENWRT_STATIC_PROTOTYPE_MODE = false;
 var OPENWRT_STATIC_PROTOTYPE_PATH = '/luci-static/resources/ccswitch/prototype-b24/index.html';
 var SHARED_PROVIDER_UI_FALLBACK_REASON_GATE_DISABLED = 'gate-disabled';
 var SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_FAILURE = 'bundle-failure';
@@ -622,7 +622,7 @@ return view.extend({
 		return Promise.all([
 			this.loadHostConfigSnapshot(),
 			L.resolveDefault(callServiceList('ccswitch'), {}),
-			this.loadProviderState(this.getSelectedApp())
+			callOpenWrtRuntimeStatus()
 		]);
 	},
 
@@ -1210,6 +1210,89 @@ return view.extend({
 			proxyEnabled: proxyEnabled ? '1' : '0',
 			logLevel: hostConfig.logLevel || 'info'
 		};
+	},
+
+	normalizeNativeHostState: function (bindings) {
+		var payload = bindings && typeof bindings === 'object' ? bindings : {};
+
+		return {
+			app: this.isSupportedApp(payload.app) ? payload.app : this.getSelectedApp(),
+			status: payload.status === 'running' ? 'running' : 'stopped',
+			health: payload.health || 'unknown',
+			listenAddr: payload.listenAddr != null ? String(payload.listenAddr) : '',
+			listenPort: payload.listenPort != null ? String(payload.listenPort) : '',
+			serviceLabel: payload.serviceLabel != null ? String(payload.serviceLabel) : _('Router daemon'),
+			httpProxy: payload.httpProxy != null ? String(payload.httpProxy) : '',
+			httpsProxy: payload.httpsProxy != null ? String(payload.httpsProxy) : '',
+			proxyEnabled: payload.proxyEnabled === true || payload.proxyEnabled === '1',
+			logLevel: payload.logLevel != null ? String(payload.logLevel) : 'info'
+		};
+	},
+
+	setNativeHostState: function (uiState, bindings) {
+		uiState.hostState = this.normalizeNativeHostState(bindings);
+		uiState.isRunning = uiState.hostState.status === 'running';
+
+		return Object.assign({}, uiState.hostState);
+	},
+
+	refreshNativeHostState: function (uiState) {
+		return this.loadStaticPrototypeHostBindings().then(L.bind(function (bindings) {
+			var hostState = this.setNativeHostState(uiState, bindings);
+
+			this.notifyShellListeners(uiState);
+			return hostState;
+		}, this));
+	},
+
+	saveNativeHostConfig: function (uiState, payload) {
+		this.setMessage(uiState, 'info', _('Saving host settings...'));
+		this.notifyShellListeners(uiState);
+
+		return this.saveStaticPrototypeHostConfig(payload).then(L.bind(function () {
+			return this.loadStaticPrototypeHostBindings().then(L.bind(function (bindings) {
+				var hostState = this.setNativeHostState(uiState, bindings);
+
+				this.setMessage(uiState, 'success', _('Host settings saved.'));
+				this.notifyShellListeners(uiState);
+				return hostState;
+			}, this));
+		}, this)).catch(L.bind(function (err) {
+			this.setMessage(uiState, 'error', this.rpcFailureMessage(err) || _('Failed to save host settings.'));
+			this.notifyShellListeners(uiState);
+			throw err;
+		}, this));
+	},
+
+	restartServiceFromNativeShellBridge: function (uiState) {
+		uiState.busy = true;
+		uiState.restartInFlight = true;
+		this.setMessage(uiState, 'info', _('Restarting service...'));
+		this.notifyShellListeners(uiState);
+
+		return this.restartService().then(L.bind(function (result) {
+			if (!this.isRpcSuccess(result))
+				throw new Error(this.rpcError(result) || _('Failed to restart service.'));
+
+			return this.loadStaticPrototypeHostBindingsAfterRestart().then(L.bind(function (bindings) {
+				this.setNativeHostState(uiState, bindings);
+				uiState.restartPending = false;
+				this.setMessage(uiState, 'success', _('Service restarted.'));
+				this.notifyShellListeners(uiState);
+
+				return {
+					isRunning: uiState.isRunning
+				};
+			}, this));
+		}, this)).catch(L.bind(function (err) {
+			this.setMessage(uiState, 'error', this.rpcFailureMessage(err) || _('Failed to restart service.'));
+			this.notifyShellListeners(uiState);
+			throw err;
+		}, this)).finally(L.bind(function () {
+			uiState.busy = false;
+			uiState.restartInFlight = false;
+			this.notifyShellListeners(uiState);
+		}, this));
 	},
 
 	buildStaticPrototypeQuery: function (bindings) {
@@ -3050,6 +3133,98 @@ return view.extend({
 		};
 	},
 
+	createNativePageShellBridge: function (uiState) {
+		var self = this;
+
+		return {
+			getSelectedApp: function () {
+				return uiState.selectedApp;
+			},
+			setSelectedApp: function (appId) {
+				if (!self.isSupportedApp(appId))
+					return uiState.selectedApp;
+
+				uiState.selectedApp = appId;
+				self.saveSelectedApp(appId);
+				if (uiState.hostState)
+					uiState.hostState.app = appId;
+				self.notifyShellListeners(uiState);
+
+				return uiState.selectedApp;
+			},
+			getServiceStatus: function () {
+				return {
+					isRunning: uiState.isRunning
+				};
+			},
+			getRestartState: function () {
+				return {
+					pending: !!uiState.restartPending,
+					inFlight: !!uiState.restartInFlight
+				};
+			},
+			setRestartState: function (restartState) {
+				if (!restartState)
+					return;
+
+				if (typeof restartState.pending === 'boolean')
+					uiState.restartPending = restartState.pending;
+				if (typeof restartState.inFlight === 'boolean')
+					uiState.restartInFlight = restartState.inFlight;
+
+				self.notifyShellListeners(uiState);
+			},
+			getHostState: function () {
+				return Object.assign({}, uiState.hostState || self.normalizeNativeHostState({ app: uiState.selectedApp }));
+			},
+			getMessage: function () {
+				return uiState.message ? {
+					kind: uiState.message.kind,
+					text: uiState.message.text
+				} : null;
+			},
+			subscribe: function (listener) {
+				if (typeof listener !== 'function')
+					return function () {};
+
+				uiState.shellListeners.push(listener);
+				return function () {
+					var nextListeners = [];
+
+					uiState.shellListeners.forEach(function (candidate) {
+						if (candidate !== listener)
+							nextListeners.push(candidate);
+					});
+					uiState.shellListeners = nextListeners;
+				};
+			},
+			refreshServiceStatus: async function () {
+				var hostState = await self.refreshNativeHostState(uiState);
+
+				return {
+					isRunning: hostState.status === 'running'
+				};
+			},
+			refreshHostState: async function () {
+				return self.refreshNativeHostState(uiState);
+			},
+			saveHostConfig: async function (payload) {
+				return self.saveNativeHostConfig(uiState, payload);
+			},
+			showMessage: function (kind, text) {
+				self.setMessage(uiState, kind, text);
+				self.notifyShellListeners(uiState);
+			},
+			clearMessage: function () {
+				self.clearMessage(uiState);
+				self.notifyShellListeners(uiState);
+			},
+			restartService: async function () {
+				return self.restartServiceFromNativeShellBridge(uiState);
+			}
+		};
+	},
+
 	createShellBridge: function (uiState, statusNodes, shellNodes) {
 		var self = this;
 
@@ -3459,9 +3634,71 @@ return view.extend({
 			}
 		},
 
+	renderNativePage: function (data) {
+		var self = this;
+		var selectedApp = this.getSelectedApp();
+		var hostBindings = this.getStaticPrototypeBindings(data || []);
+		var uiState = this.createUiState(hostBindings.status === 'running', selectedApp);
+		var wrapper = E('div', {
+			'id': 'ccswitch-openwrt-native-page-root'
+		});
+
+		this.setNativeHostState(uiState, hostBindings);
+		this.clearMessage(uiState);
+
+		wrapper.appendChild(this.createInlineStateNotice(
+			'info',
+			null,
+			_('Loading the OpenWrt-native workspace...')
+		));
+
+		window.setTimeout(function () {
+			self.loadSharedProviderBundle().then(function (api) {
+				var handle;
+
+				if (!api || typeof api.mountPage !== 'function') {
+					throw new Error(_('The shared provider bundle did not register a page-shell mount API.'));
+				}
+
+				while (wrapper.firstChild)
+					wrapper.removeChild(wrapper.firstChild);
+
+				return Promise.resolve(api.mountPage({
+					target: wrapper,
+					transport: self.createProviderTransport(),
+					shell: self.createNativePageShellBridge(uiState)
+				})).then(function (mountedHandle) {
+					handle = mountedHandle;
+					uiState.mountHandle = self.normalizeMountHandle(handle);
+				});
+			}).catch(function (err) {
+				var fallback = self.renderStaticPrototype([
+					data[0],
+					data[1],
+					data[2],
+					{}
+				]);
+
+				while (wrapper.firstChild)
+					wrapper.removeChild(wrapper.firstChild);
+
+				wrapper.appendChild(self.createInlineStateNotice(
+					'error',
+					_('Native page shell unavailable'),
+					self.rpcFailureMessage(err) || _('Falling back to the packaged prototype surface because the native page shell failed to load.')
+				));
+				wrapper.appendChild(fallback);
+			});
+		}, 0);
+
+		return wrapper;
+	},
+
 		render: function (data) {
 			if (OPENWRT_STATIC_PROTOTYPE_MODE)
 				return Promise.resolve(this.renderStaticPrototype(data));
+
+			return Promise.resolve(this.renderNativePage(data));
 
 			var selectedApp = this.getSelectedApp();
 			var isRunning = this.parseServiceState(data[1]);
