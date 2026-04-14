@@ -477,7 +477,6 @@ pub fn strip_thinking_blocks(mut body: Value) -> Value {
 
     body
 }
-
 // ─── 内部辅助 ─────────────────────────────────
 
 /// 从请求体的 `system` 字段提取文本（处理 string/array 两种格式）。
@@ -1406,7 +1405,6 @@ mod tests {
         assert_eq!(content[0]["type"], "text");
         assert_eq!(content[1]["type"], "text");
     }
-
     // === strip_thinking_blocks 测试 ===
 
     #[test]
