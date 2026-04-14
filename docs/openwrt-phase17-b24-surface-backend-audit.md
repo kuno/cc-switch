@@ -22,6 +22,22 @@ Categories:
 - `needs backend`: visible control would need new backend/RPC semantics
 - `placeholder-only`: visible control is intentionally mock/inert and must stay unsupported until rebound deliberately
 
+### 0. Remaining visible controls
+
+- page-local theme toggle: `real now`
+  - the B2.4 prototype wires the visible `Light` / `Dark` button to local theme state and rerendering; no backend or RPC support is needed
+  - source: `prototype-b24/index.html:1104`, `:2204`, `:2275-2278`
+- app picker trigger + app menu rows: `real now`
+  - this control already switches between the three supported OpenWrt app scopes using the payload that `settings.js` loads for every app before posting into the prototype
+  - source: `settings.js:718-823`; `prototype-b24/index.html:1171`, `:2014-2045`, `:2290-2292`
+- footer `Cancel`: `adapter-only`
+  - the button is visible in the selected-provider footer, but the current prototype binds no handler to it; eventual semantics are local editor/reset/navigation behavior, not new backend semantics
+  - source: `prototype-b24/index.html:1208-1210`, `:2210-2278`
+- other still-visible interactive controls in `prototype-b24`: already classified above
+  - workspace switcher: `prototype-b24/index.html:1200-1205`, `:2048-2060`
+  - section tabs: `prototype-b24/index.html:1205`, `:2147-2158`
+  - modal close/cancel: `prototype-b24/index.html:1224`, `:1245-1247`, `:2244-2253`
+
 ### 1. Top daemon band
 
 - running state text: `real now`
