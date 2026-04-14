@@ -474,6 +474,21 @@ describe("OpenWrt settings shared-provider shell", () => {
     });
   });
 
+  it("keeps restart shell-owned when building shared provider mount options", () => {
+    const { settings } = loadSettingsView("codex");
+    const uiState = settings.createUiState(true, "codex");
+    const statusNodes = settings.createStatusPanel(uiState);
+    const shellNodes = settings.createProviderShell(uiState, statusNodes);
+    const mountOptions = settings.createSharedProviderMountOptions(
+      uiState,
+      statusNodes,
+      shellNodes,
+    );
+
+    expect(mountOptions.shell.restartService).toEqual(expect.any(Function));
+    expect("restartService" in mountOptions.transport).toBe(false);
+  });
+
   it("wires raw rpc transport methods for the shared runtime surface", async () => {
     const { settings } = loadSettingsView();
     const transport = settings.createRuntimeTransport();
@@ -840,10 +855,10 @@ describe("OpenWrt settings shared-provider shell", () => {
       "ccswitch-host-shared-mount ccswitch-host-provider-mount",
     );
     expect(runtimeShell?.className).toBe(
-      "ccswitch-host-surface ccswitch-host-runtime-shell",
+      "ccswitch-host-surface ccswitch-host-runtime-shell ccswitch-host-nonlive-shell",
     );
     expect(providerShell?.className).toBe(
-      "ccswitch-host-surface ccswitch-host-provider-shell",
+      "ccswitch-host-surface ccswitch-host-provider-shell ccswitch-host-nonlive-shell",
     );
     expect(runtimeShell?.contains(shellNodes.runtimeMountRoot)).toBe(true);
     expect(providerShell?.contains(shellNodes.mountRoot)).toBe(true);
@@ -852,6 +867,26 @@ describe("OpenWrt settings shared-provider shell", () => {
     for (const phrase of FORBIDDEN_DESKTOP_SHELL_PHRASES) {
       expect(combinedText).not.toContain(phrase);
     }
+  });
+
+  it("keeps the b24 prototype provider search local and non-live shell controls visibly inert", () => {
+    const source = readFileSync(
+      path.resolve(
+        process.cwd(),
+        "openwrt/luci-app-ccswitch/htdocs/luci-static/resources/ccswitch/prototype-b24/index.html",
+      ),
+      "utf8",
+    );
+
+    expect(source).toContain('id="providerSearch"');
+    expect(source).toContain("function filteredProviders(app)");
+    expect(source).toContain("function resetProviderFilter()");
+    expect(source).toContain("resetProviderFilter();");
+    expect(source).toContain("providerFilter: \"\"");
+    expect(source).toContain("Stop stays unsupported in this prototype shell");
+    expect(source).toContain('class="chip non-live"');
+    expect(source).toContain('class="inline-input mono non-live"');
+    expect(source).toContain('class="chip-select non-live"');
   });
 
   it("injects explicit host-shell layout fallbacks for narrow widths", () => {

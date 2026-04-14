@@ -261,6 +261,31 @@
         color: var(--success);
       }
 
+      .chip.non-live,
+      .inline-input.non-live,
+      .search.non-live {
+        opacity: 0.58;
+      }
+
+      .chip.non-live {
+        background: color-mix(in srgb, var(--button) 84%, transparent);
+        color: var(--muted);
+        border-style: dashed;
+        cursor: not-allowed;
+      }
+
+      .inline-input.non-live,
+      .search.non-live {
+        background: color-mix(in srgb, var(--panel-soft) 88%, transparent);
+        color: var(--muted);
+        border-style: dashed;
+        box-shadow: none;
+      }
+
+      .search.non-live::placeholder {
+        color: var(--muted);
+      }
+
       .chip.active {
         background: var(--accent);
         color: #fff;
@@ -1112,15 +1137,15 @@
             <div class="band-actions">
               <div class="status-text" id="daemonStatusText">Running</div>
               <div class="chip success" id="daemonHealthChip">Healthy</div>
-              <div class="chip active">Restart</div>
-              <div class="chip">Stop</div>
-              <select class="chip-select" id="loggingValue" aria-label="Logging level">
+              <div class="chip active" id="restartChip">Restart</div>
+              <div class="chip non-live" aria-disabled="true" title="Stop stays unsupported in this prototype shell">Stop</div>
+              <select class="chip-select non-live" id="loggingValue" aria-label="Logging level" aria-disabled="true" tabindex="-1">
                 <option value="debug">Debug</option>
                 <option value="info" selected>Info</option>
                 <option value="warn">Warn</option>
                 <option value="error">Error</option>
               </select>
-              <div class="chip active meta">Save</div>
+              <div class="chip non-live meta" aria-disabled="true">Save</div>
             </div>
             <div class="band-divider"></div>
             <div class="band-details">
@@ -1130,11 +1155,11 @@
                 <div class="grid">
                   <div class="field">
                     <label>Listen address</label>
-                    <input class="inline-input mono" id="listenAddressValue" value="0.0.0.0" />
+                    <input class="inline-input mono non-live" id="listenAddressValue" value="0.0.0.0" readonly aria-readonly="true" />
                   </div>
                   <div class="field">
                     <label>Listen port</label>
-                    <input class="inline-input mono" id="listenPortValue" value="15721" />
+                    <input class="inline-input mono non-live" id="listenPortValue" value="15721" readonly aria-readonly="true" />
                   </div>
                 </div>
               </div>
@@ -1144,11 +1169,11 @@
                 <div class="grid">
                   <div class="field">
                     <label>HTTP proxy</label>
-                    <input class="inline-input mono" id="httpProxyValue" value="http://127.0.0.1:7890" />
+                    <input class="inline-input mono non-live" id="httpProxyValue" value="http://127.0.0.1:7890" readonly aria-readonly="true" />
                   </div>
                   <div class="field">
                     <label>HTTPS proxy</label>
-                    <input class="inline-input mono" id="httpsProxyValue" value="http://127.0.0.1:7890" />
+                    <input class="inline-input mono non-live" id="httpsProxyValue" value="http://127.0.0.1:7890" readonly aria-readonly="true" />
                   </div>
                 </div>
               </div>
@@ -1177,7 +1202,7 @@
           <aside class="sidebar">
             <div class="sidebar-head">Providers</div>
             <div class="search-row">
-              <input class="search" placeholder="Search provider or endpoint" />
+              <input class="search" id="providerSearch" placeholder="Search provider or endpoint" />
               <div class="chip">All</div>
             </div>
             <div class="provider-list" id="providerList"></div>
@@ -1447,6 +1472,7 @@
         app: "claude",
         workspace: "providers",
         selectedProvider: 0,
+        providerFilter: "",
         activePreset: "",
         detailTab: 0,
         modalOpen: false,
@@ -1641,9 +1667,16 @@
         duplicateButton: document.querySelectorAll(".action-row button")[0],
         editorSaveButton: document.querySelectorAll(".action-row button")[1],
         footerSaveButton: document.querySelectorAll(".footer-actions .primary")[0],
+        providerSearch: document.getElementById("providerSearch"),
+        restartChip: document.getElementById("restartChip"),
       };
 
       let toastTimer = null;
+
+      function resetProviderFilter() {
+        state.providerFilter = "";
+        if (els.providerSearch) els.providerSearch.value = "";
+      }
 
       function initFromQuery() {
         const params = new URLSearchParams(window.location.search);
@@ -1684,6 +1717,7 @@
         });
 
         clampSelection();
+        resetProviderFilter();
         state.selectedProvider = preferredProviderIndex(currentApp());
         state.activePreset = currentProvider()?.name || currentApp().presets[0] || "Custom";
         render();
@@ -1734,9 +1768,7 @@
       }
 
       function currentProvider() {
-        const app = currentApp();
-        if (!app.providers.length) return null;
-        return app.providers[Math.min(state.selectedProvider, app.providers.length - 1)];
+        return currentFilteredProvider();
       }
 
       function credentialSummaryValue(provider) {
@@ -1959,21 +1991,42 @@
 
       function resetDetailContext() {
         state.detailTab = 0;
+        resetProviderFilter();
         state.activePreset = currentProvider()?.name || currentApp().presets[0] || "Custom";
       }
 
       function clampSelection() {
-        const app = currentApp();
-        if (!app.providers.length) {
+        const providers = filteredProviders(currentApp());
+        if (!providers.length) {
           state.selectedProvider = 0;
           return;
         }
-        if (state.selectedProvider >= app.providers.length) state.selectedProvider = app.providers.length - 1;
+        if (state.selectedProvider >= providers.length) state.selectedProvider = providers.length - 1;
         if (state.selectedProvider < 0) state.selectedProvider = 0;
       }
 
+      function filteredProviders(app) {
+        const query = (state.providerFilter || "").trim().toLowerCase();
+        if (!app || !Array.isArray(app.providers)) return [];
+        if (!query) return app.providers;
+        return app.providers.filter((provider) => {
+          const haystack = [provider.name, provider.url, provider.baseUrl, provider.notes, provider.status]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
+          return haystack.includes(query);
+        });
+      }
+
+      function currentFilteredProvider() {
+        const app = currentApp();
+        const providers = filteredProviders(app);
+        if (!providers.length) return null;
+        return providers[Math.min(state.selectedProvider, providers.length - 1)];
+      }
+
       function countLabel(app) {
-        const count = app.providers.length;
+        const count = filteredProviders(app).length;
         if (!count) return "No providers";
         return `${count} provider${count === 1 ? "" : "s"}`;
       }
@@ -2038,9 +2091,9 @@
           button.addEventListener("click", (event) => {
             const key = event.currentTarget.dataset.app;
             state.app = key;
-            state.selectedProvider = preferredProviderIndex(APPS[key]);
             state.appMenuOpen = false;
             resetDetailContext();
+            state.selectedProvider = preferredProviderIndex(APPS[key]);
             render();
           });
         });
@@ -2079,6 +2132,8 @@
       }
 
       function renderProviders(app) {
+        const providers = filteredProviders(app);
+
         els.providerList.innerHTML = "";
         if (!app.providers.length) {
           els.providerList.innerHTML = `
@@ -2089,7 +2144,16 @@
           `;
           return;
         }
-        app.providers.forEach((provider, index) => {
+        if (!providers.length) {
+          els.providerList.innerHTML = `
+            <div class="provider-empty">
+              <div class="provider-empty-title">No providers match</div>
+              <div class="provider-empty-copy">Clear the local search to restore the full provider rail.</div>
+            </div>
+          `;
+          return;
+        }
+        providers.forEach((provider, index) => {
           const row = document.createElement("button");
           row.type = "button";
           row.className = `provider-row ${index === state.selectedProvider ? "selected" : ""}`.trim();
@@ -2113,7 +2177,7 @@
       }
 
       function renderEditor(app) {
-        const provider = currentProvider();
+        const provider = currentFilteredProvider();
         const editableWorkspace = state.workspace !== "routing";
         els.editorName.textContent = provider ? provider.name : app.label;
         els.editorSubtitle.textContent =
@@ -2207,6 +2271,7 @@
         renderProviders(app);
         renderEditor(app);
         const hasProvider = !!currentProvider();
+        els.providerSearch.value = state.providerFilter;
         els.duplicateButton.disabled = !hasProvider;
         els.editorSaveButton.disabled = !hasProvider;
         els.footerSaveButton.disabled = !hasProvider;
@@ -2272,14 +2337,19 @@
         showToast("Save stays placeholder-only in this prototype");
       });
 
-      els.themeToggle.addEventListener("click", () => {
-        state.theme = state.theme === "dark" ? "light" : "dark";
+      els.providerSearch.addEventListener("input", (event) => {
+        state.providerFilter = event.target.value || "";
+        state.selectedProvider = 0;
         render();
       });
 
-      els.loggingValue.addEventListener("change", (event) => {
-        state.host.logLevel = event.target.value || "info";
-        renderHost();
+      els.restartChip.addEventListener("click", () => {
+        showToast("Restart stays shell-owned in this prototype");
+      });
+
+      els.themeToggle.addEventListener("click", () => {
+        state.theme = state.theme === "dark" ? "light" : "dark";
+        render();
       });
 
       window.addEventListener("message", (event) => {
