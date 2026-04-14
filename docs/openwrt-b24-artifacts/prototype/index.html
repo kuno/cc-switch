@@ -26,6 +26,11 @@
         --button: #f5f8fd;
         --shadow: 0 24px 60px -34px rgba(50, 72, 103, 0.28);
         --shadow-soft: 0 16px 34px -28px rgba(50, 72, 103, 0.18);
+        --radius-panel: 28px;
+        --radius-card: 20px;
+        --radius-control: 16px;
+        --radius-icon: 12px;
+        --divider-inset: 20px;
       }
 
       body[data-theme="dark"] {
@@ -106,6 +111,7 @@
         color: var(--muted);
         font-size: 16px;
         font-weight: 520;
+        display: none;
       }
 
       .head-actions {
@@ -137,7 +143,7 @@
         background: var(--panel);
         backdrop-filter: blur(16px);
         border: 1px solid var(--line);
-        border-radius: 28px;
+        border-radius: var(--radius-panel);
         box-shadow: var(--shadow);
       }
 
@@ -196,7 +202,7 @@
       .band-divider {
         height: 1px;
         background: var(--line);
-        margin: 18px 0;
+        margin: 18px var(--divider-inset);
       }
 
       .band-details {
@@ -263,7 +269,7 @@
 
       .workspace {
         padding: 0;
-        overflow: hidden;
+        overflow: visible;
       }
 
       .host-settings {
@@ -276,7 +282,7 @@
       .host-card {
         background: var(--panel);
         border: 1px solid var(--line);
-        border-radius: 22px;
+        border-radius: var(--radius-card);
         box-shadow: var(--shadow-soft);
         padding: 16px;
       }
@@ -301,13 +307,24 @@
       }
 
       .workspace-top {
+        position: relative;
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 16px;
         padding: 18px 20px 14px;
-        border-bottom: 1px solid var(--line);
         background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent);
+        overflow: visible;
+      }
+
+      .workspace-top::after {
+        content: "";
+        position: absolute;
+        left: var(--divider-inset);
+        right: var(--divider-inset);
+        bottom: 0;
+        height: 1px;
+        background: var(--line);
       }
 
       .toolbar-group {
@@ -326,7 +343,7 @@
         height: 44px;
         padding: 0 14px 0 12px;
         border: 1px solid var(--line);
-        border-radius: 16px;
+        border-radius: var(--radius-control);
         background: var(--button);
         color: var(--text);
         display: inline-flex;
@@ -372,7 +389,7 @@
         right: 0;
         width: 360px;
         border: 1px solid var(--line);
-        border-radius: 22px;
+        border-radius: var(--radius-card);
         background: var(--panel-strong);
         box-shadow: var(--shadow);
         padding: 8px;
@@ -385,9 +402,19 @@
       }
 
       .app-menu-section + .app-menu-section {
+        position: relative;
         margin-top: 6px;
         padding-top: 8px;
-        border-top: 1px solid var(--line);
+      }
+
+      .app-menu-section + .app-menu-section::before {
+        content: "";
+        position: absolute;
+        left: var(--divider-inset);
+        right: var(--divider-inset);
+        top: 0;
+        height: 1px;
+        background: var(--line);
       }
 
       .app-menu-title {
@@ -402,7 +429,7 @@
       .app-menu-row {
         width: 100%;
         border: 0;
-        border-radius: 16px;
+        border-radius: var(--radius-control);
         background: transparent;
         color: var(--text);
         padding: 10px;
@@ -422,7 +449,7 @@
       .glyph-shell {
         width: 36px;
         height: 36px;
-        border-radius: 12px;
+        border-radius: var(--radius-icon);
         border: 1px solid var(--line);
         display: inline-flex;
         align-items: center;
@@ -518,8 +545,19 @@
       }
 
       .sidebar {
-        border-right: 1px solid var(--line);
+        position: relative;
         padding: 14px 14px 18px;
+        overflow: visible;
+      }
+
+      .sidebar::after {
+        content: "";
+        position: absolute;
+        top: var(--divider-inset);
+        bottom: var(--divider-inset);
+        right: 0;
+        width: 1px;
+        background: var(--line);
       }
 
       .sidebar-head {
@@ -541,7 +579,7 @@
         height: 42px;
         padding: 0 14px;
         border: 1px solid var(--line);
-        border-radius: 16px;
+        border-radius: var(--radius-control);
         background: var(--panel-soft);
         color: var(--soft-text);
         display: flex;
@@ -559,7 +597,7 @@
       .provider-empty {
         padding: 18px 16px;
         border: 1px dashed var(--line-strong);
-        border-radius: 18px;
+        border-radius: var(--radius-card);
         background: var(--panel-soft);
       }
 
@@ -579,7 +617,7 @@
       .provider-row {
         width: 100%;
         border: 1px solid var(--line);
-        border-radius: 18px;
+        border-radius: var(--radius-card);
         background: var(--row);
         box-shadow: var(--shadow-soft);
         padding: 12px 12px 10px;
@@ -641,6 +679,9 @@
 
       .editor {
         padding: 14px 18px 18px;
+        min-height: 100%;
+        display: flex;
+        flex-direction: column;
       }
 
       .editor-head {
@@ -730,7 +771,7 @@
         gap: 16px;
         padding: 14px 16px;
         border: 1px solid var(--line);
-        border-radius: 22px;
+        border-radius: var(--radius-card);
         background: var(--panel-soft);
         margin-bottom: 14px;
       }
@@ -787,7 +828,7 @@
       .editor-empty {
         padding: 18px;
         border: 1px dashed var(--line-strong);
-        border-radius: 22px;
+        border-radius: var(--radius-card);
         background: var(--panel-soft);
       }
 
@@ -831,7 +872,7 @@
       .value-box {
         min-height: 48px;
         border: 1px solid var(--line);
-        border-radius: 16px;
+        border-radius: var(--radius-control);
         background: var(--panel-strong);
         padding: 14px 16px;
         display: flex;
@@ -852,7 +893,7 @@
         width: 100%;
         min-height: 48px;
         border: 1px solid var(--line);
-        border-radius: 16px;
+        border-radius: var(--radius-control);
         background: var(--panel-strong);
         padding: 12px 14px;
         font: inherit;
@@ -876,9 +917,8 @@
         display: flex;
         justify-content: flex-end;
         gap: 10px;
-        margin-top: 18px;
-        padding-top: 16px;
-        border-top: 1px solid var(--line);
+        margin-top: auto;
+        padding-top: 24px;
       }
 
       .footer-actions button {
@@ -911,7 +951,7 @@
         bottom: 24px;
         max-width: 340px;
         padding: 14px 16px;
-        border-radius: 18px;
+        border-radius: var(--radius-card);
         border: 1px solid var(--line);
         background: var(--panel-strong);
         box-shadow: var(--shadow);
@@ -945,7 +985,7 @@
 
       .modal {
         width: min(720px, 100%);
-        border-radius: 28px;
+        border-radius: var(--radius-panel);
         border: 1px solid var(--line);
         background: var(--panel-strong);
         box-shadow: var(--shadow);
@@ -998,7 +1038,7 @@
         width: 100%;
         min-height: 48px;
         border: 1px solid var(--line);
-        border-radius: 16px;
+        border-radius: var(--radius-control);
         background: var(--panel-soft);
         padding: 12px 14px;
         font: inherit;
@@ -1029,7 +1069,15 @@
 
         .sidebar {
           border-right: 0;
-          border-bottom: 1px solid var(--line);
+        }
+
+        .sidebar::after {
+          top: auto;
+          bottom: 0;
+          left: var(--divider-inset);
+          right: var(--divider-inset);
+          width: auto;
+          height: 1px;
         }
 
         .band-grid {
@@ -1129,7 +1177,7 @@
           <aside class="sidebar">
             <div class="sidebar-head">Providers</div>
             <div class="search-row">
-              <div class="search">Search provider or endpoint</div>
+              <input class="search" placeholder="Search provider or endpoint" />
               <div class="chip">All</div>
             </div>
             <div class="provider-list" id="providerList"></div>
