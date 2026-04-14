@@ -1106,8 +1106,8 @@ export function SharedProviderManager({
               </CardDescription>
             </div>
             <div
-              data-ccswitch-region="provider-app-switch"
-              data-ccswitch-layout="wrap-row"
+              data-ccswitch-region="provider-app-picker"
+              data-ccswitch-layout="compact-row"
               className="inline-flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-border-default/80 bg-muted/25 p-1.5 shadow-sm"
               aria-label="Provider apps"
             >
