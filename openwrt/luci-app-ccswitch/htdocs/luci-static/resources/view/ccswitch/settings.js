@@ -17,8 +17,11 @@ var SHARED_PROVIDER_UI_GLOBAL_KEY = '__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__';
 var SHARED_PROVIDER_UI_SCRIPT_ID = 'ccswitch-openwrt-shared-provider-ui-bundle';
 var SHARED_PROVIDER_UI_STYLE_ID = 'ccswitch-openwrt-shared-provider-ui-styles';
 var HOST_PAGE_STYLE_ID = 'ccswitch-openwrt-host-page-shell-styles';
+var STATIC_PROTOTYPE_STYLE_ID = 'ccswitch-openwrt-static-prototype-styles';
 var SHARED_PROVIDER_UI_BUNDLE_PATH = '/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js';
 var SHARED_PROVIDER_UI_STYLE_PATH = '/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.css';
+var OPENWRT_B23_STATIC_PROTOTYPE_MODE = true;
+var OPENWRT_B23_STATIC_PROTOTYPE_PATH = '/luci-static/resources/ccswitch/prototype/index.html';
 var SHARED_PROVIDER_UI_FALLBACK_REASON_GATE_DISABLED = 'gate-disabled';
 var SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_FAILURE = 'bundle-failure';
 var SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_REGRESSION = 'bundle-regression';
@@ -383,12 +386,87 @@ var callRestartService = rpc.declare({
 });
 
 return view.extend({
+	handleSaveApply: null,
+	handleSave: null,
+	handleReset: null,
+
 	load: function () {
+		if (OPENWRT_B23_STATIC_PROTOTYPE_MODE)
+			return Promise.all([
+				uci.load('ccswitch'),
+				L.resolveDefault(callServiceList('ccswitch'), {}),
+				L.resolveDefault(callGetRuntimeStatus(), { ok: false }),
+				this.loadAllStaticPrototypeProviderStates()
+			]);
+
 		return Promise.all([
 			uci.load('ccswitch'),
 			L.resolveDefault(callServiceList('ccswitch'), {}),
 			this.loadProviderState(this.getSelectedApp())
 		]);
+	},
+
+	renderStaticPrototype: function (data) {
+		var bindings = this.getStaticPrototypeBindings(data || []);
+		var workspaceData = this.buildStaticPrototypeWorkspaceData(data || []);
+		var prototypeSrc = OPENWRT_B23_STATIC_PROTOTYPE_PATH + '?' + this.buildStaticPrototypeQuery(bindings);
+		var existingStyle = document.getElementById(STATIC_PROTOTYPE_STYLE_ID);
+		var wrapper = E('div', {
+			'id': 'ccswitch-static-prototype-shell',
+			'style': 'padding:0;margin:0;'
+		});
+		var frame = E('iframe', {
+			'src': prototypeSrc,
+			'title': _('CC Switch OpenWrt prototype'),
+			'style': 'display:block;width:100%;min-height:2200px;border:0;border-radius:28px;background:#fff;overflow:hidden;'
+		});
+		var syncHeight = function () {
+			try {
+				var doc = frame.contentWindow && frame.contentWindow.document;
+				var bodyHeight = doc && doc.body ? doc.body.scrollHeight : 0;
+				var rootHeight = doc && doc.documentElement ? doc.documentElement.scrollHeight : 0;
+				var nextHeight = Math.max(bodyHeight, rootHeight, 1200);
+
+				frame.style.height = nextHeight + 'px';
+			} catch (e) {
+				frame.style.height = '2200px';
+			}
+		};
+		var postWorkspaceData = function () {
+			try {
+				if (frame.contentWindow && typeof frame.contentWindow.postMessage === 'function') {
+					frame.contentWindow.postMessage({
+						type: 'ccswitch-prototype-live-data',
+						payload: workspaceData
+					}, '*');
+				}
+			} catch (e) {
+				/* no-op */
+			}
+		};
+
+		if (!existingStyle) {
+			existingStyle = E('style', {
+				'id': STATIC_PROTOTYPE_STYLE_ID
+			}, [
+				'.cbi-page-actions, .cbi-page-actions.control-group { display:none !important; }'
+			]);
+			document.head.appendChild(existingStyle);
+		}
+
+		frame.addEventListener('load', function () {
+			postWorkspaceData();
+			syncHeight();
+			window.setTimeout(function () {
+				postWorkspaceData();
+				syncHeight();
+			}, 50);
+			window.setTimeout(syncHeight, 300);
+		});
+
+		wrapper.appendChild(frame);
+
+		return wrapper;
 	},
 
 	parseServiceState: function (serviceStatus) {
@@ -550,6 +628,200 @@ return view.extend({
 		}
 	},
 
+	parseRuntimeStatusPayload: function (response) {
+		var parsed = null;
+		var service;
+
+		if (response && response.ok === true && response.result_json)
+			parsed = this.parseJsonString(response.result_json);
+
+		if (!parsed && response && response.status_json)
+			parsed = this.parseJsonString(response.status_json);
+
+		if (!parsed && response && typeof response === 'object' && response.service)
+			parsed = response;
+
+		service = parsed && parsed.service && typeof parsed.service === 'object' ? parsed.service : null;
+
+		return {
+			running: !!(service && service.running),
+			reachable: !!(service && service.reachable),
+			listenAddress: service && service.listenAddress ? String(service.listenAddress) : '',
+			listenPort: service && service.listenPort != null ? String(service.listenPort) : '',
+			proxyEnabled: !!(service && service.proxyEnabled),
+			enableLogging: !!(service && service.enableLogging),
+			statusSource: service && service.statusSource ? String(service.statusSource) : ''
+		};
+	},
+
+	getHostConfigSnapshot: function () {
+		return {
+			enabled: uci.get('ccswitch', 'main', 'enabled') === '1',
+			listenAddr: uci.get('ccswitch', 'main', 'listen_addr') || '',
+			listenPort: uci.get('ccswitch', 'main', 'listen_port') || '',
+			httpProxy: uci.get('ccswitch', 'main', 'http_proxy') || '',
+			httpsProxy: uci.get('ccswitch', 'main', 'https_proxy') || '',
+			logLevel: uci.get('ccswitch', 'main', 'log_level') || 'info'
+		};
+	},
+
+	getStaticPrototypeBindings: function (data) {
+		var serviceStatus = data && data[1] ? data[1] : {};
+		var runtimeResponse = data && data[2] ? data[2] : {};
+		var runtime = this.parseRuntimeStatusPayload(runtimeResponse);
+		var hostConfig = this.getHostConfigSnapshot();
+		var isRunning = this.parseServiceState(serviceStatus);
+		var proxyEnabled = runtime.statusSource ? runtime.proxyEnabled : !!(hostConfig.httpProxy || hostConfig.httpsProxy);
+		var health = 'unknown';
+
+		if (!isRunning)
+			health = 'stopped';
+		else if (runtime.statusSource)
+			health = runtime.reachable ? 'healthy' : 'degraded';
+
+		return {
+			app: this.getSelectedApp(),
+			status: isRunning ? 'running' : 'stopped',
+			health: health,
+			listenAddr: runtime.listenAddress || hostConfig.listenAddr || '0.0.0.0',
+			listenPort: runtime.listenPort || hostConfig.listenPort || '15721',
+			serviceLabel: _('Router daemon'),
+			httpProxy: hostConfig.httpProxy || '',
+			httpsProxy: hostConfig.httpsProxy || '',
+			proxyEnabled: proxyEnabled ? '1' : '0',
+			logLevel: hostConfig.logLevel || 'info'
+		};
+	},
+
+	buildStaticPrototypeQuery: function (bindings) {
+		var params = [];
+		var append = function (key, value) {
+			params.push(encodeURIComponent(key) + '=' + encodeURIComponent(value == null ? '' : String(value)));
+		};
+
+		append('app', bindings.app || 'claude');
+		append('status', bindings.status || 'stopped');
+		append('health', bindings.health || 'unknown');
+		append('listen_addr', bindings.listenAddr || '');
+		append('listen_port', bindings.listenPort || '');
+		append('service_label', bindings.serviceLabel || '');
+		append('http_proxy', bindings.httpProxy || '');
+		append('https_proxy', bindings.httpsProxy || '');
+		append('proxy_enabled', bindings.proxyEnabled || '0');
+		append('log_level', bindings.logLevel || 'info');
+
+		return params.join('&');
+	},
+
+	loadAllStaticPrototypeProviderStates: function () {
+		var self = this;
+		var requests = APP_OPTIONS.map(function (appMeta) {
+			return self.loadStaticPrototypeProviderState(appMeta.id);
+		});
+
+		return Promise.all(requests).then(function (states) {
+			var byApp = {};
+
+			APP_OPTIONS.forEach(function (appMeta, index) {
+				byApp[appMeta.id] = states[index];
+			});
+
+			return byApp;
+		});
+	},
+
+	loadStaticPrototypeProviderState: function (appId) {
+		return this.loadProviderState(appId).then(L.bind(function (providerState) {
+			return this.loadStaticPrototypeFailoverState(appId, providerState).then(L.bind(function (failoverByProviderId) {
+				var providers = Array.isArray(providerState.providers) ? providerState.providers : [];
+				var enrichedProviders = providers.map(function (provider) {
+					var providerId = provider && provider.providerId ? provider.providerId : null;
+					var failoverState = providerId && failoverByProviderId[providerId]
+						? failoverByProviderId[providerId]
+						: null;
+
+					return Object.assign({}, provider, {
+						failover: failoverState
+					});
+				});
+
+				return Object.assign({}, providerState, {
+					providers: enrichedProviders
+				});
+			}, this));
+		}, this));
+	},
+
+	loadStaticPrototypeFailoverState: function (appId, providerState) {
+		var self = this;
+		var providers = providerState && Array.isArray(providerState.providers) ? providerState.providers : [];
+		var requests = [];
+
+		providers.forEach(function (provider) {
+			var providerId = provider && provider.providerId ? provider.providerId : null;
+
+			if (!providerId)
+				return;
+
+			requests.push(
+				L.resolveDefault(callGetProviderFailover(appId, providerId), null).then(function (response) {
+					return {
+						providerId: providerId,
+						failover: self.parseStaticPrototypeFailoverState(response, providerId)
+					};
+				})
+			);
+		});
+
+		if (!requests.length)
+			return Promise.resolve({});
+
+		return Promise.all(requests).then(function (entries) {
+			var byProviderId = {};
+
+			entries.forEach(function (entry) {
+				if (!entry || !entry.providerId)
+					return;
+
+				byProviderId[entry.providerId] = entry.failover;
+			});
+
+			return byProviderId;
+		});
+	},
+
+	buildStaticPrototypeWorkspaceData: function (data) {
+		var providerStates = data && data[3] && typeof data[3] === 'object' ? data[3] : {};
+		var payload = {
+			apps: {}
+		};
+
+		APP_OPTIONS.forEach(function (appMeta) {
+			var state = providerStates[appMeta.id] || { providers: [], activeProviderId: null };
+			var providers = Array.isArray(state.providers) ? state.providers : [];
+
+			payload.apps[appMeta.id] = {
+				activeProviderId: state.activeProviderId || null,
+				providers: providers.map(function (provider) {
+					return {
+						providerId: provider.providerId || null,
+						name: provider.name || '',
+						baseUrl: provider.baseUrl || '',
+						tokenField: provider.tokenField || '',
+						tokenConfigured: !!provider.tokenConfigured,
+						tokenMasked: provider.tokenMasked || '',
+						model: provider.model || '',
+						notes: provider.notes || '',
+						active: !!provider.active,
+						failover: provider.failover || null
+					};
+				})
+			};
+		});
+
+		return payload;
+	},
+
 	parseProviderState: function (providerResponse, appId) {
 		var parsed = null;
 
@@ -563,6 +835,172 @@ return view.extend({
 			return this.emptyProviderView(appId);
 
 		return this.normalizeProviderView(parsed, null, null, appId);
+	},
+
+	parseStaticPrototypeFailoverState: function (response, fallbackProviderId) {
+		var parsed = null;
+		var queue = [];
+		var providerId;
+
+		if (response && response.ok === true && response.result_json)
+			parsed = this.parseJsonString(response.result_json);
+
+		if (!parsed && response && response.status_json)
+			parsed = this.parseJsonString(response.status_json);
+
+		if (!parsed && response && typeof response === 'object' && response.providerId)
+			parsed = response;
+
+		if (!parsed || typeof parsed !== 'object')
+			return this.emptyStaticPrototypeFailoverState(fallbackProviderId);
+
+		queue = Array.isArray(parsed.failoverQueue)
+			? parsed.failoverQueue.map(L.bind(function (entry) {
+				return this.parseStaticPrototypeFailoverQueueEntry(entry);
+			}, this)).filter(function (entry) {
+				return entry != null;
+			})
+			: [];
+		providerId = this.getStaticPrototypeStringValue(parsed, ['providerId', 'provider_id']) || fallbackProviderId;
+
+		return {
+			providerId: providerId,
+			proxyEnabled: this.getStaticPrototypeBooleanValue(parsed, ['proxyEnabled', 'proxy_enabled']),
+			autoFailoverEnabled: this.getStaticPrototypeBooleanValue(parsed, ['autoFailoverEnabled', 'auto_failover_enabled']),
+			maxRetries: this.getStaticPrototypeNumberValue(parsed, ['maxRetries', 'max_retries']),
+			activeProviderId: this.getStaticPrototypeOptionalStringValue(parsed, ['activeProviderId', 'active_provider_id']),
+			inFailoverQueue: this.getStaticPrototypeBooleanValue(parsed, ['inFailoverQueue', 'in_failover_queue']),
+			queuePosition: this.getStaticPrototypeOptionalNumberValue(parsed, ['queuePosition', 'queue_position']),
+			sortIndex: this.getStaticPrototypeOptionalNumberValue(parsed, ['sortIndex', 'sort_index']),
+			providerHealth: this.parseStaticPrototypeProviderHealth(parsed.providerHealth, providerId),
+			failoverQueueDepth: this.getStaticPrototypeNumberValue(parsed, ['failoverQueueDepth', 'failover_queue_depth']) || queue.length,
+			failoverQueue: queue
+		};
+	},
+
+	parseStaticPrototypeFailoverQueueEntry: function (entry) {
+		var providerId;
+
+		if (!entry || typeof entry !== 'object')
+			return null;
+
+		providerId = this.getStaticPrototypeStringValue(entry, ['providerId', 'provider_id']);
+		if (!providerId)
+			return null;
+
+		return {
+			providerId: providerId,
+			providerName: this.getStaticPrototypeStringValue(entry, ['providerName', 'provider_name']),
+			sortIndex: this.getStaticPrototypeOptionalNumberValue(entry, ['sortIndex', 'sort_index']),
+			active: this.getStaticPrototypeBooleanValue(entry, ['active']),
+			health: this.parseStaticPrototypeProviderHealth(entry.health, providerId)
+		};
+	},
+
+	parseStaticPrototypeProviderHealth: function (health, fallbackProviderId) {
+		if (!health || typeof health !== 'object') {
+			return {
+				providerId: fallbackProviderId,
+				observed: false,
+				healthy: true,
+				consecutiveFailures: 0,
+				lastSuccessAt: null,
+				lastFailureAt: null,
+				lastError: null,
+				updatedAt: null
+			};
+		}
+
+		return {
+			providerId: this.getStaticPrototypeStringValue(health, ['providerId', 'provider_id']) || fallbackProviderId,
+			observed: this.getStaticPrototypeBooleanValue(health, ['observed']),
+			healthy: !health.hasOwnProperty('healthy')
+				? true
+				: this.getStaticPrototypeBooleanValue(health, ['healthy']),
+			consecutiveFailures: this.getStaticPrototypeNumberValue(health, ['consecutiveFailures', 'consecutive_failures']),
+			lastSuccessAt: this.getStaticPrototypeOptionalStringValue(health, ['lastSuccessAt', 'last_success_at']),
+			lastFailureAt: this.getStaticPrototypeOptionalStringValue(health, ['lastFailureAt', 'last_failure_at']),
+			lastError: this.getStaticPrototypeOptionalStringValue(health, ['lastError', 'last_error']),
+			updatedAt: this.getStaticPrototypeOptionalStringValue(health, ['updatedAt', 'updated_at'])
+		};
+	},
+
+	emptyStaticPrototypeFailoverState: function (providerId) {
+		return {
+			providerId: providerId,
+			proxyEnabled: false,
+			autoFailoverEnabled: false,
+			maxRetries: 0,
+			activeProviderId: null,
+			inFailoverQueue: false,
+			queuePosition: null,
+			sortIndex: null,
+			providerHealth: this.parseStaticPrototypeProviderHealth(null, providerId),
+			failoverQueueDepth: 0,
+			failoverQueue: []
+		};
+	},
+
+	getStaticPrototypeStringValue: function (value, keys) {
+		var i;
+
+		if (!value || typeof value !== 'object')
+			return '';
+
+		for (i = 0; i < keys.length; i++) {
+			if (typeof value[keys[i]] === 'string')
+				return value[keys[i]];
+		}
+
+		return '';
+	},
+
+	getStaticPrototypeOptionalStringValue: function (value, keys) {
+		var result = this.getStaticPrototypeStringValue(value, keys);
+
+		return result || null;
+	},
+
+	getStaticPrototypeNumberValue: function (value, keys) {
+		var i;
+
+		if (!value || typeof value !== 'object')
+			return 0;
+
+		for (i = 0; i < keys.length; i++) {
+			if (typeof value[keys[i]] === 'number' && isFinite(value[keys[i]]))
+				return value[keys[i]];
+		}
+
+		return 0;
+	},
+
+	getStaticPrototypeOptionalNumberValue: function (value, keys) {
+		var i;
+
+		if (!value || typeof value !== 'object')
+			return null;
+
+		for (i = 0; i < keys.length; i++) {
+			if (typeof value[keys[i]] === 'number' && isFinite(value[keys[i]]))
+				return value[keys[i]];
+		}
+
+		return null;
+	},
+
+	getStaticPrototypeBooleanValue: function (value, keys) {
+		var i;
+
+		if (!value || typeof value !== 'object')
+			return false;
+
+		for (i = 0; i < keys.length; i++) {
+			if (value[keys[i]])
+				return true;
+		}
+
+		return false;
 	},
 
 	extractPhase2ListPayload: function (response) {
@@ -2518,6 +2956,9 @@ return view.extend({
 		},
 
 		render: function (data) {
+			if (OPENWRT_B23_STATIC_PROTOTYPE_MODE)
+				return Promise.resolve(this.renderStaticPrototype(data));
+
 			var selectedApp = this.getSelectedApp();
 			var isRunning = this.parseServiceState(data[1]);
 			var providerState = data[2];
