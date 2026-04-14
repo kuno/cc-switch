@@ -193,6 +193,18 @@
         margin-left: auto;
       }
 
+      .band-divider {
+        height: 1px;
+        background: var(--line);
+        margin: 18px 0;
+      }
+
+      .band-details {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+      }
+
       .band-actions .status-text {
         font-size: 20px;
         font-weight: 760;
@@ -970,6 +982,10 @@
       }
 
       @media (max-width: 1200px) {
+        .band-details {
+          grid-template-columns: 1fr;
+        }
+
         .workspace-body {
           grid-template-columns: 1fr;
         }
@@ -1020,6 +1036,37 @@
                 <option value="error">Error</option>
               </select>
             </div>
+            <div class="band-divider"></div>
+            <div class="band-details">
+              <div class="host-card">
+                <h3>Listen settings</h3>
+                <p>Daemon network settings.</p>
+                <div class="grid">
+                  <div class="field">
+                    <label>Listen address</label>
+                    <div class="value-box mono" id="listenAddressValue">0.0.0.0</div>
+                  </div>
+                  <div class="field">
+                    <label>Listen port</label>
+                    <div class="value-box mono" id="listenPortValue">15721</div>
+                  </div>
+                </div>
+              </div>
+              <div class="host-card">
+                <h3>Outbound proxy</h3>
+                <p>Optional upstream routing.</p>
+                <div class="grid">
+                  <div class="field">
+                    <label>HTTP proxy</label>
+                    <div class="value-box mono" id="httpProxyValue">http://127.0.0.1:7890</div>
+                  </div>
+                  <div class="field">
+                    <label>HTTPS proxy</label>
+                    <div class="value-box mono" id="httpsProxyValue">http://127.0.0.1:7890</div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
           <div class="band-cell is-hidden">
             <div class="cell-label">Listen endpoint</div>
@@ -1028,37 +1075,6 @@
           <div class="band-cell is-hidden">
             <div class="cell-label">Service</div>
             <div class="cell-value" id="serviceLabelValue">Router daemon</div>
-          </div>
-        </div>
-      </section>
-
-      <section class="host-settings">
-        <div class="host-card">
-          <h3>Listen settings</h3>
-          <p>Daemon network settings.</p>
-          <div class="grid">
-            <div class="field">
-              <label>Listen address</label>
-              <div class="value-box mono" id="listenAddressValue">0.0.0.0</div>
-            </div>
-            <div class="field">
-              <label>Listen port</label>
-              <div class="value-box mono" id="listenPortValue">15721</div>
-            </div>
-          </div>
-        </div>
-        <div class="host-card">
-          <h3>Outbound proxy</h3>
-          <p>Optional upstream routing.</p>
-          <div class="grid">
-            <div class="field">
-              <label>HTTP proxy</label>
-              <div class="value-box mono" id="httpProxyValue">http://127.0.0.1:7890</div>
-            </div>
-            <div class="field">
-              <label>HTTPS proxy</label>
-              <div class="value-box mono" id="httpsProxyValue">http://127.0.0.1:7890</div>
-            </div>
           </div>
         </div>
       </section>
