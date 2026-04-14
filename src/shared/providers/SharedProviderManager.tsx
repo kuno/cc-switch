@@ -33,9 +33,11 @@ import {
   getSharedProviderPresets,
   inferSharedProviderPresetId,
   OPENWRT_SUPPORTED_PROVIDER_APPS,
+  supportsProviderFailoverControls,
   type SharedProviderAppId,
   type SharedProviderCapabilities,
   type SharedProviderEditorPayload,
+  type SharedProviderFailoverState,
   type SharedProviderState,
   type SharedProviderView,
 } from "./domain";
@@ -124,6 +126,10 @@ function capabilitiesQueryKey(appId: SharedProviderAppId) {
   return ["shared-provider-manager", "capabilities", appId] as const;
 }
 
+function failoverQueryKey(appId: SharedProviderAppId, providerId: string) {
+  return ["shared-provider-manager", "failover", appId, providerId] as const;
+}
+
 function createSelectedProviderState(): Record<SharedProviderAppId, string | null> {
   return {
     claude: null,
@@ -134,7 +140,7 @@ function createSelectedProviderState(): Record<SharedProviderAppId, string | nul
 
 function createDetailTabState(): Record<
   SharedProviderAppId,
-  "general" | "credentials"
+  "general" | "failover" | "credentials"
 > {
   return {
     claude: "general",
@@ -609,10 +615,6 @@ export function SharedProviderManager({
     },
   });
 
-  const isMutating =
-    saveMutation.isPending ||
-    activateMutation.isPending ||
-    deleteMutation.isPending;
   const isRegionLoading =
     (stateQuery.data == null || capabilitiesQuery.data == null) &&
     !(stateQuery.error || capabilitiesQuery.error);
@@ -645,6 +647,116 @@ export function SharedProviderManager({
     filteredProviders[0] ??
     null;
   const isRefreshing = stateQuery.isFetching || capabilitiesQuery.isFetching;
+  const supportsFailoverControls = supportsProviderFailoverControls(adapter);
+
+  const failoverQuery = useQuery({
+    queryKey: failoverQueryKey(currentApp, selectedProvider?.providerId ?? ""),
+    queryFn: () =>
+      adapter.getProviderFailoverState!(
+        currentApp,
+        selectedProvider!.providerId!,
+      ),
+    enabled:
+      supportsFailoverControls &&
+      Boolean(selectedProvider?.providerId) &&
+      detailTabByApp[currentApp] === "failover",
+  });
+
+  const addToFailoverQueueMutation = useMutation({
+    mutationFn: async (variables: {
+      appId: SharedProviderAppId;
+      providerId: string;
+    }) => adapter.addToFailoverQueue!(variables.appId, variables.providerId),
+    onSuccess: async (_, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: stateQueryKey(variables.appId) }),
+        queryClient.invalidateQueries({
+          queryKey: failoverQueryKey(variables.appId, variables.providerId),
+        }),
+      ]);
+    },
+    onError: (error) => setNotice(buildErrorNotice("Add to failover queue", error)),
+  });
+
+  const removeFromFailoverQueueMutation = useMutation({
+    mutationFn: async (variables: {
+      appId: SharedProviderAppId;
+      providerId: string;
+    }) => adapter.removeFromFailoverQueue!(variables.appId, variables.providerId),
+    onSuccess: async (_, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: stateQueryKey(variables.appId) }),
+        queryClient.invalidateQueries({
+          queryKey: failoverQueryKey(variables.appId, variables.providerId),
+        }),
+      ]);
+    },
+    onError: (error) =>
+      setNotice(buildErrorNotice("Remove from failover queue", error)),
+  });
+
+  const autoFailoverMutation = useMutation({
+    mutationFn: async (variables: {
+      appId: SharedProviderAppId;
+      enabled: boolean;
+      providerId: string;
+    }) => adapter.setAutoFailoverEnabled!(variables.appId, variables.enabled),
+    onSuccess: async (_, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: stateQueryKey(variables.appId) }),
+        queryClient.invalidateQueries({
+          queryKey: failoverQueryKey(variables.appId, variables.providerId),
+        }),
+      ]);
+    },
+    onError: (error) =>
+      setNotice(buildErrorNotice("Update auto failover", error)),
+  });
+
+  const reorderFailoverQueueMutation = useMutation({
+    mutationFn: async (variables: {
+      appId: SharedProviderAppId;
+      providerId: string;
+      providerIds: string[];
+    }) => adapter.reorderFailoverQueue!(variables.appId, variables.providerIds),
+    onSuccess: async (_, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: stateQueryKey(variables.appId) }),
+        queryClient.invalidateQueries({
+          queryKey: failoverQueryKey(variables.appId, variables.providerId),
+        }),
+      ]);
+    },
+    onError: (error) =>
+      setNotice(buildErrorNotice("Reorder failover queue", error)),
+  });
+
+  const maxRetriesMutation = useMutation({
+    mutationFn: async (variables: {
+      appId: SharedProviderAppId;
+      providerId: string;
+      value: number;
+    }) => adapter.setMaxRetries!(variables.appId, variables.value),
+    onSuccess: async (_, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: stateQueryKey(variables.appId) }),
+        queryClient.invalidateQueries({
+          queryKey: failoverQueryKey(variables.appId, variables.providerId),
+        }),
+      ]);
+    },
+    onError: (error) => setNotice(buildErrorNotice("Update max retries", error)),
+  });
+
+  const isMutating =
+    saveMutation.isPending ||
+    activateMutation.isPending ||
+    deleteMutation.isPending ||
+    addToFailoverQueueMutation.isPending ||
+    removeFromFailoverQueueMutation.isPending ||
+    autoFailoverMutation.isPending ||
+    reorderFailoverQueueMutation.isPending ||
+    maxRetriesMutation.isPending;
 
   function getCurrentAppSwitchButton(appId: SharedProviderAppId = currentApp) {
     return appSwitchRefs.current[appId] ?? null;
@@ -865,6 +977,66 @@ export function SharedProviderManager({
     await Promise.all([stateQuery.refetch(), capabilitiesQuery.refetch()]);
   }
 
+  function handleToggleSelectedProviderFailover(inQueue: boolean) {
+    if (!selectedProvider?.providerId || !supportsFailoverControls) {
+      return;
+    }
+
+    setNotice(null);
+
+    if (inQueue) {
+      removeFromFailoverQueueMutation.mutate({
+        appId: currentApp,
+        providerId: selectedProvider.providerId,
+      });
+      return;
+    }
+
+    addToFailoverQueueMutation.mutate({
+      appId: currentApp,
+      providerId: selectedProvider.providerId,
+    });
+  }
+
+  function handleAutoFailoverChange(enabled: boolean) {
+    if (!selectedProvider?.providerId || !supportsFailoverControls) {
+      return;
+    }
+
+    setNotice(null);
+    autoFailoverMutation.mutate({
+      appId: currentApp,
+      enabled,
+      providerId: selectedProvider.providerId,
+    });
+  }
+
+  function handleFailoverQueueReorder(nextProviderIds: string[]) {
+    if (!selectedProvider?.providerId || !supportsFailoverControls) {
+      return;
+    }
+
+    setNotice(null);
+    reorderFailoverQueueMutation.mutate({
+      appId: currentApp,
+      providerId: selectedProvider.providerId,
+      providerIds: nextProviderIds,
+    });
+  }
+
+  function handleMaxRetriesSave(value: number) {
+    if (!selectedProvider?.providerId || !supportsFailoverControls) {
+      return;
+    }
+
+    setNotice(null);
+    maxRetriesMutation.mutate({
+      appId: currentApp,
+      providerId: selectedProvider.providerId,
+      value,
+    });
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -934,8 +1106,8 @@ export function SharedProviderManager({
               </CardDescription>
             </div>
             <div
-              data-ccswitch-region="provider-app-picker"
-              data-ccswitch-layout="compact-row"
+              data-ccswitch-region="provider-app-switch"
+              data-ccswitch-layout="wrap-row"
               className="inline-flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-border-default/80 bg-muted/25 p-1.5 shadow-sm"
               aria-label="Provider apps"
             >
@@ -1167,6 +1339,20 @@ export function SharedProviderManager({
                       appId={currentApp}
                       provider={selectedProvider}
                       detailTab={detailTabByApp[currentApp]}
+                      supportsFailoverControls={supportsFailoverControls}
+                      failoverState={
+                        detailTabByApp[currentApp] === "failover"
+                          ? (failoverQuery.data as SharedProviderFailoverState | undefined)
+                          : undefined
+                      }
+                      failoverLoading={failoverQuery.isLoading}
+                      failoverError={
+                        failoverQuery.error instanceof Error
+                          ? failoverQuery.error.message
+                          : failoverQuery.error
+                            ? String(failoverQuery.error)
+                            : null
+                      }
                       actionVisibility={getSharedProviderCardActionVisibility(
                         capabilities,
                         selectedProvider,
@@ -1183,6 +1369,10 @@ export function SharedProviderManager({
                           [currentApp]: tab,
                         }))
                       }
+                      onToggleFailoverQueue={handleToggleSelectedProviderFailover}
+                      onAutoFailoverEnabledChange={handleAutoFailoverChange}
+                      onReorderFailoverQueue={handleFailoverQueueReorder}
+                      onSetMaxRetries={handleMaxRetriesSave}
                       onEdit={() => openEditEditor(selectedProvider)}
                       onActivate={() => {
                         if (!selectedProvider.providerId) {
