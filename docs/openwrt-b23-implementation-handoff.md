@@ -120,12 +120,18 @@ What exists now:
   - `model`
   - `notes`
 - the daemon already maps these into app-specific env/config internally
+- the current selected-provider RPC already exists via `get_provider`, and its read model already returns:
+  - `base_url`
+  - `token_field`
+  - `token_configured`
+  - `token_masked`
+  - `model`
+  - `notes`
 
 What is missing:
 
-- a first-class OpenWrt detail/env read model for the selected provider
-- a clean normalized env/config DTO for UI consumption
-- a dedicated detail RPC, or equivalent richer provider-detail contract
+- a credentials-pane-specific normalization layer over the existing selected-provider detail data
+- any additional app-specific env/detail fields beyond the current `get_provider` contract, if the final UI really needs them
 
 ### Failover
 
@@ -190,7 +196,7 @@ The following fields from earlier mock passes should not be implemented as first
 
 ### Credentials pane
 
-- add provider detail/env RPC support
+- reuse the existing selected-provider detail RPC as the baseline
 - return normalized app-specific credential/config data for the selected provider
 - keep blank-secret-preserves-existing behavior
 
