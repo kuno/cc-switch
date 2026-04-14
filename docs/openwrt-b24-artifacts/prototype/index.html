@@ -232,6 +232,19 @@
         white-space: nowrap;
       }
 
+      .chip-button {
+        appearance: none;
+        cursor: pointer;
+        font: inherit;
+      }
+
+      .chip-button:disabled {
+        opacity: 0.58;
+        border-style: dashed;
+        color: var(--muted);
+        cursor: not-allowed;
+      }
+
       .chip-select {
         height: 30px;
         min-width: 110px;
@@ -259,6 +272,31 @@
         background: var(--success-soft);
         border-color: var(--success-line);
         color: var(--success);
+      }
+
+      .chip.non-live,
+      .inline-input.non-live,
+      .search.non-live {
+        opacity: 0.58;
+      }
+
+      .chip.non-live {
+        background: color-mix(in srgb, var(--button) 84%, transparent);
+        color: var(--muted);
+        border-style: dashed;
+        cursor: not-allowed;
+      }
+
+      .inline-input.non-live,
+      .search.non-live {
+        background: color-mix(in srgb, var(--panel-soft) 88%, transparent);
+        color: var(--muted);
+        border-style: dashed;
+        box-shadow: none;
+      }
+
+      .search.non-live::placeholder {
+        color: var(--muted);
       }
 
       .chip.active {
@@ -1112,15 +1150,16 @@
             <div class="band-actions">
               <div class="status-text" id="daemonStatusText">Running</div>
               <div class="chip success" id="daemonHealthChip">Healthy</div>
-              <div class="chip active">Restart</div>
-              <div class="chip">Stop</div>
+              <div class="chip active" id="restartChip">Restart</div>
+              <div class="chip non-live" aria-disabled="true" title="Stop stays unsupported in this prototype shell">Stop</div>
               <select class="chip-select" id="loggingValue" aria-label="Logging level">
+                <option value="trace">Trace</option>
                 <option value="debug">Debug</option>
                 <option value="info" selected>Info</option>
                 <option value="warn">Warn</option>
                 <option value="error">Error</option>
               </select>
-              <div class="chip active meta">Save</div>
+              <button class="chip chip-button meta" id="hostSaveButton" type="button" disabled>Save</button>
             </div>
             <div class="band-divider"></div>
             <div class="band-details">
@@ -1177,8 +1216,8 @@
           <aside class="sidebar">
             <div class="sidebar-head">Providers</div>
             <div class="search-row">
-              <input class="search" placeholder="Search provider or endpoint" />
-              <div class="chip">All</div>
+              <input class="search" id="providerSearch" placeholder="Search provider or endpoint" />
+              <button class="chip" id="providerFilterReset" type="button">All</button>
             </div>
             <div class="provider-list" id="providerList"></div>
           </aside>
@@ -1447,6 +1486,7 @@
         app: "claude",
         workspace: "providers",
         selectedProvider: 0,
+        providerFilter: "",
         activePreset: "",
         detailTab: 0,
         modalOpen: false,
@@ -1463,7 +1503,11 @@
           proxyEnabled: true,
           logLevel: "info",
         },
+        hostInitial: null,
+        hostSavePending: false,
       };
+
+      const HOST_LOG_LEVELS = ["error", "warn", "info", "debug", "trace"];
 
       function defaultTokenFieldForApp(appKey) {
         if (appKey === "codex") return "OPENAI_API_KEY";
@@ -1616,6 +1660,7 @@
         httpProxyValue: document.getElementById("httpProxyValue"),
         httpsProxyValue: document.getElementById("httpsProxyValue"),
         loggingValue: document.getElementById("loggingValue"),
+        hostSaveButton: document.getElementById("hostSaveButton"),
         appPicker: document.getElementById("appPicker"),
         detailWorkspaceSwitcher: document.getElementById("detailWorkspaceSwitcher"),
         providerList: document.getElementById("providerList"),
@@ -1641,9 +1686,17 @@
         duplicateButton: document.querySelectorAll(".action-row button")[0],
         editorSaveButton: document.querySelectorAll(".action-row button")[1],
         footerSaveButton: document.querySelectorAll(".footer-actions .primary")[0],
+        providerSearch: document.getElementById("providerSearch"),
+        providerFilterReset: document.getElementById("providerFilterReset"),
+        restartChip: document.getElementById("restartChip"),
       };
 
       let toastTimer = null;
+
+      function resetProviderFilter() {
+        state.providerFilter = "";
+        if (els.providerSearch) els.providerSearch.value = "";
+      }
 
       function initFromQuery() {
         const params = new URLSearchParams(window.location.search);
@@ -1684,6 +1737,7 @@
         });
 
         clampSelection();
+        resetProviderFilter();
         state.selectedProvider = preferredProviderIndex(currentApp());
         state.activePreset = currentProvider()?.name || currentApp().presets[0] || "Custom";
         render();
@@ -1691,6 +1745,91 @@
 
       function formatProxyValue(value) {
         return value && value.trim() ? value.trim() : "Not set";
+      }
+
+      function cloneHostFields(host) {
+        return {
+          listenAddr: host.listenAddr || "",
+          listenPort: host.listenPort || "",
+          httpProxy: host.httpProxy || "",
+          httpsProxy: host.httpsProxy || "",
+          logLevel: HOST_LOG_LEVELS.includes((host.logLevel || "").toLowerCase())
+            ? host.logLevel.toLowerCase()
+            : "info",
+        };
+      }
+
+      function normalizeHostFields(payload, fallback = state.host) {
+        const source = payload && typeof payload === "object" ? payload : {};
+        const reference = fallback && typeof fallback === "object" ? fallback : {};
+        const nextLogLevel = typeof source.logLevel === "string" && HOST_LOG_LEVELS.includes(source.logLevel.toLowerCase())
+          ? source.logLevel.toLowerCase()
+          : cloneHostFields(reference).logLevel;
+
+        return {
+          listenAddr: typeof source.listenAddr === "string" ? source.listenAddr : (reference.listenAddr || ""),
+          listenPort: typeof source.listenPort === "string" ? source.listenPort : (reference.listenPort || ""),
+          httpProxy: typeof source.httpProxy === "string" ? source.httpProxy : (reference.httpProxy || ""),
+          httpsProxy: typeof source.httpsProxy === "string" ? source.httpsProxy : (reference.httpsProxy || ""),
+          logLevel: nextLogLevel,
+        };
+      }
+
+      function hostSavePayload() {
+        return cloneHostFields(state.host);
+      }
+
+      function hasHostChanges() {
+        if (!state.hostInitial) return false;
+        return JSON.stringify(hostSavePayload()) !== JSON.stringify(state.hostInitial);
+      }
+
+      function syncHostInputs() {
+        els.listenAddressValue.value = state.host.listenAddr;
+        els.listenPortValue.value = state.host.listenPort;
+        els.httpProxyValue.value = state.host.httpProxy;
+        els.httpsProxyValue.value = state.host.httpsProxy;
+        els.loggingValue.value = (state.host.logLevel || "info").toLowerCase();
+        els.hostSaveButton.disabled = state.hostSavePending || !hasHostChanges();
+        els.hostSaveButton.textContent = state.hostSavePending ? "Saving..." : "Save";
+      }
+
+      function applyHostBridgeState(payload) {
+        if (!payload || typeof payload !== "object") return;
+
+        state.host = {
+          ...state.host,
+          ...(typeof payload.status === "string" ? { status: payload.status } : {}),
+          ...(typeof payload.health === "string" ? { health: payload.health } : {}),
+          ...(typeof payload.serviceLabel === "string" ? { serviceLabel: payload.serviceLabel } : {}),
+          ...(Object.prototype.hasOwnProperty.call(payload, "proxyEnabled") ? { proxyEnabled: !!payload.proxyEnabled } : {}),
+          ...normalizeHostFields(payload, state.host),
+        };
+        state.hostInitial = cloneHostFields(state.host);
+        state.hostSavePending = false;
+        renderHost();
+      }
+
+      function postParentMessage(message) {
+        if (window.parent === window || !window.parent || typeof window.parent.postMessage !== "function") {
+          showToast("Host controls require the LuCI shell");
+          return false;
+        }
+
+        window.parent.postMessage(message, "*");
+        return true;
+      }
+
+      function requestHostSave() {
+        if (state.hostSavePending || !hasHostChanges()) return;
+        if (!postParentMessage({ type: "ccswitch-prototype-host-save", payload: hostSavePayload() })) return;
+
+        state.hostSavePending = true;
+        renderHost();
+      }
+
+      function requestRestart() {
+        postParentMessage({ type: "ccswitch-prototype-restart-service" });
       }
 
       function formatLogLevel(value) {
@@ -1715,11 +1854,7 @@
         els.daemonHealthChip.className = `chip ${host.health === "healthy" ? "success" : ""}`.trim();
         els.listenEndpointValue.textContent = `${host.listenAddr}:${host.listenPort}`;
         els.serviceLabelValue.textContent = host.serviceLabel;
-        els.listenAddressValue.value = host.listenAddr;
-        els.listenPortValue.value = host.listenPort;
-        els.httpProxyValue.value = formatProxyValue(host.httpProxy);
-        els.httpsProxyValue.value = formatProxyValue(host.httpsProxy);
-        els.loggingValue.value = (host.logLevel || "info").toLowerCase();
+        syncHostInputs();
       }
 
       function showToast(message) {
@@ -1734,9 +1869,7 @@
       }
 
       function currentProvider() {
-        const app = currentApp();
-        if (!app.providers.length) return null;
-        return app.providers[Math.min(state.selectedProvider, app.providers.length - 1)];
+        return currentFilteredProvider();
       }
 
       function credentialSummaryValue(provider) {
@@ -1959,21 +2092,42 @@
 
       function resetDetailContext() {
         state.detailTab = 0;
+        resetProviderFilter();
         state.activePreset = currentProvider()?.name || currentApp().presets[0] || "Custom";
       }
 
       function clampSelection() {
-        const app = currentApp();
-        if (!app.providers.length) {
+        const providers = filteredProviders(currentApp());
+        if (!providers.length) {
           state.selectedProvider = 0;
           return;
         }
-        if (state.selectedProvider >= app.providers.length) state.selectedProvider = app.providers.length - 1;
+        if (state.selectedProvider >= providers.length) state.selectedProvider = providers.length - 1;
         if (state.selectedProvider < 0) state.selectedProvider = 0;
       }
 
+      function filteredProviders(app) {
+        const query = (state.providerFilter || "").trim().toLowerCase();
+        if (!app || !Array.isArray(app.providers)) return [];
+        if (!query) return app.providers;
+        return app.providers.filter((provider) => {
+          const haystack = [provider.name, provider.url, provider.baseUrl, provider.notes, provider.status]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
+          return haystack.includes(query);
+        });
+      }
+
+      function currentFilteredProvider() {
+        const app = currentApp();
+        const providers = filteredProviders(app);
+        if (!providers.length) return null;
+        return providers[Math.min(state.selectedProvider, providers.length - 1)];
+      }
+
       function countLabel(app) {
-        const count = app.providers.length;
+        const count = filteredProviders(app).length;
         if (!count) return "No providers";
         return `${count} provider${count === 1 ? "" : "s"}`;
       }
@@ -2038,9 +2192,9 @@
           button.addEventListener("click", (event) => {
             const key = event.currentTarget.dataset.app;
             state.app = key;
-            state.selectedProvider = preferredProviderIndex(APPS[key]);
             state.appMenuOpen = false;
             resetDetailContext();
+            state.selectedProvider = preferredProviderIndex(APPS[key]);
             render();
           });
         });
@@ -2079,6 +2233,8 @@
       }
 
       function renderProviders(app) {
+        const providers = filteredProviders(app);
+
         els.providerList.innerHTML = "";
         if (!app.providers.length) {
           els.providerList.innerHTML = `
@@ -2089,7 +2245,16 @@
           `;
           return;
         }
-        app.providers.forEach((provider, index) => {
+        if (!providers.length) {
+          els.providerList.innerHTML = `
+            <div class="provider-empty">
+              <div class="provider-empty-title">No providers match</div>
+              <div class="provider-empty-copy">Clear the local search to restore the full provider rail.</div>
+            </div>
+          `;
+          return;
+        }
+        providers.forEach((provider, index) => {
           const row = document.createElement("button");
           row.type = "button";
           row.className = `provider-row ${index === state.selectedProvider ? "selected" : ""}`.trim();
@@ -2113,7 +2278,7 @@
       }
 
       function renderEditor(app) {
-        const provider = currentProvider();
+        const provider = currentFilteredProvider();
         const editableWorkspace = state.workspace !== "routing";
         els.editorName.textContent = provider ? provider.name : app.label;
         els.editorSubtitle.textContent =
@@ -2207,6 +2372,7 @@
         renderProviders(app);
         renderEditor(app);
         const hasProvider = !!currentProvider();
+        els.providerSearch.value = state.providerFilter;
         els.duplicateButton.disabled = !hasProvider;
         els.editorSaveButton.disabled = !hasProvider;
         els.footerSaveButton.disabled = !hasProvider;
@@ -2272,9 +2438,36 @@
         showToast("Save stays placeholder-only in this prototype");
       });
 
-      els.themeToggle.addEventListener("click", () => {
-        state.theme = state.theme === "dark" ? "light" : "dark";
+      els.providerSearch.addEventListener("input", (event) => {
+        state.providerFilter = event.target.value || "";
+        state.selectedProvider = 0;
         render();
+      });
+
+      els.providerFilterReset.addEventListener("click", () => {
+        resetProviderFilter();
+        state.selectedProvider = 0;
+        render();
+      });
+
+      els.listenAddressValue.addEventListener("input", (event) => {
+        state.host.listenAddr = event.target.value || "";
+        renderHost();
+      });
+
+      els.listenPortValue.addEventListener("input", (event) => {
+        state.host.listenPort = event.target.value || "";
+        renderHost();
+      });
+
+      els.httpProxyValue.addEventListener("input", (event) => {
+        state.host.httpProxy = event.target.value || "";
+        renderHost();
+      });
+
+      els.httpsProxyValue.addEventListener("input", (event) => {
+        state.host.httpsProxy = event.target.value || "";
+        renderHost();
       });
 
       els.loggingValue.addEventListener("change", (event) => {
@@ -2282,9 +2475,53 @@
         renderHost();
       });
 
+      els.hostSaveButton.addEventListener("click", () => {
+        requestHostSave();
+      });
+
+      els.restartChip.addEventListener("click", () => {
+        requestRestart();
+      });
+
+      els.themeToggle.addEventListener("click", () => {
+        state.theme = state.theme === "dark" ? "light" : "dark";
+        render();
+      });
+
       window.addEventListener("message", (event) => {
-        if (!event || !event.data || event.data.type !== "ccswitch-prototype-live-data") return;
-        applyLiveWorkspaceData(event.data.payload);
+        if (!event || !event.data) return;
+        if (event.data.type === "ccswitch-prototype-live-data") {
+          applyLiveWorkspaceData(event.data.payload);
+          return;
+        }
+        if (event.data.type === "ccswitch-prototype-host-state") {
+          applyHostBridgeState(event.data.payload);
+          return;
+        }
+        if (event.data.type === "ccswitch-prototype-host-save-result") {
+          if (event.data.payload && event.data.payload.ok === false) {
+            state.hostSavePending = false;
+            renderHost();
+            showToast(event.data.payload.message || "Host save failed");
+            return;
+          }
+
+          if (event.data.payload && event.data.payload.host) {
+            applyHostBridgeState(event.data.payload.host);
+            showToast("Host settings saved");
+          }
+          return;
+        }
+        if (event.data.type === "ccswitch-prototype-restart-result") {
+          if (event.data.payload && event.data.payload.ok === false) {
+            showToast(event.data.payload.message || "Restart failed");
+            return;
+          }
+
+          if (event.data.payload && event.data.payload.host)
+            applyHostBridgeState(event.data.payload.host);
+          showToast("Service restarted");
+        }
       });
 
       document.addEventListener("click", (event) => {
@@ -2297,6 +2534,7 @@
       });
 
       initFromQuery();
+      state.hostInitial = cloneHostFields(state.host);
       resetDetailContext();
       render();
     </script>

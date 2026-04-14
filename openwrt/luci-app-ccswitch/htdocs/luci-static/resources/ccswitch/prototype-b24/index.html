@@ -232,6 +232,19 @@
         white-space: nowrap;
       }
 
+      .chip-button {
+        appearance: none;
+        cursor: pointer;
+        font: inherit;
+      }
+
+      .chip-button:disabled {
+        opacity: 0.58;
+        border-style: dashed;
+        color: var(--muted);
+        cursor: not-allowed;
+      }
+
       .chip-select {
         height: 30px;
         min-width: 110px;
@@ -1139,13 +1152,14 @@
               <div class="chip success" id="daemonHealthChip">Healthy</div>
               <div class="chip active" id="restartChip">Restart</div>
               <div class="chip non-live" aria-disabled="true" title="Stop stays unsupported in this prototype shell">Stop</div>
-              <select class="chip-select non-live" id="loggingValue" aria-label="Logging level" aria-disabled="true" tabindex="-1">
+              <select class="chip-select" id="loggingValue" aria-label="Logging level">
+                <option value="trace">Trace</option>
                 <option value="debug">Debug</option>
                 <option value="info" selected>Info</option>
                 <option value="warn">Warn</option>
                 <option value="error">Error</option>
               </select>
-              <div class="chip non-live meta" aria-disabled="true">Save</div>
+              <button class="chip chip-button meta" id="hostSaveButton" type="button" disabled>Save</button>
             </div>
             <div class="band-divider"></div>
             <div class="band-details">
@@ -1155,11 +1169,11 @@
                 <div class="grid">
                   <div class="field">
                     <label>Listen address</label>
-                    <input class="inline-input mono non-live" id="listenAddressValue" value="0.0.0.0" readonly aria-readonly="true" />
+                    <input class="inline-input mono" id="listenAddressValue" value="0.0.0.0" />
                   </div>
                   <div class="field">
                     <label>Listen port</label>
-                    <input class="inline-input mono non-live" id="listenPortValue" value="15721" readonly aria-readonly="true" />
+                    <input class="inline-input mono" id="listenPortValue" value="15721" />
                   </div>
                 </div>
               </div>
@@ -1169,11 +1183,11 @@
                 <div class="grid">
                   <div class="field">
                     <label>HTTP proxy</label>
-                    <input class="inline-input mono non-live" id="httpProxyValue" value="http://127.0.0.1:7890" readonly aria-readonly="true" />
+                    <input class="inline-input mono" id="httpProxyValue" value="http://127.0.0.1:7890" />
                   </div>
                   <div class="field">
                     <label>HTTPS proxy</label>
-                    <input class="inline-input mono non-live" id="httpsProxyValue" value="http://127.0.0.1:7890" readonly aria-readonly="true" />
+                    <input class="inline-input mono" id="httpsProxyValue" value="http://127.0.0.1:7890" />
                   </div>
                 </div>
               </div>
@@ -1489,7 +1503,11 @@
           proxyEnabled: true,
           logLevel: "info",
         },
+        hostInitial: null,
+        hostSavePending: false,
       };
+
+      const HOST_LOG_LEVELS = ["error", "warn", "info", "debug", "trace"];
 
       function defaultTokenFieldForApp(appKey) {
         if (appKey === "codex") return "OPENAI_API_KEY";
@@ -1642,6 +1660,7 @@
         httpProxyValue: document.getElementById("httpProxyValue"),
         httpsProxyValue: document.getElementById("httpsProxyValue"),
         loggingValue: document.getElementById("loggingValue"),
+        hostSaveButton: document.getElementById("hostSaveButton"),
         appPicker: document.getElementById("appPicker"),
         detailWorkspaceSwitcher: document.getElementById("detailWorkspaceSwitcher"),
         providerList: document.getElementById("providerList"),
@@ -1728,6 +1747,91 @@
         return value && value.trim() ? value.trim() : "Not set";
       }
 
+      function cloneHostFields(host) {
+        return {
+          listenAddr: host.listenAddr || "",
+          listenPort: host.listenPort || "",
+          httpProxy: host.httpProxy || "",
+          httpsProxy: host.httpsProxy || "",
+          logLevel: HOST_LOG_LEVELS.includes((host.logLevel || "").toLowerCase())
+            ? host.logLevel.toLowerCase()
+            : "info",
+        };
+      }
+
+      function normalizeHostFields(payload, fallback = state.host) {
+        const source = payload && typeof payload === "object" ? payload : {};
+        const reference = fallback && typeof fallback === "object" ? fallback : {};
+        const nextLogLevel = typeof source.logLevel === "string" && HOST_LOG_LEVELS.includes(source.logLevel.toLowerCase())
+          ? source.logLevel.toLowerCase()
+          : cloneHostFields(reference).logLevel;
+
+        return {
+          listenAddr: typeof source.listenAddr === "string" ? source.listenAddr : (reference.listenAddr || ""),
+          listenPort: typeof source.listenPort === "string" ? source.listenPort : (reference.listenPort || ""),
+          httpProxy: typeof source.httpProxy === "string" ? source.httpProxy : (reference.httpProxy || ""),
+          httpsProxy: typeof source.httpsProxy === "string" ? source.httpsProxy : (reference.httpsProxy || ""),
+          logLevel: nextLogLevel,
+        };
+      }
+
+      function hostSavePayload() {
+        return cloneHostFields(state.host);
+      }
+
+      function hasHostChanges() {
+        if (!state.hostInitial) return false;
+        return JSON.stringify(hostSavePayload()) !== JSON.stringify(state.hostInitial);
+      }
+
+      function syncHostInputs() {
+        els.listenAddressValue.value = state.host.listenAddr;
+        els.listenPortValue.value = state.host.listenPort;
+        els.httpProxyValue.value = state.host.httpProxy;
+        els.httpsProxyValue.value = state.host.httpsProxy;
+        els.loggingValue.value = (state.host.logLevel || "info").toLowerCase();
+        els.hostSaveButton.disabled = state.hostSavePending || !hasHostChanges();
+        els.hostSaveButton.textContent = state.hostSavePending ? "Saving..." : "Save";
+      }
+
+      function applyHostBridgeState(payload) {
+        if (!payload || typeof payload !== "object") return;
+
+        state.host = {
+          ...state.host,
+          ...(typeof payload.status === "string" ? { status: payload.status } : {}),
+          ...(typeof payload.health === "string" ? { health: payload.health } : {}),
+          ...(typeof payload.serviceLabel === "string" ? { serviceLabel: payload.serviceLabel } : {}),
+          ...(Object.prototype.hasOwnProperty.call(payload, "proxyEnabled") ? { proxyEnabled: !!payload.proxyEnabled } : {}),
+          ...normalizeHostFields(payload, state.host),
+        };
+        state.hostInitial = cloneHostFields(state.host);
+        state.hostSavePending = false;
+        renderHost();
+      }
+
+      function postParentMessage(message) {
+        if (window.parent === window || !window.parent || typeof window.parent.postMessage !== "function") {
+          showToast("Host controls require the LuCI shell");
+          return false;
+        }
+
+        window.parent.postMessage(message, "*");
+        return true;
+      }
+
+      function requestHostSave() {
+        if (state.hostSavePending || !hasHostChanges()) return;
+        if (!postParentMessage({ type: "ccswitch-prototype-host-save", payload: hostSavePayload() })) return;
+
+        state.hostSavePending = true;
+        renderHost();
+      }
+
+      function requestRestart() {
+        postParentMessage({ type: "ccswitch-prototype-restart-service" });
+      }
+
       function formatLogLevel(value) {
         if (!value) return "Info";
         return value.charAt(0).toUpperCase() + value.slice(1);
@@ -1750,11 +1854,7 @@
         els.daemonHealthChip.className = `chip ${host.health === "healthy" ? "success" : ""}`.trim();
         els.listenEndpointValue.textContent = `${host.listenAddr}:${host.listenPort}`;
         els.serviceLabelValue.textContent = host.serviceLabel;
-        els.listenAddressValue.value = host.listenAddr;
-        els.listenPortValue.value = host.listenPort;
-        els.httpProxyValue.value = formatProxyValue(host.httpProxy);
-        els.httpsProxyValue.value = formatProxyValue(host.httpsProxy);
-        els.loggingValue.value = (host.logLevel || "info").toLowerCase();
+        syncHostInputs();
       }
 
       function showToast(message) {
@@ -2350,8 +2450,37 @@
         render();
       });
 
+      els.listenAddressValue.addEventListener("input", (event) => {
+        state.host.listenAddr = event.target.value || "";
+        renderHost();
+      });
+
+      els.listenPortValue.addEventListener("input", (event) => {
+        state.host.listenPort = event.target.value || "";
+        renderHost();
+      });
+
+      els.httpProxyValue.addEventListener("input", (event) => {
+        state.host.httpProxy = event.target.value || "";
+        renderHost();
+      });
+
+      els.httpsProxyValue.addEventListener("input", (event) => {
+        state.host.httpsProxy = event.target.value || "";
+        renderHost();
+      });
+
+      els.loggingValue.addEventListener("change", (event) => {
+        state.host.logLevel = event.target.value || "info";
+        renderHost();
+      });
+
+      els.hostSaveButton.addEventListener("click", () => {
+        requestHostSave();
+      });
+
       els.restartChip.addEventListener("click", () => {
-        showToast("Restart stays shell-owned in this prototype");
+        requestRestart();
       });
 
       els.themeToggle.addEventListener("click", () => {
@@ -2360,8 +2489,39 @@
       });
 
       window.addEventListener("message", (event) => {
-        if (!event || !event.data || event.data.type !== "ccswitch-prototype-live-data") return;
-        applyLiveWorkspaceData(event.data.payload);
+        if (!event || !event.data) return;
+        if (event.data.type === "ccswitch-prototype-live-data") {
+          applyLiveWorkspaceData(event.data.payload);
+          return;
+        }
+        if (event.data.type === "ccswitch-prototype-host-state") {
+          applyHostBridgeState(event.data.payload);
+          return;
+        }
+        if (event.data.type === "ccswitch-prototype-host-save-result") {
+          if (event.data.payload && event.data.payload.ok === false) {
+            state.hostSavePending = false;
+            renderHost();
+            showToast(event.data.payload.message || "Host save failed");
+            return;
+          }
+
+          if (event.data.payload && event.data.payload.host) {
+            applyHostBridgeState(event.data.payload.host);
+            showToast("Host settings saved");
+          }
+          return;
+        }
+        if (event.data.type === "ccswitch-prototype-restart-result") {
+          if (event.data.payload && event.data.payload.ok === false) {
+            showToast(event.data.payload.message || "Restart failed");
+            return;
+          }
+
+          if (event.data.payload && event.data.payload.host)
+            applyHostBridgeState(event.data.payload.host);
+          showToast("Service restarted");
+        }
       });
 
       document.addEventListener("click", (event) => {
@@ -2374,6 +2534,7 @@
       });
 
       initFromQuery();
+      state.hostInitial = cloneHostFields(state.host);
       resetDetailContext();
       render();
     </script>
