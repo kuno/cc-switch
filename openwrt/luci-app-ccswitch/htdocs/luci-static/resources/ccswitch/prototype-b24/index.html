@@ -1,0 +1,2187 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CC Switch OpenWrt Clickable Mock</title>
+    <style>
+      :root {
+        --bg: #eef3f8;
+        --panel: rgba(255, 255, 255, 0.86);
+        --panel-strong: #ffffff;
+        --panel-soft: #f8fbff;
+        --line: #d8e2ef;
+        --line-strong: #ccd7e6;
+        --text: #172133;
+        --muted: #708198;
+        --soft-text: #90a0b4;
+        --accent: #4d7cff;
+        --accent-soft: #ebf2ff;
+        --accent-text: #2752c9;
+        --success: #2d8a5a;
+        --success-soft: #edf8f1;
+        --success-line: #bfe4cd;
+        --row-active: #edf4ff;
+        --row: #ffffff;
+        --button: #f5f8fd;
+        --shadow: 0 24px 60px -34px rgba(50, 72, 103, 0.28);
+        --shadow-soft: 0 16px 34px -28px rgba(50, 72, 103, 0.18);
+      }
+
+      body[data-theme="dark"] {
+        --bg: #0f141b;
+        --panel: rgba(20, 28, 38, 0.92);
+        --panel-strong: #151d27;
+        --panel-soft: #121923;
+        --line: #263241;
+        --line-strong: #314258;
+        --text: #eef4fb;
+        --muted: #93a2b8;
+        --soft-text: #6e7d92;
+        --accent: #7f94ff;
+        --accent-soft: #212d48;
+        --accent-text: #dfe5ff;
+        --success: #49b06d;
+        --success-soft: #183122;
+        --success-line: #275139;
+        --row-active: #1b2a42;
+        --row: #161f2b;
+        --button: #192332;
+        --shadow: none;
+        --shadow-soft: none;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "SF Pro Display", Inter, ui-sans-serif, system-ui, sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(77, 124, 255, 0.08), transparent 28%),
+          linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 24%),
+          var(--bg);
+        color: var(--text);
+        transition: background 180ms ease, color 180ms ease;
+      }
+
+      img {
+        display: block;
+      }
+
+      button {
+        font: inherit;
+      }
+
+      .shell {
+        max-width: 1600px;
+        margin: 0 auto;
+        padding: 28px 28px 40px;
+      }
+
+      .page-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 20px;
+        margin-bottom: 20px;
+      }
+
+      .eyebrow {
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .title {
+        margin: 4px 0 6px;
+        font-size: 52px;
+        line-height: 0.95;
+        font-weight: 760;
+        letter-spacing: -0.04em;
+      }
+
+      .subtitle {
+        color: var(--muted);
+        font-size: 16px;
+        font-weight: 520;
+      }
+
+      .head-actions {
+        display: flex;
+        gap: 10px;
+      }
+
+      .pill {
+        height: 34px;
+        padding: 0 16px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: var(--button);
+        color: var(--text);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .pill.accent {
+        background: var(--accent-soft);
+        color: var(--accent-text);
+      }
+
+      .band,
+      .workspace {
+        background: var(--panel);
+        backdrop-filter: blur(16px);
+        border: 1px solid var(--line);
+        border-radius: 28px;
+        box-shadow: var(--shadow);
+      }
+
+      .band {
+        padding: 22px 24px;
+        margin-bottom: 24px;
+      }
+
+      .band-grid {
+        display: grid;
+        grid-template-columns: 1.8fr 1fr 1fr;
+        gap: 0;
+        align-items: stretch;
+      }
+
+      .band-cell.is-hidden {
+        display: none;
+      }
+
+      .band-cell {
+        min-height: 82px;
+        padding: 6px 18px 6px 0;
+      }
+
+      .band-cell + .band-cell {
+        border-left: 1px solid var(--line);
+        padding-left: 18px;
+      }
+
+      .cell-label {
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.11em;
+        text-transform: uppercase;
+      }
+
+      .cell-value {
+        margin-top: 10px;
+        font-size: 20px;
+        font-weight: 680;
+        letter-spacing: -0.03em;
+      }
+
+      .band-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 8px;
+      }
+
+      .band-actions .chip.meta {
+        margin-left: auto;
+      }
+
+      .band-actions .status-text {
+        font-size: 20px;
+        font-weight: 760;
+        letter-spacing: -0.03em;
+      }
+
+      .chip {
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: var(--button);
+        color: var(--text);
+        padding: 0 14px;
+        height: 30px;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .chip-select {
+        height: 30px;
+        min-width: 110px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: var(--button);
+        color: var(--text);
+        padding: 0 34px 0 14px;
+        font: inherit;
+        font-size: 12px;
+        font-weight: 700;
+        appearance: none;
+        -webkit-appearance: none;
+        background-image:
+          linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+          linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+        background-position:
+          calc(100% - 18px) 12px,
+          calc(100% - 13px) 12px;
+        background-size: 5px 5px, 5px 5px;
+        background-repeat: no-repeat;
+      }
+
+      .chip.success {
+        background: var(--success-soft);
+        border-color: var(--success-line);
+        color: var(--success);
+      }
+
+      .chip.active {
+        background: var(--accent);
+        color: #fff;
+        border-color: transparent;
+      }
+
+      .workspace {
+        padding: 0;
+        overflow: hidden;
+      }
+
+      .host-settings {
+        margin-bottom: 24px;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .host-card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        box-shadow: var(--shadow-soft);
+        padding: 16px;
+      }
+
+      .host-card h3 {
+        margin: 0 0 6px;
+        font-size: 14px;
+        font-weight: 760;
+        color: var(--muted);
+      }
+
+      .host-card p {
+        margin: 0 0 14px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
+        font-weight: 520;
+      }
+
+      .workspace-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 18px 20px 14px;
+        border-bottom: 1px solid var(--line);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent);
+      }
+
+      .toolbar-group {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .app-picker {
+        position: relative;
+      }
+
+      .app-trigger {
+        min-width: 254px;
+        height: 44px;
+        padding: 0 14px 0 12px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--button);
+        color: var(--text);
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        cursor: pointer;
+      }
+
+      .app-trigger-copy {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        justify-content: center;
+      }
+
+      .app-trigger-value {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 15px;
+        font-weight: 760;
+        letter-spacing: -0.02em;
+      }
+
+      .app-trigger-meta {
+        margin-left: auto;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .chevron {
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 800;
+      }
+
+      .app-menu {
+        position: absolute;
+        top: calc(100% + 10px);
+        right: 0;
+        width: 360px;
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        background: var(--panel-strong);
+        box-shadow: var(--shadow);
+        padding: 8px;
+        display: none;
+        z-index: 40;
+      }
+
+      .app-picker.open .app-menu {
+        display: block;
+      }
+
+      .app-menu-section + .app-menu-section {
+        margin-top: 6px;
+        padding-top: 8px;
+        border-top: 1px solid var(--line);
+      }
+
+      .app-menu-title {
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.11em;
+        text-transform: uppercase;
+        padding: 8px 10px 6px;
+      }
+
+      .app-menu-row {
+        width: 100%;
+        border: 0;
+        border-radius: 16px;
+        background: transparent;
+        color: var(--text);
+        padding: 10px;
+        display: grid;
+        grid-template-columns: 36px minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: center;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .app-menu-row:hover,
+      .app-menu-row.selected {
+        background: var(--panel-soft);
+      }
+
+      .glyph-shell {
+        width: 36px;
+        height: 36px;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--panel-soft);
+        flex: 0 0 auto;
+      }
+
+      .glyph-shell.round {
+        border-radius: 999px;
+      }
+
+      .glyph-shell img {
+        width: 20px;
+        height: 20px;
+      }
+
+      .glyph-fallback {
+        color: var(--text);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.03em;
+      }
+
+      .app-row-copy {
+        min-width: 0;
+      }
+
+      .app-row-name {
+        font-size: 14px;
+        font-weight: 760;
+        margin-bottom: 2px;
+      }
+
+      .app-row-meta {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .switcher {
+        display: flex;
+        gap: 6px;
+        padding: 5px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: var(--button);
+      }
+
+      .switcher button {
+        height: 34px;
+        min-width: 110px;
+        padding: 0 14px;
+        border: 0;
+        border-radius: 999px;
+        background: transparent;
+        color: var(--muted);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .switcher button.selected {
+        background: var(--panel-strong);
+        color: var(--text);
+        box-shadow: inset 0 0 0 1px var(--line);
+      }
+
+      .switcher button.compact {
+        min-width: 0;
+        padding: 0 16px;
+      }
+
+      .toolbar-add {
+        height: 40px;
+        padding: 0 18px;
+        border: 0;
+        border-radius: 999px;
+        background: var(--accent);
+        color: #fff;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .workspace-body {
+        display: grid;
+        grid-template-columns: 312px minmax(0, 1fr);
+        min-height: 900px;
+      }
+
+      .sidebar {
+        border-right: 1px solid var(--line);
+        padding: 14px 14px 18px;
+      }
+
+      .sidebar-head {
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 760;
+        margin-bottom: 10px;
+      }
+
+      .search-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+
+      .search {
+        flex: 1;
+        height: 42px;
+        padding: 0 14px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--panel-soft);
+        color: var(--soft-text);
+        display: flex;
+        align-items: center;
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .provider-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .provider-empty {
+        padding: 18px 16px;
+        border: 1px dashed var(--line-strong);
+        border-radius: 18px;
+        background: var(--panel-soft);
+      }
+
+      .provider-empty-title {
+        font-size: 14px;
+        font-weight: 760;
+        margin-bottom: 4px;
+      }
+
+      .provider-empty-copy {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 1.5;
+      }
+
+      .provider-row {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: var(--row);
+        box-shadow: var(--shadow-soft);
+        padding: 12px 12px 10px;
+        display: grid;
+        grid-template-columns: 42px minmax(0, 1fr) auto;
+        gap: 12px;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .provider-row.selected {
+        background: var(--row-active);
+      }
+
+      .provider-icon-shell {
+        width: 42px;
+        height: 42px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .provider-icon-shell img {
+        width: 24px;
+        height: 24px;
+      }
+
+      .provider-main {
+        min-width: 0;
+      }
+
+      .provider-name {
+        font-size: 15px;
+        font-weight: 760;
+        margin-bottom: 4px;
+      }
+
+      .provider-url {
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 600;
+        margin-bottom: 4px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      body[data-theme="dark"] .provider-url {
+        color: var(--muted);
+      }
+
+      .provider-usage {
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 600;
+      }
+
+      .editor {
+        padding: 14px 18px 18px;
+      }
+
+      .editor-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: flex-start;
+        margin-bottom: 16px;
+      }
+
+      .editor-kicker {
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 760;
+        margin-bottom: 2px;
+        display: none;
+      }
+
+      .editor-name {
+        font-size: 28px;
+        line-height: 1;
+        letter-spacing: -0.04em;
+        font-weight: 780;
+        margin-bottom: 6px;
+      }
+
+      .editor-subtitle {
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 520;
+        display: none;
+      }
+
+      .action-row {
+        display: flex;
+        gap: 10px;
+      }
+
+      .action-row button {
+        height: 34px;
+        padding: 0 14px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: var(--button);
+        color: var(--text);
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .action-row .primary {
+        background: var(--accent);
+        color: #fff;
+        border-color: transparent;
+      }
+
+      .section-tabs {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-bottom: 14px;
+      }
+
+      .tag {
+        height: 32px;
+        padding: 0 16px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--button);
+        color: var(--text);
+        display: inline-flex;
+        align-items: center;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .tag.selected {
+        background: var(--accent);
+        border-color: transparent;
+        color: #fff;
+      }
+
+      .summary {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 14px 16px;
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        background: var(--panel-soft);
+        margin-bottom: 14px;
+      }
+
+      .detail-workspace-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 14px;
+        margin-bottom: 10px;
+      }
+
+      .detail-workspace-copy {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+        display: none;
+      }
+
+      .selection-note {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 600;
+        margin-bottom: 14px;
+        display: none !important;
+      }
+
+      .summary-main {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        min-width: 0;
+      }
+
+      .summary-copy {
+        min-width: 0;
+      }
+
+      .summary-copy .label {
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .summary-copy .value {
+        font-size: 15px;
+        font-weight: 760;
+        margin-top: 4px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .editor-empty {
+        padding: 18px;
+        border: 1px dashed var(--line-strong);
+        border-radius: 22px;
+        background: var(--panel-soft);
+      }
+
+      .editor-empty-title {
+        font-size: 16px;
+        font-weight: 760;
+        margin-bottom: 6px;
+      }
+
+      .editor-empty-copy {
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 600;
+        line-height: 1.55;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px 18px;
+      }
+
+      .field {
+        min-width: 0;
+      }
+
+      .field.wide {
+        grid-column: 1 / -1;
+      }
+
+      .field label {
+        display: block;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.11em;
+        text-transform: uppercase;
+        margin-bottom: 8px;
+      }
+
+      .value-box {
+        min-height: 48px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--panel-strong);
+        padding: 14px 16px;
+        display: flex;
+        align-items: center;
+        font-size: 15px;
+        font-weight: 650;
+        color: var(--text);
+      }
+
+      .value-box.stack {
+        align-items: flex-start;
+        white-space: pre-wrap;
+        line-height: 1.45;
+      }
+
+      .mono {
+        font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+        letter-spacing: -0.03em;
+      }
+
+      .footer-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        margin-top: 18px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+      }
+
+      .footer-actions button {
+        height: 38px;
+        padding: 0 16px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: var(--button);
+        color: var(--text);
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .footer-actions button:disabled,
+      .action-row button:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+
+      .footer-actions .primary {
+        background: var(--accent);
+        color: #fff;
+        border-color: transparent;
+      }
+
+      .toast {
+        position: fixed;
+        right: 24px;
+        bottom: 24px;
+        max-width: 340px;
+        padding: 14px 16px;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        background: var(--panel-strong);
+        box-shadow: var(--shadow);
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--text);
+        opacity: 0;
+        transform: translateY(14px);
+        pointer-events: none;
+        transition: opacity 160ms ease, transform 160ms ease;
+      }
+
+      .toast.visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(12, 18, 26, 0.32);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+      }
+
+      .modal-backdrop.visible {
+        display: flex;
+      }
+
+      .modal {
+        width: min(720px, 100%);
+        border-radius: 28px;
+        border: 1px solid var(--line);
+        background: var(--panel-strong);
+        box-shadow: var(--shadow);
+        padding: 22px;
+      }
+
+      .modal-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: flex-start;
+        margin-bottom: 14px;
+      }
+
+      .modal-title {
+        font-size: 26px;
+        font-weight: 780;
+        letter-spacing: -0.04em;
+        margin-bottom: 4px;
+      }
+
+      .modal-subtitle {
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 520;
+      }
+
+      .icon-btn {
+        width: 34px;
+        height: 34px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: var(--button);
+        color: var(--text);
+        cursor: pointer;
+      }
+
+      .modal-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px 18px;
+        margin-top: 14px;
+      }
+
+      .modal-grid .field.wide {
+        grid-column: 1 / -1;
+      }
+
+      .modal-input {
+        width: 100%;
+        min-height: 48px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--panel-soft);
+        padding: 12px 14px;
+        font: inherit;
+        color: var(--text);
+      }
+
+      @media (max-width: 1200px) {
+        .workspace-body {
+          grid-template-columns: 1fr;
+        }
+
+        .sidebar {
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+
+        .band-grid {
+          grid-template-columns: 1fr 1fr;
+          gap: 14px;
+        }
+
+        .band-cell + .band-cell {
+          border-left: 0;
+          padding-left: 0;
+        }
+      }
+    </style>
+  </head>
+  <body data-theme="light">
+    <div class="shell">
+      <div class="page-head">
+        <div>
+          <div class="eyebrow">OpenWrt / Services</div>
+          <div class="title">CC Switch</div>
+          <div class="subtitle">Daemon control and provider routing</div>
+        </div>
+        <div class="head-actions">
+          <button class="pill" id="themeToggle" type="button">Light</button>
+        </div>
+      </div>
+
+      <section class="band">
+        <div class="band-grid">
+          <div class="band-cell">
+            <div class="cell-label">Daemon control</div>
+            <div class="band-actions">
+              <div class="status-text" id="daemonStatusText">Running</div>
+              <div class="chip success" id="daemonHealthChip">Healthy</div>
+              <div class="chip active">Restart</div>
+              <div class="chip">Stop</div>
+              <select class="chip-select meta" id="loggingValue" aria-label="Logging level">
+                <option value="debug">Debug</option>
+                <option value="info" selected>Info</option>
+                <option value="warn">Warn</option>
+                <option value="error">Error</option>
+              </select>
+            </div>
+          </div>
+          <div class="band-cell is-hidden">
+            <div class="cell-label">Listen endpoint</div>
+            <div class="cell-value mono" id="listenEndpointValue">0.0.0.0:15721</div>
+          </div>
+          <div class="band-cell is-hidden">
+            <div class="cell-label">Service</div>
+            <div class="cell-value" id="serviceLabelValue">Router daemon</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="host-settings">
+        <div class="host-card">
+          <h3>Listen settings</h3>
+          <p>Daemon network settings.</p>
+          <div class="grid">
+            <div class="field">
+              <label>Listen address</label>
+              <div class="value-box mono" id="listenAddressValue">0.0.0.0</div>
+            </div>
+            <div class="field">
+              <label>Listen port</label>
+              <div class="value-box mono" id="listenPortValue">15721</div>
+            </div>
+          </div>
+        </div>
+        <div class="host-card">
+          <h3>Outbound proxy</h3>
+          <p>Optional upstream routing.</p>
+          <div class="grid">
+            <div class="field">
+              <label>HTTP proxy</label>
+              <div class="value-box mono" id="httpProxyValue">http://127.0.0.1:7890</div>
+            </div>
+            <div class="field">
+              <label>HTTPS proxy</label>
+              <div class="value-box mono" id="httpsProxyValue">http://127.0.0.1:7890</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <div class="workspace-top">
+          <div class="toolbar-group">
+            <div class="app-picker" id="appPicker"></div>
+            <button class="toolbar-add" type="button">Add</button>
+          </div>
+        </div>
+
+        <div class="workspace-body">
+          <aside class="sidebar">
+            <div class="sidebar-head">Providers</div>
+            <div class="search-row">
+              <div class="search">Search provider or endpoint</div>
+              <div class="chip">All</div>
+            </div>
+            <div class="provider-list" id="providerList"></div>
+          </aside>
+
+          <main class="editor">
+            <div class="editor-head">
+              <div>
+                <div class="editor-kicker">Selected provider</div>
+                <div class="editor-name" id="editorName"></div>
+                <div class="editor-subtitle" id="editorSubtitle"></div>
+              </div>
+              <div class="action-row">
+                <button type="button">Duplicate</button>
+                <button class="primary" type="button">Save</button>
+              </div>
+            </div>
+
+            <div class="selection-note" id="selectionNote"></div>
+            <div class="detail-workspace-row">
+              <div class="detail-workspace-copy">Sections</div>
+              <div class="switcher" id="detailWorkspaceSwitcher"></div>
+            </div>
+            <div class="summary" id="summaryCard"></div>
+            <div class="section-tabs" id="sectionTabs"></div>
+            <div class="grid" id="fieldGrid"></div>
+
+            <div class="footer-actions">
+              <button type="button">Cancel</button>
+              <button class="primary" type="button">Save</button>
+            </div>
+          </main>
+        </div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="modalBackdrop" aria-hidden="true">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <div class="modal-head">
+          <div>
+            <div class="modal-title" id="modalTitle">Add provider</div>
+            <div class="modal-subtitle" id="modalSubtitle">Choose a preset or enter details manually.</div>
+          </div>
+          <button class="icon-btn" id="modalClose" type="button">×</button>
+        </div>
+        <div class="preset-row" id="modalPresetRow"></div>
+        <div class="modal-grid">
+          <div class="field">
+            <label>Provider name</label>
+            <input class="modal-input" id="modalName" />
+          </div>
+          <div class="field">
+            <label>Notes</label>
+            <input class="modal-input" id="modalNotes" />
+          </div>
+          <div class="field wide">
+            <label>Website URL</label>
+            <input class="modal-input" id="modalWebsite" />
+          </div>
+          <div class="field wide">
+            <label>Base URL</label>
+            <input class="modal-input" id="modalBaseUrl" />
+          </div>
+        </div>
+        <div class="footer-actions">
+          <button id="modalCancel" type="button">Cancel</button>
+          <button class="primary" id="modalSave" type="button">Add draft</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+      const ICONS = {
+        claude: "./icons/claude.svg",
+        codex: "./icons/openai.svg",
+        gemini: "./icons/gemini.svg",
+        minimax: "./icons/minimax.svg",
+        deepseek: "./icons/deepseek.svg",
+        qwen: "./icons/qwen.svg",
+        packycode: "./icons/packycode.svg",
+      };
+
+      const APPS = {
+        claude: {
+          label: "Claude",
+          iconKey: "claude",
+          pageTitle: "Provider setup",
+          providerSubtitle: "General provider settings for the Claude workspace",
+          routingSubtitle: "Failover settings for the Claude workspace",
+          envSubtitle: "Credential settings for the Claude workspace",
+          providers: [
+            { name: "MiniMax en", url: "https://platform.minimax.io", status: "Active", tone: "success", iconKey: "minimax", bg: "#fff1f1", usage: "Used 157.47   Remaining 52.53 USD" },
+            { name: "Claude Official", url: "https://api.anthropic.com", status: "Preset", tone: "accent", iconKey: "claude", bg: "#fff4eb" },
+            { name: "DeepSeek", url: "https://platform.deepseek.com", status: "Saved", tone: "neutral", iconKey: "deepseek", bg: "#eef4ff" },
+            { name: "Qwen Coder", url: "https://bailian.console.aliyun.com", status: "Saved", tone: "neutral", iconKey: "qwen", bg: "#f2edff" },
+            { name: "PackyCode", url: "https://www.packyapi.com", status: "Draft", tone: "neutral", iconKey: "packycode", bg: "#eef6ef" },
+          ],
+          presets: ["Custom", "Claude Official", "MiniMax en", "DeepSeek", "Qwen Coder"],
+          fields: {
+            providers: [
+              ["Provider name", "MiniMax en"],
+              ["Notes", "Dedicated Claude route"],
+              ["Website URL", "https://platform.minimax.io", "wide"],
+              ["Base URL", "https://api.minimax.chat/v1", "wide"],
+              ["API key", "•••••••••••••••••••••••", "wide mono"],
+              ["Model", "MiniMax-M1"],
+              ["Health check", "/models", "mono"],
+              ["Fallback model", "claude-sonnet-4.5"],
+              ["Latency budget", "3000 ms", "mono"],
+            ],
+            routing: [
+              ["Provider name", "MiniMax en"],
+              ["Route mode", "Pinned"],
+              ["Outbound target", "Router proxy host fields above", "wide"],
+              ["Priority", "1", "mono"],
+              ["Fallback policy", "Use next healthy provider"],
+              ["Health gate", "Healthy required"],
+              ["Queue role", "Primary"],
+              ["Notes", "Claude traffic prefers this provider before failover.", "wide"],
+              ["Latency budget", "3000 ms", "mono"],
+              ["Health check", "/models", "mono"],
+            ],
+            env: [
+              ["Provider name", "MiniMax en"],
+              ["Secret policy", "Blank preserves stored secret"],
+              ["Primary env key", "•••••••••••••••••••••••", "wide mono"],
+              ["Base URL env", "https://api.minimax.chat/v1", "wide"],
+              ["Model env", "MiniMax-M1"],
+              ["Fallback model", "claude-sonnet-4.5"],
+              ["Health probe", "/models", "mono"],
+              ["Latency budget", "3000 ms", "mono"],
+              ["Notes", "Credential settings for the selected provider.", "wide"],
+            ],
+          },
+          summary: {
+            providers: { label: "Platform endpoint", value: "https://platform.minimax.io" },
+            routing: { label: "Route target", value: "Claude traffic prefers MiniMax en" },
+            env: { label: "Primary env mapping", value: "ANTHROPIC_AUTH_TOKEN + ANTHROPIC_BASE_URL" },
+          },
+        },
+        codex: {
+          label: "Codex",
+          iconKey: "codex",
+          pageTitle: "Provider setup",
+          providerSubtitle: "General provider settings for the Codex workspace",
+          routingSubtitle: "Failover settings for the Codex workspace",
+          envSubtitle: "Credential settings for the Codex workspace",
+          providers: [
+            { name: "OpenAI Official", url: "https://api.openai.com/v1", status: "Active", tone: "success", iconKey: "codex", bg: "#eef6ef", iconStyle: "filter: brightness(0) saturate(100%) invert(10%) sepia(7%) saturate(1851%) hue-rotate(175deg) brightness(99%) contrast(94%);" },
+            { name: "Azure OpenAI", url: "https://YOUR_RESOURCE.openai.azure.com/openai", status: "Saved", tone: "neutral", iconKey: "codex", bg: "#eef4ff", iconStyle: "filter: brightness(0) saturate(100%) invert(10%) sepia(7%) saturate(1851%) hue-rotate(175deg) brightness(99%) contrast(94%);" },
+            { name: "PackyCode", url: "https://www.packyapi.com/v1", status: "Saved", tone: "neutral", iconKey: "packycode", bg: "#eef6ef" },
+            { name: "CTok.ai", url: "https://api.ctok.ai/v1", status: "Preset", tone: "accent", iconKey: "codex", bg: "#f5f0ff", iconStyle: "filter: brightness(0) saturate(100%) invert(10%) sepia(7%) saturate(1851%) hue-rotate(175deg) brightness(99%) contrast(94%);" },
+            { name: "OpenRouter", url: "https://openrouter.ai/api/v1", status: "Draft", tone: "neutral", iconKey: "codex", bg: "#eef4ff", iconStyle: "filter: brightness(0) saturate(100%) invert(10%) sepia(7%) saturate(1851%) hue-rotate(175deg) brightness(99%) contrast(94%);" },
+          ],
+          presets: ["Custom", "OpenAI Official", "Azure OpenAI", "PackyCode", "CTok.ai"],
+          fields: {
+            providers: [
+              ["Provider name", "OpenAI Official"],
+              ["Notes", "Primary Codex route"],
+              ["Website URL", "https://chatgpt.com/codex", "wide"],
+              ["Base URL", "https://api.openai.com/v1", "wide"],
+              ["API key", "•••••••••••••••••••••••", "wide mono"],
+              ["Model", "gpt-5.4"],
+              ["Health check", "/models", "mono"],
+              ["Fallback model", "gpt-5.4-mini"],
+              ["Latency budget", "2500 ms", "mono"],
+            ],
+            routing: [
+              ["Provider name", "OpenAI Official"],
+              ["Route mode", "Pinned"],
+              ["Outbound target", "Router proxy host fields above", "wide"],
+              ["Priority", "1", "mono"],
+              ["Fallback policy", "Use next healthy provider"],
+              ["Health gate", "Healthy required"],
+              ["Queue role", "Primary"],
+              ["Notes", "Codex traffic prefers OpenAI Official before failover.", "wide"],
+              ["Latency budget", "2500 ms", "mono"],
+              ["Health check", "/models", "mono"],
+            ],
+            env: [
+              ["Provider name", "OpenAI Official"],
+              ["Secret policy", "Blank preserves stored secret"],
+              ["Primary env key", "•••••••••••••••••••••••", "wide mono"],
+              ["Base URL env", "https://api.openai.com/v1", "wide"],
+              ["Model env", "gpt-5.4"],
+              ["Fallback model", "gpt-5.4-mini"],
+              ["Health probe", "/models", "mono"],
+              ["Latency budget", "2500 ms", "mono"],
+              ["Notes", "Credential settings for the selected provider.", "wide"],
+            ],
+          },
+          summary: {
+            providers: { label: "Responses endpoint", value: "https://api.openai.com/v1" },
+            routing: { label: "Route target", value: "Codex traffic prefers OpenAI Official" },
+            env: { label: "Primary env mapping", value: "OPENAI_API_KEY + base_url" },
+          },
+        },
+        gemini: {
+          label: "Gemini",
+          iconKey: "gemini",
+          pageTitle: "Provider setup",
+          providerSubtitle: "General provider settings for the Gemini workspace",
+          routingSubtitle: "Failover settings for the Gemini workspace",
+          envSubtitle: "Credential settings for the Gemini workspace",
+          providers: [
+            { name: "Google Official", url: "https://generativelanguage.googleapis.com/v1beta", status: "Active", tone: "success", iconKey: "gemini", bg: "#eef4ff" },
+            { name: "PackyCode", url: "https://www.packyapi.com", status: "Saved", tone: "neutral", iconKey: "packycode", bg: "#eef6ef" },
+            { name: "CTok.ai", url: "https://api.ctok.ai/v1beta", status: "Saved", tone: "neutral", iconKey: "gemini", bg: "#fff7ec" },
+            { name: "OpenRouter", url: "https://openrouter.ai/api", status: "Preset", tone: "accent", iconKey: "gemini", bg: "#eef4ff" },
+            { name: "Cubence", url: "https://api.cubence.com", status: "Draft", tone: "neutral", iconKey: "gemini", bg: "#eef4ff" },
+          ],
+          presets: ["Custom", "Google Official", "PackyCode", "CTok.ai", "OpenRouter"],
+          fields: {
+            providers: [
+              ["Provider name", "Google Official"],
+              ["Notes", "Primary Gemini route"],
+              ["Website URL", "https://ai.google.dev/", "wide"],
+              ["Base URL", "https://generativelanguage.googleapis.com/v1beta", "wide"],
+              ["API key", "•••••••••••••••••••••••", "wide mono"],
+              ["Model", "gemini-3.1-pro"],
+              ["Health check", "/models", "mono"],
+              ["Fallback model", "gemini-3.1-flash"],
+              ["Latency budget", "2800 ms", "mono"],
+            ],
+            routing: [
+              ["Provider name", "Google Official"],
+              ["Route mode", "Pinned"],
+              ["Outbound target", "Router proxy host fields above", "wide"],
+              ["Priority", "1", "mono"],
+              ["Fallback policy", "Use next healthy provider"],
+              ["Health gate", "Healthy required"],
+              ["Queue role", "Primary"],
+              ["Notes", "Gemini traffic prefers Google Official before failover.", "wide"],
+              ["Latency budget", "2800 ms", "mono"],
+              ["Health check", "/models", "mono"],
+            ],
+            env: [
+              ["Provider name", "Google Official"],
+              ["Secret policy", "Blank preserves stored secret"],
+              ["Primary env key", "•••••••••••••••••••••••", "wide mono"],
+              ["Base URL env", "https://generativelanguage.googleapis.com/v1beta", "wide"],
+              ["Model env", "gemini-3.1-pro"],
+              ["Fallback model", "gemini-3.1-flash"],
+              ["Health probe", "/models", "mono"],
+              ["Latency budget", "2800 ms", "mono"],
+              ["Notes", "Credential settings for the selected provider.", "wide"],
+            ],
+          },
+          summary: {
+            providers: { label: "Generative Language endpoint", value: "https://generativelanguage.googleapis.com/v1beta" },
+            routing: { label: "Route target", value: "Gemini traffic prefers Google Official" },
+            env: { label: "Primary env mapping", value: "GEMINI_API_KEY + GOOGLE_GEMINI_BASE_URL" },
+          },
+        },
+      };
+
+      const WORKSPACES = {
+        providers: { label: "General", tabs: ["General", "Endpoint", "Model", "Notes"] },
+        routing: { label: "Failover", tabs: ["Queue", "Health", "Policy", "Notes"] },
+        env: { label: "Credentials", tabs: ["Credentials", "Endpoint", "Models", "Notes"] },
+      };
+
+      const state = {
+        theme: "light",
+        app: "claude",
+        workspace: "providers",
+        selectedProvider: 0,
+        activePreset: "",
+        detailTab: 0,
+        modalOpen: false,
+        modalPreset: "Custom",
+        appMenuOpen: false,
+        host: {
+          status: "running",
+          health: "healthy",
+          listenAddr: "0.0.0.0",
+          listenPort: "15721",
+          serviceLabel: "Router daemon",
+          httpProxy: "http://127.0.0.1:7890",
+          httpsProxy: "http://127.0.0.1:7890",
+          proxyEnabled: true,
+          logLevel: "info",
+        },
+      };
+
+      function defaultTokenFieldForApp(appKey) {
+        if (appKey === "codex") return "OPENAI_API_KEY";
+        if (appKey === "gemini") return "GEMINI_API_KEY";
+        return "ANTHROPIC_AUTH_TOKEN";
+      }
+
+      function inferProviderVisual(provider, appKey) {
+        const haystack = `${provider.name || ""} ${provider.baseUrl || ""}`.toLowerCase();
+        const visual = {
+          iconKey: APPS[appKey]?.iconKey || appKey,
+          bg: "#eef4ff",
+        };
+
+        if (haystack.includes("minimax")) return { iconKey: "minimax", bg: "#fff1f1" };
+        if (haystack.includes("deepseek")) return { iconKey: "deepseek", bg: "#eef4ff" };
+        if (haystack.includes("qwen")) return { iconKey: "qwen", bg: "#f2edff" };
+        if (haystack.includes("packy")) return { iconKey: "packycode", bg: "#eef6ef" };
+        if (haystack.includes("anthropic") || haystack.includes("claude")) return { iconKey: "claude", bg: "#fff4eb" };
+        if (haystack.includes("openai") || haystack.includes("azure")) {
+          return {
+            iconKey: "codex",
+            bg: "#eef6ef",
+            iconStyle: "filter: brightness(0) saturate(100%) invert(10%) sepia(7%) saturate(1851%) hue-rotate(175deg) brightness(99%) contrast(94%);",
+          };
+        }
+        if (haystack.includes("gemini") || haystack.includes("google")) return { iconKey: "gemini", bg: "#eef4ff" };
+
+        if (appKey === "codex")
+          visual.iconStyle = "filter: brightness(0) saturate(100%) invert(10%) sepia(7%) saturate(1851%) hue-rotate(175deg) brightness(99%) contrast(94%);";
+
+        return visual;
+      }
+
+      function emptyLiveFailover(providerId) {
+        return {
+          providerId: providerId || null,
+          proxyEnabled: false,
+          autoFailoverEnabled: false,
+          maxRetries: 0,
+          activeProviderId: null,
+          inFailoverQueue: false,
+          queuePosition: null,
+          sortIndex: null,
+          providerHealth: normalizeLiveProviderHealth(null, providerId),
+          failoverQueueDepth: 0,
+          failoverQueue: [],
+        };
+      }
+
+      function normalizeLiveProviderHealth(health, providerId) {
+        if (!health || typeof health !== "object") {
+          return {
+            providerId: providerId || null,
+            observed: false,
+            healthy: true,
+            consecutiveFailures: 0,
+            lastSuccessAt: null,
+            lastFailureAt: null,
+            lastError: null,
+            updatedAt: null,
+          };
+        }
+
+        return {
+          providerId: health.providerId || providerId || null,
+          observed: !!health.observed,
+          healthy: Object.prototype.hasOwnProperty.call(health, "healthy") ? !!health.healthy : true,
+          consecutiveFailures: Number.isFinite(health.consecutiveFailures) ? health.consecutiveFailures : 0,
+          lastSuccessAt: health.lastSuccessAt || null,
+          lastFailureAt: health.lastFailureAt || null,
+          lastError: health.lastError || null,
+          updatedAt: health.updatedAt || null,
+        };
+      }
+
+      function normalizeLiveFailoverQueueEntry(entry) {
+        if (!entry || typeof entry !== "object") return null;
+        if (!entry.providerId) return null;
+
+        return {
+          providerId: entry.providerId,
+          providerName: entry.providerName || "",
+          sortIndex: Number.isFinite(entry.sortIndex) ? entry.sortIndex : null,
+          active: !!entry.active,
+          health: normalizeLiveProviderHealth(entry.health, entry.providerId),
+        };
+      }
+
+      function normalizeLiveFailover(failover, providerId) {
+        if (!failover || typeof failover !== "object") return emptyLiveFailover(providerId);
+
+        const queue = Array.isArray(failover.failoverQueue)
+          ? failover.failoverQueue.map((entry) => normalizeLiveFailoverQueueEntry(entry)).filter(Boolean)
+          : [];
+
+        return {
+          providerId: failover.providerId || providerId || null,
+          proxyEnabled: !!failover.proxyEnabled,
+          autoFailoverEnabled: !!failover.autoFailoverEnabled,
+          maxRetries: Number.isFinite(failover.maxRetries) ? failover.maxRetries : 0,
+          activeProviderId: failover.activeProviderId || null,
+          inFailoverQueue: !!failover.inFailoverQueue,
+          queuePosition: Number.isFinite(failover.queuePosition) ? failover.queuePosition : null,
+          sortIndex: Number.isFinite(failover.sortIndex) ? failover.sortIndex : null,
+          providerHealth: normalizeLiveProviderHealth(failover.providerHealth, failover.providerId || providerId),
+          failoverQueueDepth: Number.isFinite(failover.failoverQueueDepth) ? failover.failoverQueueDepth : queue.length,
+          failoverQueue: queue,
+        };
+      }
+
+      function normalizeLiveProvider(provider, appKey) {
+        const visual = inferProviderVisual(provider, appKey);
+        const hasLiveFailover = Object.prototype.hasOwnProperty.call(provider || {}, "failover");
+        return {
+          providerId: provider.providerId || null,
+          name: provider.name || "Unnamed provider",
+          url: provider.baseUrl || "Not set",
+          baseUrl: provider.baseUrl || "Not set",
+          status: provider.active ? "Active" : "Saved",
+          tone: provider.active ? "success" : "neutral",
+          usage: provider.active ? "Currently selected on this router" : "Saved provider",
+          tokenField: provider.tokenField || defaultTokenFieldForApp(appKey),
+          tokenConfigured: !!provider.tokenConfigured,
+          tokenMasked: provider.tokenMasked || "",
+          model: provider.model || "",
+          notes: provider.notes || "",
+          active: !!provider.active,
+          hasLiveFailover,
+          failover: normalizeLiveFailover(provider.failover, provider.providerId || null),
+          ...visual,
+        };
+      }
+
+      function preferredProviderIndex(app) {
+        if (!app || !Array.isArray(app.providers) || !app.providers.length) return 0;
+        const activeIndex = app.providers.findIndex((provider) => provider.active);
+        return activeIndex >= 0 ? activeIndex : 0;
+      }
+
+      const els = {
+        body: document.body,
+        themeToggle: document.getElementById("themeToggle"),
+        daemonStatusText: document.getElementById("daemonStatusText"),
+        daemonHealthChip: document.getElementById("daemonHealthChip"),
+        listenEndpointValue: document.getElementById("listenEndpointValue"),
+        serviceLabelValue: document.getElementById("serviceLabelValue"),
+        listenAddressValue: document.getElementById("listenAddressValue"),
+        listenPortValue: document.getElementById("listenPortValue"),
+        httpProxyValue: document.getElementById("httpProxyValue"),
+        httpsProxyValue: document.getElementById("httpsProxyValue"),
+        loggingValue: document.getElementById("loggingValue"),
+        appPicker: document.getElementById("appPicker"),
+        detailWorkspaceSwitcher: document.getElementById("detailWorkspaceSwitcher"),
+        providerList: document.getElementById("providerList"),
+        editorName: document.getElementById("editorName"),
+        editorSubtitle: document.getElementById("editorSubtitle"),
+        selectionNote: document.getElementById("selectionNote"),
+        summaryCard: document.getElementById("summaryCard"),
+        sectionTabs: document.getElementById("sectionTabs"),
+        fieldGrid: document.getElementById("fieldGrid"),
+        modalBackdrop: document.getElementById("modalBackdrop"),
+        modalTitle: document.getElementById("modalTitle"),
+        modalSubtitle: document.getElementById("modalSubtitle"),
+        modalPresetRow: document.getElementById("modalPresetRow"),
+        modalName: document.getElementById("modalName"),
+        modalNotes: document.getElementById("modalNotes"),
+        modalWebsite: document.getElementById("modalWebsite"),
+        modalBaseUrl: document.getElementById("modalBaseUrl"),
+        modalClose: document.getElementById("modalClose"),
+        modalCancel: document.getElementById("modalCancel"),
+        modalSave: document.getElementById("modalSave"),
+        toast: document.getElementById("toast"),
+        addButton: document.querySelector(".toolbar-add"),
+        duplicateButton: document.querySelectorAll(".action-row button")[0],
+        editorSaveButton: document.querySelectorAll(".action-row button")[1],
+        footerSaveButton: document.querySelectorAll(".footer-actions .primary")[0],
+      };
+
+      let toastTimer = null;
+
+      function initFromQuery() {
+        const params = new URLSearchParams(window.location.search);
+        const app = params.get("app");
+        const theme = params.get("theme");
+        const menu = params.get("menu");
+        const workspace = params.get("workspace");
+        const status = params.get("status");
+        const health = params.get("health");
+
+        if (APPS[app]) state.app = app;
+        if (theme === "dark" || theme === "light") state.theme = theme;
+        if (WORKSPACES[workspace]) state.workspace = workspace;
+        if (menu === "open") state.appMenuOpen = true;
+        if (status === "running" || status === "stopped") state.host.status = status;
+        if (health === "healthy" || health === "degraded" || health === "stopped" || health === "unknown")
+          state.host.health = health;
+        state.host.listenAddr = params.get("listen_addr") || state.host.listenAddr;
+        state.host.listenPort = params.get("listen_port") || state.host.listenPort;
+        state.host.serviceLabel = params.get("service_label") || state.host.serviceLabel;
+        state.host.httpProxy = params.get("http_proxy") || "";
+        state.host.httpsProxy = params.get("https_proxy") || "";
+        state.host.proxyEnabled = params.get("proxy_enabled") === "1";
+        state.host.logLevel = params.get("log_level") || state.host.logLevel;
+      }
+
+      function applyLiveWorkspaceData(payload) {
+        if (!payload || typeof payload !== "object" || !payload.apps) return;
+
+        Object.entries(payload.apps).forEach(([appKey, appPayload]) => {
+          if (!APPS[appKey]) return;
+
+          const providers = Array.isArray(appPayload.providers)
+            ? appPayload.providers.map((provider) => normalizeLiveProvider(provider, appKey))
+            : [];
+
+          APPS[appKey].providers = providers;
+        });
+
+        clampSelection();
+        state.selectedProvider = preferredProviderIndex(currentApp());
+        state.activePreset = currentProvider()?.name || currentApp().presets[0] || "Custom";
+        render();
+      }
+
+      function formatProxyValue(value) {
+        return value && value.trim() ? value.trim() : "Not set";
+      }
+
+      function formatLogLevel(value) {
+        if (!value) return "Info";
+        return value.charAt(0).toUpperCase() + value.slice(1);
+      }
+
+      function renderHost() {
+        const host = state.host;
+        const isRunning = host.status === "running";
+        const healthLabel =
+          host.health === "healthy"
+            ? "Healthy"
+            : host.health === "degraded"
+              ? "Degraded"
+              : host.health === "stopped"
+                ? "Stopped"
+                : "Unknown";
+
+        els.daemonStatusText.textContent = isRunning ? "Running" : "Stopped";
+        els.daemonHealthChip.textContent = healthLabel;
+        els.daemonHealthChip.className = `chip ${host.health === "healthy" ? "success" : ""}`.trim();
+        els.listenEndpointValue.textContent = `${host.listenAddr}:${host.listenPort}`;
+        els.serviceLabelValue.textContent = host.serviceLabel;
+        els.listenAddressValue.textContent = host.listenAddr;
+        els.listenPortValue.textContent = host.listenPort;
+        els.httpProxyValue.textContent = formatProxyValue(host.httpProxy);
+        els.httpsProxyValue.textContent = formatProxyValue(host.httpsProxy);
+        els.loggingValue.value = (host.logLevel || "info").toLowerCase();
+      }
+
+      function showToast(message) {
+        els.toast.textContent = message;
+        els.toast.classList.add("visible");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => els.toast.classList.remove("visible"), 1800);
+      }
+
+      function currentApp() {
+        return APPS[state.app];
+      }
+
+      function currentProvider() {
+        const app = currentApp();
+        if (!app.providers.length) return null;
+        return app.providers[Math.min(state.selectedProvider, app.providers.length - 1)];
+      }
+
+      function credentialSummaryValue(provider) {
+        if (!provider) return "";
+        const tokenField = provider.tokenField || defaultTokenFieldForApp(state.app);
+        if (!provider.tokenConfigured) return `${tokenField} · Not configured`;
+        return provider.tokenMasked ? `${tokenField} · ${provider.tokenMasked}` : `${tokenField} · Configured`;
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/\"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      function formatEnabledValue(value) {
+        return value ? "Enabled" : "Disabled";
+      }
+
+      function formatQueueMembershipValue(value) {
+        return value ? "Queued" : "Not queued";
+      }
+
+      function formatQueuePositionValue(value) {
+        return value == null ? "Not queued" : String(value + 1);
+      }
+
+      function formatSortIndexValue(value) {
+        return value == null ? "Not queued" : String(value);
+      }
+
+      function formatProviderHealthValue(health) {
+        if (!health) return "Unavailable";
+        if (!health.observed) return "No health sample";
+        return health.healthy ? "Healthy" : "Unhealthy";
+      }
+
+      function formatObservedValue(value) {
+        return value ? "Yes" : "No";
+      }
+
+      function formatTimestampValue(value, emptyLabel) {
+        return value || emptyLabel;
+      }
+
+      function formatQueueOrderValue(queue) {
+        if (!Array.isArray(queue) || !queue.length) return "No queued providers";
+
+        return queue.map((entry, index) => {
+          const name = entry.providerName || entry.providerId || `Entry ${index + 1}`;
+          const health = formatProviderHealthValue(entry.health).toLowerCase();
+          const active = entry.active ? "active" : "standby";
+          const sortLabel = entry.sortIndex == null ? null : `sort ${entry.sortIndex}`;
+
+          return `${index + 1}. ${name} · ${active} · ${health}${sortLabel ? ` · ${sortLabel}` : ""}`;
+        }).join("\n");
+      }
+
+      function routingSummary(provider) {
+        if (!provider || !provider.hasLiveFailover) {
+          return {
+            label: "Failover contract",
+            value: "Waiting for provider.failover payload",
+          };
+        }
+
+        const failover = provider.failover;
+        const positionLabel = failover.queuePosition == null ? "not queued" : `position ${failover.queuePosition + 1}`;
+
+        return {
+          label: "Failover status",
+          value: `${formatEnabledValue(failover.autoFailoverEnabled)} · ${failover.failoverQueueDepth} queued · ${positionLabel}`,
+        };
+      }
+
+      function liveRoutingFieldGroups(provider) {
+        const failover = provider.failover;
+        const health = failover.providerHealth;
+
+        return [
+          [
+            ["Provider ID", failover.providerId || "Not set", "mono"],
+            ["Queue membership", formatQueueMembershipValue(failover.inFailoverQueue)],
+            ["Queue position", formatQueuePositionValue(failover.queuePosition), "mono"],
+            ["Queue sort index", formatSortIndexValue(failover.sortIndex), "mono"],
+            ["Queue depth", String(failover.failoverQueueDepth), "mono"],
+            ["Queue order", formatQueueOrderValue(failover.failoverQueue), "wide stack"],
+          ],
+          [
+            ["Provider health", formatProviderHealthValue(health)],
+            ["Health observed", formatObservedValue(health.observed)],
+            ["Consecutive failures", String(health.consecutiveFailures), "mono"],
+          ],
+          [
+            ["Proxy enabled", formatEnabledValue(failover.proxyEnabled)],
+            ["Auto failover", formatEnabledValue(failover.autoFailoverEnabled)],
+            ["Max retries", String(failover.maxRetries), "mono"],
+            ["Active provider ID", failover.activeProviderId || "None", "wide mono"],
+          ],
+          [
+            ["Last success", formatTimestampValue(health.lastSuccessAt, "No success sample"), "wide mono"],
+            ["Last failure", formatTimestampValue(health.lastFailureAt, "No failure sample"), "wide mono"],
+            ["Last error", formatTimestampValue(health.lastError, "No recent error"), "wide stack"],
+            ["Runtime updated", formatTimestampValue(health.updatedAt, "No update timestamp"), "wide mono"],
+          ],
+        ];
+      }
+
+      function placeholderRoutingFieldGroups(provider) {
+        const providerId = provider && provider.providerId ? provider.providerId : "Placeholder";
+
+        return [
+          [
+            ["Provider ID", providerId, "mono"],
+            ["Queue membership", "Placeholder until provider.failover arrives"],
+            ["Queue position", "Placeholder", "mono"],
+            ["Queue sort index", "Placeholder", "mono"],
+            ["Queue depth", "Placeholder", "mono"],
+            ["Queue order", "Placeholder only. No queue facts are derived without provider.failover.", "wide stack"],
+          ],
+          [
+            ["Provider health", "Placeholder until provider.failover.providerHealth arrives"],
+            ["Health observed", "Placeholder"],
+            ["Consecutive failures", "Placeholder", "mono"],
+          ],
+          [
+            ["Proxy enabled", "Placeholder until provider.failover.proxyEnabled arrives"],
+            ["Auto failover", "Placeholder until provider.failover.autoFailoverEnabled arrives"],
+            ["Max retries", "Placeholder until provider.failover.maxRetries arrives", "mono"],
+            ["Active provider ID", "Placeholder until provider.failover.activeProviderId arrives", "wide mono"],
+          ],
+          [
+            ["Last success", "Placeholder", "wide mono"],
+            ["Last failure", "Placeholder", "wide mono"],
+            ["Last error", "Placeholder only. No health error is derived without provider.failover.", "wide stack"],
+            ["Runtime updated", "Placeholder", "wide mono"],
+          ],
+        ];
+      }
+
+      function workspaceFieldGroups(app, provider) {
+        if (state.workspace === "routing" && provider) {
+          return provider.hasLiveFailover ? liveRoutingFieldGroups(provider) : placeholderRoutingFieldGroups(provider);
+        }
+
+        const allFields = workspaceFields(app, provider);
+
+        return state.workspace === "providers"
+          ? [
+              allFields.slice(0, 4),
+              allFields.slice(4, 5),
+              allFields.slice(5, 7),
+              allFields.slice(7),
+            ]
+          : [
+              allFields.slice(0, 3),
+              allFields.slice(3, 5),
+              allFields.slice(5, 7),
+              allFields.slice(7),
+            ];
+      }
+
+      function workspaceSummary(app, provider) {
+        if (state.workspace === "providers" && provider) {
+          return {
+            label: "Configured endpoint",
+            value: provider.baseUrl || "Not set",
+          };
+        }
+
+        if (state.workspace === "routing" && provider) {
+          return routingSummary(provider);
+        }
+
+        if (state.workspace === "env" && provider) {
+          return {
+            label: app.summary.env.label,
+            value: credentialSummaryValue(provider),
+          };
+        }
+
+        return app.summary[state.workspace];
+      }
+
+      function workspaceFields(app, provider) {
+        if (state.workspace === "providers" && provider) {
+          return [
+            ["Provider name", provider.name],
+            ["Notes", provider.notes || "No notes"],
+            ["Website URL", provider.baseUrl || "Not set", "wide"],
+            ["Base URL", provider.baseUrl || "Not set", "wide"],
+            ["Credential status", provider.tokenConfigured ? (provider.tokenMasked || "Configured") : "Not configured", "wide mono"],
+            ["Token field", provider.tokenField || defaultTokenFieldForApp(state.app)],
+            ["Model", provider.model || "Default"],
+            ["Health check", "Placeholder", "mono"],
+            ["Fallback model", "Placeholder"],
+            ["Latency budget", "Placeholder", "mono"],
+          ];
+        }
+
+        if (state.workspace === "env" && provider) {
+          return [
+            ["Provider name", provider.name],
+            ["Secret policy", "Blank preserves stored secret"],
+            ["Primary env key", credentialSummaryValue(provider), "wide mono"],
+            ["Base URL env", provider.baseUrl || "Not set", "wide"],
+            ["Model env", provider.model || "Default"],
+            ["Fallback model", "Placeholder"],
+            ["Health probe", "Placeholder", "mono"],
+            ["Latency budget", "Placeholder", "mono"],
+            ["Notes", provider.notes || "No notes", "wide"],
+          ];
+        }
+
+        return app.fields[state.workspace];
+      }
+
+      function resetDetailContext() {
+        state.detailTab = 0;
+        state.activePreset = currentProvider()?.name || currentApp().presets[0] || "Custom";
+      }
+
+      function clampSelection() {
+        const app = currentApp();
+        if (!app.providers.length) {
+          state.selectedProvider = 0;
+          return;
+        }
+        if (state.selectedProvider >= app.providers.length) state.selectedProvider = app.providers.length - 1;
+        if (state.selectedProvider < 0) state.selectedProvider = 0;
+      }
+
+      function countLabel(app) {
+        const count = app.providers.length;
+        if (!count) return "No providers";
+        return `${count} provider${count === 1 ? "" : "s"}`;
+      }
+
+      function toneChip(status, tone) {
+        const className = tone === "success" ? "chip success" : tone === "accent" ? "chip" : "chip";
+        const activeStyle = tone === "accent" ? ' style="background: var(--accent-soft); color: var(--accent-text);"' : "";
+        return `<div class="${className}"${activeStyle}>${status}</div>`;
+      }
+
+      function iconMarkup(key, label, options = {}) {
+        const src = key ? ICONS[key] : null;
+        const style = options.style ? ` style="${options.style}"` : "";
+        const shellClass = `glyph-shell ${options.round ? "round" : ""}`.trim();
+        if (src)
+          return `<div class="${shellClass}"${options.background ? ` style="background:${options.background}"` : ""}><img src="${src}" alt="${label}"${style}></div>`;
+        return `<div class="${shellClass}"${options.background ? ` style="background:${options.background}"` : ""}><span class="glyph-fallback">${options.monogram || label.slice(0, 2).toUpperCase()}</span></div>`;
+      }
+
+      function makeIcon(provider) {
+        return iconMarkup(provider.iconKey, provider.name, {
+          round: true,
+          background: provider.bg,
+          style: provider.iconStyle || "",
+          monogram: provider.monogram,
+        });
+      }
+
+      function renderSwitchers() {
+        const app = currentApp();
+        const appStyle = app.iconKey === "codex"
+          ? 'filter: brightness(0) saturate(100%) invert(10%) sepia(7%) saturate(1851%) hue-rotate(175deg) brightness(99%) contrast(94%);'
+          : "";
+        const appRows = Object.entries(APPS)
+          .map(([key, entry]) => appMenuRow(key, entry))
+          .join("");
+
+        els.appPicker.className = `app-picker ${state.appMenuOpen ? "open" : ""}`.trim();
+        els.appPicker.innerHTML = `
+          <button class="app-trigger" id="appTrigger" type="button" aria-expanded="${state.appMenuOpen ? "true" : "false"}">
+            ${iconMarkup(app.iconKey, app.label, { background: app.iconKey ? "var(--panel-strong)" : "var(--panel-soft)", style: appStyle, monogram: app.monogram })}
+            <span class="app-trigger-copy">
+              <span class="app-trigger-value">${app.label}</span>
+            </span>
+            <span class="app-trigger-meta">${countLabel(app)}</span>
+            <span class="chevron">▾</span>
+          </button>
+          <div class="app-menu" id="appMenu">
+            <div class="app-menu-section">
+              <div class="app-menu-title">Applications</div>
+              ${appRows}
+            </div>
+          </div>
+        `;
+
+        els.appPicker.querySelector("#appTrigger").addEventListener("click", (event) => {
+          event.stopPropagation();
+          state.appMenuOpen = !state.appMenuOpen;
+          render();
+        });
+        els.appPicker.querySelectorAll(".app-menu-row").forEach((button) => {
+          button.addEventListener("click", (event) => {
+            const key = event.currentTarget.dataset.app;
+            state.app = key;
+            state.selectedProvider = preferredProviderIndex(APPS[key]);
+            state.appMenuOpen = false;
+            resetDetailContext();
+            render();
+          });
+        });
+
+        els.detailWorkspaceSwitcher.innerHTML = "";
+        Object.entries(WORKSPACES).forEach(([key, workspace]) => {
+          const button = document.createElement("button");
+          button.className = `compact ${key === state.workspace ? "selected" : ""}`.trim();
+          button.textContent = workspace.label;
+          button.type = "button";
+          button.addEventListener("click", () => {
+            state.workspace = key;
+            state.detailTab = 0;
+            render();
+          });
+          els.detailWorkspaceSwitcher.appendChild(button);
+        });
+      }
+
+      function appMenuRow(key, app) {
+        const selected = key === state.app ? " selected" : "";
+        const appStyle = app.iconKey === "codex"
+          ? 'filter: brightness(0) saturate(100%) invert(10%) sepia(7%) saturate(1851%) hue-rotate(175deg) brightness(99%) contrast(94%);'
+          : "";
+        const meta = app.providers.length ? `${countLabel(app)} configured` : "No providers configured";
+        return `
+          <button class="app-menu-row${selected}" data-app="${key}" type="button">
+            ${iconMarkup(app.iconKey, app.label, { background: "var(--panel-soft)", style: appStyle, monogram: app.monogram })}
+            <div class="app-row-copy">
+              <div class="app-row-name">${app.label}</div>
+              <div class="app-row-meta">${meta}</div>
+            </div>
+            <div class="chip">${app.providers.length ? `${app.providers.length}` : "Empty"}</div>
+          </button>
+        `;
+      }
+
+      function renderProviders(app) {
+        els.providerList.innerHTML = "";
+        if (!app.providers.length) {
+          els.providerList.innerHTML = `
+            <div class="provider-empty">
+              <div class="provider-empty-title">No providers yet</div>
+              <div class="provider-empty-copy">Add a provider to start configuring this app.</div>
+            </div>
+          `;
+          return;
+        }
+        app.providers.forEach((provider, index) => {
+          const row = document.createElement("button");
+          row.type = "button";
+          row.className = `provider-row ${index === state.selectedProvider ? "selected" : ""}`.trim();
+          row.innerHTML = `
+            ${makeIcon(provider)}
+            <div class="provider-main">
+              <div class="provider-name">${provider.name}</div>
+              <div class="provider-url">${provider.url}</div>
+              <div class="provider-usage">${provider.usage || ""}</div>
+            </div>
+            ${toneChip(provider.status, provider.tone)}
+          `;
+          row.addEventListener("click", () => {
+            state.selectedProvider = index;
+            state.activePreset = provider.name;
+            state.detailTab = 0;
+            render();
+          });
+          els.providerList.appendChild(row);
+        });
+      }
+
+      function renderEditor(app) {
+        const provider = currentProvider();
+        els.editorName.textContent = provider ? provider.name : app.label;
+        els.editorSubtitle.textContent =
+          state.workspace === "providers"
+            ? app.providerSubtitle
+            : state.workspace === "routing"
+              ? app.routingSubtitle
+              : app.envSubtitle;
+
+        if (provider) {
+          els.selectionNote.textContent = `Source preset: ${state.activePreset || provider.name}`;
+          els.selectionNote.style.display = "";
+        } else {
+          els.selectionNote.textContent = "";
+          els.selectionNote.style.display = "none";
+        }
+
+        const summary = workspaceSummary(app, provider);
+        els.summaryCard.innerHTML = `
+          <div class="summary-main">
+            ${provider
+              ? makeIcon(provider)
+              : iconMarkup(app.iconKey, app.label, { round: true, background: "var(--panel-soft)", monogram: app.monogram })}
+            <div class="summary-copy">
+              <div class="label">${escapeHtml(summary.label)}</div>
+              <div class="value">${escapeHtml(summary.value)}</div>
+            </div>
+          </div>
+        `;
+
+        els.sectionTabs.innerHTML = "";
+        WORKSPACES[state.workspace].tabs.forEach((label, index) => {
+          const div = document.createElement("div");
+          div.className = `tag ${index === state.detailTab ? "selected" : ""}`.trim();
+          div.textContent = label;
+          div.addEventListener("click", () => {
+            state.detailTab = index;
+            showToast(`${label} section selected`);
+            render();
+          });
+          els.sectionTabs.appendChild(div);
+        });
+
+        els.fieldGrid.innerHTML = "";
+        if (!provider) {
+          els.fieldGrid.innerHTML = `
+            <div class="editor-empty">
+              <div class="editor-empty-title">No selected provider</div>
+              <div class="editor-empty-copy">Add a provider to start configuring this workspace.</div>
+            </div>
+          `;
+          return;
+        }
+
+        const groupedFields = workspaceFieldGroups(app, provider);
+
+        groupedFields[state.detailTab].forEach(([label, value, kind]) => {
+          const field = document.createElement("div");
+          field.className = `field ${kind && kind.includes("wide") ? "wide" : ""}`.trim();
+          const mono = kind && kind.includes("mono") ? " mono" : "";
+          const stack = kind && kind.includes("stack") ? " stack" : "";
+          field.innerHTML = `
+            <label>${escapeHtml(label)}</label>
+            <div class="value-box${mono}${stack}">${escapeHtml(value).replace(/\n/g, "<br>")}</div>
+          `;
+          els.fieldGrid.appendChild(field);
+        });
+      }
+
+      function render() {
+        clampSelection();
+        const app = APPS[state.app];
+        els.body.dataset.theme = state.theme;
+        els.themeToggle.textContent = state.theme === "dark" ? "Dark" : "Light";
+        renderHost();
+        renderSwitchers();
+        renderProviders(app);
+        renderEditor(app);
+        const hasProvider = !!currentProvider();
+        els.duplicateButton.disabled = !hasProvider;
+        els.editorSaveButton.disabled = !hasProvider;
+        els.footerSaveButton.disabled = !hasProvider;
+      }
+
+      els.addButton.addEventListener("click", () => {
+        const app = currentApp();
+        state.modalOpen = true;
+        state.modalPreset = "Custom";
+        els.modalTitle.textContent = `Add ${app.label} provider`;
+        els.modalSubtitle.textContent = `Choose a preset or enter details for ${app.label}.`;
+        els.modalName.value = "";
+        els.modalNotes.value = "";
+        els.modalWebsite.value = "";
+        els.modalBaseUrl.value = "";
+        els.modalPresetRow.innerHTML = "";
+        app.presets.forEach((label) => {
+          const div = document.createElement("div");
+          div.className = `tag ${label === state.modalPreset ? "selected" : ""}`.trim();
+          div.textContent = label;
+          div.addEventListener("click", () => {
+            state.modalPreset = label;
+            els.modalName.value = label === "Custom" ? "" : label;
+            els.modalNotes.value = label === "Custom" ? "" : `${app.label} draft preset`;
+            els.modalWebsite.value = label === "Custom" ? "" : app.providers.find((entry) => entry.name === label)?.url || "";
+            els.modalBaseUrl.value = els.modalWebsite.value;
+            Array.from(els.modalPresetRow.children).forEach((child) => child.classList.remove("selected"));
+            div.classList.add("selected");
+          });
+          els.modalPresetRow.appendChild(div);
+        });
+        els.modalBackdrop.classList.add("visible");
+      });
+
+      function closeModal() {
+        state.modalOpen = false;
+        els.modalBackdrop.classList.remove("visible");
+      }
+
+      els.modalClose.addEventListener("click", closeModal);
+      els.modalCancel.addEventListener("click", closeModal);
+      els.modalBackdrop.addEventListener("click", (event) => {
+        if (event.target === els.modalBackdrop) closeModal();
+      });
+
+      els.modalSave.addEventListener("click", () => {
+        closeModal();
+        showToast("Add draft stays placeholder-only in this prototype");
+      });
+
+      els.duplicateButton.addEventListener("click", () => {
+        if (!currentProvider()) return;
+        showToast("Duplicate stays placeholder-only in this prototype");
+      });
+
+      els.editorSaveButton.addEventListener("click", () => {
+        if (!currentProvider()) return;
+        showToast("Save stays placeholder-only in this prototype");
+      });
+
+      els.footerSaveButton.addEventListener("click", () => {
+        if (!currentProvider()) return;
+        showToast("Save stays placeholder-only in this prototype");
+      });
+
+      els.themeToggle.addEventListener("click", () => {
+        state.theme = state.theme === "dark" ? "light" : "dark";
+        render();
+      });
+
+      els.loggingValue.addEventListener("change", (event) => {
+        state.host.logLevel = event.target.value || "info";
+        renderHost();
+      });
+
+      window.addEventListener("message", (event) => {
+        if (!event || !event.data || event.data.type !== "ccswitch-prototype-live-data") return;
+        applyLiveWorkspaceData(event.data.payload);
+      });
+
+      document.addEventListener("click", (event) => {
+        if (!els.appPicker.contains(event.target)) {
+          if (state.appMenuOpen) {
+            state.appMenuOpen = false;
+            render();
+          }
+        }
+      });
+
+      initFromQuery();
+      resetDetailContext();
+      render();
+    </script>
+  </body>
+</html>
