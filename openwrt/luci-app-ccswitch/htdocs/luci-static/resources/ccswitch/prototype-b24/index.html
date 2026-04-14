@@ -148,7 +148,7 @@
 
       .band-grid {
         display: grid;
-        grid-template-columns: 1.8fr 1fr 1fr;
+        grid-template-columns: 1fr;
         gap: 0;
         align-items: stretch;
       }
@@ -189,7 +189,7 @@
         margin-top: 8px;
       }
 
-      .band-actions .chip.meta {
+      .band-actions .meta {
         margin-left: auto;
       }
 
@@ -294,6 +294,10 @@
         font-size: 12px;
         line-height: 1.45;
         font-weight: 520;
+      }
+
+      .host-card p.is-hidden {
+        display: none;
       }
 
       .workspace-top {
@@ -981,6 +985,19 @@
         color: var(--text);
       }
 
+      .inline-input {
+        width: 100%;
+        min-height: 48px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--panel-strong);
+        padding: 12px 14px;
+        font: inherit;
+        font-size: 15px;
+        font-weight: 650;
+        color: var(--text);
+      }
+
       @media (max-width: 1200px) {
         .band-details {
           grid-template-columns: 1fr;
@@ -996,7 +1013,7 @@
         }
 
         .band-grid {
-          grid-template-columns: 1fr 1fr;
+          grid-template-columns: 1fr;
           gap: 14px;
         }
 
@@ -1029,40 +1046,41 @@
               <div class="chip success" id="daemonHealthChip">Healthy</div>
               <div class="chip active">Restart</div>
               <div class="chip">Stop</div>
-              <select class="chip-select meta" id="loggingValue" aria-label="Logging level">
+              <select class="chip-select" id="loggingValue" aria-label="Logging level">
                 <option value="debug">Debug</option>
                 <option value="info" selected>Info</option>
                 <option value="warn">Warn</option>
                 <option value="error">Error</option>
               </select>
+              <div class="chip active meta">Save</div>
             </div>
             <div class="band-divider"></div>
             <div class="band-details">
               <div class="host-card">
                 <h3>Listen settings</h3>
-                <p>Daemon network settings.</p>
+                <p class="is-hidden">Daemon network settings.</p>
                 <div class="grid">
                   <div class="field">
                     <label>Listen address</label>
-                    <div class="value-box mono" id="listenAddressValue">0.0.0.0</div>
+                    <input class="inline-input mono" id="listenAddressValue" value="0.0.0.0" />
                   </div>
                   <div class="field">
                     <label>Listen port</label>
-                    <div class="value-box mono" id="listenPortValue">15721</div>
+                    <input class="inline-input mono" id="listenPortValue" value="15721" />
                   </div>
                 </div>
               </div>
               <div class="host-card">
                 <h3>Outbound proxy</h3>
-                <p>Optional upstream routing.</p>
+                <p class="is-hidden">Optional upstream routing.</p>
                 <div class="grid">
                   <div class="field">
                     <label>HTTP proxy</label>
-                    <div class="value-box mono" id="httpProxyValue">http://127.0.0.1:7890</div>
+                    <input class="inline-input mono" id="httpProxyValue" value="http://127.0.0.1:7890" />
                   </div>
                   <div class="field">
                     <label>HTTPS proxy</label>
-                    <div class="value-box mono" id="httpsProxyValue">http://127.0.0.1:7890</div>
+                    <input class="inline-input mono" id="httpsProxyValue" value="http://127.0.0.1:7890" />
                   </div>
                 </div>
               </div>
@@ -1629,10 +1647,10 @@
         els.daemonHealthChip.className = `chip ${host.health === "healthy" ? "success" : ""}`.trim();
         els.listenEndpointValue.textContent = `${host.listenAddr}:${host.listenPort}`;
         els.serviceLabelValue.textContent = host.serviceLabel;
-        els.listenAddressValue.textContent = host.listenAddr;
-        els.listenPortValue.textContent = host.listenPort;
-        els.httpProxyValue.textContent = formatProxyValue(host.httpProxy);
-        els.httpsProxyValue.textContent = formatProxyValue(host.httpsProxy);
+        els.listenAddressValue.value = host.listenAddr;
+        els.listenPortValue.value = host.listenPort;
+        els.httpProxyValue.value = formatProxyValue(host.httpProxy);
+        els.httpsProxyValue.value = formatProxyValue(host.httpsProxy);
         els.loggingValue.value = (host.logLevel || "info").toLowerCase();
       }
 
