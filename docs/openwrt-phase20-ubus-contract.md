@@ -10,7 +10,12 @@ The current OpenWrt admin surface works but has two architectural debts:
 
 2. **Iframe bridge**: The LuCI page loads a static prototype HTML file in an iframe and shuttles state through `postMessage` + query parameters. Host settings are saved through a `postMessage` -> UCI write -> `postMessage` reply cycle. This works but blocks native React/LuCI integration.
 
-This contract defines the target ubus method surface that eliminates debt (1) and creates the preconditions for eliminating debt (2).
+This contract defines the target ubus method surface that eliminates debt (1)
+and creates the preconditions for eliminating debt (2). It also fixes the
+steady-state migration target: routine LuCI provider, failover, and runtime
+operations must stop spawning the `cc-switch` CLI. A structured-object bridge
+at the current ubus boundary is acceptable as an intermediate cut, but it is
+not the end state for this phase family.
 
 ## Design Principles
 
@@ -303,9 +308,20 @@ function runProviderCommand(command) {
 }
 ```
 
-**Path B (future: native ubus):** The daemon registers directly as a ubus object via `libubus`, eliminating the shell-spawn entirely. This is a larger change and not required for the contract migration.
+**Path B (target: non-shell-spawn ubus handler):** Provider, failover, and
+runtime methods stop calling `popen("cc-switch openwrt ...")`. This can be
+implemented either by:
 
-**Recommended:** Path A first. Path B is optional/future.
+- the daemon registering a ubus object directly via `libubus`, or
+- a thin OpenWrt-side bridge calling shared Rust/admin logic without spawning a
+  new process per RPC
+
+The contract does not force one implementation technique, but it does require
+that the steady-state path for routine LuCI operations is no longer
+shell-spawn-based.
+
+**Recommended:** Path A is an optional compatibility cut for low-risk rollout.
+Path B is the actual target for provider, failover, and runtime methods.
 
 ### rpcd ucode: new methods
 
@@ -325,7 +341,7 @@ Add `rpc.declare` entries for `get_host_config` and `set_host_config`. Remove th
 
 ## Ordered Migration Slices
 
-### Slice 1: Structured provider reads (no daemon changes)
+### Slice 1: Structured objects at the ubus boundary
 
 **Type:** rpcd ucode + TypeScript adapter
 **Risk:** low (read-only, no router state mutation)
@@ -338,23 +354,47 @@ Add `rpc.declare` entries for `get_host_config` and `set_host_config`. Remove th
 
 **Methods affected:** R1-R7, plus read paths of W1-W9 return values
 
-**Why first:** This is the highest-value change. It eliminates the double-serialization for every read and every mutation response in a single cut. It requires zero daemon binary changes.
+**Why first:** This is the lowest-risk structural cleanup. It eliminates the
+double-serialization boundary and simplifies frontend adapters before the
+transport change. It is not sufficient on its own, because it still leaves the
+shell-spawn bottleneck in place.
 
-### Slice 2: Host config ubus methods
+### Slice 2: Replace routine shell-spawn RPCs for provider/failover/runtime
+
+**Type:** OpenWrt backend transport + LuCI adapters
+**Risk:** medium
+**Scope:**
+- Replace `popen("cc-switch openwrt ...")` for provider CRUD, failover, and
+  runtime reads with a non-shell-spawn ubus handler
+- Preserve the frozen method surface above and the same structured return types
+- Keep existing backend truth in `openwrt_admin.rs` as the source of behavior
+- Eliminate the per-call process spawn and stdout JSON transport for routine
+  LuCI operations
+
+**Why second:** This is the core architectural payoff of the Phase 20 plan. It
+removes the largest latency and indirection source without requiring iframe
+removal first.
+
+### Slice 3: Host config ubus methods
 
 **Type:** rpcd ucode + LuCI view
-**Risk:** low (UCI read/write already works via LuCI; this just moves the surface)
+**Risk:** low
 **Scope:**
-- Add `get_host_config` read method to rpcd ucode using `uci.cursor()` to read `ccswitch.main`
-- Add `set_host_config` write method to rpcd ucode using `uci.cursor()` to write `ccswitch.main`
+- Add `get_host_config` read method to rpcd ucode using `uci.cursor()` to read
+  `ccswitch.main`
+- Add `set_host_config` write method to rpcd ucode using `uci.cursor()` to
+  write `ccswitch.main`
 - Add both to ACL
 - Add `rpc.declare` entries in `settings.js`
-- Replace direct `uci.load`/`uci.get`/`uci.set` calls in the prototype bridge with the new ubus methods
+- Replace direct `uci.load`/`uci.get`/`uci.set` calls in the prototype bridge
+  with the new ubus methods
 - Return structured `HostConfigView` object
 
-**Why second:** This lifts the last UCI-direct dependency out of the LuCI view into the ubus surface, making the full admin surface accessible through a single transport. It unblocks future non-LuCI admin UIs.
+**Why third:** Host config is already router-native through UCI today. This
+slice is about transport unification and frontend simplification, not about
+removing the main latency bottleneck.
 
-### Slice 3: Clean up dead RPC declarations
+### Slice 4: Clean up dead RPC declarations
 
 **Type:** LuCI view only
 **Risk:** none
@@ -363,9 +403,9 @@ Add `rpc.declare` entries for `get_host_config` and `set_host_config`. Remove th
 - Remove duplicate parameter-variant declarations (`callUpsertProviderById` vs `callUpsertProviderByProviderId`, etc.) and consolidate to one declaration per rpcd method
 - Remove `get_available_providers_for_failover` alias from rpcd ucode; keep `get_available_failover_providers`
 
-**Why third:** Cleanup after the structural work is done. No functional change.
+**Why fourth:** Cleanup after the structural work is done. No functional change.
 
-### Slice 4: Remove `*_json` string fields from TypeScript types
+### Slice 5: Remove `*_json` string fields from TypeScript types
 
 **Type:** TypeScript only
 **Risk:** none (dead code removal after Slice 1)
@@ -374,23 +414,31 @@ Add `rpc.declare` entries for `get_host_config` and `set_host_config`. Remove th
 - Remove any remaining backward-compat parse paths
 - Tighten the `[key: string]: unknown` index signatures to explicit fields
 
-**Why fourth:** Waits for Slice 1 to be deployed and verified on real hardware before removing fallback paths.
+**Why fifth:** Waits for Slices 1-2 to be deployed and verified on real
+hardware before removing fallback paths.
 
-### Slice 5: Iframe removal (deferred)
+### Slice 6: Iframe removal (deferred)
 
 **Type:** LuCI view + prototype HTML
 **Risk:** high (full UI rewrite)
 **Scope:**
 - Replace the static prototype iframe with a native LuCI view or embedded React bundle that calls the ubus surface directly
 - Remove `postMessage` bridge, query-parameter injection, and the prototype HTML asset
-- This slice depends on Slices 1-2 being complete and verified, plus a design decision on whether the replacement is a LuCI JS view or a React SPA served from LuCI
+- This slice depends on Slices 1-3 being complete and verified, plus a design
+  decision on whether the replacement is a LuCI JS view or a React SPA served
+  from LuCI
 
-**Explicitly deferred.** The ubus contract from Slices 1-2 is a prerequisite. The iframe works today and is not blocking. Iframe removal is a UI project, not a backend contract project.
+**Explicitly deferred.** The ubus contract from Slices 1-3 is a prerequisite.
+The iframe works today and is not blocking. Iframe removal is a UI project,
+not a backend contract project.
 
 ## What This Contract Does NOT Cover
 
 - **Provider quota/cost semantics:** No backend truth exists. Not invented here.
 - **Health probe URL / fallback model / latency budget:** Visible as B2.4 placeholders but no backend DTO. Leave as placeholder-only per phase 17 audit.
-- **Native ubus daemon registration (Path B):** Optional future optimization. The shell-spawn with JSON parse (Path A) is sufficient for the method contract.
+- **Specific implementation mechanism for non-shell-spawn ubus handling:** The
+  contract requires routine LuCI provider/failover/runtime operations to stop
+  spawning the CLI, but it does not force direct daemon ubus registration over
+  other safe shared-logic implementations.
 - **HTTP admin API:** The domain models are transport-agnostic. An HTTP API can be built later over the same types. Not in scope.
 - **Start/stop service controls:** Only `restart_service` exists in the backend. No `start_service` or `stop_service` rpcd methods today.
