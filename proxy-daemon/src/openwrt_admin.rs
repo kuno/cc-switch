@@ -305,11 +305,28 @@ pub fn upsert_provider(
     upsert_provider_with_payload(db, app_type, requested_provider_id, payload)
 }
 
+pub fn upsert_provider_from_payload(
+    db: &Database,
+    app_type: &AppType,
+    requested_provider_id: Option<&str>,
+    payload: OpenWrtProviderPayload,
+) -> anyhow::Result<OpenWrtProviderView> {
+    upsert_provider_with_payload(db, app_type, requested_provider_id, payload)
+}
+
 pub fn upsert_active_provider(
     db: &Database,
     app_type: &AppType,
 ) -> anyhow::Result<OpenWrtProviderView> {
     let payload = read_payload_from_stdin()?;
+    upsert_active_provider_with_payload(db, app_type, payload)
+}
+
+pub fn upsert_active_provider_from_payload(
+    db: &Database,
+    app_type: &AppType,
+    payload: OpenWrtProviderPayload,
+) -> anyhow::Result<OpenWrtProviderView> {
     upsert_active_provider_with_payload(db, app_type, payload)
 }
 
