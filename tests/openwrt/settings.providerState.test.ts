@@ -217,6 +217,8 @@ const SHARED_PROVIDER_UI_CUTOVER_MODE_STORAGE_KEY =
   "ccswitch-openwrt-provider-ui-cutover-mode";
 const SHARED_PROVIDER_UI_DISABLE_GLOBAL_KEY =
   "__CCSWITCH_OPENWRT_DISABLE_REAL_PROVIDER_UI__";
+const DAEMON_ADMIN_BASE_URL_OVERRIDE_KEY =
+  "__CCSWITCH_OPENWRT_DAEMON_ADMIN_BASE_URL__";
 const SHARED_PROVIDER_UI_FALLBACK_REASON_GATE_DISABLED = "gate-disabled";
 const SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_FAILURE = "bundle-failure";
 const SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_REGRESSION =
@@ -411,6 +413,14 @@ beforeEach(() => {
       return Promise.resolve(promise).catch(() => fallback);
     },
   };
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  delete (window as unknown as Record<string, unknown>)[
+    DAEMON_ADMIN_BASE_URL_OVERRIDE_KEY
+  ];
 });
 
 describe("OpenWrt settings shared-provider shell", () => {
@@ -628,6 +638,153 @@ describe("OpenWrt settings shared-provider shell", () => {
         params: ["app", "enabled"],
       },
     });
+  });
+
+  it("prefers the daemon-admin runtime fast path when an override base URL is configured", async () => {
+    const { settings, rpcCalls } = loadSettingsView("codex");
+    const staticPrototypeSettings =
+      settings as unknown as StaticPrototypeSettings;
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        ok: true,
+        service: {
+          running: true,
+          reachable: true,
+          listenAddress: "10.0.0.5",
+          listenPort: 18443,
+          proxyEnabled: false,
+          enableLogging: true,
+          statusSource: "live-status",
+        },
+        runtime: {
+          running: true,
+        },
+      }),
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+    (window as unknown as Record<string, unknown>)[
+      DAEMON_ADMIN_BASE_URL_OVERRIDE_KEY
+    ] = "http://router.example:15721/openwrt/admin";
+    staticPrototypeSettings.parseServiceState = () => true;
+
+    const bindings = await staticPrototypeSettings.loadStaticPrototypeHostBindings();
+
+    expect(bindings).toMatchObject({
+      health: "healthy",
+      listenAddr: "0.0.0.0",
+      listenPort: "15721",
+      proxyEnabled: "0",
+      status: "running",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://router.example:15721/openwrt/admin/runtime",
+      expect.objectContaining({
+        method: "GET",
+        headers: expect.objectContaining({
+          Accept: "application/json",
+        }),
+      }),
+    );
+    expect(
+      rpcCalls.some(
+        (call) =>
+          call.spec.object === "ccswitch" &&
+          call.spec.method === "get_runtime_status",
+      ),
+    ).toBe(false);
+  });
+
+  it("prefers the daemon-admin provider fast path when an override base URL is configured", async () => {
+    const { settings, rpcCalls } = loadSettingsView("codex");
+    const transport = settings.createProviderTransport();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          ok: true,
+          activeProviderId: "codex-primary",
+          providers: [
+            {
+              active: true,
+              baseUrl: "https://api.openai.com/v1",
+              configured: true,
+              model: "gpt-5.4",
+              name: "OpenAI Official",
+              notes: "Pinned live route",
+              providerId: "codex-primary",
+              tokenConfigured: true,
+              tokenField: "OPENAI_API_KEY",
+              tokenMasked: "sk-live-...789",
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          ok: true,
+          active: true,
+          baseUrl: "https://api.openai.com/v1",
+          configured: true,
+          model: "gpt-5.4",
+          name: "OpenAI Official",
+          notes: "Pinned live route",
+          providerId: "codex-primary",
+          tokenConfigured: true,
+          tokenField: "OPENAI_API_KEY",
+          tokenMasked: "sk-live-...789",
+        }),
+      });
+
+    vi.stubGlobal("fetch", fetchMock);
+    (window as unknown as Record<string, unknown>)[
+      DAEMON_ADMIN_BASE_URL_OVERRIDE_KEY
+    ] = "http://router.example:15721/openwrt/admin";
+
+    const [providersResult, activeProviderResult] = await Promise.all([
+      transport.listProviders("codex"),
+      transport.getActiveProvider("codex"),
+    ]);
+
+    expect(providersResult).toMatchObject({
+      activeProviderId: "codex-primary",
+      providers: [
+        expect.objectContaining({
+          providerId: "codex-primary",
+          name: "OpenAI Official",
+        }),
+      ],
+    });
+    expect(activeProviderResult).toMatchObject({
+      providerId: "codex-primary",
+      name: "OpenAI Official",
+      active: true,
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://router.example:15721/openwrt/admin/apps/codex/providers",
+      expect.objectContaining({
+        method: "GET",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://router.example:15721/openwrt/admin/apps/codex/providers/active",
+      expect.objectContaining({
+        method: "GET",
+      }),
+    );
+    expect(
+      rpcCalls.some(
+        (call) =>
+          call.spec.object === "ccswitch" &&
+          (call.spec.method === "list_providers" ||
+            call.spec.method === "get_active_provider"),
+      ),
+    ).toBe(false);
   });
 
   it("builds contract-checked host bindings and nested provider.failover payload for the static prototype bridge", () => {

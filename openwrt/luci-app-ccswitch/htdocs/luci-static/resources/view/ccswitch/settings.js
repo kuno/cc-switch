@@ -393,6 +393,269 @@ var callUciCommit = rpc.declare({
 	expect: { '': {} }
 });
 
+function createDaemonAdminUnavailableError(message) {
+	var error = new Error(message || 'OpenWrt daemon admin API unavailable');
+
+	error.ccswitchDaemonAdminUnavailable = true;
+	return error;
+}
+
+function isDaemonAdminUnavailableError(error) {
+	return !!(error && error.ccswitchDaemonAdminUnavailable === true);
+}
+
+function getDaemonAdminBaseUrl() {
+	var hostname;
+	var override;
+
+	if (typeof window === 'undefined' || !window.location || window.location.protocol !== 'http:')
+		return null;
+
+	override = window.__CCSWITCH_OPENWRT_DAEMON_ADMIN_BASE_URL__;
+	if (typeof override === 'string' && override)
+		return override.replace(/\/+$/, '');
+
+	hostname = window.location.hostname;
+	if (!hostname)
+		return null;
+
+	if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1')
+		return null;
+
+	if (hostname.indexOf(':') >= 0 && hostname.charAt(0) !== '[')
+		hostname = '[' + hostname + ']';
+
+	return 'http://' + hostname + ':15721/openwrt/admin';
+}
+
+function readDaemonAdminJson(response) {
+	if (!response || typeof response.json !== 'function')
+		return Promise.reject(createDaemonAdminUnavailableError('OpenWrt daemon admin API returned an invalid response object.'));
+
+	if (response.ok !== true)
+		return Promise.reject(createDaemonAdminUnavailableError('OpenWrt daemon admin API responded with HTTP ' + response.status + '.'));
+
+	return response.json().then(function (payload) {
+		if (!payload || typeof payload !== 'object')
+			throw createDaemonAdminUnavailableError('OpenWrt daemon admin API returned invalid JSON.');
+
+		return payload;
+	});
+}
+
+function callDaemonAdminJson(path, options) {
+	var baseUrl = getDaemonAdminBaseUrl();
+	var request = options || {};
+	var headers = {
+		Accept: 'application/json'
+	};
+	var key;
+
+	if (!baseUrl)
+		return Promise.reject(createDaemonAdminUnavailableError('OpenWrt daemon admin API disabled for this page origin.'));
+
+	if (typeof fetch !== 'function')
+		return Promise.reject(createDaemonAdminUnavailableError('Browser fetch API is unavailable.'));
+
+	if (request.headers && typeof request.headers === 'object') {
+		for (key in request.headers)
+			headers[key] = request.headers[key];
+	}
+
+	if (request.body != null && headers['Content-Type'] == null)
+		headers['Content-Type'] = 'application/json';
+
+	return fetch(baseUrl + path, {
+		method: request.method || 'GET',
+		headers: headers,
+		body: request.body != null ? JSON.stringify(request.body) : undefined
+	}).then(function (response) {
+		return readDaemonAdminJson(response);
+	}).catch(function (error) {
+		if (isDaemonAdminUnavailableError(error))
+			throw error;
+
+		throw createDaemonAdminUnavailableError((error && error.message) || String(error));
+	});
+}
+
+function daemonAdminOrFallback(apiCall, fallbackCall) {
+	return Promise.resolve().then(apiCall).catch(function (error) {
+		if (isDaemonAdminUnavailableError(error))
+			return fallbackCall();
+
+		throw error;
+	});
+}
+
+function callOpenWrtRuntimeStatus() {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/runtime');
+	}, function () {
+		return L.resolveDefault(callGetRuntimeStatus(), { ok: false });
+	});
+}
+
+function callOpenWrtAppRuntimeStatus(appId) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/runtime');
+	}, function () {
+		return L.resolveDefault(callGetAppRuntimeStatus(appId), { ok: false });
+	});
+}
+
+function callOpenWrtListProviders(appId) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/providers');
+	}, function () {
+		return L.resolveDefault(callListProviders(appId), null);
+	});
+}
+
+function callOpenWrtListSavedProviders(appId) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/providers');
+	}, function () {
+		return L.resolveDefault(callListSavedProviders(appId), null);
+	});
+}
+
+function callOpenWrtGetActiveProvider(appId) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/providers/active');
+	}, function () {
+		return L.resolveDefault(callGetActiveProvider(appId), { ok: false });
+	});
+}
+
+function callOpenWrtGetProviderFailover(appId, providerId) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/providers/' + encodeURIComponent(providerId) + '/failover');
+	}, function () {
+		return L.resolveDefault(callGetProviderFailover(appId, providerId), { ok: false });
+	});
+}
+
+function callOpenWrtGetAvailableFailoverProviders(appId) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/failover/providers/available');
+	}, function () {
+		return L.resolveDefault(callGetAvailableFailoverProviders(appId), { ok: false });
+	});
+}
+
+function callOpenWrtCreateProvider(appId, providerPayload) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/providers', {
+			method: 'POST',
+			body: providerPayload
+		});
+	}, function () {
+		return L.resolveDefault(callUpsertProvider(appId, providerPayload), { ok: false });
+	});
+}
+
+function callOpenWrtUpdateProvider(appId, providerId, providerPayload) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/providers/' + encodeURIComponent(providerId), {
+			method: 'PUT',
+			body: providerPayload
+		});
+	}, function () {
+		return L.resolveDefault(callUpsertProviderByProviderId(appId, providerId, providerPayload), { ok: false });
+	});
+}
+
+function callOpenWrtSaveActiveProvider(appId, providerPayload) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/providers/active', {
+			method: 'POST',
+			body: providerPayload
+		});
+	}, function () {
+		return L.resolveDefault(callUpsertActiveProvider(appId, providerPayload), { ok: false });
+	});
+}
+
+function callOpenWrtDeleteProvider(appId, providerId) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/providers/' + encodeURIComponent(providerId), {
+			method: 'DELETE'
+		});
+	}, function () {
+		return L.resolveDefault(callDeleteProviderByProviderId(appId, providerId), { ok: false });
+	});
+}
+
+function callOpenWrtActivateProvider(appId, providerId) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/providers/' + encodeURIComponent(providerId) + '/activate', {
+			method: 'POST'
+		});
+	}, function () {
+		return L.resolveDefault(callActivateProviderByProviderId(appId, providerId), { ok: false });
+	});
+}
+
+function callOpenWrtAddToFailoverQueue(appId, providerId) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/failover/providers/' + encodeURIComponent(providerId), {
+			method: 'POST'
+		});
+	}, function () {
+		return L.resolveDefault(callAddToFailoverQueue(appId, providerId), { ok: false });
+	});
+}
+
+function callOpenWrtRemoveFromFailoverQueue(appId, providerId) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/failover/providers/' + encodeURIComponent(providerId), {
+			method: 'DELETE'
+		});
+	}, function () {
+		return L.resolveDefault(callRemoveFromFailoverQueue(appId, providerId), { ok: false });
+	});
+}
+
+function callOpenWrtReorderFailoverQueue(appId, providerIds) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/failover/queue', {
+			method: 'PUT',
+			body: {
+				providerIds: providerIds
+			}
+		});
+	}, function () {
+		return L.resolveDefault(callReorderFailoverQueue(appId, providerIds), { ok: false });
+	});
+}
+
+function callOpenWrtSetAutoFailoverEnabled(appId, enabled) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/failover/auto-enabled', {
+			method: 'PUT',
+			body: {
+				enabled: enabled
+			}
+		});
+	}, function () {
+		return L.resolveDefault(callSetAutoFailoverEnabled(appId, enabled), { ok: false });
+	});
+}
+
+function callOpenWrtSetMaxRetries(appId, value) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/failover/max-retries', {
+			method: 'PUT',
+			body: {
+				value: value
+			}
+		});
+	}, function () {
+		return L.resolveDefault(callSetMaxRetries(appId, value), { ok: false });
+	});
+}
+
 return view.extend({
 	handleSaveApply: null,
 	handleSave: null,
@@ -403,7 +666,7 @@ return view.extend({
 			return Promise.all([
 				uci.load('ccswitch'),
 				L.resolveDefault(callServiceList('ccswitch'), {}),
-				L.resolveDefault(callGetRuntimeStatus(), { ok: false }),
+				callOpenWrtRuntimeStatus(),
 				this.loadAllStaticPrototypeProviderStates()
 			]);
 
@@ -829,7 +1092,7 @@ return view.extend({
 	loadStaticPrototypeHostBindings: function () {
 		return Promise.all([
 			L.resolveDefault(callServiceList('ccswitch'), {}),
-			L.resolveDefault(callGetRuntimeStatus(), { ok: false })
+			callOpenWrtRuntimeStatus()
 		]).then(L.bind(function (results) {
 			return this.getStaticPrototypeBindings([
 				null,
@@ -1019,7 +1282,7 @@ return view.extend({
 				return;
 
 			requests.push(
-				L.resolveDefault(callGetProviderFailover(appId, providerId), null).then(function (response) {
+				L.resolveDefault(callOpenWrtGetProviderFailover(appId, providerId), null).then(function (response) {
 					return {
 						providerId: providerId,
 						failover: self.parseStaticPrototypeFailoverState(response, providerId)
@@ -1479,9 +1742,9 @@ return view.extend({
 
 	loadProviderState: function (appId) {
 		return Promise.all([
-			L.resolveDefault(callListProviders(appId), null),
-			L.resolveDefault(callListSavedProviders(appId), null),
-			L.resolveDefault(callGetActiveProvider(appId), { ok: false })
+			callOpenWrtListProviders(appId),
+			callOpenWrtListSavedProviders(appId),
+			callOpenWrtGetActiveProvider(appId)
 		]).then(L.bind(function (results) {
 			var activeProvider = this.parseProviderState(results[2], appId);
 			var phase2State = this.parsePhase2ProviderState(results[0], activeProvider, appId) ||
@@ -2486,7 +2749,7 @@ return view.extend({
 		if (providerId) {
 			return this.invokeRpcCandidates([
 				{
-					call: function () { return callUpsertProviderByProviderId(appId, providerId, providerPayload); },
+					call: function () { return callOpenWrtUpdateProvider(appId, providerId, providerPayload); },
 					compatibilityFallback: true
 				},
 				{
@@ -2498,12 +2761,12 @@ return view.extend({
 
 		return this.invokeRpcCandidates([
 			{
-				call: function () { return callUpsertProvider(appId, providerPayload); },
-				compatibilityFallback: true
+				call: function () { return callOpenWrtCreateProvider(appId, providerPayload); },
+					compatibilityFallback: true
 			},
 			{
 				call: function () { return callSaveProvider(appId, providerPayload); },
-				compatibilityFallback: true
+					compatibilityFallback: true
 			}
 		], missingMessage);
 	},
@@ -2511,8 +2774,8 @@ return view.extend({
 	invokePhase2Delete: function (appId, providerId) {
 		return this.invokeRpcCandidates([
 			{
-				call: function () { return callDeleteProviderByProviderId(appId, providerId); },
-				compatibilityFallback: true
+				call: function () { return callOpenWrtDeleteProvider(appId, providerId); },
+					compatibilityFallback: true
 			},
 			{
 				call: function () { return callDeleteProviderById(appId, providerId); },
@@ -2524,8 +2787,8 @@ return view.extend({
 	invokePhase2Activate: function (appId, providerId) {
 		return this.invokeRpcCandidates([
 			{
-				call: function () { return callActivateProviderByProviderId(appId, providerId); },
-				compatibilityFallback: true
+				call: function () { return callOpenWrtActivateProvider(appId, providerId); },
+					compatibilityFallback: true
 			},
 			{
 				call: function () { return callActivateProviderById(appId, providerId); },
@@ -2729,40 +2992,40 @@ return view.extend({
 	createProviderTransport: function () {
 		return {
 			listProviders: function (appId) {
-				return L.resolveDefault(callListProviders(appId), null);
+				return callOpenWrtListProviders(appId);
 			},
 			listSavedProviders: function (appId) {
-				return L.resolveDefault(callListSavedProviders(appId), null);
+				return callOpenWrtListSavedProviders(appId);
 			},
 			getActiveProvider: function (appId) {
-				return L.resolveDefault(callGetActiveProvider(appId), { ok: false });
+				return callOpenWrtGetActiveProvider(appId);
 			},
 			getProviderFailoverState: function (appId, providerId) {
-				return L.resolveDefault(callGetProviderFailover(appId, providerId), { ok: false });
+				return callOpenWrtGetProviderFailover(appId, providerId);
 			},
 			upsertProvider: function (appId, provider) {
-				return L.resolveDefault(callUpsertProvider(appId, provider), { ok: false });
+				return callOpenWrtCreateProvider(appId, provider);
 			},
 			saveProvider: function (appId, provider) {
 				return L.resolveDefault(callSaveProvider(appId, provider), { ok: false });
 			},
 			upsertProviderByProviderId: function (appId, providerId, provider) {
-				return L.resolveDefault(callUpsertProviderByProviderId(appId, providerId, provider), { ok: false });
+				return callOpenWrtUpdateProvider(appId, providerId, provider);
 			},
 			upsertProviderById: function (appId, providerId, provider) {
 				return L.resolveDefault(callUpsertProviderById(appId, providerId, provider), { ok: false });
 			},
 			upsertActiveProvider: function (appId, provider) {
-				return L.resolveDefault(callUpsertActiveProvider(appId, provider), { ok: false });
+				return callOpenWrtSaveActiveProvider(appId, provider);
 			},
 			deleteProviderByProviderId: function (appId, providerId) {
-				return L.resolveDefault(callDeleteProviderByProviderId(appId, providerId), { ok: false });
+				return callOpenWrtDeleteProvider(appId, providerId);
 			},
 			deleteProviderById: function (appId, providerId) {
 				return L.resolveDefault(callDeleteProviderById(appId, providerId), { ok: false });
 			},
 			activateProviderByProviderId: function (appId, providerId) {
-				return L.resolveDefault(callActivateProviderByProviderId(appId, providerId), { ok: false });
+				return callOpenWrtActivateProvider(appId, providerId);
 			},
 			activateProviderById: function (appId, providerId) {
 				return L.resolveDefault(callActivateProviderById(appId, providerId), { ok: false });
@@ -2774,19 +3037,19 @@ return view.extend({
 				return L.resolveDefault(callSwitchProviderById(appId, providerId), { ok: false });
 			},
 			addToFailoverQueue: function (appId, providerId) {
-				return L.resolveDefault(callAddToFailoverQueue(appId, providerId), { ok: false });
+				return callOpenWrtAddToFailoverQueue(appId, providerId);
 			},
 			removeFromFailoverQueue: function (appId, providerId) {
-				return L.resolveDefault(callRemoveFromFailoverQueue(appId, providerId), { ok: false });
+				return callOpenWrtRemoveFromFailoverQueue(appId, providerId);
 			},
 			setAutoFailoverEnabled: function (appId, enabled) {
-				return L.resolveDefault(callSetAutoFailoverEnabled(appId, enabled), { ok: false });
+				return callOpenWrtSetAutoFailoverEnabled(appId, enabled);
 			},
 			reorderFailoverQueue: function (appId, providerIds) {
-				return L.resolveDefault(callReorderFailoverQueue(appId, providerIds), { ok: false });
+				return callOpenWrtReorderFailoverQueue(appId, providerIds);
 			},
 			setMaxRetries: function (appId, value) {
-				return L.resolveDefault(callSetMaxRetries(appId, value), { ok: false });
+				return callOpenWrtSetMaxRetries(appId, value);
 			},
 			restartService: function () {
 				return L.resolveDefault(callRestartService(), { ok: false });
@@ -2798,22 +3061,22 @@ return view.extend({
 		return {
 			failoverControlsAvailable: true,
 			getRuntimeStatus: function () {
-				return L.resolveDefault(callGetRuntimeStatus(), { ok: false });
+				return callOpenWrtRuntimeStatus();
 			},
 			getAppRuntimeStatus: function (appId) {
-				return L.resolveDefault(callGetAppRuntimeStatus(appId), { ok: false });
+				return callOpenWrtAppRuntimeStatus(appId);
 			},
 			getAvailableFailoverProviders: function (appId) {
-				return L.resolveDefault(callGetAvailableFailoverProviders(appId), { ok: false });
+				return callOpenWrtGetAvailableFailoverProviders(appId);
 			},
 			addToFailoverQueue: function (appId, providerId) {
-				return L.resolveDefault(callAddToFailoverQueue(appId, providerId), { ok: false });
+				return callOpenWrtAddToFailoverQueue(appId, providerId);
 			},
 			removeFromFailoverQueue: function (appId, providerId) {
-				return L.resolveDefault(callRemoveFromFailoverQueue(appId, providerId), { ok: false });
+				return callOpenWrtRemoveFromFailoverQueue(appId, providerId);
 			},
 			setAutoFailoverEnabled: function (appId, enabled) {
-				return L.resolveDefault(callSetAutoFailoverEnabled(appId, enabled), { ok: false });
+				return callOpenWrtSetAutoFailoverEnabled(appId, enabled);
 			}
 		};
 	},
