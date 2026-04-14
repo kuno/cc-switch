@@ -171,6 +171,21 @@ function parseActiveProviderResponse(
     parsed = response.provider;
   }
 
+  if (
+    !parsed &&
+    response &&
+    typeof response === "object" &&
+    (response.providerId != null ||
+      response.provider_id != null ||
+      response.configured != null ||
+      response.baseUrl != null ||
+      response.base_url != null ||
+      response.tokenField != null ||
+      response.token_field != null)
+  ) {
+    parsed = response;
+  }
+
   if (!parsed) {
     return emptySharedProviderView(appId);
   }
@@ -181,15 +196,32 @@ function parseActiveProviderResponse(
 function parseStatusPayload(
   response: OpenWrtRpcResult | null | undefined,
 ): Record<string, unknown> | null {
-  if (!response || typeof response.status_json !== "string") {
+  if (!response) {
     return null;
   }
 
-  try {
-    return JSON.parse(response.status_json) as Record<string, unknown>;
-  } catch {
-    return null;
+  if (typeof response.status_json === "string") {
+    try {
+      return JSON.parse(response.status_json) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
   }
+
+  if (
+    response.service != null ||
+    response.runtime != null ||
+    response.apps != null ||
+    response.app != null ||
+    response.providerId != null ||
+    response.provider_id != null ||
+    response.failoverQueue != null ||
+    response.failover_queue != null
+  ) {
+    return response;
+  }
+
+  return null;
 }
 
 function buildLegacyProviderState(

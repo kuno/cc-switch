@@ -66,16 +66,28 @@ function commandFailure(result) {
 	};
 }
 
+function commandSuccess(result) {
+	let parsed = json(result.output);
+
+	if (parsed == null)
+		return {
+			ok: false,
+			code: result.code,
+			error: 'invalid JSON from daemon'
+		};
+
+	parsed.ok = true;
+
+	return parsed;
+}
+
 function runProviderCommand(command) {
 	let result = runReadCommand(command);
 
 	if (!result.ok)
 		return commandFailure(result);
 
-	return {
-		ok: true,
-		provider_json: result.output
-	};
+	return commandSuccess(result);
 }
 
 function runProvidersCommand(command) {
@@ -84,11 +96,7 @@ function runProvidersCommand(command) {
 	if (!result.ok)
 		return commandFailure(result);
 
-	return {
-		ok: true,
-		providers_json: result.output,
-		result_json: result.output
-	};
+	return commandSuccess(result);
 }
 
 function runResultCommand(command) {
@@ -97,10 +105,7 @@ function runResultCommand(command) {
 	if (!result.ok)
 		return commandFailure(result);
 
-	return {
-		ok: true,
-		result_json: result.output
-	};
+	return commandSuccess(result);
 }
 
 function runStatusCommand(command) {
@@ -109,11 +114,7 @@ function runStatusCommand(command) {
 	if (!result.ok)
 		return commandFailure(result);
 
-	return {
-		ok: true,
-		status_json: result.output,
-		result_json: result.output
-	};
+	return commandSuccess(result);
 }
 
 function requireProviderId(providerId) {
