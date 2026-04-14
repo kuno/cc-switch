@@ -847,6 +847,26 @@
         line-height: 1.45;
       }
 
+      .field-input,
+      .field-textarea {
+        width: 100%;
+        min-height: 48px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--panel-strong);
+        padding: 12px 14px;
+        font: inherit;
+        font-size: 15px;
+        font-weight: 650;
+        color: var(--text);
+      }
+
+      .field-textarea {
+        min-height: 96px;
+        resize: vertical;
+        line-height: 1.45;
+      }
+
       .mono {
         font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
         letter-spacing: -0.03em;
@@ -2046,6 +2066,7 @@
 
       function renderEditor(app) {
         const provider = currentProvider();
+        const editableWorkspace = state.workspace !== "routing";
         els.editorName.textContent = provider ? provider.name : app.label;
         els.editorSubtitle.textContent =
           state.workspace === "providers"
@@ -2106,10 +2127,24 @@
           field.className = `field ${kind && kind.includes("wide") ? "wide" : ""}`.trim();
           const mono = kind && kind.includes("mono") ? " mono" : "";
           const stack = kind && kind.includes("stack") ? " stack" : "";
-          field.innerHTML = `
-            <label>${escapeHtml(label)}</label>
-            <div class="value-box${mono}${stack}">${escapeHtml(value).replace(/\n/g, "<br>")}</div>
-          `;
+
+          if (editableWorkspace) {
+            const isTextarea = !!stack || label === "Notes";
+            field.innerHTML = isTextarea
+              ? `
+                <label>${escapeHtml(label)}</label>
+                <textarea class="field-textarea${mono}">${escapeHtml(value)}</textarea>
+              `
+              : `
+                <label>${escapeHtml(label)}</label>
+                <input class="field-input${mono}" value="${escapeHtml(value)}" />
+              `;
+          } else {
+            field.innerHTML = `
+              <label>${escapeHtml(label)}</label>
+              <div class="value-box${mono}${stack}">${escapeHtml(value).replace(/\n/g, "<br>")}</div>
+            `;
+          }
           els.fieldGrid.appendChild(field);
         });
       }
