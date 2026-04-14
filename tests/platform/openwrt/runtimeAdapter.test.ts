@@ -11,99 +11,95 @@ function createTransport(
   return {
     getRuntimeStatus: vi.fn().mockResolvedValue({
       ok: true,
-      status_json: JSON.stringify({
-        service: {
-          running: false,
-          reachable: false,
-          listenAddress: "127.0.0.1",
-          listenPort: 15721,
-          proxyEnabled: true,
-          enableLogging: true,
-          statusSource: "config-fallback",
-          statusError: "connection refused",
-        },
-        runtime: {
-          running: false,
-          address: "127.0.0.1",
-          port: 15721,
-          active_connections: 2,
-          total_requests: 14,
-          success_requests: 11,
-          failed_requests: 3,
-          success_rate: 78.6,
-          uptime_seconds: 42,
-          current_provider: "Claude A",
-          current_provider_id: "provider-a",
-          last_request_at: "2026-04-13T08:00:00Z",
-          last_error: "dial tcp timeout",
-          failover_count: 2,
-          active_targets: [
-            {
-              app_type: "claude",
-              provider_name: "Claude A",
-              provider_id: "provider-a",
-            },
-          ],
-        },
-        apps: [],
-      }),
+      service: {
+        running: false,
+        reachable: false,
+        listenAddress: "127.0.0.1",
+        listenPort: 15721,
+        proxyEnabled: true,
+        enableLogging: true,
+        statusSource: "config-fallback",
+        statusError: "connection refused",
+      },
+      runtime: {
+        running: false,
+        address: "127.0.0.1",
+        port: 15721,
+        active_connections: 2,
+        total_requests: 14,
+        success_requests: 11,
+        failed_requests: 3,
+        success_rate: 78.6,
+        uptime_seconds: 42,
+        current_provider: "Claude A",
+        current_provider_id: "provider-a",
+        last_request_at: "2026-04-13T08:00:00Z",
+        last_error: "dial tcp timeout",
+        failover_count: 2,
+        active_targets: [
+          {
+            app_type: "claude",
+            provider_name: "Claude A",
+            provider_id: "provider-a",
+          },
+        ],
+      },
+      apps: [],
     }),
     getAppRuntimeStatus: vi.fn().mockImplementation(async (appId) => ({
       ok: true,
-      status_json: JSON.stringify({
-        app: appId,
-        providerCount: 1,
-        proxyEnabled: appId !== "gemini",
-        autoFailoverEnabled: appId === "claude",
-        maxRetries: 3,
-        activeProviderId: `${appId}-active`,
-        activeProvider: {
-          configured: true,
-          providerId: `${appId}-active`,
-          name: `${appId} active`,
-          baseUrl: `https://${appId}.example.com`,
-          tokenField:
-            appId === "claude"
-              ? "ANTHROPIC_AUTH_TOKEN"
-              : appId === "codex"
-                ? "OPENAI_API_KEY"
-                : "GEMINI_API_KEY",
-          tokenConfigured: true,
-        },
-        activeProviderHealth: {
-          providerId: `${appId}-active`,
-          observed: appId !== "gemini",
-          healthy: appId === "codex",
-          consecutiveFailures: appId === "claude" ? 2 : 0,
-          lastSuccessAt:
-            appId === "gemini" ? null : "2026-04-13T07:59:00Z",
-          lastFailureAt:
-            appId === "claude" ? "2026-04-13T07:58:00Z" : null,
-          lastError: appId === "claude" ? "upstream timeout" : null,
-          updatedAt: "2026-04-13T08:00:00Z",
-        },
-        usingLegacyDefault: appId === "gemini",
-        failoverQueueDepth: appId === "claude" ? 1 : 0,
-        failoverQueue:
+      app: appId,
+      providerCount: 1,
+      proxyEnabled: appId !== "gemini",
+      autoFailoverEnabled: appId === "claude",
+      maxRetries: 3,
+      activeProviderId: `${appId}-active`,
+      activeProvider: {
+        configured: true,
+        providerId: `${appId}-active`,
+        name: `${appId} active`,
+        baseUrl: `https://${appId}.example.com`,
+        tokenField:
           appId === "claude"
-            ? [
-                {
+            ? "ANTHROPIC_AUTH_TOKEN"
+            : appId === "codex"
+              ? "OPENAI_API_KEY"
+              : "GEMINI_API_KEY",
+        tokenConfigured: true,
+      },
+      activeProviderHealth: {
+        providerId: `${appId}-active`,
+        observed: appId !== "gemini",
+        healthy: appId === "codex",
+        consecutiveFailures: appId === "claude" ? 2 : 0,
+        lastSuccessAt:
+          appId === "gemini" ? null : "2026-04-13T07:59:00Z",
+        lastFailureAt:
+          appId === "claude" ? "2026-04-13T07:58:00Z" : null,
+        lastError: appId === "claude" ? "upstream timeout" : null,
+        updatedAt: "2026-04-13T08:00:00Z",
+      },
+      usingLegacyDefault: appId === "gemini",
+      failoverQueueDepth: appId === "claude" ? 1 : 0,
+      failoverQueue:
+        appId === "claude"
+          ? [
+              {
+                providerId: "claude-backup",
+                providerName: "Claude Backup",
+                sortIndex: 0,
+                active: false,
+                health: {
                   providerId: "claude-backup",
-                  providerName: "Claude Backup",
-                  sortIndex: 0,
-                  active: false,
-                  health: {
-                    providerId: "claude-backup",
-                    observed: false,
-                    healthy: true,
-                  },
+                  observed: false,
+                  healthy: true,
                 },
-              ]
-            : [],
-        observedProviderCount: appId === "gemini" ? 0 : 1,
-        healthyProviderCount: appId === "codex" ? 1 : 0,
-        unhealthyProviderCount: appId === "claude" ? 1 : 0,
-      }),
+              },
+            ]
+          : [],
+      observedProviderCount: appId === "gemini" ? 0 : 1,
+      healthyProviderCount: appId === "codex" ? 1 : 0,
+      unhealthyProviderCount: appId === "claude" ? 1 : 0,
     })),
     ...overrides,
   };
@@ -167,88 +163,86 @@ describe("OpenWrt runtime adapter", () => {
     const transport = createTransport({
       getRuntimeStatus: vi.fn().mockResolvedValue({
         ok: true,
-        status_json: JSON.stringify({
-          service: {
-            running: true,
-            reachable: true,
-            listenAddress: "0.0.0.0",
-            listenPort: 15721,
+        service: {
+          running: true,
+          reachable: true,
+          listenAddress: "0.0.0.0",
+          listenPort: 15721,
+          proxyEnabled: true,
+          enableLogging: false,
+          statusSource: "live-status",
+        },
+        runtime: {
+          running: true,
+          address: "0.0.0.0",
+          port: 15721,
+          active_connections: 1,
+          total_requests: 7,
+          success_requests: 7,
+          failed_requests: 0,
+          success_rate: 100,
+          uptime_seconds: 61,
+          current_provider: "Codex Primary",
+          current_provider_id: "codex-primary",
+          last_request_at: null,
+          last_error: null,
+          failover_count: 0,
+          active_targets: [],
+        },
+        apps: [
+          {
+            app: "claude",
+            providerCount: 0,
+            proxyEnabled: false,
+            autoFailoverEnabled: false,
+            maxRetries: 0,
+            activeProvider: { configured: false },
+            failoverQueueDepth: 0,
+            failoverQueue: [],
+            observedProviderCount: 0,
+            healthyProviderCount: 0,
+            unhealthyProviderCount: 0,
+          },
+          {
+            app: "codex",
+            providerCount: 1,
             proxyEnabled: true,
-            enableLogging: false,
-            statusSource: "live-status",
+            autoFailoverEnabled: false,
+            maxRetries: 2,
+            activeProviderId: "codex-primary",
+            activeProvider: {
+              configured: true,
+              providerId: "codex-primary",
+              name: "Codex Primary",
+              baseUrl: "https://api.openai.com/v1",
+              tokenField: "OPENAI_API_KEY",
+              tokenConfigured: true,
+            },
+            activeProviderHealth: {
+              providerId: "codex-primary",
+              observed: true,
+              healthy: true,
+            },
+            failoverQueueDepth: 0,
+            failoverQueue: [],
+            observedProviderCount: 1,
+            healthyProviderCount: 1,
+            unhealthyProviderCount: 0,
           },
-          runtime: {
-            running: true,
-            address: "0.0.0.0",
-            port: 15721,
-            active_connections: 1,
-            total_requests: 7,
-            success_requests: 7,
-            failed_requests: 0,
-            success_rate: 100,
-            uptime_seconds: 61,
-            current_provider: "Codex Primary",
-            current_provider_id: "codex-primary",
-            last_request_at: null,
-            last_error: null,
-            failover_count: 0,
-            active_targets: [],
+          {
+            app: "gemini",
+            providerCount: 0,
+            proxyEnabled: false,
+            autoFailoverEnabled: false,
+            maxRetries: 0,
+            activeProvider: { configured: false },
+            failoverQueueDepth: 0,
+            failoverQueue: [],
+            observedProviderCount: 0,
+            healthyProviderCount: 0,
+            unhealthyProviderCount: 0,
           },
-          apps: [
-            {
-              app: "claude",
-              providerCount: 0,
-              proxyEnabled: false,
-              autoFailoverEnabled: false,
-              maxRetries: 0,
-              activeProvider: { configured: false },
-              failoverQueueDepth: 0,
-              failoverQueue: [],
-              observedProviderCount: 0,
-              healthyProviderCount: 0,
-              unhealthyProviderCount: 0,
-            },
-            {
-              app: "codex",
-              providerCount: 1,
-              proxyEnabled: true,
-              autoFailoverEnabled: false,
-              maxRetries: 2,
-              activeProviderId: "codex-primary",
-              activeProvider: {
-                configured: true,
-                providerId: "codex-primary",
-                name: "Codex Primary",
-                baseUrl: "https://api.openai.com/v1",
-                tokenField: "OPENAI_API_KEY",
-                tokenConfigured: true,
-              },
-              activeProviderHealth: {
-                providerId: "codex-primary",
-                observed: true,
-                healthy: true,
-              },
-              failoverQueueDepth: 0,
-              failoverQueue: [],
-              observedProviderCount: 1,
-              healthyProviderCount: 1,
-              unhealthyProviderCount: 0,
-            },
-            {
-              app: "gemini",
-              providerCount: 0,
-              proxyEnabled: false,
-              autoFailoverEnabled: false,
-              maxRetries: 0,
-              activeProvider: { configured: false },
-              failoverQueueDepth: 0,
-              failoverQueue: [],
-              observedProviderCount: 0,
-              healthyProviderCount: 0,
-              unhealthyProviderCount: 0,
-            },
-          ],
-        }),
+        ],
       }),
       getAppRuntimeStatus: vi
         .fn()
@@ -304,19 +298,17 @@ describe("OpenWrt runtime adapter", () => {
       failoverControlsAvailable: true,
       getAvailableFailoverProviders: vi.fn().mockResolvedValue({
         ok: true,
-        list_json: JSON.stringify({
-          providers: {
-            "codex-backup": {
-              configured: true,
-              providerId: "codex-backup",
-              name: "Codex Backup",
-              baseUrl: "https://backup.example.com/v1",
-              model: "gpt-5.4-mini",
-              tokenConfigured: true,
-              tokenField: "OPENAI_API_KEY",
-            },
+        providers: {
+          "codex-backup": {
+            configured: true,
+            providerId: "codex-backup",
+            name: "Codex Backup",
+            baseUrl: "https://backup.example.com/v1",
+            model: "gpt-5.4-mini",
+            tokenConfigured: true,
+            tokenField: "OPENAI_API_KEY",
           },
-        }),
+        },
       }),
       addToFailoverQueue: vi.fn().mockResolvedValue({ ok: true }),
       removeFromFailoverQueue: vi.fn().mockResolvedValue({ ok: true }),
@@ -397,7 +389,7 @@ describe("OpenWrt runtime adapter", () => {
     expect(adapter.setAutoFailoverEnabled).toBeUndefined();
   });
 
-  it("parses direct status_json payloads and preserves unknown health as neutral data", () => {
+  it("preserves unknown health as neutral data for structured payloads", () => {
     expect(
       __private__.normalizeHealth(
         {

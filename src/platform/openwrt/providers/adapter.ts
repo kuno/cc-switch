@@ -159,14 +159,6 @@ function parseActiveProviderResponse(
 ): SharedProviderView {
   let parsed: Record<string, unknown> | null = null;
 
-  if (response?.ok === true && response.provider_json) {
-    try {
-      parsed = JSON.parse(response.provider_json) as Record<string, unknown>;
-    } catch {
-      parsed = null;
-    }
-  }
-
   if (!parsed && response?.provider) {
     parsed = response.provider;
   }
@@ -183,7 +175,7 @@ function parseActiveProviderResponse(
       response.tokenField != null ||
       response.token_field != null)
   ) {
-    parsed = response;
+    parsed = response as Record<string, unknown>;
   }
 
   if (!parsed) {
@@ -200,14 +192,6 @@ function parseStatusPayload(
     return null;
   }
 
-  if (typeof response.status_json === "string") {
-    try {
-      return JSON.parse(response.status_json) as Record<string, unknown>;
-    } catch {
-      return null;
-    }
-  }
-
   if (
     response.service != null ||
     response.runtime != null ||
@@ -218,7 +202,7 @@ function parseStatusPayload(
     response.failoverQueue != null ||
     response.failover_queue != null
   ) {
-    return response;
+    return response as Record<string, unknown>;
   }
 
   return null;
@@ -326,8 +310,16 @@ async function loadProviderState(
   const activeProvider = parseActiveProviderResponse(activeResponse, appId);
 
   const phase2State =
-    parseSharedProviderState(listResponse, activeProvider, appId) ??
-    parseSharedProviderState(savedResponse, activeProvider, appId);
+    parseSharedProviderState(
+      (listResponse as Record<string, unknown> | null) ?? null,
+      activeProvider,
+      appId,
+    ) ??
+    parseSharedProviderState(
+      (savedResponse as Record<string, unknown> | null) ?? null,
+      activeProvider,
+      appId,
+    );
 
   return phase2State ?? buildLegacyProviderState(activeProvider, appId);
 }
