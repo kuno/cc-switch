@@ -910,6 +910,76 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(uciState.get("ccswitch.main.inventedField")).toBeUndefined();
   });
 
+  it("falls back to the current snapshot when static prototype listen fields are invalid", async () => {
+    const { settings, uci, uciState } = loadSettingsView("codex");
+    const staticPrototypeSettings =
+      settings as unknown as StaticPrototypeSettings;
+
+    const saved = await staticPrototypeSettings.saveStaticPrototypeHostConfig({
+      listenAddr: "router.internal",
+      listenPort: "70000",
+      httpProxy: "http://router-http.internal:7890",
+      httpsProxy: "http://router-https.internal:7891",
+      logLevel: "debug",
+    });
+
+    expect(saved).toStrictEqual({
+      listenAddr: "0.0.0.0",
+      listenPort: "15721",
+      httpProxy: "http://router-http.internal:7890",
+      httpsProxy: "http://router-https.internal:7891",
+      logLevel: "debug",
+    });
+    expect(uci.set).toHaveBeenNthCalledWith(
+      1,
+      "ccswitch",
+      "main",
+      "listen_addr",
+      "0.0.0.0",
+    );
+    expect(uci.set).toHaveBeenNthCalledWith(
+      2,
+      "ccswitch",
+      "main",
+      "listen_port",
+      "15721",
+    );
+    expect(uciState.get("ccswitch.main.listen_addr")).toBe("0.0.0.0");
+    expect(uciState.get("ccswitch.main.listen_port")).toBe("15721");
+    expect(uciState.get("ccswitch.main.http_proxy")).toBe(
+      "http://router-http.internal:7890",
+    );
+    expect(uciState.get("ccswitch.main.https_proxy")).toBe(
+      "http://router-https.internal:7891",
+    );
+    expect(uciState.get("ccswitch.main.log_level")).toBe("debug");
+  });
+
+  it("accepts valid IP-form listen addresses and valid ports in static prototype saves", async () => {
+    const { settings } = loadSettingsView("codex");
+    const staticPrototypeSettings =
+      settings as unknown as StaticPrototypeSettings;
+
+    expect(
+      staticPrototypeSettings.normalizeStaticPrototypeHostPayload({
+        listenAddr: "2001:db8::1",
+        listenPort: "443",
+      }),
+    ).toMatchObject({
+      listenAddr: "2001:db8::1",
+      listenPort: "443",
+    });
+    expect(
+      staticPrototypeSettings.normalizeStaticPrototypeHostPayload({
+        listenAddr: "10.0.0.7",
+        listenPort: "28443",
+      }),
+    ).toMatchObject({
+      listenAddr: "10.0.0.7",
+      listenPort: "28443",
+    });
+  });
+
   it("routes static prototype restart requests back through the shell-owned restart path", async () => {
     const { settings } = loadSettingsView("codex");
     const staticPrototypeSettings =

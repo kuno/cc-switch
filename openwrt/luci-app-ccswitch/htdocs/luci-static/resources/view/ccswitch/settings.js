@@ -680,8 +680,100 @@ return view.extend({
 		};
 	},
 
+	isStaticPrototypeValidIpv4Address: function (value) {
+		var parts;
+		var i;
+
+		if (!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(value))
+			return false;
+
+		parts = value.split('.');
+
+		for (i = 0; i < parts.length; i++) {
+			if (parts[i].length > 1 && parts[i].charAt(0) === '0')
+				return false;
+			if (+parts[i] < 0 || +parts[i] > 255)
+				return false;
+		}
+
+		return true;
+	},
+
+	isStaticPrototypeValidIpv6Address: function (value) {
+		var parts;
+		var emptyIndex;
+		var hasIpv4Tail;
+		var segmentCount;
+		var ipv4Part;
+		var compressedParts;
+		var i;
+
+		if (!/^[0-9A-Fa-f:.]+$/.test(value) || value.indexOf(':::') >= 0)
+			return false;
+
+		hasIpv4Tail = value.indexOf('.') >= 0;
+		ipv4Part = null;
+
+		if (hasIpv4Tail) {
+			ipv4Part = value.substring(value.lastIndexOf(':') + 1);
+			if (!this.isStaticPrototypeValidIpv4Address(ipv4Part))
+				return false;
+
+			value = value.substring(0, value.lastIndexOf(':')) + ':ipv4';
+		}
+
+		parts = value.split('::');
+		if (parts.length > 2)
+			return false;
+
+		emptyIndex = value.indexOf('::');
+		if (emptyIndex < 0) {
+			compressedParts = value.split(':');
+			segmentCount = compressedParts.length;
+			if (hasIpv4Tail)
+				segmentCount += 1;
+			if (segmentCount !== 8)
+				return false;
+		} else {
+			compressedParts = (parts[0] ? parts[0].split(':') : []).concat(parts[1] ? parts[1].split(':') : []);
+			segmentCount = compressedParts.length;
+			if (hasIpv4Tail)
+				segmentCount += 1;
+			if (segmentCount >= 8)
+				return false;
+		}
+
+		for (i = 0; i < compressedParts.length; i++) {
+			if (!compressedParts[i])
+				return false;
+			if (compressedParts[i] === 'ipv4')
+				continue;
+			if (!/^[0-9A-Fa-f]{1,4}$/.test(compressedParts[i]))
+				return false;
+		}
+
+		return true;
+	},
+
+	isStaticPrototypeValidIpAddress: function (value) {
+		if (typeof value !== 'string' || !value)
+			return false;
+
+		return this.isStaticPrototypeValidIpv4Address(value) || this.isStaticPrototypeValidIpv6Address(value);
+	},
+
+	isStaticPrototypeValidPort: function (value) {
+		if (typeof value !== 'string' || !/^\d+$/.test(value))
+			return false;
+
+		value = +value;
+		return value >= 1 && value <= 65535;
+	},
+
 	normalizeStaticPrototypeHostPayload: function (payload) {
 		var snapshot = this.getHostConfigSnapshot();
+		var listenAddr = payload && payload.listenAddr != null ? String(payload.listenAddr).trim() : snapshot.listenAddr || '';
+		var listenPort = payload && payload.listenPort != null ? String(payload.listenPort).trim() : snapshot.listenPort || '';
 		var logLevel = payload && typeof payload.logLevel === 'string'
 			? String(payload.logLevel).toLowerCase()
 			: (snapshot.logLevel || 'info');
@@ -696,9 +788,15 @@ return view.extend({
 		if (!allowedLogLevels[logLevel])
 			logLevel = snapshot.logLevel || 'info';
 
+		if (!this.isStaticPrototypeValidIpAddress(listenAddr))
+			listenAddr = snapshot.listenAddr || '';
+
+		if (!this.isStaticPrototypeValidPort(listenPort))
+			listenPort = snapshot.listenPort || '';
+
 		return {
-			listenAddr: payload && payload.listenAddr != null ? String(payload.listenAddr) : snapshot.listenAddr || '',
-			listenPort: payload && payload.listenPort != null ? String(payload.listenPort) : snapshot.listenPort || '',
+			listenAddr: listenAddr,
+			listenPort: listenPort,
 			httpProxy: payload && payload.httpProxy != null ? String(payload.httpProxy) : snapshot.httpProxy || '',
 			httpsProxy: payload && payload.httpsProxy != null ? String(payload.httpsProxy) : snapshot.httpsProxy || '',
 			logLevel: logLevel
