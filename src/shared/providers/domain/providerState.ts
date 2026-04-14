@@ -17,18 +17,6 @@ const DEFAULT_TOKEN_FIELD_BY_APP: Record<
   gemini: "GEMINI_API_KEY",
 };
 
-function parseJsonString(payload: unknown): Record<string, unknown> | null {
-  if (typeof payload !== "string") {
-    return null;
-  }
-
-  try {
-    return JSON.parse(payload) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
-
 function getBoolean(provider: ProviderLike, keys: string[]): boolean {
   return keys.some((key) => Boolean(provider[key]));
 }
@@ -165,19 +153,9 @@ export function normalizeSharedProviderList(
 
 function extractPhase2ListPayload(response: ProviderLike | null): unknown {
   const directKeys = ["providers", "items", "savedProviders", "providerMap"];
-  const jsonKeys = ["providers_json", "state_json", "list_json"];
 
   if (!response) {
     return null;
-  }
-
-  for (const key of jsonKeys) {
-    if (response[key] != null) {
-      const parsed = parseJsonString(response[key]);
-      if (parsed) {
-        return parsed;
-      }
-    }
   }
 
   if (Array.isArray(response)) {
