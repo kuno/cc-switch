@@ -386,6 +386,13 @@ var callRestartService = rpc.declare({
 	expect: { '': {} }
 });
 
+var callUciCommit = rpc.declare({
+	object: 'uci',
+	method: 'commit',
+	params: ['config'],
+	expect: { '': {} }
+});
+
 return view.extend({
 	handleSaveApply: null,
 	handleSave: null,
@@ -813,6 +820,8 @@ return view.extend({
 		uci.set('ccswitch', 'main', 'log_level', next.logLevel);
 
 		return Promise.resolve(uci.save()).then(function () {
+			return callUciCommit('ccswitch');
+		}).then(function () {
 			return next;
 		});
 	},
@@ -828,6 +837,30 @@ return view.extend({
 				results[1]
 			]);
 		}, this));
+	},
+
+	loadStaticPrototypeHostBindingsAfterRestart: function () {
+		var self = this;
+		var attempts = 0;
+		var maxAttempts = 6;
+		var delayMs = 500;
+
+		var tryLoad = function () {
+			return self.loadStaticPrototypeHostBindings().then(function (hostBindings) {
+				if (hostBindings && hostBindings.status === 'running' && hostBindings.health !== 'unknown')
+					return hostBindings;
+
+				attempts += 1;
+				if (attempts >= maxAttempts)
+					return hostBindings;
+
+				return new Promise(function (resolve) {
+					window.setTimeout(resolve, delayMs);
+				}).then(tryLoad);
+			});
+		};
+
+		return tryLoad();
 	},
 
 	postStaticPrototypeFrameMessage: function (frame, type, payload) {
@@ -869,7 +902,7 @@ return view.extend({
 				if (!this.isRpcSuccess(result))
 					throw new Error(this.rpcError(result) || _('Failed to restart service.'));
 
-				return this.loadStaticPrototypeHostBindings().then(L.bind(function (hostBindings) {
+				return this.loadStaticPrototypeHostBindingsAfterRestart().then(L.bind(function (hostBindings) {
 					this.postStaticPrototypeFrameMessage(frame, 'ccswitch-prototype-restart-result', {
 						ok: true,
 						host: hostBindings

@@ -236,6 +236,18 @@
         appearance: none;
         cursor: pointer;
         font: inherit;
+        transition: background 160ms ease, border-color 160ms ease, color 160ms ease,
+          box-shadow 160ms ease, transform 160ms ease;
+      }
+
+      .chip-button:hover:not(:disabled) {
+        transform: translateY(-1px);
+      }
+
+      .chip-button:focus-visible,
+      .chip-select:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
       }
 
       .chip-button:disabled {
@@ -243,6 +255,23 @@
         border-style: dashed;
         color: var(--muted);
         cursor: not-allowed;
+        transform: none;
+      }
+
+      .chip-button.primary:not(:disabled) {
+        background: var(--accent);
+        color: #fff;
+        border-color: transparent;
+      }
+
+      .chip-button.primary:not(:disabled):hover {
+        background: color-mix(in srgb, var(--accent) 88%, #fff 12%);
+      }
+
+      .chip-button.active:not(:disabled) {
+        background: var(--accent);
+        color: #fff;
+        border-color: transparent;
       }
 
       .chip-select {
@@ -258,6 +287,9 @@
         font-weight: 700;
         appearance: none;
         -webkit-appearance: none;
+        cursor: pointer;
+        line-height: 28px;
+        box-shadow: none;
         background-image:
           linear-gradient(45deg, transparent 50%, var(--muted) 50%),
           linear-gradient(135deg, var(--muted) 50%, transparent 50%);
@@ -266,6 +298,10 @@
           calc(100% - 13px) 12px;
         background-size: 5px 5px, 5px 5px;
         background-repeat: no-repeat;
+      }
+
+      .chip-select:hover {
+        border-color: color-mix(in srgb, var(--line) 70%, var(--accent) 30%);
       }
 
       .chip.success {
@@ -1150,7 +1186,7 @@
             <div class="band-actions">
               <div class="status-text" id="daemonStatusText">Running</div>
               <div class="chip success" id="daemonHealthChip">Healthy</div>
-              <div class="chip active" id="restartChip">Restart</div>
+              <button class="chip chip-button active" id="restartButton" type="button">Restart</button>
               <div class="chip non-live" aria-disabled="true" title="Stop stays unsupported in this prototype shell">Stop</div>
               <select class="chip-select" id="loggingValue" aria-label="Logging level">
                 <option value="trace">Trace</option>
@@ -1159,7 +1195,7 @@
                 <option value="warn">Warn</option>
                 <option value="error">Error</option>
               </select>
-              <button class="chip chip-button meta" id="hostSaveButton" type="button" disabled>Save</button>
+              <button class="chip chip-button primary" id="hostSaveButton" type="button" disabled>Save</button>
             </div>
             <div class="band-divider"></div>
             <div class="band-details">
@@ -1688,7 +1724,7 @@
         footerSaveButton: document.querySelectorAll(".footer-actions .primary")[0],
         providerSearch: document.getElementById("providerSearch"),
         providerFilterReset: document.getElementById("providerFilterReset"),
-        restartChip: document.getElementById("restartChip"),
+        restartButton: document.getElementById("restartButton"),
       };
 
       let toastTimer = null;
@@ -2479,7 +2515,7 @@
         requestHostSave();
       });
 
-      els.restartChip.addEventListener("click", () => {
+      els.restartButton.addEventListener("click", () => {
         requestRestart();
       });
 

@@ -114,6 +114,11 @@ type RpcSpec = {
   params?: string[];
 };
 
+type RpcCall = {
+  args: unknown[];
+  spec: RpcSpec;
+};
+
 type StaticPrototypeSettings = SettingsView & {
   buildStaticPrototypeQuery(bindings: {
     app: AppId;
@@ -190,6 +195,18 @@ type StaticPrototypeSettings = SettingsView & {
     listenAddr: string;
     listenPort: string;
     logLevel: string;
+  }>;
+  loadStaticPrototypeHostBindingsAfterRestart(): Promise<{
+    app: AppId;
+    health: string;
+    httpProxy: string;
+    httpsProxy: string;
+    listenAddr: string;
+    listenPort: string;
+    logLevel: string;
+    proxyEnabled: string;
+    serviceLabel: string;
+    status: string;
   }>;
 };
 
@@ -285,6 +302,7 @@ function createElement(
 
 function loadSettingsView(selectedApp?: AppId) {
   const rpcDeclares: RpcSpec[] = [];
+  const rpcCalls: RpcCall[] = [];
   const storage = new Map<string, string>();
   const uciState = new Map<string, string>([
     ["ccswitch.main.enabled", "1"],
@@ -345,12 +363,15 @@ function loadSettingsView(selectedApp?: AppId) {
       declare(spec: RpcSpec) {
         rpcDeclares.push(spec);
 
-        return (...args: unknown[]) =>
-          Promise.resolve({
+        return (...args: unknown[]) => {
+          rpcCalls.push({ args, spec });
+
+          return Promise.resolve({
             args,
             ok: true,
             spec,
           });
+        };
       },
     },
     {
@@ -364,6 +385,7 @@ function loadSettingsView(selectedApp?: AppId) {
 
   return {
     localStorage,
+    rpcCalls,
     rpcDeclares,
     settings,
     storage,
@@ -840,7 +862,7 @@ describe("OpenWrt settings shared-provider shell", () => {
   });
 
   it("writes only the UCI-backed host fields for static prototype saves", async () => {
-    const { settings, uci, uciState } = loadSettingsView("codex");
+    const { settings, uci, uciState, rpcCalls } = loadSettingsView("codex");
     const staticPrototypeSettings =
       settings as unknown as StaticPrototypeSettings;
 
@@ -897,6 +919,14 @@ describe("OpenWrt settings shared-provider shell", () => {
       "trace",
     );
     expect(uci.save).toHaveBeenCalledTimes(1);
+    expect(
+      rpcCalls.some(
+        (call) =>
+          call.spec.object === "uci" &&
+          call.spec.method === "commit" &&
+          call.args[0] === "ccswitch",
+      ),
+    ).toBe(true);
     expect(uciState.get("ccswitch.main.enabled")).toBe("1");
     expect(uciState.get("ccswitch.main.listen_addr")).toBe("10.0.0.7");
     expect(uciState.get("ccswitch.main.listen_port")).toBe("28443");
@@ -911,7 +941,7 @@ describe("OpenWrt settings shared-provider shell", () => {
   });
 
   it("falls back to the current snapshot when static prototype listen fields are invalid", async () => {
-    const { settings, uci, uciState } = loadSettingsView("codex");
+    const { settings, uci, uciState, rpcCalls } = loadSettingsView("codex");
     const staticPrototypeSettings =
       settings as unknown as StaticPrototypeSettings;
 
@@ -953,6 +983,14 @@ describe("OpenWrt settings shared-provider shell", () => {
       "http://router-https.internal:7891",
     );
     expect(uciState.get("ccswitch.main.log_level")).toBe("debug");
+    expect(
+      rpcCalls.some(
+        (call) =>
+          call.spec.object === "uci" &&
+          call.spec.method === "commit" &&
+          call.args[0] === "ccswitch",
+      ),
+    ).toBe(true);
   });
 
   it("accepts valid IP-form listen addresses and valid ports in static prototype saves", async () => {
@@ -980,20 +1018,16 @@ describe("OpenWrt settings shared-provider shell", () => {
     });
   });
 
-  it("routes static prototype restart requests back through the shell-owned restart path", async () => {
+  it("polls static prototype host bindings after restart until live health is available", async () => {
     const { settings } = loadSettingsView("codex");
     const staticPrototypeSettings =
       settings as unknown as StaticPrototypeSettings;
     const postMessage = vi.fn();
     const contentWindow = { postMessage };
     const frame = { contentWindow };
-
-    (staticPrototypeSettings as StaticPrototypeSettings & {
-      restartService: ReturnType<typeof vi.fn>;
-    }).restartService = vi.fn().mockResolvedValue({ ok: true });
-    staticPrototypeSettings.loadStaticPrototypeHostBindings = vi.fn().mockResolvedValue({
-      app: "codex",
-      health: "healthy",
+    const first = {
+      app: "codex" as const,
+      health: "unknown",
       httpProxy: "http://router-http.internal:7890",
       httpsProxy: "http://router-https.internal:7890",
       listenAddr: "10.0.0.5",
@@ -1002,7 +1036,26 @@ describe("OpenWrt settings shared-provider shell", () => {
       proxyEnabled: "0",
       serviceLabel: "Router daemon",
       status: "running",
+    };
+    const second = {
+      ...first,
+      health: "healthy",
+    };
+
+    (staticPrototypeSettings as StaticPrototypeSettings & {
+      restartService: ReturnType<typeof vi.fn>;
+    }).restartService = vi.fn().mockResolvedValue({ ok: true });
+    vi.spyOn(window, "setTimeout").mockImplementation((handler: TimerHandler) => {
+      if (typeof handler === "function") {
+        handler();
+      }
+
+      return 1 as unknown as ReturnType<typeof window.setTimeout>;
     });
+    staticPrototypeSettings.loadStaticPrototypeHostBindings = vi
+      .fn()
+      .mockResolvedValueOnce(first)
+      .mockResolvedValueOnce(second);
 
     const handled = await staticPrototypeSettings.handleStaticPrototypeFrameMessage(
       frame,
@@ -1020,23 +1073,13 @@ describe("OpenWrt settings shared-provider shell", () => {
         }
       ).restartService,
     ).toHaveBeenCalledTimes(1);
+    expect(staticPrototypeSettings.loadStaticPrototypeHostBindings).toHaveBeenCalledTimes(2);
     expect(postMessage).toHaveBeenCalledWith(
       {
         type: "ccswitch-prototype-restart-result",
         payload: {
           ok: true,
-          host: {
-            app: "codex",
-            health: "healthy",
-            httpProxy: "http://router-http.internal:7890",
-            httpsProxy: "http://router-https.internal:7890",
-            listenAddr: "10.0.0.5",
-            listenPort: "18443",
-            logLevel: "debug",
-            proxyEnabled: "0",
-            serviceLabel: "Router daemon",
-            status: "running",
-          },
+          host: second,
         },
       },
       "*",

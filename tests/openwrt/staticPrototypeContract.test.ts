@@ -230,6 +230,8 @@ describe("OpenWrt static prototype contract", () => {
     expect(normalizeValue(document.getElementById("loggingValue"))).toBe(
       "debug",
     );
+    expect(document.getElementById("restartButton")?.tagName).toBe("BUTTON");
+    expect(document.getElementById("hostSaveButton")?.tagName).toBe("BUTTON");
 
     expect(document.querySelectorAll(".provider-row")).toHaveLength(1);
     expect(normalizeText(document.getElementById("providerList"))).toContain(
@@ -527,7 +529,7 @@ describe("OpenWrt static prototype contract", () => {
     );
     expect(hostSaveButton.disabled).toBe(true);
 
-    click(dom, document.getElementById("restartChip"));
+    click(dom, document.getElementById("restartButton"));
     await settle(dom);
 
     expect(parentPostMessage).toHaveBeenCalledWith(
