@@ -1086,6 +1086,17 @@ return view.extend({
 		if (!parsed && providerResponse && providerResponse.provider)
 			parsed = providerResponse.provider;
 
+		if (!parsed && providerResponse && typeof providerResponse === 'object' && (
+			providerResponse.providerId != null ||
+			providerResponse.provider_id != null ||
+			providerResponse.configured != null ||
+			providerResponse.baseUrl != null ||
+			providerResponse.base_url != null ||
+			providerResponse.tokenField != null ||
+			providerResponse.token_field != null
+		))
+			parsed = providerResponse;
+
 		if (!parsed)
 			return this.emptyProviderView(appId);
 

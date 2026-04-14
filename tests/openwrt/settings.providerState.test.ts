@@ -651,17 +651,15 @@ describe("OpenWrt settings shared-provider shell", () => {
       { ccswitch: { instances: { main: {} } } },
       {
         ok: true,
-        status_json: JSON.stringify({
-          service: {
-            running: true,
-            reachable: false,
-            listenAddress: "10.0.0.5",
-            listenPort: 18443,
-            proxyEnabled: false,
-            enableLogging: true,
-            statusSource: "runtime",
-          },
-        }),
+        service: {
+          running: true,
+          reachable: false,
+          listenAddress: "10.0.0.5",
+          listenPort: 18443,
+          proxyEnabled: false,
+          enableLogging: true,
+          statusSource: "runtime",
+        },
       },
     ]);
 
@@ -699,40 +697,38 @@ describe("OpenWrt settings shared-provider shell", () => {
     const failover = staticPrototypeSettings.parseStaticPrototypeFailoverState(
       {
         ok: true,
-        status_json: JSON.stringify({
+        providerId: "codex-primary",
+        proxyEnabled: false,
+        autoFailoverEnabled: true,
+        maxRetries: 4,
+        activeProviderId: "codex-primary",
+        inFailoverQueue: true,
+        queuePosition: 0,
+        sortIndex: 0,
+        providerHealth: {
           providerId: "codex-primary",
-          proxyEnabled: false,
-          autoFailoverEnabled: true,
-          maxRetries: 4,
-          activeProviderId: "codex-primary",
-          inFailoverQueue: true,
-          queuePosition: 0,
-          sortIndex: 0,
-          providerHealth: {
-            providerId: "codex-primary",
-            observed: true,
-            healthy: false,
-            consecutiveFailures: 2,
-            lastSuccessAt: "2026-04-13T07:59:00Z",
-            lastFailureAt: "2026-04-13T08:00:00Z",
-            lastError: "upstream timeout",
-            updatedAt: "2026-04-13T08:01:00Z",
-          },
-          failoverQueueDepth: 2,
-          failoverQueue: [
-            {
+          observed: true,
+          healthy: false,
+          consecutiveFailures: 2,
+          lastSuccessAt: "2026-04-13T07:59:00Z",
+          lastFailureAt: "2026-04-13T08:00:00Z",
+          lastError: "upstream timeout",
+          updatedAt: "2026-04-13T08:01:00Z",
+        },
+        failoverQueueDepth: 2,
+        failoverQueue: [
+          {
+            providerId: "codex-backup",
+            providerName: "Codex Backup",
+            sortIndex: 1,
+            active: false,
+            health: {
               providerId: "codex-backup",
-              providerName: "Codex Backup",
-              sortIndex: 1,
-              active: false,
-              health: {
-                providerId: "codex-backup",
-                observed: false,
-                healthy: true,
-              },
+              observed: false,
+              healthy: true,
             },
-          ],
-        }),
+          },
+        ],
       },
       "ignored-provider-id",
     );
@@ -858,6 +854,43 @@ describe("OpenWrt settings shared-provider shell", () => {
           },
         },
       ],
+    });
+  });
+
+  it("parses inlined active-provider objects in the LuCI host bridge", () => {
+    const { settings } = loadSettingsView("codex");
+    const parsed = (
+      settings as SettingsView & {
+        parseProviderState(providerResponse: unknown, appId: AppId): Record<string, unknown>;
+      }
+    ).parseProviderState(
+      {
+        ok: true,
+        active: true,
+        baseUrl: "https://api.openai.com/v1",
+        configured: true,
+        model: "gpt-5.4",
+        name: "OpenAI Official",
+        notes: "Pinned live route",
+        providerId: "codex-primary",
+        tokenConfigured: true,
+        tokenField: "OPENAI_API_KEY",
+        tokenMasked: "sk-live-...789",
+      },
+      "codex",
+    );
+
+    expect(parsed).toMatchObject({
+      active: true,
+      baseUrl: "https://api.openai.com/v1",
+      configured: true,
+      model: "gpt-5.4",
+      name: "OpenAI Official",
+      notes: "Pinned live route",
+      providerId: "codex-primary",
+      tokenConfigured: true,
+      tokenField: "OPENAI_API_KEY",
+      tokenMasked: "sk-live-...789",
     });
   });
 
