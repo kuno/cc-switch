@@ -72,7 +72,6 @@ export function UsageDashboard() {
       resolvedRange.endDate * 1000,
     ).toLocaleString(locale)}`;
   }, [locale, range, resolvedRange.endDate, resolvedRange.startDate, t]);
-
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
