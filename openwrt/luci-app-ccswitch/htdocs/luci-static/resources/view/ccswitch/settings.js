@@ -408,6 +408,7 @@ return view.extend({
 	},
 
 	renderStaticPrototype: function (data) {
+		var self = this;
 		var bindings = this.getStaticPrototypeBindings(data || []);
 		var workspaceData = this.buildStaticPrototypeWorkspaceData(data || []);
 		var prototypeSrc = OPENWRT_STATIC_PROTOTYPE_PATH + '?' + this.buildStaticPrototypeQuery(bindings);
@@ -445,6 +446,14 @@ return view.extend({
 				/* no-op */
 			}
 		};
+		var postHostState = function () {
+			return self.loadStaticPrototypeHostBindings().then(function (hostBindings) {
+				self.postStaticPrototypeFrameMessage(frame, 'ccswitch-prototype-host-state', hostBindings);
+			});
+		};
+		var handleFrameMessage = function (event) {
+			self.handleStaticPrototypeFrameMessage(frame, event);
+		};
 
 		if (!existingStyle) {
 			existingStyle = E('style', {
@@ -455,11 +464,15 @@ return view.extend({
 			document.head.appendChild(existingStyle);
 		}
 
+		window.addEventListener('message', handleFrameMessage);
+
 		frame.addEventListener('load', function () {
 			postWorkspaceData();
+			postHostState();
 			syncHeight();
 			window.setTimeout(function () {
 				postWorkspaceData();
+				postHostState();
 				syncHeight();
 			}, 50);
 			window.setTimeout(syncHeight, 300);
@@ -667,6 +680,115 @@ return view.extend({
 		};
 	},
 
+	normalizeStaticPrototypeHostPayload: function (payload) {
+		var snapshot = this.getHostConfigSnapshot();
+		var logLevel = payload && typeof payload.logLevel === 'string'
+			? String(payload.logLevel).toLowerCase()
+			: (snapshot.logLevel || 'info');
+		var allowedLogLevels = {
+			error: true,
+			warn: true,
+			info: true,
+			debug: true,
+			trace: true
+		};
+
+		if (!allowedLogLevels[logLevel])
+			logLevel = snapshot.logLevel || 'info';
+
+		return {
+			listenAddr: payload && payload.listenAddr != null ? String(payload.listenAddr) : snapshot.listenAddr || '',
+			listenPort: payload && payload.listenPort != null ? String(payload.listenPort) : snapshot.listenPort || '',
+			httpProxy: payload && payload.httpProxy != null ? String(payload.httpProxy) : snapshot.httpProxy || '',
+			httpsProxy: payload && payload.httpsProxy != null ? String(payload.httpsProxy) : snapshot.httpsProxy || '',
+			logLevel: logLevel
+		};
+	},
+
+	saveStaticPrototypeHostConfig: function (payload) {
+		var next = this.normalizeStaticPrototypeHostPayload(payload);
+
+		uci.set('ccswitch', 'main', 'listen_addr', next.listenAddr);
+		uci.set('ccswitch', 'main', 'listen_port', next.listenPort);
+		uci.set('ccswitch', 'main', 'http_proxy', next.httpProxy);
+		uci.set('ccswitch', 'main', 'https_proxy', next.httpsProxy);
+		uci.set('ccswitch', 'main', 'log_level', next.logLevel);
+
+		return Promise.resolve(uci.save()).then(function () {
+			return next;
+		});
+	},
+
+	loadStaticPrototypeHostBindings: function () {
+		return Promise.all([
+			L.resolveDefault(callServiceList('ccswitch'), {}),
+			L.resolveDefault(callGetRuntimeStatus(), { ok: false })
+		]).then(L.bind(function (results) {
+			return this.getStaticPrototypeBindings([
+				null,
+				results[0],
+				results[1]
+			]);
+		}, this));
+	},
+
+	postStaticPrototypeFrameMessage: function (frame, type, payload) {
+		try {
+			if (frame && frame.contentWindow && typeof frame.contentWindow.postMessage === 'function') {
+				frame.contentWindow.postMessage({
+					type: type,
+					payload: payload
+				}, '*');
+			}
+		} catch (e) {
+			/* no-op */
+		}
+	},
+
+	handleStaticPrototypeFrameMessage: function (frame, event) {
+		if (!frame || !frame.contentWindow || !event || event.source !== frame.contentWindow || !event.data)
+			return Promise.resolve(false);
+
+		if (event.data.type === 'ccswitch-prototype-host-save')
+			return this.saveStaticPrototypeHostConfig(event.data.payload).then(L.bind(function () {
+				return this.loadStaticPrototypeHostBindings().then(L.bind(function (hostBindings) {
+					this.postStaticPrototypeFrameMessage(frame, 'ccswitch-prototype-host-save-result', {
+						ok: true,
+						host: hostBindings
+					});
+					return true;
+				}, this));
+			}, this)).catch(L.bind(function (err) {
+				this.postStaticPrototypeFrameMessage(frame, 'ccswitch-prototype-host-save-result', {
+					ok: false,
+					message: this.rpcFailureMessage(err) || _('Failed to save host settings.')
+				});
+				return true;
+			}, this));
+
+		if (event.data.type === 'ccswitch-prototype-restart-service')
+			return this.restartService().then(L.bind(function (result) {
+				if (!this.isRpcSuccess(result))
+					throw new Error(this.rpcError(result) || _('Failed to restart service.'));
+
+				return this.loadStaticPrototypeHostBindings().then(L.bind(function (hostBindings) {
+					this.postStaticPrototypeFrameMessage(frame, 'ccswitch-prototype-restart-result', {
+						ok: true,
+						host: hostBindings
+					});
+					return true;
+				}, this));
+			}, this)).catch(L.bind(function (err) {
+				this.postStaticPrototypeFrameMessage(frame, 'ccswitch-prototype-restart-result', {
+					ok: false,
+					message: this.rpcFailureMessage(err) || _('Failed to restart service.')
+				});
+				return true;
+			}, this));
+
+		return Promise.resolve(false);
+	},
+
 	getStaticPrototypeBindings: function (data) {
 		var serviceStatus = data && data[1] ? data[1] : {};
 		var runtimeResponse = data && data[2] ? data[2] : {};
@@ -685,8 +807,8 @@ return view.extend({
 			app: this.getSelectedApp(),
 			status: isRunning ? 'running' : 'stopped',
 			health: health,
-			listenAddr: runtime.listenAddress || hostConfig.listenAddr || '0.0.0.0',
-			listenPort: runtime.listenPort || hostConfig.listenPort || '15721',
+			listenAddr: hostConfig.listenAddr || runtime.listenAddress || '0.0.0.0',
+			listenPort: hostConfig.listenPort || runtime.listenPort || '15721',
 			serviceLabel: _('Router daemon'),
 			httpProxy: hostConfig.httpProxy || '',
 			httpsProxy: hostConfig.httpsProxy || '',

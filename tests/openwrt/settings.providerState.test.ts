@@ -127,6 +127,10 @@ type StaticPrototypeSettings = SettingsView & {
     serviceLabel: string;
     status: string;
   }): string;
+  handleStaticPrototypeFrameMessage(
+    frame: { contentWindow: { postMessage: ReturnType<typeof vi.fn> } },
+    event: { data?: { payload?: Record<string, unknown>; type?: string }; source?: unknown },
+  ): Promise<boolean>;
   buildStaticPrototypeWorkspaceData(data: unknown[]): {
     apps: Record<
       AppId,
@@ -156,11 +160,37 @@ type StaticPrototypeSettings = SettingsView & {
     serviceLabel: string;
     status: string;
   };
+  loadStaticPrototypeHostBindings(): Promise<{
+    app: AppId;
+    health: string;
+    httpProxy: string;
+    httpsProxy: string;
+    listenAddr: string;
+    listenPort: string;
+    logLevel: string;
+    proxyEnabled: string;
+    serviceLabel: string;
+    status: string;
+  }>;
+  normalizeStaticPrototypeHostPayload(payload: Record<string, unknown>): {
+    httpProxy: string;
+    httpsProxy: string;
+    listenAddr: string;
+    listenPort: string;
+    logLevel: string;
+  };
   parseServiceState(serviceStatus: unknown): boolean;
   parseStaticPrototypeFailoverState(
     response: unknown,
     fallbackProviderId: string,
   ): Record<string, unknown>;
+  saveStaticPrototypeHostConfig(payload: Record<string, unknown>): Promise<{
+    httpProxy: string;
+    httpsProxy: string;
+    listenAddr: string;
+    listenPort: string;
+    logLevel: string;
+  }>;
 };
 
 const SHARED_PROVIDER_UI_GLOBAL_KEY = "__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__";
@@ -256,6 +286,14 @@ function createElement(
 function loadSettingsView(selectedApp?: AppId) {
   const rpcDeclares: RpcSpec[] = [];
   const storage = new Map<string, string>();
+  const uciState = new Map<string, string>([
+    ["ccswitch.main.enabled", "1"],
+    ["ccswitch.main.listen_addr", "0.0.0.0"],
+    ["ccswitch.main.listen_port", "15721"],
+    ["ccswitch.main.http_proxy", ""],
+    ["ccswitch.main.https_proxy", ""],
+    ["ccswitch.main.log_level", "info"],
+  ]);
 
   if (selectedApp) {
     storage.set("ccswitch-openwrt-selected-app", selectedApp);
@@ -284,6 +322,16 @@ function loadSettingsView(selectedApp?: AppId) {
       storage.set(key, value);
     }),
   };
+  const uci = {
+    get: vi.fn((config: string, section: string, option: string) => {
+      return uciState.get(`${config}.${section}.${option}`) ?? null;
+    }),
+    load: vi.fn().mockResolvedValue(null),
+    save: vi.fn().mockResolvedValue(null),
+    set: vi.fn((config: string, section: string, option: string, value: unknown) => {
+      uciState.set(`${config}.${section}.${option}`, value == null ? "" : String(value));
+    }),
+  };
 
   const settings = factory(
     {
@@ -292,9 +340,7 @@ function loadSettingsView(selectedApp?: AppId) {
       },
     },
     {},
-    {
-      load: vi.fn().mockResolvedValue(null),
-    },
+    uci,
     {
       declare(spec: RpcSpec) {
         rpcDeclares.push(spec);
@@ -321,6 +367,8 @@ function loadSettingsView(selectedApp?: AppId) {
     rpcDeclares,
     settings,
     storage,
+    uci,
+    uciState,
   };
 }
 
@@ -600,8 +648,8 @@ describe("OpenWrt settings shared-provider shell", () => {
       health: "degraded",
       httpProxy: "http://router-http.internal:7890",
       httpsProxy: "http://router-https.internal:7890",
-      listenAddr: "10.0.0.5",
-      listenPort: "18443",
+      listenAddr: "0.0.0.0",
+      listenPort: "15721",
       logLevel: "debug",
       proxyEnabled: "0",
       serviceLabel: "Router daemon",
@@ -618,8 +666,8 @@ describe("OpenWrt settings shared-provider shell", () => {
       health: "degraded",
       http_proxy: "http://router-http.internal:7890",
       https_proxy: "http://router-https.internal:7890",
-      listen_addr: "10.0.0.5",
-      listen_port: "18443",
+      listen_addr: "0.0.0.0",
+      listen_port: "15721",
       log_level: "debug",
       proxy_enabled: "0",
       service_label: "Router daemon",
@@ -791,6 +839,140 @@ describe("OpenWrt settings shared-provider shell", () => {
     });
   });
 
+  it("writes only the UCI-backed host fields for static prototype saves", async () => {
+    const { settings, uci, uciState } = loadSettingsView("codex");
+    const staticPrototypeSettings =
+      settings as unknown as StaticPrototypeSettings;
+
+    const saved = await staticPrototypeSettings.saveStaticPrototypeHostConfig({
+      listenAddr: "10.0.0.7",
+      listenPort: "28443",
+      httpProxy: "http://router-http.internal:7890",
+      httpsProxy: "http://router-https.internal:7891",
+      logLevel: "trace",
+      inventedField: "ignored",
+    });
+
+    expect(saved).toStrictEqual({
+      listenAddr: "10.0.0.7",
+      listenPort: "28443",
+      httpProxy: "http://router-http.internal:7890",
+      httpsProxy: "http://router-https.internal:7891",
+      logLevel: "trace",
+    });
+    expect(uci.set).toHaveBeenCalledTimes(5);
+    expect(uci.set).toHaveBeenNthCalledWith(
+      1,
+      "ccswitch",
+      "main",
+      "listen_addr",
+      "10.0.0.7",
+    );
+    expect(uci.set).toHaveBeenNthCalledWith(
+      2,
+      "ccswitch",
+      "main",
+      "listen_port",
+      "28443",
+    );
+    expect(uci.set).toHaveBeenNthCalledWith(
+      3,
+      "ccswitch",
+      "main",
+      "http_proxy",
+      "http://router-http.internal:7890",
+    );
+    expect(uci.set).toHaveBeenNthCalledWith(
+      4,
+      "ccswitch",
+      "main",
+      "https_proxy",
+      "http://router-https.internal:7891",
+    );
+    expect(uci.set).toHaveBeenNthCalledWith(
+      5,
+      "ccswitch",
+      "main",
+      "log_level",
+      "trace",
+    );
+    expect(uci.save).toHaveBeenCalledTimes(1);
+    expect(uciState.get("ccswitch.main.enabled")).toBe("1");
+    expect(uciState.get("ccswitch.main.listen_addr")).toBe("10.0.0.7");
+    expect(uciState.get("ccswitch.main.listen_port")).toBe("28443");
+    expect(uciState.get("ccswitch.main.http_proxy")).toBe(
+      "http://router-http.internal:7890",
+    );
+    expect(uciState.get("ccswitch.main.https_proxy")).toBe(
+      "http://router-https.internal:7891",
+    );
+    expect(uciState.get("ccswitch.main.log_level")).toBe("trace");
+    expect(uciState.get("ccswitch.main.inventedField")).toBeUndefined();
+  });
+
+  it("routes static prototype restart requests back through the shell-owned restart path", async () => {
+    const { settings } = loadSettingsView("codex");
+    const staticPrototypeSettings =
+      settings as unknown as StaticPrototypeSettings;
+    const postMessage = vi.fn();
+    const contentWindow = { postMessage };
+    const frame = { contentWindow };
+
+    (staticPrototypeSettings as StaticPrototypeSettings & {
+      restartService: ReturnType<typeof vi.fn>;
+    }).restartService = vi.fn().mockResolvedValue({ ok: true });
+    staticPrototypeSettings.loadStaticPrototypeHostBindings = vi.fn().mockResolvedValue({
+      app: "codex",
+      health: "healthy",
+      httpProxy: "http://router-http.internal:7890",
+      httpsProxy: "http://router-https.internal:7890",
+      listenAddr: "10.0.0.5",
+      listenPort: "18443",
+      logLevel: "debug",
+      proxyEnabled: "0",
+      serviceLabel: "Router daemon",
+      status: "running",
+    });
+
+    const handled = await staticPrototypeSettings.handleStaticPrototypeFrameMessage(
+      frame,
+      {
+        data: { type: "ccswitch-prototype-restart-service" },
+        source: contentWindow,
+      },
+    );
+
+    expect(handled).toBe(true);
+    expect(
+      (
+        staticPrototypeSettings as StaticPrototypeSettings & {
+          restartService: ReturnType<typeof vi.fn>;
+        }
+      ).restartService,
+    ).toHaveBeenCalledTimes(1);
+    expect(postMessage).toHaveBeenCalledWith(
+      {
+        type: "ccswitch-prototype-restart-result",
+        payload: {
+          ok: true,
+          host: {
+            app: "codex",
+            health: "healthy",
+            httpProxy: "http://router-http.internal:7890",
+            httpsProxy: "http://router-https.internal:7890",
+            listenAddr: "10.0.0.5",
+            listenPort: "18443",
+            logLevel: "debug",
+            proxyEnabled: "0",
+            serviceLabel: "Router daemon",
+            status: "running",
+          },
+        },
+      },
+      "*",
+    );
+  });
+
   it("lets the shared bundle update the shell-owned selected app and banner state", () => {
     const { settings, localStorage } = loadSettingsView("claude");
     const uiState = settings.createUiState(true, "claude");
@@ -892,8 +1074,10 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(source).toContain("providerFilter: \"\"");
     expect(source).toContain("Stop stays unsupported in this prototype shell");
     expect(source).toContain('class="chip non-live"');
-    expect(source).toContain('class="inline-input mono non-live"');
-    expect(source).toContain('class="chip-select non-live"');
+    expect(source).toContain('id="hostSaveButton"');
+    expect(source).toContain('function requestHostSave()');
+    expect(source).toContain('type: "ccswitch-prototype-host-save"');
+    expect(source).toContain('type: "ccswitch-prototype-restart-service"');
   });
 
   it("injects explicit host-shell layout fallbacks for narrow widths", () => {

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { JSDOM } from "jsdom";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 type JSDOMInstance = ReturnType<typeof JSDOM>;
 type DomNode = Element | DocumentFragment | null;
@@ -64,6 +64,38 @@ function click(dom: JSDOMInstance, element: unknown) {
 	expect(element).not.toBeNull();
 	candidate?.dispatchEvent(
     new dom.window.MouseEvent("click", {
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+}
+
+function inputValue(dom: JSDOMInstance, element: unknown, value: string) {
+  const candidate = element as HTMLInputElement | HTMLTextAreaElement | null;
+  expect(element).not.toBeNull();
+  if (!candidate) {
+    return;
+  }
+
+  candidate.value = value;
+  candidate.dispatchEvent(
+    new dom.window.Event("input", {
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+}
+
+function changeValue(dom: JSDOMInstance, element: unknown, value: string) {
+  const candidate = element as HTMLSelectElement | null;
+  expect(element).not.toBeNull();
+  if (!candidate) {
+    return;
+  }
+
+  candidate.value = value;
+  candidate.dispatchEvent(
+    new dom.window.Event("change", {
       bubbles: true,
       cancelable: true,
     }),
@@ -389,6 +421,138 @@ describe("OpenWrt static prototype contract", () => {
     );
     expect(normalizeText(document.getElementById("providerList"))).not.toContain(
       "Draft From Modal",
+    );
+  });
+
+  it("bridges top-card host save and restart while keeping host dirty state separate from provider saves", async () => {
+    const dom = loadPrototype(
+      "?app=codex&status=running&health=degraded&listen_addr=10.0.0.5&listen_port=18443&service_label=Router%20daemon&http_proxy=http%3A%2F%2Frouter-http.internal%3A7890&https_proxy=http%3A%2F%2Frouter-https.internal%3A7890&proxy_enabled=0&log_level=debug",
+    );
+
+    const parentPostMessage = vi.fn((message: { payload?: Record<string, unknown>; type?: string }) => {
+      if (message.type === "ccswitch-prototype-host-save") {
+        dom.window.dispatchEvent(
+          new dom.window.MessageEvent("message", {
+            data: {
+              type: "ccswitch-prototype-host-save-result",
+              payload: {
+                ok: true,
+                host: {
+                  app: "codex",
+                  health: "degraded",
+                  httpProxy: String(message.payload?.httpProxy ?? ""),
+                  httpsProxy: String(message.payload?.httpsProxy ?? ""),
+                  listenAddr: String(message.payload?.listenAddr ?? ""),
+                  listenPort: String(message.payload?.listenPort ?? ""),
+                  logLevel: String(message.payload?.logLevel ?? "info"),
+                  proxyEnabled: "0",
+                  serviceLabel: "Router daemon",
+                  status: "running",
+                },
+              },
+            },
+          }),
+        );
+      }
+
+      if (message.type === "ccswitch-prototype-restart-service") {
+        dom.window.dispatchEvent(
+          new dom.window.MessageEvent("message", {
+            data: {
+              type: "ccswitch-prototype-restart-result",
+              payload: {
+                ok: true,
+                host: {
+                  app: "codex",
+                  health: "healthy",
+                  httpProxy: "http://router-http.internal:9000",
+                  httpsProxy: "http://router-https.internal:7890",
+                  listenAddr: "10.0.0.8",
+                  listenPort: "28443",
+                  logLevel: "trace",
+                  proxyEnabled: "0",
+                  serviceLabel: "Router daemon",
+                  status: "running",
+                },
+              },
+            },
+          }),
+        );
+      }
+    });
+
+    Object.defineProperty(dom.window, "parent", {
+      configurable: true,
+      value: { postMessage: parentPostMessage },
+    });
+
+    await settle(dom);
+    postLivePayload(dom);
+    await settle(dom);
+
+    const { document } = dom.window;
+    const hostSaveButton = document.getElementById("hostSaveButton") as HTMLButtonElement;
+    const editorSaveButton = document.querySelectorAll(".action-row button")[1] as HTMLButtonElement;
+
+    expect(hostSaveButton.disabled).toBe(true);
+    expect(editorSaveButton.disabled).toBe(false);
+
+    inputValue(dom, document.getElementById("listenAddressValue"), "10.0.0.8");
+    inputValue(dom, document.getElementById("listenPortValue"), "28443");
+    inputValue(dom, document.getElementById("httpProxyValue"), "http://router-http.internal:9000");
+    changeValue(dom, document.getElementById("loggingValue"), "trace");
+    await settle(dom);
+
+    expect(hostSaveButton.disabled).toBe(false);
+    expect(editorSaveButton.disabled).toBe(false);
+
+    click(dom, hostSaveButton);
+    await settle(dom);
+
+    expect(parentPostMessage).toHaveBeenCalledWith(
+      {
+        type: "ccswitch-prototype-host-save",
+        payload: {
+          listenAddr: "10.0.0.8",
+          listenPort: "28443",
+          httpProxy: "http://router-http.internal:9000",
+          httpsProxy: "http://router-https.internal:7890",
+          logLevel: "trace",
+        },
+      },
+      "*",
+    );
+    expect(normalizeText(document.getElementById("toast"))).toBe(
+      "Host settings saved",
+    );
+    expect(hostSaveButton.disabled).toBe(true);
+
+    click(dom, document.getElementById("restartChip"));
+    await settle(dom);
+
+    expect(parentPostMessage).toHaveBeenCalledWith(
+      {
+        type: "ccswitch-prototype-restart-service",
+      },
+      "*",
+    );
+    expect(normalizeText(document.getElementById("toast"))).toBe(
+      "Service restarted",
+    );
+    expect(normalizeText(document.getElementById("daemonHealthChip"))).toBe(
+      "Healthy",
+    );
+    expect(normalizeValue(document.getElementById("listenAddressValue"))).toBe(
+      "10.0.0.8",
+    );
+    expect(normalizeValue(document.getElementById("listenPortValue"))).toBe(
+      "28443",
+    );
+    expect(normalizeValue(document.getElementById("httpProxyValue"))).toBe(
+      "http://router-http.internal:9000",
+    );
+    expect(normalizeValue(document.getElementById("loggingValue"))).toBe(
+      "trace",
     );
   });
 });
