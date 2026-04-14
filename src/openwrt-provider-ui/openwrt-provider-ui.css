@@ -620,6 +620,264 @@ body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-preset-chip {
   }
 }
 
+#ccswitch-openwrt-native-page-root {
+  min-width: 0;
+}
+
+#ccswitch-openwrt-native-page-root,
+#ccswitch-openwrt-native-page-root *,
+#ccswitch-openwrt-native-page-root *::before,
+#ccswitch-openwrt-native-page-root *::after {
+  box-sizing: border-box;
+}
+
+.ccswitch-openwrt-page-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  color: hsl(var(--foreground));
+}
+
+.ccswitch-openwrt-daemon-card,
+.ccswitch-openwrt-workspace-shell {
+  border: 1px solid var(--ccswitch-page-border-strong);
+  border-radius: var(--ccswitch-page-radius-xl);
+  background:
+    linear-gradient(
+      180deg,
+      var(--ccswitch-page-surface-strong) 0%,
+      var(--ccswitch-page-surface) 100%
+    );
+  box-shadow: var(--ccswitch-page-shadow-strong);
+}
+
+.ccswitch-openwrt-daemon-card {
+  padding: 1.4rem 1.4rem 1.2rem;
+}
+
+.ccswitch-openwrt-daemon-card__head,
+.ccswitch-openwrt-workspace-shell__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.ccswitch-openwrt-daemon-card__intro {
+  min-width: 0;
+}
+
+.ccswitch-openwrt-daemon-card__eyebrow {
+  margin: 0 0 0.4rem;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.ccswitch-openwrt-daemon-card__status-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.ccswitch-openwrt-daemon-card__title,
+.ccswitch-openwrt-workspace-shell__title {
+  margin: 0;
+  font-size: clamp(1.4rem, 2vw, 1.95rem);
+  line-height: 1;
+  letter-spacing: -0.04em;
+  font-weight: 760;
+}
+
+.ccswitch-openwrt-daemon-card__summary {
+  margin: 0.55rem 0 0;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.94rem;
+}
+
+.ccswitch-openwrt-daemon-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+.ccswitch-openwrt-daemon-button {
+  appearance: none;
+  border: 1px solid var(--ccswitch-page-border);
+  border-radius: 999px;
+  background: var(--ccswitch-page-chip-bg);
+  color: hsl(var(--foreground));
+  min-height: 2.25rem;
+  padding: 0 0.95rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.ccswitch-openwrt-daemon-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.ccswitch-openwrt-daemon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.ccswitch-openwrt-daemon-button--primary {
+  border-color: hsl(var(--primary) / 0.34);
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+
+.ccswitch-openwrt-daemon-card__divider {
+  height: 1px;
+  margin: 1rem 0;
+  background: var(--ccswitch-page-divider);
+}
+
+.ccswitch-openwrt-page-note {
+  margin-top: 1rem;
+  border-radius: 1rem;
+  border: 1px solid transparent;
+  padding: 0.8rem 0.95rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.ccswitch-openwrt-page-note--success {
+  background: var(--ccswitch-page-banner-success-bg);
+  border-color: var(--ccswitch-page-banner-success-border);
+  color: var(--ccswitch-page-banner-success-text);
+}
+
+.ccswitch-openwrt-page-note--error {
+  background: var(--ccswitch-page-banner-error-bg);
+  border-color: var(--ccswitch-page-banner-error-border);
+  color: var(--ccswitch-page-banner-error-text);
+}
+
+.ccswitch-openwrt-page-note--info {
+  background: var(--ccswitch-page-banner-warning-bg);
+  border-color: var(--ccswitch-page-banner-warning-border);
+  color: var(--ccswitch-page-banner-warning-text);
+}
+
+.ccswitch-openwrt-daemon-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.75rem;
+  padding: 0 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--ccswitch-page-border);
+  background: var(--ccswitch-page-chip-bg);
+  color: hsl(var(--foreground));
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.ccswitch-openwrt-daemon-chip[data-tone="healthy"] {
+  background: var(--ccswitch-page-banner-success-bg);
+  border-color: var(--ccswitch-page-banner-success-border);
+  color: var(--ccswitch-page-banner-success-text);
+}
+
+.ccswitch-openwrt-daemon-chip[data-tone="warning"] {
+  background: var(--ccswitch-page-banner-warning-bg);
+  border-color: var(--ccswitch-page-banner-warning-border);
+  color: var(--ccswitch-page-banner-warning-text);
+}
+
+.ccswitch-openwrt-daemon-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.ccswitch-openwrt-daemon-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.ccswitch-openwrt-daemon-field--wide {
+  grid-column: span 2;
+}
+
+.ccswitch-openwrt-daemon-field > span {
+  color: hsl(var(--muted-foreground));
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.ccswitch-openwrt-daemon-field input,
+.ccswitch-openwrt-daemon-field select {
+  width: 100%;
+  min-height: 2.8rem;
+  border: 1px solid var(--ccswitch-page-border);
+  border-radius: var(--ccswitch-page-radius-md);
+  background:
+    linear-gradient(
+      180deg,
+      var(--ccswitch-page-surface-strong) 0%,
+      var(--ccswitch-page-surface-muted) 100%
+    );
+  color: hsl(var(--foreground));
+  padding: 0 0.9rem;
+  font: inherit;
+  box-shadow: var(--ccswitch-page-shadow-soft);
+}
+
+.ccswitch-openwrt-daemon-field input:focus,
+.ccswitch-openwrt-daemon-field select:focus {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+.ccswitch-openwrt-workspace-shell {
+  padding: 1.2rem;
+}
+
+.ccswitch-openwrt-workspace-shell__body {
+  min-width: 0;
+  margin-top: 1rem;
+}
+
+@media (max-width: 900px) {
+  .ccswitch-openwrt-daemon-card__head,
+  .ccswitch-openwrt-workspace-shell__head {
+    flex-direction: column;
+  }
+
+  .ccswitch-openwrt-daemon-card__actions {
+    justify-content: flex-start;
+  }
+
+  .ccswitch-openwrt-daemon-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ccswitch-openwrt-daemon-field--wide {
+    grid-column: auto;
+  }
+}
+
 @media (min-width: 1180px) {
   #ccswitch-shared-provider-ui-root
     [data-ccswitch-region="provider-card-grid"] {

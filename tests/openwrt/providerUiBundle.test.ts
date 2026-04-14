@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY,
   __private__,
+  type OpenWrtHostState,
   type OpenWrtSharedProviderBundleApi,
 } from "@/openwrt-provider-ui/index";
 import type {
@@ -400,14 +401,17 @@ describe("OpenWrt provider UI bundle", () => {
     const transport = createRuntimeTransport();
 
     expect(api?.capabilities).toEqual({
+      pageShell: true,
       providerManager: true,
       runtimeSurface: true,
     });
     expect(Object.keys(api ?? {}).sort()).toEqual([
       "capabilities",
       "mount",
+      "mountPage",
       "mountRuntimeSurface",
     ]);
+    expect(typeof api?.mountPage).toBe("function");
     expect(typeof api?.mountRuntimeSurface).toBe("function");
     expect(typeof api?.mount).toBe("function");
 
@@ -631,6 +635,7 @@ describe("OpenWrt provider UI bundle", () => {
 
     expect(api).toBeDefined();
     expect(api?.capabilities).toEqual({
+      pageShell: true,
       providerManager: true,
       runtimeSurface: true,
     });
@@ -799,6 +804,151 @@ describe("OpenWrt provider UI bundle", () => {
     expect(
       document.body.classList.contains("ccswitch-openwrt-provider-ui-theme"),
     ).toBe(false);
+    expect(target.textContent).toBe("");
+    target.remove();
+  });
+
+  it("mounts the native OpenWrt page shell with a live top card and provider workspace", async () => {
+    const globalScope = globalThis as typeof globalThis & {
+      [OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY]?: OpenWrtSharedProviderBundleApi;
+    };
+    const api = globalScope[OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY];
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    let selectedApp: SharedProviderAppId = "claude";
+    let hostState: OpenWrtHostState = {
+      app: "claude",
+      status: "running",
+      health: "healthy",
+      listenAddr: "0.0.0.0",
+      listenPort: "15721",
+      serviceLabel: "Router daemon",
+      httpProxy: "http://127.0.0.1:7890",
+      httpsProxy: "http://127.0.0.1:7890",
+      proxyEnabled: true,
+      logLevel: "debug",
+    };
+    const listeners: Array<() => void> = [];
+    const transport = createTransport({
+      claude: createProviderState("claude", [
+        {
+          active: true,
+          baseUrl: "https://claude-primary.example.com",
+          model: "claude-sonnet-4-5",
+          name: "Claude Primary",
+          providerId: "claude-primary",
+          tokenConfigured: true,
+          tokenField: "ANTHROPIC_AUTH_TOKEN",
+        },
+      ]),
+    });
+    const shell = {
+      clearMessage: vi.fn(),
+      getHostState: vi.fn().mockImplementation(() => hostState),
+      getMessage: vi.fn().mockReturnValue(null),
+      getSelectedApp: vi.fn().mockImplementation(() => selectedApp),
+      getServiceStatus: vi.fn().mockImplementation(() => ({
+        isRunning: hostState.status === "running",
+      })),
+      getRestartState: vi.fn().mockReturnValue({
+        pending: false,
+        inFlight: false,
+      }),
+      refreshHostState: vi.fn().mockImplementation(async () => hostState),
+      refreshServiceStatus: vi.fn().mockResolvedValue({ isRunning: true }),
+      restartService: vi.fn().mockResolvedValue({ isRunning: true }),
+      saveHostConfig: vi.fn().mockImplementation(async (payload) => {
+        hostState = {
+          ...hostState,
+          ...payload,
+        };
+        listeners.forEach((listener) => listener());
+        return hostState;
+      }),
+      setRestartState: vi.fn(),
+      setSelectedApp: vi
+        .fn()
+        .mockImplementation((appId: SharedProviderAppId) => {
+          selectedApp = appId;
+          hostState = {
+            ...hostState,
+            app: appId,
+          };
+          listeners.forEach((listener) => listener());
+          return appId;
+        }),
+      showMessage: vi.fn(),
+      subscribe: vi.fn().mockImplementation((listener: () => void) => {
+        listeners.push(listener);
+        return vi.fn();
+      }),
+    };
+
+    let handle:
+      | void
+      | (() => void)
+      | {
+          unmount(): void;
+        };
+
+    await act(async () => {
+      handle = await Promise.resolve(
+        api!.mountPage({
+          shell,
+          target,
+          transport,
+        }),
+      );
+    });
+
+    await waitFor(() =>
+      expect(target).toHaveTextContent("Configure routes and provider details"),
+    );
+
+    expect(target).toHaveTextContent("Router daemon");
+    expect(target).toHaveTextContent("Running");
+    expect(target).toHaveTextContent("Healthy");
+    expect(target).toHaveTextContent("0.0.0.0:15721");
+    expect(
+      within(target).getByRole("button", { name: "Save" }),
+    ).toBeDisabled();
+    expect(
+      within(target).getByRole("button", { name: "Restart" }),
+    ).toBeInTheDocument();
+    expect(
+      within(target).getByRole("button", { name: "Edit Claude Primary" }),
+    ).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.change(within(target).getByDisplayValue("15721"), {
+        target: { value: "18443" },
+      });
+    });
+
+    expect(
+      within(target).getByRole("button", { name: "Save" }),
+    ).toBeEnabled();
+
+    await act(async () => {
+      fireEvent.click(within(target).getByRole("button", { name: "Save" }));
+    });
+
+    expect(shell.saveHostConfig).toHaveBeenCalledWith({
+      httpProxy: "http://127.0.0.1:7890",
+      httpsProxy: "http://127.0.0.1:7890",
+      listenAddr: "0.0.0.0",
+      listenPort: "18443",
+      logLevel: "debug",
+    });
+
+    await act(async () => {
+      if (typeof handle === "function") {
+        handle();
+      } else if (handle && typeof handle.unmount === "function") {
+        handle.unmount();
+      }
+    });
+
     expect(target.textContent).toBe("");
     target.remove();
   });
@@ -1468,8 +1618,10 @@ describe("OpenWrt provider UI bundle", () => {
     expect(stagedBundleSource).toContain(
       "__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__",
     );
+    expect(stagedBundleSource).toContain("pageShell");
     expect(stagedBundleSource).toContain("providerManager");
     expect(stagedBundleSource).toContain("runtimeSurface");
+    expect(stagedBundleSource).toContain("mountPage");
     expect(stagedBundleSource).toContain("mountRuntimeSurface");
     expect(stagedStylesheetSource).toContain(
       "body.ccswitch-openwrt-provider-ui-theme",
