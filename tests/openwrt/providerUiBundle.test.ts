@@ -865,7 +865,9 @@ describe("OpenWrt provider UI bundle", () => {
       providerRoot.querySelector(".ccswitch-openwrt-page-header"),
     ).not.toBeNull();
     expect(
-      providerRoot.querySelector(".ccswitch-openwrt-app-switch"),
+      providerRoot.querySelector(
+        '[data-ccswitch-region="provider-app-picker"][aria-label="Provider apps"]',
+      ),
     ).not.toBeNull();
     expect(
       providerRoot.querySelector(".ccswitch-openwrt-provider-card"),
@@ -874,27 +876,19 @@ describe("OpenWrt provider UI bundle", () => {
       providerRoot.querySelector('[data-ccswitch-region="provider-detail-panel"]'),
     ).not.toBeNull();
     expect(
-      Array.from(providerRoot.querySelectorAll("*")).some((element) =>
-        getElementClassName(element).includes(
-          "xl:grid-cols-[minmax(320px,0.88fr)_minmax(0,1.12fr)]",
-        ),
-      ),
-    ).toBe(true);
+      within(providerRoot).getByRole("tab", { name: "General" }),
+    ).toHaveAttribute("aria-selected", "true");
+    expect(
+      within(providerRoot).getByRole("tab", { name: "Credentials" }),
+    ).toBeInTheDocument();
     expect(
       providerRoot.querySelector(
         '[data-ccswitch-region="provider-summary-grid"][data-ccswitch-layout="stack-to-split"]',
       ),
     ).not.toBeNull();
     expect(
-      Array.from(providerRoot.querySelectorAll("*")).some((element) =>
-        getElementClassName(element).includes("rounded-[28px]"),
-      ),
-    ).toBe(true);
-    expect(
-      Array.from(providerRoot.querySelectorAll("article")).every((element) =>
-        getElementClassName(element).includes("rounded-[22px]"),
-      ),
-    ).toBe(true);
+      providerRoot,
+    ).toHaveTextContent("General provider settings");
     expect(
       shellRoot.querySelector("main, nav, aside, [role='navigation']"),
     ).toBeNull();
