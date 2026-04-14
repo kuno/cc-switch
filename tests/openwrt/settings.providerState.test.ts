@@ -368,6 +368,66 @@ function loadSettingsView(selectedApp?: AppId) {
         return (...args: unknown[]) => {
           rpcCalls.push({ args, spec });
 
+          if (
+            spec.object === "ccswitch" &&
+            spec.method === "get_host_config"
+          ) {
+            return Promise.resolve({
+              ok: true,
+              enabled: uciState.get("ccswitch.main.enabled") === "1",
+              listenAddr: uciState.get("ccswitch.main.listen_addr") ?? "",
+              listenPort: uciState.get("ccswitch.main.listen_port") ?? "",
+              httpProxy: uciState.get("ccswitch.main.http_proxy") ?? "",
+              httpsProxy: uciState.get("ccswitch.main.https_proxy") ?? "",
+              logLevel: uciState.get("ccswitch.main.log_level") ?? "info",
+            });
+          }
+
+          if (
+            spec.object === "ccswitch" &&
+            spec.method === "set_host_config"
+          ) {
+            const host =
+              args[0] && typeof args[0] === "object"
+                ? (args[0] as Record<string, unknown>)
+                : {};
+
+            uciState.set(
+              "ccswitch.main.enabled",
+              host.enabled === true ? "1" : "0",
+            );
+            uciState.set(
+              "ccswitch.main.listen_addr",
+              host.listenAddr == null ? "" : String(host.listenAddr),
+            );
+            uciState.set(
+              "ccswitch.main.listen_port",
+              host.listenPort == null ? "" : String(host.listenPort),
+            );
+            uciState.set(
+              "ccswitch.main.http_proxy",
+              host.httpProxy == null ? "" : String(host.httpProxy),
+            );
+            uciState.set(
+              "ccswitch.main.https_proxy",
+              host.httpsProxy == null ? "" : String(host.httpsProxy),
+            );
+            uciState.set(
+              "ccswitch.main.log_level",
+              host.logLevel == null ? "info" : String(host.logLevel),
+            );
+
+            return Promise.resolve({
+              ok: true,
+              enabled: uciState.get("ccswitch.main.enabled") === "1",
+              listenAddr: uciState.get("ccswitch.main.listen_addr") ?? "",
+              listenPort: uciState.get("ccswitch.main.listen_port") ?? "",
+              httpProxy: uciState.get("ccswitch.main.http_proxy") ?? "",
+              httpsProxy: uciState.get("ccswitch.main.https_proxy") ?? "",
+              logLevel: uciState.get("ccswitch.main.log_level") ?? "info",
+            });
+          }
+
           return Promise.resolve({
             args,
             ok: true,
@@ -687,6 +747,13 @@ describe("OpenWrt settings shared-provider shell", () => {
         }),
       }),
     );
+    expect(
+      rpcCalls.some(
+        (call) =>
+          call.spec.object === "ccswitch" &&
+          call.spec.method === "get_host_config",
+      ),
+    ).toBe(true);
     expect(
       rpcCalls.some(
         (call) =>
@@ -1051,7 +1118,7 @@ describe("OpenWrt settings shared-provider shell", () => {
     });
   });
 
-  it("writes only the UCI-backed host fields for static prototype saves", async () => {
+  it("writes only the host-config ubus fields for static prototype saves", async () => {
     const { settings, uci, uciState, rpcCalls } = loadSettingsView("codex");
     const staticPrototypeSettings =
       settings as unknown as StaticPrototypeSettings;
@@ -1072,49 +1139,22 @@ describe("OpenWrt settings shared-provider shell", () => {
       httpsProxy: "http://router-https.internal:7891",
       logLevel: "trace",
     });
-    expect(uci.set).toHaveBeenCalledTimes(5);
-    expect(uci.set).toHaveBeenNthCalledWith(
-      1,
-      "ccswitch",
-      "main",
-      "listen_addr",
-      "10.0.0.7",
-    );
-    expect(uci.set).toHaveBeenNthCalledWith(
-      2,
-      "ccswitch",
-      "main",
-      "listen_port",
-      "28443",
-    );
-    expect(uci.set).toHaveBeenNthCalledWith(
-      3,
-      "ccswitch",
-      "main",
-      "http_proxy",
-      "http://router-http.internal:7890",
-    );
-    expect(uci.set).toHaveBeenNthCalledWith(
-      4,
-      "ccswitch",
-      "main",
-      "https_proxy",
-      "http://router-https.internal:7891",
-    );
-    expect(uci.set).toHaveBeenNthCalledWith(
-      5,
-      "ccswitch",
-      "main",
-      "log_level",
-      "trace",
-    );
-    expect(uci.save).toHaveBeenCalledTimes(1);
+    expect(uci.set).not.toHaveBeenCalled();
+    expect(uci.save).not.toHaveBeenCalled();
     expect(
       rpcCalls.some(
         (call) =>
-          call.spec.object === "uci" &&
-          call.spec.method === "commit" &&
-          call.args[0] === "ccswitch",
+          call.spec.object === "ccswitch" &&
+          call.spec.method === "set_host_config" &&
+          call.args[0] &&
+          typeof call.args[0] === "object" &&
+          (call.args[0] as Record<string, unknown>).listenAddr === "10.0.0.7" &&
+          (call.args[0] as Record<string, unknown>).listenPort === "28443" &&
+          (call.args[0] as Record<string, unknown>).httpProxy ===
+            "http://router-http.internal:7890" &&
+          (call.args[0] as Record<string, unknown>).httpsProxy ===
+            "http://router-https.internal:7891" &&
+          (call.args[0] as Record<string, unknown>).logLevel === "trace",
       ),
     ).toBe(true);
     expect(uciState.get("ccswitch.main.enabled")).toBe("1");
@@ -1150,20 +1190,8 @@ describe("OpenWrt settings shared-provider shell", () => {
       httpsProxy: "http://router-https.internal:7891",
       logLevel: "debug",
     });
-    expect(uci.set).toHaveBeenNthCalledWith(
-      1,
-      "ccswitch",
-      "main",
-      "listen_addr",
-      "0.0.0.0",
-    );
-    expect(uci.set).toHaveBeenNthCalledWith(
-      2,
-      "ccswitch",
-      "main",
-      "listen_port",
-      "15721",
-    );
+    expect(uci.set).not.toHaveBeenCalled();
+    expect(uci.save).not.toHaveBeenCalled();
     expect(uciState.get("ccswitch.main.listen_addr")).toBe("0.0.0.0");
     expect(uciState.get("ccswitch.main.listen_port")).toBe("15721");
     expect(uciState.get("ccswitch.main.http_proxy")).toBe(
@@ -1176,9 +1204,12 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(
       rpcCalls.some(
         (call) =>
-          call.spec.object === "uci" &&
-          call.spec.method === "commit" &&
-          call.args[0] === "ccswitch",
+          call.spec.object === "ccswitch" &&
+          call.spec.method === "set_host_config" &&
+          call.args[0] &&
+          typeof call.args[0] === "object" &&
+          (call.args[0] as Record<string, unknown>).listenAddr === "0.0.0.0" &&
+          (call.args[0] as Record<string, unknown>).listenPort === "15721",
       ),
     ).toBe(true);
   });

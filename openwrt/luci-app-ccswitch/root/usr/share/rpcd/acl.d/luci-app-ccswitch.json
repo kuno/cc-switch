@@ -10,6 +10,7 @@
 					"get_provider",
 					"get_provider_failover",
 					"get_active_provider",
+					"get_host_config",
 					"get_runtime_status",
 					"get_app_runtime_status",
 					"get_available_failover_providers",
@@ -30,6 +31,7 @@
 					"set_auto_failover_enabled",
 					"reorder_failover_queue",
 					"set_max_retries",
+					"set_host_config",
 					"restart_service"
 				]
 			}
