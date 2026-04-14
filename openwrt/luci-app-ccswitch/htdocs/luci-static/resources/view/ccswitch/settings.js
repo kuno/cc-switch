@@ -1066,7 +1066,7 @@ return view.extend({
 				_('OpenWrt Host Shell'),
 				_('Router Host Controls'),
 				_('Keep truthful router-backed service settings, service status, and restart actions in LuCI. The provider workspace is isolated below as the main product surface.')
-			])
+			)
 		]);
 	},
 
