@@ -1406,6 +1406,8 @@ return view.extend({
 			'#ccswitch-host-page-shell .ccswitch-host-actions{display:flex;flex-wrap:wrap;gap:.65rem;margin-top:.85rem}',
 			'#ccswitch-host-page-shell .ccswitch-host-actions .cbi-button,#ccswitch-host-page-shell .ccswitch-host-map .cbi-page-actions .cbi-button{min-height:2.75rem;padding:.7rem 1.1rem;border:1px solid var(--ccswitch-host-border-strong);border-radius:14px;background:linear-gradient(180deg,var(--ccswitch-host-input-top) 0%,var(--ccswitch-host-input-bottom) 100%);box-shadow:var(--ccswitch-host-shadow-soft);color:var(--ccswitch-host-foreground)}',
 			'#ccswitch-host-page-shell .ccswitch-host-actions .cbi-button:hover,#ccswitch-host-page-shell .ccswitch-host-map .cbi-page-actions .cbi-button:hover{border-color:var(--ccswitch-host-emphasis-border);background:linear-gradient(180deg,var(--ccswitch-host-surface-top) 0%,var(--ccswitch-host-chip-bg) 100%)}',
+			'#ccswitch-host-page-shell .ccswitch-host-nonlive-shell .ccswitch-host-shell-note{opacity:.72}',
+			'#ccswitch-host-page-shell .ccswitch-host-nonlive-shell .ccswitch-host-shared-mount{opacity:.9}',
 			'#ccswitch-host-page-shell .ccswitch-host-map{margin:0;padding:0;background:transparent;border:0;box-shadow:none}',
 			'#ccswitch-host-page-shell .ccswitch-host-map > h2,#ccswitch-host-page-shell .ccswitch-host-map > .cbi-map-descr{display:none!important}',
 			'#ccswitch-host-page-shell .ccswitch-host-settings-grid{display:grid;gap:.9rem;align-items:start;grid-template-columns:repeat(2,minmax(0,1fr))}',
@@ -1689,7 +1691,7 @@ return view.extend({
 				)
 			]),
 			E('div', { 'class': 'ccswitch-host-shell-grid' }, [
-				E('section', { 'class': 'ccswitch-host-surface ccswitch-host-runtime-shell' }, [
+				E('section', { 'class': 'ccswitch-host-surface ccswitch-host-runtime-shell ccswitch-host-nonlive-shell' }, [
 					this.createSectionIntro(
 						_('Shared Runtime'),
 						_('Runtime Status'),
@@ -1697,7 +1699,7 @@ return view.extend({
 					),
 					runtimeMountRoot
 				]),
-				E('section', { 'class': 'ccswitch-host-surface ccswitch-host-provider-shell' }, [
+				E('section', { 'class': 'ccswitch-host-surface ccswitch-host-provider-shell ccswitch-host-nonlive-shell' }, [
 					this.createSectionIntro(
 						_('Shared Provider Surface'),
 						_('Provider Manager'),
@@ -2641,13 +2643,17 @@ return view.extend({
 	},
 
 	createSharedProviderMountOptions: function (uiState, statusNodes, shellNodes) {
+		var transport = this.createProviderTransport();
+
+		delete transport.restartService;
+
 		return {
 			target: shellNodes.mountRoot,
 			appId: uiState.selectedApp,
 			serviceStatus: {
 				isRunning: uiState.isRunning
 			},
-			transport: this.createProviderTransport(),
+			transport: transport,
 			shell: this.createShellBridge(uiState, statusNodes, shellNodes)
 		};
 	},
