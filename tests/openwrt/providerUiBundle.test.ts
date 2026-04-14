@@ -703,8 +703,20 @@ describe("OpenWrt provider UI bundle", () => {
       }),
     ).not.toBeInTheDocument();
     expect(
-      within(target).queryByRole("button", { name: /duplicate/i }),
+      within(claudePrimaryCard as HTMLElement).queryByRole("button", {
+        name: "Duplicate Claude Primary",
+      }),
     ).not.toBeInTheDocument();
+    expect(
+      within(claudeBackupCard as HTMLElement).getByRole("button", {
+        name: "Duplicate Claude Backup",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(claudeDetailPanel as HTMLElement).getByRole("button", {
+        name: "Duplicate selected Claude Primary",
+      }),
+    ).toBeInTheDocument();
     expect(
       within(target).queryByRole("button", { name: /terminal/i }),
     ).not.toBeInTheDocument();
@@ -1313,15 +1325,23 @@ describe("OpenWrt provider UI bundle", () => {
     await waitFor(() =>
       expect(
         within(providerRoot).getByRole("button", {
-          name: "Duplicate Codex Primary",
+          name: "Duplicate selected Codex Primary",
         }),
       ).toBeInTheDocument(),
     );
 
+    const codexPrimaryCard = providerRoot.querySelector("article");
+    expect(codexPrimaryCard).not.toBeNull();
+    expect(
+      within(codexPrimaryCard as HTMLElement).queryByRole("button", {
+        name: "Duplicate Codex Primary",
+      }),
+    ).not.toBeInTheDocument();
+
     await act(async () => {
       fireEvent.click(
         within(providerRoot).getByRole("button", {
-          name: "Duplicate Codex Primary",
+          name: "Duplicate selected Codex Primary",
         }),
       );
     });
@@ -1361,8 +1381,8 @@ describe("OpenWrt provider UI bundle", () => {
         }),
       ),
     );
-    expect(transport.upsertProviderByProviderId).not.toHaveBeenCalled();
-    expect(transport.upsertProviderById).not.toHaveBeenCalled();
+    expect("upsertProviderByProviderId" in transport).toBe(false);
+    expect("upsertProviderById" in transport).toBe(false);
 
     await waitFor(() =>
       expect(

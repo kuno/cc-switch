@@ -1457,7 +1457,20 @@ describe("SharedProviderManager", () => {
 
     await screen.findByRole("button", { name: "Edit Alpha" });
 
-    await user.click(screen.getByRole("button", { name: "Duplicate Alpha" }));
+    const alphaCard = document.querySelector("article");
+    expect(alphaCard).not.toBeNull();
+    expect(
+      within(alphaCard as HTMLElement).queryByRole("button", {
+        name: "Duplicate Alpha",
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Duplicate selected Alpha" }),
+    ).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: "Duplicate selected Alpha" }),
+    );
 
     const duplicateDialog = await screen.findByRole("dialog", {
       name: "Save Codex provider",

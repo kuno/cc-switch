@@ -117,6 +117,10 @@ export interface SharedProviderCardActionVisibility {
   delete: boolean;
 }
 
+export interface SharedProviderActionVisibilityOptions {
+  selected?: boolean;
+}
+
 export interface SharedProviderPresetBrowseGroup {
   id: PresetGroupId;
   label: string;
@@ -197,9 +201,12 @@ export function getSharedProviderPresetBrowseGroups(
 export function getSharedProviderCardActionVisibility(
   capabilities: SharedProviderCapabilities,
   provider: SharedProviderView,
+  options: SharedProviderActionVisibilityOptions = {},
 ): SharedProviderCardActionVisibility {
+  const selected = options.selected ?? false;
+
   return {
-    duplicate: capabilities.canAdd,
+    duplicate: capabilities.canAdd && !selected,
     edit: capabilities.canEdit,
     activate:
       capabilities.canActivate &&

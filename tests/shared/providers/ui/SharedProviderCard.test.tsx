@@ -153,4 +153,32 @@ describe("SharedProviderCard", () => {
     expect(screen.getByRole("button", { name: "Edit Gamma" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Delete Gamma" })).toBeDisabled();
   });
+
+  it("hides duplicate on the selected card so the detail pane owns that action", () => {
+    const provider = createProvider({
+      providerId: "delta",
+      name: "Delta",
+      baseUrl: "https://delta.example.com/v1",
+    });
+
+    render(
+      <SharedProviderCard
+        appId="codex"
+        provider={provider}
+        selected
+        actionVisibility={getSharedProviderCardActionVisibility(
+          fullCapabilities,
+          provider,
+          { selected: true },
+        )}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "Duplicate Delta" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit Delta" })).toBeInTheDocument();
+  });
 });
