@@ -1,6 +1,7 @@
 'use strict';
 
 import { popen } from 'fs';
+import { cursor } from 'uci';
 
 const DATA_DIR = '/etc/cc-switch';
 const BINARY = '/usr/bin/cc-switch';
@@ -132,6 +133,75 @@ function normalizeEnabled(enabled) {
 		return false;
 
 	return null;
+}
+
+function hostConfigCursor() {
+	let ctx = cursor();
+
+	if (!ctx)
+		return null;
+
+	ctx.load('ccswitch');
+
+	return ctx;
+}
+
+function hostConfigViewFromCursor(ctx) {
+	let enabled = normalizeEnabled(ctx.get('ccswitch', 'main', 'enabled'));
+
+	return {
+		enabled: enabled === true,
+		listenAddr: ctx.get('ccswitch', 'main', 'listen_addr') || '',
+		listenPort: ctx.get('ccswitch', 'main', 'listen_port') || '',
+		httpProxy: ctx.get('ccswitch', 'main', 'http_proxy') || '',
+		httpsProxy: ctx.get('ccswitch', 'main', 'https_proxy') || '',
+		logLevel: ctx.get('ccswitch', 'main', 'log_level') || 'info'
+	};
+}
+
+function hostConfigSuccess(ctx) {
+	let view = hostConfigViewFromCursor(ctx);
+
+	view.ok = true;
+
+	return view;
+}
+
+function getHostConfig() {
+	let ctx = hostConfigCursor();
+
+	if (!ctx)
+		return { ok: false, error: 'failed to open UCI cursor' };
+
+	return hostConfigSuccess(ctx);
+}
+
+function setHostConfig(host) {
+	let ctx = hostConfigCursor();
+	let current;
+	let enabled;
+
+	if (!ctx)
+		return { ok: false, error: 'failed to open UCI cursor' };
+
+	current = hostConfigViewFromCursor(ctx);
+	enabled = normalizeEnabled(host ? host.enabled : current.enabled);
+
+	if (enabled == null)
+		enabled = current.enabled;
+
+	if (!ctx.set('ccswitch', 'main', 'enabled', enabled ? '1' : '0') ||
+		!ctx.set('ccswitch', 'main', 'listen_addr', host && host.listenAddr != null ? '' + host.listenAddr : current.listenAddr) ||
+		!ctx.set('ccswitch', 'main', 'listen_port', host && host.listenPort != null ? '' + host.listenPort : current.listenPort) ||
+		!ctx.set('ccswitch', 'main', 'http_proxy', host && host.httpProxy != null ? '' + host.httpProxy : current.httpProxy) ||
+		!ctx.set('ccswitch', 'main', 'https_proxy', host && host.httpsProxy != null ? '' + host.httpsProxy : current.httpsProxy) ||
+		!ctx.set('ccswitch', 'main', 'log_level', host && host.logLevel != null ? '' + host.logLevel : current.logLevel))
+		return { ok: false, error: 'failed to update ccswitch.main' };
+
+	if (!ctx.commit('ccswitch'))
+		return { ok: false, error: 'failed to commit ccswitch config' };
+
+	return hostConfigSuccess(ctx);
 }
 
 function listProviders(app) {
@@ -403,6 +473,12 @@ return {
 			}
 		},
 
+		get_host_config: {
+			call: function() {
+				return getHostConfig();
+			}
+		},
+
 		get_app_runtime_status: {
 			args: {
 				app: 'claude'
@@ -530,6 +606,16 @@ return {
 
 			call: function(request) {
 				return setMaxRetries(request.args.app, request.args.value);
+			}
+		},
+
+		set_host_config: {
+			args: {
+				host: {}
+			},
+
+			call: function(request) {
+				return setHostConfig(request.args.host);
 			}
 		},
 

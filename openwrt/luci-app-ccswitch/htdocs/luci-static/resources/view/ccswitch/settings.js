@@ -386,10 +386,16 @@ var callRestartService = rpc.declare({
 	expect: { '': {} }
 });
 
-var callUciCommit = rpc.declare({
-	object: 'uci',
-	method: 'commit',
-	params: ['config'],
+var callGetHostConfig = rpc.declare({
+	object: 'ccswitch',
+	method: 'get_host_config',
+	expect: { '': {} }
+});
+
+var callSetHostConfig = rpc.declare({
+	object: 'ccswitch',
+	method: 'set_host_config',
+	params: ['host'],
 	expect: { '': {} }
 });
 
@@ -664,14 +670,14 @@ return view.extend({
 	load: function () {
 		if (OPENWRT_STATIC_PROTOTYPE_MODE)
 			return Promise.all([
-				uci.load('ccswitch'),
+				this.loadHostConfigSnapshot(),
 				L.resolveDefault(callServiceList('ccswitch'), {}),
 				callOpenWrtRuntimeStatus(),
 				this.loadAllStaticPrototypeProviderStates()
 			]);
 
 		return Promise.all([
-			uci.load('ccswitch'),
+			this.loadHostConfigSnapshot(),
 			L.resolveDefault(callServiceList('ccswitch'), {}),
 			this.loadProviderState(this.getSelectedApp())
 		]);
@@ -939,15 +945,59 @@ return view.extend({
 		};
 	},
 
-	getHostConfigSnapshot: function () {
+	defaultHostConfigSnapshot: function () {
 		return {
-			enabled: uci.get('ccswitch', 'main', 'enabled') === '1',
-			listenAddr: uci.get('ccswitch', 'main', 'listen_addr') || '',
-			listenPort: uci.get('ccswitch', 'main', 'listen_port') || '',
-			httpProxy: uci.get('ccswitch', 'main', 'http_proxy') || '',
-			httpsProxy: uci.get('ccswitch', 'main', 'https_proxy') || '',
-			logLevel: uci.get('ccswitch', 'main', 'log_level') || 'info'
+			enabled: false,
+			listenAddr: '',
+			listenPort: '',
+			httpProxy: '',
+			httpsProxy: '',
+			logLevel: 'info'
 		};
+	},
+
+	normalizeHostConfigSnapshot: function (response) {
+		var fallback = this.defaultHostConfigSnapshot();
+		var payload = response && typeof response === 'object' ? response : {};
+		var enabled = payload.enabled;
+
+		if (payload && payload.ok === true)
+			payload = response;
+
+		if (enabled !== true && enabled !== false)
+			enabled = fallback.enabled;
+
+		return {
+			enabled: enabled === true,
+			listenAddr: payload.listenAddr != null ? String(payload.listenAddr) : fallback.listenAddr,
+			listenPort: payload.listenPort != null ? String(payload.listenPort) : fallback.listenPort,
+			httpProxy: payload.httpProxy != null ? String(payload.httpProxy) : fallback.httpProxy,
+			httpsProxy: payload.httpsProxy != null ? String(payload.httpsProxy) : fallback.httpsProxy,
+			logLevel: payload.logLevel != null ? String(payload.logLevel) : fallback.logLevel
+		};
+	},
+
+	setHostConfigSnapshot: function (response) {
+		this.hostConfigSnapshot = this.normalizeHostConfigSnapshot(response);
+		return this.getHostConfigSnapshot();
+	},
+
+	getHostConfigSnapshot: function () {
+		if (!this.hostConfigSnapshot)
+			this.hostConfigSnapshot = this.defaultHostConfigSnapshot();
+
+		return Object.assign({}, this.hostConfigSnapshot);
+	},
+
+	loadHostConfigSnapshot: function () {
+		var fallback = this.getHostConfigSnapshot();
+
+		return L.resolveDefault(callGetHostConfig(), fallback).then(L.bind(function (response) {
+			if (!response || response.ok === false)
+				return fallback;
+
+			return this.setHostConfigSnapshot(response);
+		}, this));
 	},
 
 	isStaticPrototypeValidIpv4Address: function (value) {
@@ -1040,8 +1090,8 @@ return view.extend({
 		return value >= 1 && value <= 65535;
 	},
 
-	normalizeStaticPrototypeHostPayload: function (payload) {
-		var snapshot = this.getHostConfigSnapshot();
+	normalizeStaticPrototypeHostPayload: function (payload, currentSnapshot) {
+		var snapshot = currentSnapshot || this.getHostConfigSnapshot();
 		var listenAddr = payload && payload.listenAddr != null ? String(payload.listenAddr).trim() : snapshot.listenAddr || '';
 		var listenPort = payload && payload.listenPort != null ? String(payload.listenPort).trim() : snapshot.listenPort || '';
 		var logLevel = payload && typeof payload.logLevel === 'string'
@@ -1074,30 +1124,37 @@ return view.extend({
 	},
 
 	saveStaticPrototypeHostConfig: function (payload) {
-		var next = this.normalizeStaticPrototypeHostPayload(payload);
+		return this.loadHostConfigSnapshot().then(L.bind(function (current) {
+			var next = this.normalizeStaticPrototypeHostPayload(payload, current);
+			var host = {
+				enabled: current.enabled,
+				listenAddr: next.listenAddr,
+				listenPort: next.listenPort,
+				httpProxy: next.httpProxy,
+				httpsProxy: next.httpsProxy,
+				logLevel: next.logLevel
+			};
 
-		uci.set('ccswitch', 'main', 'listen_addr', next.listenAddr);
-		uci.set('ccswitch', 'main', 'listen_port', next.listenPort);
-		uci.set('ccswitch', 'main', 'http_proxy', next.httpProxy);
-		uci.set('ccswitch', 'main', 'https_proxy', next.httpsProxy);
-		uci.set('ccswitch', 'main', 'log_level', next.logLevel);
+			return Promise.resolve(callSetHostConfig(host)).then(L.bind(function (response) {
+				if (!response || response.ok === false)
+					throw new Error(this.rpcFailureMessage(response) || _('Failed to save host settings.'));
 
-		return Promise.resolve(uci.save()).then(function () {
-			return callUciCommit('ccswitch');
-		}).then(function () {
-			return next;
-		});
+				this.setHostConfigSnapshot(response);
+				return next;
+			}, this));
+		}, this));
 	},
 
 	loadStaticPrototypeHostBindings: function () {
 		return Promise.all([
+			this.loadHostConfigSnapshot(),
 			L.resolveDefault(callServiceList('ccswitch'), {}),
 			callOpenWrtRuntimeStatus()
 		]).then(L.bind(function (results) {
 			return this.getStaticPrototypeBindings([
-				null,
 				results[0],
-				results[1]
+				results[1],
+				results[2]
 			]);
 		}, this));
 	},
@@ -1184,10 +1241,11 @@ return view.extend({
 	},
 
 	getStaticPrototypeBindings: function (data) {
+		var hostConfigResponse = data && data[0] && typeof data[0] === 'object' ? data[0] : null;
 		var serviceStatus = data && data[1] ? data[1] : {};
 		var runtimeResponse = data && data[2] ? data[2] : {};
 		var runtime = this.parseRuntimeStatusPayload(runtimeResponse);
-		var hostConfig = this.getHostConfigSnapshot();
+		var hostConfig = hostConfigResponse ? this.setHostConfigSnapshot(hostConfigResponse) : this.getHostConfigSnapshot();
 		var isRunning = this.parseServiceState(serviceStatus);
 		var proxyEnabled = runtime.statusSource ? runtime.proxyEnabled : !!(hostConfig.httpProxy || hostConfig.httpsProxy);
 		var health = 'unknown';
