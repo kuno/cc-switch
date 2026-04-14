@@ -865,16 +865,16 @@ export function SharedProviderManager({
         >
           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div className="space-y-2">
-              <CardTitle className="text-xl">Provider settings</CardTitle>
+              <CardTitle className="text-xl">Provider workspace</CardTitle>
               <CardDescription className="max-w-2xl">
-                Manage saved providers for Claude, Codex, and Gemini from one
-                shared OpenWrt surface.
+                Manage saved providers from one compact OpenWrt workspace. The
+                app picker stays compact and can scale beyond a fixed tab strip.
               </CardDescription>
             </div>
             <div
-              data-ccswitch-region="provider-app-switch"
-              data-ccswitch-layout="wrap-row"
-              className="flex flex-wrap gap-2"
+              data-ccswitch-region="provider-app-picker"
+              data-ccswitch-layout="compact-row"
+              className="inline-flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-border-default/80 bg-muted/25 p-1.5 shadow-sm"
               aria-label="Provider apps"
             >
               {appIds.map((appId) => {
@@ -889,7 +889,7 @@ export function SharedProviderManager({
                       appSwitchRefs.current[appId] = element;
                     }}
                     className={cn(
-                      "rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors",
+                      "shrink-0 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors",
                       "ccswitch-openwrt-app-switch",
                       active
                         ? appPresentation.accentClassName
