@@ -296,13 +296,6 @@ var callListProviders = rpc.declare({
 	expect: { '': {} }
 });
 
-var callListSavedProviders = rpc.declare({
-	object: 'ccswitch',
-	method: 'list_saved_providers',
-	params: ['app'],
-	expect: { '': {} }
-});
-
 var callUpsertActiveProvider = rpc.declare({
 	object: 'ccswitch',
 	method: 'upsert_active_provider',
@@ -317,24 +310,10 @@ var callUpsertProvider = rpc.declare({
 	expect: { '': {} }
 });
 
-var callSaveProvider = rpc.declare({
-	object: 'ccswitch',
-	method: 'save_provider',
-	params: ['app', 'provider'],
-	expect: { '': {} }
-});
-
 var callUpsertProviderByProviderId = rpc.declare({
 	object: 'ccswitch',
 	method: 'upsert_provider',
 	params: ['app', 'provider_id', 'provider'],
-	expect: { '': {} }
-});
-
-var callUpsertProviderById = rpc.declare({
-	object: 'ccswitch',
-	method: 'upsert_provider',
-	params: ['app', 'id', 'provider'],
 	expect: { '': {} }
 });
 
@@ -345,38 +324,10 @@ var callDeleteProviderByProviderId = rpc.declare({
 	expect: { '': {} }
 });
 
-var callDeleteProviderById = rpc.declare({
-	object: 'ccswitch',
-	method: 'delete_provider',
-	params: ['app', 'id'],
-	expect: { '': {} }
-});
-
 var callActivateProviderByProviderId = rpc.declare({
 	object: 'ccswitch',
 	method: 'activate_provider',
 	params: ['app', 'provider_id'],
-	expect: { '': {} }
-});
-
-var callActivateProviderById = rpc.declare({
-	object: 'ccswitch',
-	method: 'activate_provider',
-	params: ['app', 'id'],
-	expect: { '': {} }
-});
-
-var callSwitchProviderByProviderId = rpc.declare({
-	object: 'ccswitch',
-	method: 'switch_provider',
-	params: ['app', 'provider_id'],
-	expect: { '': {} }
-});
-
-var callSwitchProviderById = rpc.declare({
-	object: 'ccswitch',
-	method: 'switch_provider',
-	params: ['app', 'id'],
 	expect: { '': {} }
 });
 
@@ -515,14 +466,6 @@ function callOpenWrtListProviders(appId) {
 		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/providers');
 	}, function () {
 		return L.resolveDefault(callListProviders(appId), null);
-	});
-}
-
-function callOpenWrtListSavedProviders(appId) {
-	return daemonAdminOrFallback(function () {
-		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/providers');
-	}, function () {
-		return L.resolveDefault(callListSavedProviders(appId), null);
 	});
 }
 
@@ -1801,12 +1744,10 @@ return view.extend({
 	loadProviderState: function (appId) {
 		return Promise.all([
 			callOpenWrtListProviders(appId),
-			callOpenWrtListSavedProviders(appId),
 			callOpenWrtGetActiveProvider(appId)
 		]).then(L.bind(function (results) {
-			var activeProvider = this.parseProviderState(results[2], appId);
-			var phase2State = this.parsePhase2ProviderState(results[0], activeProvider, appId) ||
-				this.parsePhase2ProviderState(results[1], activeProvider, appId);
+			var activeProvider = this.parseProviderState(results[1], appId);
+			var phase2State = this.parsePhase2ProviderState(results[0], activeProvider, appId);
 
 			if (phase2State)
 				return phase2State;
@@ -2809,10 +2750,6 @@ return view.extend({
 				{
 					call: function () { return callOpenWrtUpdateProvider(appId, providerId, providerPayload); },
 					compatibilityFallback: true
-				},
-				{
-					call: function () { return callUpsertProviderById(appId, providerId, providerPayload); },
-					compatibilityFallback: true
 				}
 			], missingMessage);
 		}
@@ -2820,11 +2757,7 @@ return view.extend({
 		return this.invokeRpcCandidates([
 			{
 				call: function () { return callOpenWrtCreateProvider(appId, providerPayload); },
-					compatibilityFallback: true
-			},
-			{
-				call: function () { return callSaveProvider(appId, providerPayload); },
-					compatibilityFallback: true
+				compatibilityFallback: true
 			}
 		], missingMessage);
 	},
@@ -2833,10 +2766,6 @@ return view.extend({
 		return this.invokeRpcCandidates([
 			{
 				call: function () { return callOpenWrtDeleteProvider(appId, providerId); },
-					compatibilityFallback: true
-			},
-			{
-				call: function () { return callDeleteProviderById(appId, providerId); },
 				compatibilityFallback: true
 			}
 		], _('The Phase 2 provider delete RPC is not available in this build.'));
@@ -2846,18 +2775,6 @@ return view.extend({
 		return this.invokeRpcCandidates([
 			{
 				call: function () { return callOpenWrtActivateProvider(appId, providerId); },
-					compatibilityFallback: true
-			},
-			{
-				call: function () { return callActivateProviderById(appId, providerId); },
-				compatibilityFallback: true
-			},
-			{
-				call: function () { return callSwitchProviderByProviderId(appId, providerId); },
-				compatibilityFallback: true
-			},
-			{
-				call: function () { return callSwitchProviderById(appId, providerId); },
 				compatibilityFallback: true
 			}
 		], _('The Phase 2 provider activate RPC is not available in this build.'));
@@ -3053,7 +2970,7 @@ return view.extend({
 				return callOpenWrtListProviders(appId);
 			},
 			listSavedProviders: function (appId) {
-				return callOpenWrtListSavedProviders(appId);
+				return callOpenWrtListProviders(appId);
 			},
 			getActiveProvider: function (appId) {
 				return callOpenWrtGetActiveProvider(appId);
@@ -3065,13 +2982,13 @@ return view.extend({
 				return callOpenWrtCreateProvider(appId, provider);
 			},
 			saveProvider: function (appId, provider) {
-				return L.resolveDefault(callSaveProvider(appId, provider), { ok: false });
+				return callOpenWrtCreateProvider(appId, provider);
 			},
 			upsertProviderByProviderId: function (appId, providerId, provider) {
 				return callOpenWrtUpdateProvider(appId, providerId, provider);
 			},
 			upsertProviderById: function (appId, providerId, provider) {
-				return L.resolveDefault(callUpsertProviderById(appId, providerId, provider), { ok: false });
+				return callOpenWrtUpdateProvider(appId, providerId, provider);
 			},
 			upsertActiveProvider: function (appId, provider) {
 				return callOpenWrtSaveActiveProvider(appId, provider);
@@ -3080,19 +2997,13 @@ return view.extend({
 				return callOpenWrtDeleteProvider(appId, providerId);
 			},
 			deleteProviderById: function (appId, providerId) {
-				return L.resolveDefault(callDeleteProviderById(appId, providerId), { ok: false });
+				return callOpenWrtDeleteProvider(appId, providerId);
 			},
 			activateProviderByProviderId: function (appId, providerId) {
 				return callOpenWrtActivateProvider(appId, providerId);
 			},
 			activateProviderById: function (appId, providerId) {
-				return L.resolveDefault(callActivateProviderById(appId, providerId), { ok: false });
-			},
-			switchProviderByProviderId: function (appId, providerId) {
-				return L.resolveDefault(callSwitchProviderByProviderId(appId, providerId), { ok: false });
-			},
-			switchProviderById: function (appId, providerId) {
-				return L.resolveDefault(callSwitchProviderById(appId, providerId), { ok: false });
+				return callOpenWrtActivateProvider(appId, providerId);
 			},
 			addToFailoverQueue: function (appId, providerId) {
 				return callOpenWrtAddToFailoverQueue(appId, providerId);
