@@ -287,6 +287,26 @@ function getProviderStats(app) {
 	);
 }
 
+function getRecentActivity(app) {
+	let normalizedApp = normalizeApp(app);
+	let result;
+
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
+
+	result = runReadCommand(
+		daemonCommand(`openwrt ${shellquote(normalizedApp)} get-recent-activity`)
+	);
+
+	if (!result.ok)
+		return commandFailure(result);
+
+	return {
+		ok: true,
+		recentActivityJson: result.output
+	};
+}
+
 function getAvailableFailoverProviders(app) {
 	let normalizedApp = normalizeApp(app);
 
@@ -528,6 +548,16 @@ return {
 
 			call: function(request) {
 				return getProviderStats(request.args.app);
+			}
+		},
+
+		get_recent_activity: {
+			args: {
+				app: 'claude'
+			},
+
+			call: function(request) {
+				return getRecentActivity(request.args.app);
 			}
 		},
 

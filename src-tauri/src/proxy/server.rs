@@ -401,6 +401,10 @@ impl ProxyServer {
                 get(handlers::openwrt_get_provider_stats),
             )
             .route(
+                "/openwrt/admin/apps/:app/recent-activity",
+                get(handlers::openwrt_get_recent_activity),
+            )
+            .route(
                 "/openwrt/admin/apps/:app/providers",
                 get(handlers::openwrt_list_providers).post(handlers::openwrt_upsert_provider),
             )

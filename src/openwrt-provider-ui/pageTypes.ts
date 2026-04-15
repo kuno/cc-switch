@@ -76,11 +76,26 @@ export interface OpenWrtProviderStat {
   avgLatencyMs: number;
 }
 
+export interface OpenWrtRecentActivityItem {
+  requestId: string;
+  providerId: string;
+  providerName: string;
+  model: string;
+  totalTokens: number;
+  totalCost: string;
+  statusCode: number;
+  latencyMs: number;
+  createdAt: number;
+}
+
 export interface OpenWrtSharedPageShellApi
   extends OpenWrtSharedProviderShellApi {
   getHostState(): OpenWrtHostState;
   getMessage(): OpenWrtPageMessage | null;
   getProviderStats(appId: SharedProviderAppId): Promise<OpenWrtProviderStat[]>;
+  getRecentActivity(
+    appId: SharedProviderAppId,
+  ): Promise<OpenWrtRecentActivityItem[]>;
   getUsageSummary(appId: SharedProviderAppId): Promise<OpenWrtUsageSummary>;
   refreshHostState(): Promise<OpenWrtHostState>;
   saveHostConfig(host: OpenWrtHostConfigPayload): Promise<OpenWrtHostState>;
