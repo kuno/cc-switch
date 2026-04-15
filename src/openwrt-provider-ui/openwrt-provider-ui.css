@@ -640,6 +640,29 @@ body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-preset-chip {
   box-sizing: border-box;
 }
 
+body.ccswitch-openwrt-provider-ui-theme
+  .cbi-map.ccswitch-openwrt-native-page-map,
+body.ccswitch-openwrt-provider-ui-theme
+  .cbi-section.ccswitch-openwrt-native-page-section {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+body.ccswitch-openwrt-provider-ui-theme
+  .cbi-section.ccswitch-openwrt-native-page-section {
+  margin: 0 0 1rem;
+  padding: 0;
+}
+
+#ccswitch-openwrt-native-page-root.ccswitch-openwrt-native-page-host {
+  display: block;
+  width: 100%;
+  padding: clamp(0.9rem, 0.75rem + 0.45vw, 1.3rem);
+  border-radius: calc(var(--ccswitch-page-radius-xl) + 0.2rem);
+  background: var(--ccswitch-page-bg);
+}
+
 .ccswitch-openwrt-page-shell {
   display: flex;
   flex-direction: column;

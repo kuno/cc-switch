@@ -813,8 +813,14 @@ describe("OpenWrt provider UI bundle", () => {
       [OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY]?: OpenWrtSharedProviderBundleApi;
     };
     const api = globalScope[OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY];
+    const map = document.createElement("div");
+    map.className = "cbi-map";
+    const section = document.createElement("div");
+    section.className = "cbi-section";
     const target = document.createElement("div");
-    document.body.appendChild(target);
+    section.appendChild(target);
+    map.appendChild(section);
+    document.body.appendChild(map);
     let selectedApp: SharedProviderAppId = "claude";
     let hostState: OpenWrtHostState = {
       app: "claude",
@@ -975,6 +981,9 @@ describe("OpenWrt provider UI bundle", () => {
     expect(target).toHaveTextContent("640 tokens");
     expect(target).toHaveTextContent("Success");
     expect(target).toHaveTextContent("HTTP 429");
+    expect(target).toHaveClass("ccswitch-openwrt-native-page-host");
+    expect(section).toHaveClass("ccswitch-openwrt-native-page-section");
+    expect(map).toHaveClass("ccswitch-openwrt-native-page-map");
     expect(
       within(target).getByRole("button", { name: "Save" }),
     ).toBeDisabled();
@@ -1039,7 +1048,10 @@ describe("OpenWrt provider UI bundle", () => {
     });
 
     expect(target.textContent).toBe("");
-    target.remove();
+    expect(target).not.toHaveClass("ccswitch-openwrt-native-page-host");
+    expect(section).not.toHaveClass("ccswitch-openwrt-native-page-section");
+    expect(map).not.toHaveClass("ccswitch-openwrt-native-page-map");
+    map.remove();
   });
 
   it("mounts runtime and provider surfaces into unified OpenWrt roots without a secondary app shell", async () => {
@@ -1902,6 +1914,12 @@ describe("OpenWrt provider UI bundle", () => {
     );
     expect(stagedStylesheetSource).toMatch(
       /body\.ccswitch-openwrt-provider-ui-theme \.ccswitch-openwrt-provider-ui-positioner\{[^}]*align-items:flex-start/,
+    );
+    expect(stagedStylesheetSource).toContain(
+      ".cbi-section.ccswitch-openwrt-native-page-section",
+    );
+    expect(stagedStylesheetSource).toContain(
+      "#ccswitch-openwrt-native-page-root.ccswitch-openwrt-native-page-host",
     );
     expect(stagedStylesheetSource).toMatch(
       /#ccswitch-shared-provider-ui-root \[data-ccswitch-layout=stack-to-split\]/,
