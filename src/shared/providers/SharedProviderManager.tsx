@@ -207,6 +207,7 @@ function applyPresetToDraft(
     baseUrl: preset.baseUrl,
     tokenField: preset.tokenField,
     model: preset.model,
+    authMode: preset.authMode,
   };
 }
 
@@ -220,6 +221,7 @@ function createDraftFromProvider(
     token: "",
     model: provider.model,
     notes: provider.notes,
+    authMode: provider.authMode,
   };
 }
 
@@ -340,6 +342,7 @@ function trimDraft(
     token: draft.token.trim(),
     model: draft.model.trim(),
     notes: draft.notes.trim(),
+    authMode: draft.authMode,
   };
 }
 

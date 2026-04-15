@@ -34,6 +34,7 @@ export interface SharedProviderPreset {
   icon?: string;
   iconColor?: string;
   accentColor?: string;
+  authMode?: string;
   supportedOn: {
     desktop: boolean;
     openwrt: boolean;
@@ -56,6 +57,7 @@ export interface SharedProviderView {
   model: string;
   notes: string;
   active: boolean;
+  authMode?: string;
 }
 
 export interface SharedProviderHealth {
@@ -105,6 +107,7 @@ export interface SharedProviderEditorPayload {
   token: string;
   model: string;
   notes: string;
+  authMode?: string;
 }
 
 export interface SharedProviderCapabilities {
