@@ -25,6 +25,8 @@ import type {
 } from "./pageTypes";
 
 const OPENWRT_PAGE_THEME_STORAGE_KEY = "ccswitch-openwrt-native-page-theme";
+const OPENWRT_PAGE_THEME_DARK_CLASS =
+  "ccswitch-openwrt-provider-ui-theme-dark";
 
 type HostDraft = OpenWrtHostConfigPayload;
 
@@ -117,9 +119,20 @@ function applyTheme(theme: OpenWrtPageTheme) {
     return;
   }
 
-  document.documentElement.classList.toggle("dark", theme === "dark");
-  document.body.classList.toggle("dark", theme === "dark");
+  document.body.classList.toggle(
+    OPENWRT_PAGE_THEME_DARK_CLASS,
+    theme === "dark",
+  );
   document.body.dataset.ccswitchTheme = theme;
+}
+
+function clearTheme() {
+  if (typeof document === "undefined") {
+    return;
+  }
+
+  document.body.classList.remove(OPENWRT_PAGE_THEME_DARK_CLASS);
+  delete document.body.dataset.ccswitchTheme;
 }
 
 function getHealthTone(health: OpenWrtHostState["health"]): string {
@@ -402,6 +415,10 @@ export function OpenWrtPageShell({
     if (typeof window !== "undefined") {
       window.localStorage.setItem(OPENWRT_PAGE_THEME_STORAGE_KEY, theme);
     }
+
+    return () => {
+      clearTheme();
+    };
   }, [theme]);
 
   useEffect(() => {
