@@ -56,10 +56,21 @@ export interface OpenWrtPageMessage {
   text: string;
 }
 
+export interface OpenWrtUsageSummary {
+  totalRequests: number;
+  totalCost: string;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCacheCreationTokens: number;
+  totalCacheReadTokens: number;
+  successRate: number;
+}
+
 export interface OpenWrtSharedPageShellApi
   extends OpenWrtSharedProviderShellApi {
   getHostState(): OpenWrtHostState;
   getMessage(): OpenWrtPageMessage | null;
+  getUsageSummary(appId: SharedProviderAppId): Promise<OpenWrtUsageSummary>;
   refreshHostState(): Promise<OpenWrtHostState>;
   saveHostConfig(host: OpenWrtHostConfigPayload): Promise<OpenWrtHostState>;
 }

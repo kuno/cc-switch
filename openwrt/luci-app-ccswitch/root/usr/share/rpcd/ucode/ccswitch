@@ -265,6 +265,17 @@ function getAppRuntimeStatus(app) {
 	);
 }
 
+function getUsageSummary(app) {
+	let normalizedApp = normalizeApp(app);
+
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
+
+	return runResultCommand(
+		daemonCommand(`openwrt ${shellquote(normalizedApp)} get-usage-summary`)
+	);
+}
+
 function getAvailableFailoverProviders(app) {
 	let normalizedApp = normalizeApp(app);
 
@@ -486,6 +497,16 @@ return {
 
 			call: function(request) {
 				return getAppRuntimeStatus(request.args.app);
+			}
+		},
+
+		get_usage_summary: {
+			args: {
+				app: 'claude'
+			},
+
+			call: function(request) {
+				return getUsageSummary(request.args.app);
 			}
 		},
 
