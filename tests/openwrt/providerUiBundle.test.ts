@@ -1019,6 +1019,8 @@ describe("OpenWrt provider UI bundle", () => {
       );
     });
 
+    expect(target.firstElementChild).toHaveClass("ccswitch-openwrt-page-shell");
+    expect(target.firstElementChild).toHaveClass("dark");
     expect(document.documentElement.classList.contains("dark")).toBe(false);
     expect(document.body.classList.contains("dark")).toBe(false);
     expect(

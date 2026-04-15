@@ -580,7 +580,13 @@ export function OpenWrtPageShell({
   }
 
   return (
-    <div className="ccswitch-openwrt-page-shell">
+    <div
+      className={
+        theme === "dark"
+          ? "ccswitch-openwrt-page-shell dark"
+          : "ccswitch-openwrt-page-shell"
+      }
+    >
       <section className="ccswitch-openwrt-daemon-card">
         <div className="ccswitch-openwrt-daemon-card__head">
           <div className="ccswitch-openwrt-daemon-card__intro">
