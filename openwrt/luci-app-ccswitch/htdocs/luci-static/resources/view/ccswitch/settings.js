@@ -2091,6 +2091,13 @@ return view.extend({
 		if (typeof failure === 'string')
 			return failure;
 
+		if (failure && typeof failure === 'object' &&
+			failure.ok === false &&
+			!failure.message &&
+			!failure.error &&
+			Object.keys(failure).length === 1)
+			return null;
+
 		if (failure.message)
 			return failure.message;
 

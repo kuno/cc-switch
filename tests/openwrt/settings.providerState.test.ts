@@ -484,6 +484,40 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(source).toContain("getUsageSummary: async function (appId)");
   });
 
+  it("grants LuCI read access to the app usage-summary ubus method", () => {
+    const acl = JSON.parse(
+      readFileSync(
+        path.resolve(
+          process.cwd(),
+          "openwrt/luci-app-ccswitch/root/usr/share/rpcd/acl.d/luci-app-ccswitch.json",
+        ),
+        "utf8",
+      ),
+    ) as {
+      "luci-app-ccswitch"?: {
+        read?: { ubus?: { ccswitch?: string[] } };
+      };
+    };
+
+    expect(
+      acl["luci-app-ccswitch"]?.read?.ubus?.ccswitch ?? [],
+    ).toContain("get_usage_summary");
+  });
+
+  it("suppresses raw bare rpc failure sentinels so feature-specific fallbacks can render", () => {
+    const { settings } = loadSettingsView();
+
+    expect(
+      (
+        settings as unknown as {
+          rpcFailureMessage(input: unknown): string | null;
+        }
+      ).rpcFailureMessage({
+        ok: false,
+      }),
+    ).toBeNull();
+  });
+
   it("reuses a pre-registered bundle API without injecting another script", async () => {
     const { settings } = loadSettingsView();
     const api = {
