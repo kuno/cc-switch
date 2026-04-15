@@ -23,8 +23,7 @@ var BANNER_COLORS = {
 
 function createPreset(id, providerName, baseUrl, tokenField, model, options) {
 	var meta = options || {};
-
-	return {
+	var preset = {
 		id: id,
 		label: meta.label || providerName,
 		providerName: providerName,
@@ -33,6 +32,11 @@ function createPreset(id, providerName, baseUrl, tokenField, model, options) {
 		model: model || '',
 		description: meta.description || ''
 	};
+
+	if (meta.authMode)
+		preset.authMode = meta.authMode;
+
+	return preset;
 }
 
 /*
@@ -43,7 +47,8 @@ var PRESET_CATALOG = {
 	claude: [
 		createPreset('claude-official', 'Claude Official', 'https://api.anthropic.com', DEFAULT_TOKEN_FIELD, '', {
 			label: _('Claude Official'),
-			description: _('Official Anthropic Claude endpoint.')
+			description: _('Official Anthropic Claude endpoint. API key is optional — client credentials are forwarded automatically.'),
+			authMode: 'client_passthrough'
 		}),
 		createPreset('claude-deepseek', 'DeepSeek', 'https://api.deepseek.com/anthropic', DEFAULT_TOKEN_FIELD, 'DeepSeek-V3.2', {
 			description: _('DeepSeek Claude-compatible endpoint.')
@@ -1677,6 +1682,7 @@ return view.extend({
 		normalized.model = provider.model || '';
 		normalized.notes = provider.notes || '';
 		normalized.active = isActive;
+		normalized.authMode = provider.authMode || provider.auth_mode || undefined;
 
 		return normalized;
 	},
@@ -1886,6 +1892,7 @@ return view.extend({
 		payload.tokenField = provider.tokenField || appMeta.tokenFieldChoices[0];
 		payload.model = provider.model || '';
 		payload.notes = provider.notes || '';
+		payload.authMode = provider.authMode || undefined;
 
 		return payload;
 	},

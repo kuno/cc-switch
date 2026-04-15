@@ -57,6 +57,8 @@ pub struct OpenWrtProviderPayload {
     pub model: String,
     #[serde(default)]
     pub notes: String,
+    #[serde(default)]
+    pub auth_mode: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -72,6 +74,8 @@ pub struct OpenWrtProviderView {
     pub token_masked: String,
     pub model: String,
     pub notes: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auth_mode: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1322,10 +1326,22 @@ fn build_claude_provider(
     let name = require_trimmed("provider name", &payload.name)?;
     let base_url = require_trimmed("base URL", &payload.base_url)?;
     let token_field = normalize_token_field(profile, &payload.token_field)?;
-    let token_value = resolve_token_value(profile, existing.as_ref(), &payload.token)?;
+    let is_passthrough = payload.auth_mode.as_deref() == Some("client_passthrough");
+    let token_value = if is_passthrough {
+        resolve_optional_token_value(profile, existing.as_ref(), &payload.token)
+    } else {
+        resolve_token_value(profile, existing.as_ref(), &payload.token)?
+    };
     let mut provider = init_provider(existing, provider_id, name, payload.notes, profile);
 
     let root = ensure_settings_object(&mut provider, "Claude provider settings")?;
+
+    if is_passthrough {
+        root.insert("auth_mode".to_string(), json!("client_passthrough"));
+    } else {
+        root.remove("auth_mode");
+    }
+
     let env = ensure_child_object(root, "env", "Claude provider env")?;
 
     env.insert("ANTHROPIC_BASE_URL".to_string(), json!(base_url));
@@ -1333,7 +1349,9 @@ fn build_claude_provider(
     env.remove(CLAUDE_ALT_TOKEN_FIELD);
     env.remove("OPENROUTER_API_KEY");
     env.remove("OPENAI_API_KEY");
-    env.insert(token_field.to_string(), json!(token_value));
+    if !token_value.is_empty() {
+        env.insert(token_field.to_string(), json!(token_value));
+    }
 
     for key in CLAUDE_MODEL_KEYS_TO_CLEAR {
         env.remove(key);
@@ -1579,6 +1597,20 @@ fn resolve_token_value(
     }
 }
 
+fn resolve_optional_token_value(
+    profile: OpenWrtAppProfile,
+    existing: Option<&Provider>,
+    payload_token: &str,
+) -> String {
+    match payload_token.trim() {
+        "" => existing
+            .and_then(|provider| extract_token(profile, provider))
+            .map(|(_, token)| token.to_string())
+            .unwrap_or_default(),
+        token => token.to_string(),
+    }
+}
+
 fn resolve_model_value(
     profile: OpenWrtAppProfile,
     provider: &Provider,
@@ -1606,6 +1638,7 @@ fn empty_provider_view(profile: OpenWrtAppProfile) -> OpenWrtProviderView {
         token_masked: String::new(),
         model: String::new(),
         notes: String::new(),
+        auth_mode: None,
     }
 }
 
@@ -1618,6 +1651,12 @@ fn provider_to_view(
     let (token_field, token_value) =
         extract_token(profile, provider).unwrap_or((profile.default_token_field, ""));
 
+    let auth_mode = provider
+        .settings_config
+        .get("auth_mode")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+
     OpenWrtProviderView {
         configured: true,
         active: active_provider_id == Some(provider.id.as_str()),
@@ -1629,6 +1668,7 @@ fn provider_to_view(
         token_masked: mask_secret(token_value),
         model: extract_model(profile, provider).unwrap_or_default(),
         notes: provider.notes.clone().unwrap_or_default(),
+        auth_mode,
     }
 }
 
@@ -1964,6 +2004,7 @@ mod tests {
             token: token.to_string(),
             model: "claude-sonnet".to_string(),
             notes: "notes".to_string(),
+            auth_mode: None,
         }
     }
 
@@ -2495,6 +2536,7 @@ mod tests {
             token: "sk-codex-secret".to_string(),
             model: "gpt-5.4".to_string(),
             notes: "codex-notes".to_string(),
+            auth_mode: None,
         };
 
         let created = upsert_provider_with_payload(&db, &AppType::Codex, Some("codex-a"), payload)
@@ -2535,6 +2577,55 @@ mod tests {
 
     #[test]
     #[serial]
+    fn claude_client_passthrough_provider_allows_empty_token() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+        let payload = OpenWrtProviderPayload {
+            provider_id: None,
+            name: "Claude Official".to_string(),
+            base_url: "https://api.anthropic.com".to_string(),
+            token_field: DEFAULT_TOKEN_FIELD.to_string(),
+            token: String::new(),
+            model: String::new(),
+            notes: String::new(),
+            auth_mode: Some("client_passthrough".to_string()),
+        };
+
+        let created = upsert_provider_with_payload(&db, &AppType::Claude, Some("claude-pt"), payload)
+            .expect("create passthrough provider");
+
+        assert!(created.configured);
+        assert!(!created.token_configured);
+        assert_eq!(created.auth_mode.as_deref(), Some("client_passthrough"));
+
+        let view = get_provider(&db, &AppType::Claude, "claude-pt")
+            .expect("reload passthrough provider");
+        assert_eq!(view.auth_mode.as_deref(), Some("client_passthrough"));
+    }
+
+    #[test]
+    #[serial]
+    fn claude_non_passthrough_provider_requires_token() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+        let payload = OpenWrtProviderPayload {
+            provider_id: None,
+            name: "DeepSeek".to_string(),
+            base_url: "https://api.deepseek.com/anthropic".to_string(),
+            token_field: DEFAULT_TOKEN_FIELD.to_string(),
+            token: String::new(),
+            model: "DeepSeek-V3.2".to_string(),
+            notes: String::new(),
+            auth_mode: None,
+        };
+
+        let result = upsert_provider_with_payload(&db, &AppType::Claude, None, payload);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("token is required"));
+    }
+
+    #[test]
+    #[serial]
     fn gemini_provider_activation_updates_database_and_settings_current() {
         let _env = TestEnv::new();
         let db = Database::memory().expect("db");
@@ -2546,6 +2637,7 @@ mod tests {
             token: "gemini-a-secret".to_string(),
             model: "gemini-3.1-pro".to_string(),
             notes: String::new(),
+            auth_mode: None,
         };
         let payload_b = OpenWrtProviderPayload {
             provider_id: None,
@@ -2555,6 +2647,7 @@ mod tests {
             token: "gemini-b-secret".to_string(),
             model: "gemini-3.1-pro".to_string(),
             notes: String::new(),
+            auth_mode: None,
         };
 
         upsert_provider_with_payload(&db, &AppType::Gemini, Some("gemini-a"), payload_a)
@@ -2606,6 +2699,7 @@ mod tests {
             token: "sk-codex-secret".to_string(),
             model: "gpt-5.4".to_string(),
             notes: String::new(),
+            auth_mode: None,
         };
 
         upsert_provider_with_payload(&db, &AppType::Codex, Some("shared-id"), payload)
