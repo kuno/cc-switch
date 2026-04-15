@@ -331,6 +331,13 @@ var callGetHostConfig = rpc.declare({
 	expect: { '': {} }
 });
 
+var callGetUsageSummary = rpc.declare({
+	object: 'ccswitch',
+	method: 'get_usage_summary',
+	params: ['app'],
+	expect: { '': {} }
+});
+
 var callSetHostConfig = rpc.declare({
 	object: 'ccswitch',
 	method: 'set_host_config',
@@ -446,6 +453,14 @@ function callOpenWrtAppRuntimeStatus(appId) {
 		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/runtime');
 	}, function () {
 		return L.resolveDefault(callGetAppRuntimeStatus(appId), { ok: false });
+	});
+}
+
+function callOpenWrtUsageSummary(appId) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/usage-summary');
+	}, function () {
+		return L.resolveDefault(callGetUsageSummary(appId), { ok: false });
 	});
 }
 
@@ -1064,6 +1079,31 @@ return view.extend({
 		uiState.isRunning = uiState.hostState.status === 'running';
 
 		return Object.assign({}, uiState.hostState);
+	},
+
+	normalizeUsageSummary: function (response) {
+		var payload = response && typeof response === 'object' ? response : {};
+
+		return {
+			totalRequests: typeof payload.totalRequests === 'number' && isFinite(payload.totalRequests) ? payload.totalRequests : 0,
+			totalCost: payload.totalCost != null ? String(payload.totalCost) : '0',
+			totalInputTokens: typeof payload.totalInputTokens === 'number' && isFinite(payload.totalInputTokens) ? payload.totalInputTokens : 0,
+			totalOutputTokens: typeof payload.totalOutputTokens === 'number' && isFinite(payload.totalOutputTokens) ? payload.totalOutputTokens : 0,
+			totalCacheCreationTokens: typeof payload.totalCacheCreationTokens === 'number' && isFinite(payload.totalCacheCreationTokens) ? payload.totalCacheCreationTokens : 0,
+			totalCacheReadTokens: typeof payload.totalCacheReadTokens === 'number' && isFinite(payload.totalCacheReadTokens) ? payload.totalCacheReadTokens : 0,
+			successRate: typeof payload.successRate === 'number' && isFinite(payload.successRate) ? payload.successRate : 0
+		};
+	},
+
+	loadNativeUsageSummary: function (appId) {
+		var selectedApp = this.isSupportedApp(appId) ? appId : this.getSelectedApp();
+
+		return L.resolveDefault(callOpenWrtUsageSummary(selectedApp), { ok: false }).then(L.bind(function (response) {
+			if (!this.isRpcSuccess(response))
+				throw new Error(this.rpcFailureMessage(response) || _('Failed to load usage summary.'));
+
+			return this.normalizeUsageSummary(response);
+		}, this));
 	},
 
 	refreshNativeHostState: function (uiState) {
@@ -2302,6 +2342,9 @@ return view.extend({
 			},
 			refreshHostState: async function () {
 				return self.refreshNativeHostState(uiState);
+			},
+			getUsageSummary: async function (appId) {
+				return self.loadNativeUsageSummary(appId || uiState.selectedApp);
 			},
 			saveHostConfig: async function (payload) {
 				return self.saveNativeHostConfig(uiState, payload);

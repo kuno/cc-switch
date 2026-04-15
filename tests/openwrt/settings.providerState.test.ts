@@ -464,6 +464,26 @@ describe("OpenWrt settings shared-provider shell", () => {
     );
   });
 
+  it("declares the app usage-summary contract for the native page shell", () => {
+    const { rpcDeclares } = loadSettingsView();
+    const source = readFileSync(
+      path.resolve(
+        process.cwd(),
+        "openwrt/luci-app-ccswitch/htdocs/luci-static/resources/view/ccswitch/settings.js",
+      ),
+      "utf8",
+    );
+
+    expect(
+      rpcDeclares.some(
+        (spec) =>
+          spec.object === "ccswitch" && spec.method === "get_usage_summary",
+      ),
+    ).toBe(true);
+    expect(source).toContain("/usage-summary");
+    expect(source).toContain("getUsageSummary: async function (appId)");
+  });
+
   it("reuses a pre-registered bundle API without injecting another script", async () => {
     const { settings } = loadSettingsView();
     const api = {

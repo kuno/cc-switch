@@ -854,6 +854,53 @@ body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-preset-chip {
   padding: 1.2rem;
 }
 
+.ccswitch-openwrt-workspace-shell__usage {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.ccswitch-openwrt-workspace-shell__usage-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.ccswitch-openwrt-workspace-shell__usage-summary {
+  margin: 0;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.92rem;
+}
+
+.ccswitch-openwrt-workspace-shell__usage-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.ccswitch-openwrt-workspace-shell__usage-card {
+  padding: 1rem;
+}
+
+.ccswitch-openwrt-workspace-shell__usage-label {
+  margin: 0;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.ccswitch-openwrt-workspace-shell__usage-value {
+  margin: 0.45rem 0 0;
+  color: hsl(var(--foreground));
+  font-size: 1.05rem;
+  font-weight: 760;
+  letter-spacing: -0.03em;
+}
+
 .ccswitch-openwrt-workspace-shell__body {
   min-width: 0;
   margin-top: 1rem;
@@ -876,6 +923,10 @@ body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-preset-chip {
   .ccswitch-openwrt-daemon-field--wide {
     grid-column: auto;
   }
+
+  .ccswitch-openwrt-workspace-shell__usage-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (min-width: 1180px) {
@@ -889,6 +940,12 @@ body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-preset-chip {
   #ccswitch-shared-runtime-surface-root
     [data-ccswitch-region="runtime-app-grid"] {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .ccswitch-openwrt-workspace-shell__usage-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

@@ -4,6 +4,7 @@ use crate::database::Database;
 use crate::provider::Provider;
 use crate::proxy::server::populate_status_active_targets;
 use crate::proxy::types::{AppProxyConfig, GlobalProxyConfig, ProviderHealth, ProxyStatus};
+use crate::services::usage_stats::UsageSummary;
 use anyhow::{anyhow, Context};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -444,6 +445,16 @@ pub async fn get_app_runtime_status(
 ) -> anyhow::Result<OpenWrtAppRuntimeStatusView> {
     openwrt_app_profile(app_type)?;
     build_app_runtime_status(db, app_type).await
+}
+
+pub fn get_usage_summary(
+    db: &Database,
+    app_type: &AppType,
+) -> anyhow::Result<UsageSummary> {
+    let profile = openwrt_app_profile(app_type)?;
+
+    db.get_usage_summary(None, None, Some(profile.app_id))
+        .map_err(|e| anyhow!("failed to read {} usage summary: {e}", profile.app_id))
 }
 
 pub fn get_available_failover_providers(

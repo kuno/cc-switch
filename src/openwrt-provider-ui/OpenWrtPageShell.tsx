@@ -19,6 +19,7 @@ import type {
   OpenWrtPageMessage,
   OpenWrtPageTheme,
   OpenWrtSharedPageMountOptions,
+  OpenWrtUsageSummary,
 } from "./pageTypes";
 
 const OPENWRT_PAGE_THEME_STORAGE_KEY = "ccswitch-openwrt-native-page-theme";
@@ -31,6 +32,12 @@ type ShellSnapshot = {
   restartInFlight: boolean;
   restartPending: boolean;
   message: OpenWrtPageMessage | null;
+};
+
+type UsageState = {
+  summary: OpenWrtUsageSummary | null;
+  loading: boolean;
+  error: string | null;
 };
 
 export interface OpenWrtPageShellProps {
@@ -147,6 +154,48 @@ function getMessageToneClass(message: OpenWrtPageMessage | null): string {
   return "ccswitch-openwrt-page-note--info";
 }
 
+function formatCount(value: number): string {
+  return new Intl.NumberFormat("en-US").format(value);
+}
+
+function formatPercent(value: number): string {
+  if (!Number.isFinite(value)) {
+    return "0.0%";
+  }
+
+  return `${value.toFixed(1)}%`;
+}
+
+function formatUsd(value: string): string {
+  const numeric = Number(value);
+
+  if (!Number.isFinite(numeric)) {
+    return value || "$0.00";
+  }
+
+  const fractionDigits = numeric !== 0 && Math.abs(numeric) < 1 ? 4 : 2;
+
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  }).format(numeric);
+}
+
+function getTotalTokenCount(summary: OpenWrtUsageSummary | null): number {
+  if (!summary) {
+    return 0;
+  }
+
+  return (
+    summary.totalInputTokens +
+    summary.totalOutputTokens +
+    summary.totalCacheCreationTokens +
+    summary.totalCacheReadTokens
+  );
+}
+
 function getProviderNameFromMutation(
   providerId: string | null,
   providerState: {
@@ -218,6 +267,11 @@ export function OpenWrtPageShell({
   );
   const [theme, setTheme] = useState<OpenWrtPageTheme>(() => getInitialTheme());
   const [saveInFlight, setSaveInFlight] = useState(false);
+  const [usageState, setUsageState] = useState<UsageState>({
+    summary: null,
+    loading: true,
+    error: null,
+  });
   const previousHostDraftRef = useRef(createHostDraft(options.shell.getHostState()));
   const queryClient = useMemo(() => createSharedProviderManagerQueryClient(), []);
   const providerAdapter = useMemo(
@@ -275,6 +329,45 @@ export function OpenWrtPageShell({
     );
     previousHostDraftRef.current = nextDraft;
   }, [snapshot.host]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    setUsageState((current) => ({
+      ...current,
+      loading: true,
+      error: null,
+    }));
+
+    void options.shell
+      .getUsageSummary(snapshot.host.app)
+      .then((summary) => {
+        if (cancelled) {
+          return;
+        }
+
+        setUsageState({
+          summary,
+          loading: false,
+          error: null,
+        });
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+
+        setUsageState({
+          summary: null,
+          loading: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [options, snapshot.host.app]);
 
   const isDirty = useMemo(
     () => !isHostDraftEqual(hostDraft, createHostDraft(snapshot.host)),
@@ -466,6 +559,67 @@ export function OpenWrtPageShell({
               Configure routes and provider details
             </h2>
           </div>
+        </div>
+        <div className="ccswitch-openwrt-workspace-shell__usage">
+          <div className="ccswitch-openwrt-workspace-shell__usage-head">
+            <div>
+              <p className="ccswitch-openwrt-daemon-card__eyebrow">
+                Usage summary
+              </p>
+              <p className="ccswitch-openwrt-workspace-shell__usage-summary">
+                Local usage totals for the selected app. Provider quota and
+                balance remain separate from this OpenWrt surface.
+              </p>
+            </div>
+          </div>
+          {usageState.error ? (
+            <div className="ccswitch-openwrt-page-note ccswitch-openwrt-page-note--info">
+              {usageState.error}
+            </div>
+          ) : (
+            <div className="ccswitch-openwrt-workspace-shell__usage-grid">
+              <div className="ccswitch-openwrt-stat-card ccswitch-openwrt-workspace-shell__usage-card">
+                <p className="ccswitch-openwrt-workspace-shell__usage-label">
+                  Requests
+                </p>
+                <p className="ccswitch-openwrt-workspace-shell__usage-value">
+                  {usageState.loading
+                    ? "Loading…"
+                    : formatCount(usageState.summary?.totalRequests ?? 0)}
+                </p>
+              </div>
+              <div className="ccswitch-openwrt-stat-card ccswitch-openwrt-workspace-shell__usage-card">
+                <p className="ccswitch-openwrt-workspace-shell__usage-label">
+                  Cost
+                </p>
+                <p className="ccswitch-openwrt-workspace-shell__usage-value">
+                  {usageState.loading
+                    ? "Loading…"
+                    : formatUsd(usageState.summary?.totalCost ?? "0")}
+                </p>
+              </div>
+              <div className="ccswitch-openwrt-stat-card ccswitch-openwrt-workspace-shell__usage-card">
+                <p className="ccswitch-openwrt-workspace-shell__usage-label">
+                  Tokens
+                </p>
+                <p className="ccswitch-openwrt-workspace-shell__usage-value">
+                  {usageState.loading
+                    ? "Loading…"
+                    : formatCount(getTotalTokenCount(usageState.summary))}
+                </p>
+              </div>
+              <div className="ccswitch-openwrt-stat-card ccswitch-openwrt-workspace-shell__usage-card">
+                <p className="ccswitch-openwrt-workspace-shell__usage-label">
+                  Success
+                </p>
+                <p className="ccswitch-openwrt-workspace-shell__usage-value">
+                  {usageState.loading
+                    ? "Loading…"
+                    : formatPercent(usageState.summary?.successRate ?? 0)}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
         <div className="ccswitch-openwrt-workspace-shell__body">
           <QueryClientProvider client={queryClient}>

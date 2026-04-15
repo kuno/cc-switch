@@ -847,6 +847,15 @@ describe("OpenWrt provider UI bundle", () => {
       getHostState: vi.fn().mockImplementation(() => hostState),
       getMessage: vi.fn().mockReturnValue(null),
       getSelectedApp: vi.fn().mockImplementation(() => selectedApp),
+      getUsageSummary: vi.fn().mockResolvedValue({
+        totalRequests: 12,
+        totalCost: "1.23",
+        totalInputTokens: 1200,
+        totalOutputTokens: 450,
+        totalCacheCreationTokens: 80,
+        totalCacheReadTokens: 60,
+        successRate: 83.3,
+      }),
       getServiceStatus: vi.fn().mockImplementation(() => ({
         isRunning: hostState.status === "running",
       })),
@@ -909,6 +918,10 @@ describe("OpenWrt provider UI bundle", () => {
     expect(target).toHaveTextContent("Running");
     expect(target).toHaveTextContent("Healthy");
     expect(target).toHaveTextContent("0.0.0.0:15721");
+    expect(target).toHaveTextContent("Usage summary");
+    expect(target).toHaveTextContent("$1.23");
+    expect(target).toHaveTextContent("1,790");
+    expect(target).toHaveTextContent("83.3%");
     expect(
       within(target).getByRole("button", { name: "Save" }),
     ).toBeDisabled();
@@ -940,6 +953,7 @@ describe("OpenWrt provider UI bundle", () => {
       listenPort: "18443",
       logLevel: "debug",
     });
+    expect(shell.getUsageSummary).toHaveBeenCalledWith("claude");
 
     await act(async () => {
       if (typeof handle === "function") {
