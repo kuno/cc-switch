@@ -59,8 +59,10 @@ body.ccswitch-openwrt-provider-ui-theme {
   --ccswitch-page-radius-lg: 1.3rem;
   --ccswitch-page-radius-md: 1rem;
   --ccswitch-page-density: 2.625rem;
-  background: var(--ccswitch-page-bg);
-  color: hsl(var(--foreground));
+}
+
+#ccswitch-openwrt-native-page-root.ccswitch-openwrt-native-page-host,
+.ccswitch-openwrt-page-shell {
   font-family:
     "Segoe UI Variable Text", "SF Pro Display", "Avenir Next", "Helvetica Neue",
     sans-serif;
