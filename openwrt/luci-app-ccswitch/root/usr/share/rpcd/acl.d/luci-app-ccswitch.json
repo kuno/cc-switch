@@ -15,6 +15,7 @@
 					"get_app_runtime_status",
 					"get_usage_summary",
 					"get_provider_stats",
+					"get_recent_activity",
 					"get_available_failover_providers"
 				]
 			}

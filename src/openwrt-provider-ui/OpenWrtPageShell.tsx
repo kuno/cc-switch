@@ -18,6 +18,7 @@ import type {
   OpenWrtHostState,
   OpenWrtPageMessage,
   OpenWrtPageTheme,
+  OpenWrtRecentActivityItem,
   OpenWrtProviderStat,
   OpenWrtSharedPageMountOptions,
   OpenWrtUsageSummary,
@@ -43,6 +44,12 @@ type UsageState = {
 
 type ProviderStatsState = {
   providers: OpenWrtProviderStat[];
+  loading: boolean;
+  error: string | null;
+};
+
+type RecentActivityState = {
+  entries: OpenWrtRecentActivityItem[];
   loading: boolean;
   error: string | null;
 };
@@ -198,6 +205,68 @@ function formatLatency(value: number): string {
   return `${Math.round(value)} ms`;
 }
 
+function normalizeEpochMs(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) {
+    return 0;
+  }
+
+  return value > 1_000_000_000_000 ? value : value * 1000;
+}
+
+function formatRecentActivityTime(value: number): string {
+  const epochMs = normalizeEpochMs(value);
+
+  if (!epochMs) {
+    return "Unknown time";
+  }
+
+  const diffMs = Date.now() - epochMs;
+  const diffMinutes = Math.round(diffMs / 60000);
+
+  if (diffMinutes <= 1) {
+    return "Just now";
+  }
+
+  if (diffMinutes < 60) {
+    return `${diffMinutes}m ago`;
+  }
+
+  if (diffMinutes < 1440) {
+    return `${Math.round(diffMinutes / 60)}h ago`;
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(epochMs));
+}
+
+function getRecentActivityStatusTone(statusCode: number): string {
+  if (statusCode >= 200 && statusCode < 300) {
+    return "healthy";
+  }
+
+  if (statusCode >= 400) {
+    return "warning";
+  }
+
+  return "neutral";
+}
+
+function getRecentActivityStatusLabel(statusCode: number): string {
+  if (statusCode >= 200 && statusCode < 300) {
+    return "Success";
+  }
+
+  if (statusCode > 0) {
+    return `HTTP ${statusCode}`;
+  }
+
+  return "Unknown";
+}
+
 function getTotalTokenCount(summary: OpenWrtUsageSummary | null): number {
   if (!summary) {
     return 0;
@@ -292,6 +361,11 @@ export function OpenWrtPageShell({
     loading: true,
     error: null,
   });
+  const [recentActivityState, setRecentActivityState] = useState<RecentActivityState>({
+    entries: [],
+    loading: true,
+    error: null,
+  });
   const previousHostDraftRef = useRef(createHostDraft(options.shell.getHostState()));
   const queryClient = useMemo(() => createSharedProviderManagerQueryClient(), []);
   const providerAdapter = useMemo(
@@ -379,6 +453,45 @@ export function OpenWrtPageShell({
 
         setUsageState({
           summary: null,
+          loading: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [options, snapshot.host.app]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    setRecentActivityState({
+      entries: [],
+      loading: true,
+      error: null,
+    });
+
+    void options.shell
+      .getRecentActivity(snapshot.host.app)
+      .then((entries) => {
+        if (cancelled) {
+          return;
+        }
+
+        setRecentActivityState({
+          entries,
+          loading: false,
+          error: null,
+        });
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+
+        setRecentActivityState({
+          entries: [],
           loading: false,
           error: error instanceof Error ? error.message : String(error),
         });
@@ -725,6 +838,63 @@ export function OpenWrtPageShell({
             ) : (
               <div className="ccswitch-openwrt-workspace-shell__provider-usage-empty">
                 No provider usage has been recorded for this app yet.
+              </div>
+            )}
+          </div>
+          <div className="ccswitch-openwrt-workspace-shell__recent-activity">
+            <div className="ccswitch-openwrt-workspace-shell__provider-usage-head">
+              <div>
+                <p className="ccswitch-openwrt-daemon-card__eyebrow">
+                  Recent activity
+                </p>
+                <p className="ccswitch-openwrt-workspace-shell__usage-summary">
+                  Latest local requests recorded for the selected app.
+                </p>
+              </div>
+            </div>
+            {recentActivityState.error ? (
+              <div className="ccswitch-openwrt-page-note ccswitch-openwrt-page-note--info">
+                {recentActivityState.error}
+              </div>
+            ) : recentActivityState.loading ? (
+              <div className="ccswitch-openwrt-workspace-shell__provider-usage-empty">
+                Loading recent activity…
+              </div>
+            ) : recentActivityState.entries.length > 0 ? (
+              <div className="ccswitch-openwrt-workspace-shell__recent-activity-list">
+                {recentActivityState.entries.map((entry) => (
+                  <div
+                    className="ccswitch-openwrt-workspace-shell__recent-activity-row"
+                    key={entry.requestId || `${entry.providerId}-${entry.createdAt}`}
+                  >
+                    <div className="ccswitch-openwrt-workspace-shell__recent-activity-main">
+                      <div className="ccswitch-openwrt-workspace-shell__recent-activity-title">
+                        <p className="ccswitch-openwrt-workspace-shell__provider-name">
+                          {entry.providerName || entry.providerId}
+                        </p>
+                        <span
+                          className="ccswitch-openwrt-daemon-chip"
+                          data-tone={getRecentActivityStatusTone(entry.statusCode)}
+                        >
+                          {getRecentActivityStatusLabel(entry.statusCode)}
+                        </span>
+                      </div>
+                      <p className="ccswitch-openwrt-workspace-shell__provider-meta">
+                        {entry.model || "Default model"} ·{" "}
+                        {formatRecentActivityTime(entry.createdAt)}
+                      </p>
+                    </div>
+                    <div className="ccswitch-openwrt-workspace-shell__recent-activity-metrics">
+                      <span>{formatCount(entry.totalTokens)} tokens</span>
+                      <span>{formatUsd(entry.totalCost)}</span>
+                      <span>{formatLatency(entry.latencyMs)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="ccswitch-openwrt-workspace-shell__provider-usage-empty">
+                No recent activity has been recorded for this app yet.
               </div>
             )}
           </div>

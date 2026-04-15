@@ -345,6 +345,13 @@ var callGetProviderStats = rpc.declare({
 	expect: { '': {} }
 });
 
+var callGetRecentActivity = rpc.declare({
+	object: 'ccswitch',
+	method: 'get_recent_activity',
+	params: ['app'],
+	expect: { '': {} }
+});
+
 var callSetHostConfig = rpc.declare({
 	object: 'ccswitch',
 	method: 'set_host_config',
@@ -476,6 +483,14 @@ function callOpenWrtProviderStats(appId) {
 		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/provider-stats');
 	}, function () {
 		return L.resolveDefault(callGetProviderStats(appId), { ok: false });
+	});
+}
+
+function callOpenWrtRecentActivity(appId) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/recent-activity');
+	}, function () {
+		return L.resolveDefault(callGetRecentActivity(appId), { ok: false });
 	});
 }
 
@@ -769,12 +784,26 @@ return view.extend({
 	},
 
 	parseJsonString: function (payload) {
+		var text;
+		var start;
+
 		if (typeof payload !== 'string')
 			return null;
 
+		text = payload.trim();
+
 		try {
-			return JSON.parse(payload);
+			return JSON.parse(text);
 		} catch (e) {
+			start = text.indexOf('{');
+
+			if (start > 0) {
+				try {
+					return JSON.parse(text.substring(start));
+				} catch (ignored) {
+				}
+			}
+
 			return null;
 		}
 	},
@@ -1129,6 +1158,35 @@ return view.extend({
 		});
 	},
 
+	normalizeRecentActivity: function (response) {
+		var payload = response && typeof response === 'object' ? response : {};
+		var fallbackPayload = null;
+		var entries = Array.isArray(payload.entries) ? payload.entries : (Array.isArray(payload.value) ? payload.value : []);
+
+		if (!entries.length && typeof payload.recentActivityJson === 'string' && payload.recentActivityJson) {
+			fallbackPayload = this.parseJsonString(payload.recentActivityJson);
+
+			if (fallbackPayload && typeof fallbackPayload === 'object')
+				entries = Array.isArray(fallbackPayload.entries) ? fallbackPayload.entries : [];
+		}
+
+		return entries.map(function (entry) {
+			var item = entry && typeof entry === 'object' ? entry : {};
+
+			return {
+				requestId: item.requestId != null ? String(item.requestId) : '',
+				providerId: item.providerId != null ? String(item.providerId) : '',
+				providerName: item.providerName != null ? String(item.providerName) : '',
+				model: item.model != null ? String(item.model) : '',
+				totalTokens: typeof item.totalTokens === 'number' && isFinite(item.totalTokens) ? item.totalTokens : 0,
+				totalCost: item.totalCost != null ? String(item.totalCost) : '0',
+				statusCode: typeof item.statusCode === 'number' && isFinite(item.statusCode) ? item.statusCode : 0,
+				latencyMs: typeof item.latencyMs === 'number' && isFinite(item.latencyMs) ? item.latencyMs : 0,
+				createdAt: typeof item.createdAt === 'number' && isFinite(item.createdAt) ? item.createdAt : 0
+			};
+		});
+	},
+
 	loadNativeUsageSummary: function (appId) {
 		var selectedApp = this.isSupportedApp(appId) ? appId : this.getSelectedApp();
 
@@ -1148,6 +1206,17 @@ return view.extend({
 				throw new Error(this.rpcFailureMessage(response) || _('Failed to load provider stats.'));
 
 			return this.normalizeProviderStats(response);
+		}, this));
+	},
+
+	loadNativeRecentActivity: function (appId) {
+		var selectedApp = this.isSupportedApp(appId) ? appId : this.getSelectedApp();
+
+		return L.resolveDefault(callOpenWrtRecentActivity(selectedApp), { ok: false }).then(L.bind(function (response) {
+			if (!this.isRpcSuccess(response))
+				throw new Error(this.rpcFailureMessage(response) || _('Failed to load recent activity.'));
+
+			return this.normalizeRecentActivity(response);
 		}, this));
 	},
 
@@ -2400,6 +2469,9 @@ return view.extend({
 			},
 			getProviderStats: async function (appId) {
 				return self.loadNativeProviderStats(appId || uiState.selectedApp);
+			},
+			getRecentActivity: async function (appId) {
+				return self.loadNativeRecentActivity(appId || uiState.selectedApp);
 			},
 			saveHostConfig: async function (payload) {
 				return self.saveNativeHostConfig(uiState, payload);

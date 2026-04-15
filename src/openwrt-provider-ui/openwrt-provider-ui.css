@@ -907,6 +907,12 @@ body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-preset-chip {
   gap: 0.75rem;
 }
 
+.ccswitch-openwrt-workspace-shell__recent-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
 .ccswitch-openwrt-workspace-shell__provider-usage-head {
   display: flex;
   align-items: flex-start;
@@ -972,6 +978,49 @@ body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-preset-chip {
   background: hsl(var(--accent) / 0.22);
 }
 
+.ccswitch-openwrt-workspace-shell__recent-activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.ccswitch-openwrt-workspace-shell__recent-activity-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid hsl(var(--border) / 0.78);
+  border-radius: 1rem;
+  background: linear-gradient(
+    180deg,
+    hsl(var(--card) / 0.92),
+    hsl(var(--accent) / 0.18)
+  );
+}
+
+.ccswitch-openwrt-workspace-shell__recent-activity-main {
+  min-width: 0;
+}
+
+.ccswitch-openwrt-workspace-shell__recent-activity-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.ccswitch-openwrt-workspace-shell__recent-activity-metrics {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.18rem;
+  white-space: nowrap;
+  color: hsl(var(--foreground));
+  font-size: 0.88rem;
+  font-weight: 640;
+}
+
 .ccswitch-openwrt-workspace-shell__body {
   min-width: 0;
   margin-top: 1rem;
@@ -1004,6 +1053,14 @@ body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-preset-chip {
   }
 
   .ccswitch-openwrt-workspace-shell__provider-usage-metrics {
+    align-items: flex-start;
+  }
+
+  .ccswitch-openwrt-workspace-shell__recent-activity-row {
+    flex-direction: column;
+  }
+
+  .ccswitch-openwrt-workspace-shell__recent-activity-metrics {
     align-items: flex-start;
   }
 }

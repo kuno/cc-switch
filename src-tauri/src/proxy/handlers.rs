@@ -177,6 +177,19 @@ pub async fn openwrt_get_provider_stats(
 }
 
 #[cfg(not(feature = "tauri-desktop"))]
+pub async fn openwrt_get_recent_activity(
+    Path(app): Path<String>,
+    State(state): State<ProxyState>,
+) -> (StatusCode, Json<Value>) {
+    match parse_openwrt_app(&app)
+        .and_then(|app_type| openwrt_admin::get_recent_activity(state.db.as_ref(), &app_type))
+    {
+        Ok(activity) => openwrt_admin_ok(activity),
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+#[cfg(not(feature = "tauri-desktop"))]
 pub async fn openwrt_list_providers(
     Path(app): Path<String>,
     State(state): State<ProxyState>,

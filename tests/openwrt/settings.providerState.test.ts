@@ -504,6 +504,26 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(source).toContain("getProviderStats: async function (appId)");
   });
 
+  it("declares the app recent-activity contract for the native page shell", () => {
+    const { rpcDeclares } = loadSettingsView();
+    const source = readFileSync(
+      path.resolve(
+        process.cwd(),
+        "openwrt/luci-app-ccswitch/htdocs/luci-static/resources/view/ccswitch/settings.js",
+      ),
+      "utf8",
+    );
+
+    expect(
+      rpcDeclares.some(
+        (spec) =>
+          spec.object === "ccswitch" && spec.method === "get_recent_activity",
+      ),
+    ).toBe(true);
+    expect(source).toContain("/recent-activity");
+    expect(source).toContain("getRecentActivity: async function (appId)");
+  });
+
   it("grants LuCI read access to the app usage-summary ubus method", () => {
     const acl = JSON.parse(
       readFileSync(
@@ -525,6 +545,9 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(
       acl["luci-app-ccswitch"]?.read?.ubus?.ccswitch ?? [],
     ).toContain("get_provider_stats");
+    expect(
+      acl["luci-app-ccswitch"]?.read?.ubus?.ccswitch ?? [],
+    ).toContain("get_recent_activity");
   });
 
   it("suppresses raw bare rpc failure sentinels so feature-specific fallbacks can render", () => {
@@ -539,6 +562,41 @@ describe("OpenWrt settings shared-provider shell", () => {
         ok: false,
       }),
     ).toBeNull();
+  });
+
+  it("normalizes recent-activity string fallbacks from ubus compatibility payloads", () => {
+    const { settings } = loadSettingsView();
+    const normalized = (
+      settings as unknown as {
+        normalizeRecentActivity(input: unknown): Array<{
+          providerName: string;
+          model: string;
+          totalTokens: number;
+          totalCost: string;
+          statusCode: number;
+          latencyMs: number;
+          createdAt: number;
+        }>;
+      }
+    ).normalizeRecentActivity({
+      ok: true,
+      recentActivityJson:
+        '[2026-04-15T01:51:01Z WARN] noisy log prefix\n{"entries":[{"providerName":"OpenAI Official","model":"gpt-5.4","totalTokens":321,"totalCost":"0.12","statusCode":200,"latencyMs":412,"createdAt":1712345678}]}',
+    });
+
+    expect(normalized).toEqual([
+      {
+        requestId: "",
+        providerId: "",
+        providerName: "OpenAI Official",
+        model: "gpt-5.4",
+        totalTokens: 321,
+        totalCost: "0.12",
+        statusCode: 200,
+        latencyMs: 412,
+        createdAt: 1712345678,
+      },
+    ]);
   });
 
   it("reuses a pre-registered bundle API without injecting another script", async () => {
