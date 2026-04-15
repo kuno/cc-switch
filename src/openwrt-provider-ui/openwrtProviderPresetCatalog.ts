@@ -242,7 +242,8 @@ const RAW_OPENWRT_PROVIDER_PRESETS: Record<
       label: "OpenAI Official",
       baseUrl: "https://api.openai.com/v1",
       model: "gpt-5.4",
-      description: "Official OpenAI Responses endpoint for Codex.",
+      description: "Official OpenAI endpoint. API key is optional — client credentials are forwarded automatically.",
+      authMode: "client_passthrough",
     },
     {
       id: "codex-azure-openai",

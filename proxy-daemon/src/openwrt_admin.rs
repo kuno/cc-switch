@@ -1377,13 +1377,25 @@ fn build_codex_provider(
     let name = require_trimmed("provider name", &payload.name)?;
     let base_url = require_trimmed("base URL", &payload.base_url)?;
     let _token_field = normalize_token_field(profile, &payload.token_field)?;
-    let token_value = resolve_token_value(profile, existing.as_ref(), &payload.token)?;
+    let is_passthrough = payload.auth_mode.as_deref() == Some("client_passthrough");
+    let token_value = if is_passthrough {
+        resolve_optional_token_value(profile, existing.as_ref(), &payload.token)
+    } else {
+        resolve_token_value(profile, existing.as_ref(), &payload.token)?
+    };
     let mut provider = init_provider(existing, provider_id, name, payload.notes, profile);
     let model = resolve_model_value(profile, &provider, &payload.model);
     let provider_id_for_default = provider.id.clone();
     let provider_name_for_default = provider.name.clone();
 
     let root = ensure_settings_object(&mut provider, "Codex provider settings")?;
+
+    if is_passthrough {
+        root.insert("auth_mode".to_string(), json!("client_passthrough"));
+    } else {
+        root.remove("auth_mode");
+    }
+
     let auth = ensure_child_object(root, "auth", "Codex provider auth")?;
     auth.insert(CODEX_TOKEN_FIELD.to_string(), json!(token_value));
     root.insert("base_url".to_string(), json!(base_url));
