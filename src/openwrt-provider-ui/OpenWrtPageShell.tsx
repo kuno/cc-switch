@@ -107,11 +107,16 @@ function getInitialTheme(): OpenWrtPageTheme {
     return storedTheme;
   }
 
-  const rootHasDark =
-    document.documentElement.classList.contains("dark") ||
-    document.body.classList.contains("dark");
+  return "light";
+}
 
-  return rootHasDark ? "dark" : "light";
+function clearLegacyGlobalDarkThemeLeak() {
+  if (typeof document === "undefined") {
+    return;
+  }
+
+  document.documentElement.classList.remove("dark");
+  document.body.classList.remove("dark");
 }
 
 function applyTheme(theme: OpenWrtPageTheme) {
@@ -119,6 +124,7 @@ function applyTheme(theme: OpenWrtPageTheme) {
     return;
   }
 
+  clearLegacyGlobalDarkThemeLeak();
   document.body.classList.toggle(
     OPENWRT_PAGE_THEME_DARK_CLASS,
     theme === "dark",
@@ -131,6 +137,7 @@ function clearTheme() {
     return;
   }
 
+  clearLegacyGlobalDarkThemeLeak();
   document.body.classList.remove(OPENWRT_PAGE_THEME_DARK_CLASS);
   delete document.body.dataset.ccswitchTheme;
 }

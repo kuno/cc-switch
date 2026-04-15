@@ -1216,6 +1216,111 @@ describe("OpenWrt provider UI bundle", () => {
     shellRoot.remove();
   });
 
+  it("clears leaked global dark classes and defaults the native page to light without stored preference", async () => {
+    const globalScope = globalThis as typeof globalThis & {
+      [OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY]?: OpenWrtSharedProviderBundleApi;
+    };
+    const api = globalScope[OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY];
+    const target = document.createElement("div");
+    const transport = createTransport({
+      claude: createProviderState("claude", [
+        {
+          active: true,
+          baseUrl: "https://claude-primary.example.com",
+          model: "claude-sonnet-4-5",
+          name: "Claude Primary",
+          providerId: "claude-primary",
+          tokenConfigured: true,
+          tokenField: "ANTHROPIC_AUTH_TOKEN",
+        },
+      ]),
+    });
+
+    document.documentElement.classList.add("dark");
+    document.body.classList.add("dark");
+    window.localStorage.removeItem("ccswitch-openwrt-native-page-theme");
+    document.body.appendChild(target);
+
+    let hostState: OpenWrtHostState = {
+      app: "claude",
+      status: "running",
+      health: "healthy",
+      listenAddr: "0.0.0.0",
+      listenPort: "15721",
+      serviceLabel: "Router daemon",
+      httpProxy: "",
+      httpsProxy: "",
+      proxyEnabled: false,
+      logLevel: "info",
+    };
+
+    const shell = {
+      clearMessage: vi.fn(),
+      getHostState: vi.fn().mockImplementation(() => hostState),
+      getMessage: vi.fn().mockReturnValue(null),
+      getSelectedApp: vi.fn().mockReturnValue("claude" satisfies SharedProviderAppId),
+      getProviderStats: vi.fn().mockResolvedValue([]),
+      getRecentActivity: vi.fn().mockResolvedValue([]),
+      getRestartState: vi.fn().mockReturnValue({
+        inFlight: false,
+        pending: false,
+      }),
+      getServiceStatus: vi.fn().mockReturnValue({ isRunning: true }),
+      getUsageSummary: vi.fn().mockResolvedValue({
+        totalRequests: 0,
+        totalCost: "0",
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalCacheCreationTokens: 0,
+        totalCacheReadTokens: 0,
+        successRate: 0,
+      }),
+      refreshHostState: vi.fn().mockImplementation(async () => hostState),
+      refreshServiceStatus: vi.fn().mockResolvedValue({ isRunning: true }),
+      restartService: vi.fn().mockResolvedValue({ isRunning: true }),
+      saveHostConfig: vi.fn().mockImplementation(async () => hostState),
+      setRestartState: vi.fn(),
+      setSelectedApp: vi.fn().mockImplementation((appId: SharedProviderAppId) => appId),
+      showMessage: vi.fn(),
+      subscribe: vi.fn().mockReturnValue(vi.fn()),
+    };
+
+    let handle:
+      | void
+      | (() => void)
+      | {
+          unmount(): void;
+        };
+
+    await act(async () => {
+      handle = await Promise.resolve(
+        api!.mountPage({
+          shell,
+          target,
+          transport,
+        }),
+      );
+    });
+
+    await waitFor(() =>
+      expect(target).toHaveTextContent("Configure routes and provider details"),
+    );
+
+    expect(document.documentElement.classList.contains("dark")).toBe(false);
+    expect(document.body.classList.contains("dark")).toBe(false);
+    expect(document.body.dataset.ccswitchTheme).toBe("light");
+
+    await act(async () => {
+      if (typeof handle === "function") {
+        handle();
+      } else if (handle && typeof handle.unmount === "function") {
+        handle.unmount();
+      }
+    });
+
+    target.remove();
+  });
+
   it("keeps editor and delete dialogs inside the OpenWrt body portal without creating host-owned controls", async () => {
     const globalScope = globalThis as typeof globalThis & {
       [OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY]?: OpenWrtSharedProviderBundleApi;
