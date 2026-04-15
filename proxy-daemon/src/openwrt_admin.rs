@@ -4,7 +4,7 @@ use crate::database::Database;
 use crate::provider::Provider;
 use crate::proxy::server::populate_status_active_targets;
 use crate::proxy::types::{AppProxyConfig, GlobalProxyConfig, ProviderHealth, ProxyStatus};
-use crate::services::usage_stats::UsageSummary;
+use crate::services::usage_stats::{ProviderStats, UsageSummary};
 use anyhow::{anyhow, Context};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -79,6 +79,12 @@ pub struct OpenWrtProviderView {
 pub struct OpenWrtProviderListView {
     pub active_provider_id: Option<String>,
     pub providers: Vec<OpenWrtProviderView>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtProviderStatsView {
+    pub providers: Vec<ProviderStats>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -455,6 +461,18 @@ pub fn get_usage_summary(
 
     db.get_usage_summary(None, None, Some(profile.app_id))
         .map_err(|e| anyhow!("failed to read {} usage summary: {e}", profile.app_id))
+}
+
+pub fn get_provider_stats(
+    db: &Database,
+    app_type: &AppType,
+) -> anyhow::Result<OpenWrtProviderStatsView> {
+    let profile = openwrt_app_profile(app_type)?;
+    let providers = db
+        .get_provider_stats(Some(profile.app_id))
+        .map_err(|e| anyhow!("failed to read {} provider stats: {e}", profile.app_id))?;
+
+    Ok(OpenWrtProviderStatsView { providers })
 }
 
 pub fn get_available_failover_providers(

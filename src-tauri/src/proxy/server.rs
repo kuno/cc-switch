@@ -397,6 +397,10 @@ impl ProxyServer {
                 get(handlers::openwrt_get_usage_summary),
             )
             .route(
+                "/openwrt/admin/apps/:app/provider-stats",
+                get(handlers::openwrt_get_provider_stats),
+            )
+            .route(
                 "/openwrt/admin/apps/:app/providers",
                 get(handlers::openwrt_list_providers).post(handlers::openwrt_upsert_provider),
             )

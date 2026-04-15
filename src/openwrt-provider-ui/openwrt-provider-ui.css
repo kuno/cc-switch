@@ -901,6 +901,77 @@ body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-preset-chip {
   letter-spacing: -0.03em;
 }
 
+.ccswitch-openwrt-workspace-shell__provider-usage {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.ccswitch-openwrt-workspace-shell__provider-usage-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.ccswitch-openwrt-workspace-shell__provider-usage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.ccswitch-openwrt-workspace-shell__provider-usage-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid hsl(var(--border) / 0.78);
+  border-radius: 1rem;
+  background: linear-gradient(
+    180deg,
+    hsl(var(--card) / 0.92),
+    hsl(var(--accent) / 0.34)
+  );
+}
+
+.ccswitch-openwrt-workspace-shell__provider-usage-main {
+  min-width: 0;
+}
+
+.ccswitch-openwrt-workspace-shell__provider-name {
+  margin: 0;
+  color: hsl(var(--foreground));
+  font-size: 0.96rem;
+  font-weight: 720;
+}
+
+.ccswitch-openwrt-workspace-shell__provider-meta {
+  margin: 0.3rem 0 0;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.ccswitch-openwrt-workspace-shell__provider-usage-metrics {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.18rem;
+  white-space: nowrap;
+  color: hsl(var(--foreground));
+  font-size: 0.88rem;
+  font-weight: 640;
+}
+
+.ccswitch-openwrt-workspace-shell__provider-usage-empty {
+  padding: 0.95rem 1rem;
+  border: 1px dashed hsl(var(--border) / 0.88);
+  border-radius: 1rem;
+  color: hsl(var(--muted-foreground));
+  background: hsl(var(--accent) / 0.22);
+}
+
 .ccswitch-openwrt-workspace-shell__body {
   min-width: 0;
   margin-top: 1rem;
@@ -926,6 +997,14 @@ body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-preset-chip {
 
   .ccswitch-openwrt-workspace-shell__usage-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ccswitch-openwrt-workspace-shell__provider-usage-row {
+    flex-direction: column;
+  }
+
+  .ccswitch-openwrt-workspace-shell__provider-usage-metrics {
+    align-items: flex-start;
   }
 }
 

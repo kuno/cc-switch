@@ -484,6 +484,26 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(source).toContain("getUsageSummary: async function (appId)");
   });
 
+  it("declares the app provider-stats contract for the native page shell", () => {
+    const { rpcDeclares } = loadSettingsView();
+    const source = readFileSync(
+      path.resolve(
+        process.cwd(),
+        "openwrt/luci-app-ccswitch/htdocs/luci-static/resources/view/ccswitch/settings.js",
+      ),
+      "utf8",
+    );
+
+    expect(
+      rpcDeclares.some(
+        (spec) =>
+          spec.object === "ccswitch" && spec.method === "get_provider_stats",
+      ),
+    ).toBe(true);
+    expect(source).toContain("/provider-stats");
+    expect(source).toContain("getProviderStats: async function (appId)");
+  });
+
   it("grants LuCI read access to the app usage-summary ubus method", () => {
     const acl = JSON.parse(
       readFileSync(
@@ -502,6 +522,9 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(
       acl["luci-app-ccswitch"]?.read?.ubus?.ccswitch ?? [],
     ).toContain("get_usage_summary");
+    expect(
+      acl["luci-app-ccswitch"]?.read?.ubus?.ccswitch ?? [],
+    ).toContain("get_provider_stats");
   });
 
   it("suppresses raw bare rpc failure sentinels so feature-specific fallbacks can render", () => {
