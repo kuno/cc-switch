@@ -15,8 +15,6 @@ DAEMON_SRC="$SCRIPT_DIR/proxy-daemon/files"
 LUCI_SRC="$SCRIPT_DIR/luci-app-ccswitch"
 OPENWRT_PROVIDER_UI_ASSET="$LUCI_SRC/htdocs/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js"
 OPENWRT_PROVIDER_UI_STYLESHEET="$LUCI_SRC/htdocs/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.css"
-OPENWRT_PROTOTYPE_UI_DIR="$LUCI_SRC/htdocs/luci-static/resources/ccswitch/prototype"
-OPENWRT_PROTOTYPE_B24_UI_DIR="$LUCI_SRC/htdocs/luci-static/resources/ccswitch/prototype-b24"
 PREPARE_PROVIDER_UI_BUNDLE="$SCRIPT_DIR/prepare-provider-ui-bundle.sh"
 
 read_make_var() {
@@ -204,8 +202,6 @@ Build it first with:
 	[ -f "$LUCI_SRC/htdocs/luci-static/resources/view/ccswitch/settings.js" ] || die "missing LuCI settings view"
 	[ -f "$OPENWRT_PROVIDER_UI_ASSET" ] || die "missing OpenWrt provider UI bundle"
 	[ -f "$OPENWRT_PROVIDER_UI_STYLESHEET" ] || die "missing OpenWrt provider UI stylesheet"
-	[ -f "$OPENWRT_PROTOTYPE_UI_DIR/index.html" ] || die "missing OpenWrt prototype index asset"
-	[ -f "$OPENWRT_PROTOTYPE_B24_UI_DIR/index.html" ] || die "missing OpenWrt B2.4 prototype index asset"
 }
 
 build_daemon_binary() {
@@ -465,9 +461,7 @@ build_luci_package() {
 		"$data_dir/usr/share/rpcd/ucode" \
 		"$data_dir/usr/share/luci/menu.d" \
 		"$data_dir/www/luci-static/resources/view/ccswitch" \
-		"$data_dir/www/luci-static/resources/ccswitch/provider-ui" \
-		"$data_dir/www/luci-static/resources/ccswitch/prototype" \
-		"$data_dir/www/luci-static/resources/ccswitch/prototype-b24"
+		"$data_dir/www/luci-static/resources/ccswitch/provider-ui"
 
 	emit_control_file \
 		"$control_dir/control" \
@@ -501,8 +495,6 @@ build_luci_package() {
 	install -m 0644 \
 		"$OPENWRT_PROVIDER_UI_STYLESHEET" \
 		"$data_dir/www/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.css"
-	cp -R "$OPENWRT_PROTOTYPE_UI_DIR/." "$data_dir/www/luci-static/resources/ccswitch/prototype/"
-	cp -R "$OPENWRT_PROTOTYPE_B24_UI_DIR/." "$data_dir/www/luci-static/resources/ccswitch/prototype-b24/"
 
 	rm -f "$output"
 	build_ipk "$control_dir" "$data_dir" "$output"

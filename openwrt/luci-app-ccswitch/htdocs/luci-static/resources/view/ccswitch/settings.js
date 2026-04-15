@@ -1,6 +1,5 @@
 'use strict';
 'require view';
-'require form';
 'require uci';
 'require rpc';
 'require ui';
@@ -17,12 +16,8 @@ var SHARED_PROVIDER_UI_GLOBAL_KEY = '__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__';
 var SHARED_PROVIDER_UI_SCRIPT_ID = 'ccswitch-openwrt-shared-provider-ui-bundle';
 var SHARED_PROVIDER_UI_STYLE_ID = 'ccswitch-openwrt-shared-provider-ui-styles';
 var HOST_PAGE_STYLE_ID = 'ccswitch-openwrt-host-page-shell-styles';
-var STATIC_PROTOTYPE_STYLE_ID = 'ccswitch-openwrt-static-prototype-styles';
-var STATIC_PROTOTYPE_MIN_HEIGHT = 960;
 var SHARED_PROVIDER_UI_BUNDLE_PATH = '/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js';
 var SHARED_PROVIDER_UI_STYLE_PATH = '/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.css';
-var OPENWRT_STATIC_PROTOTYPE_MODE = false;
-var OPENWRT_STATIC_PROTOTYPE_PATH = '/luci-static/resources/ccswitch/prototype-b24/index.html';
 var SHARED_PROVIDER_UI_FALLBACK_REASON_GATE_DISABLED = 'gate-disabled';
 var SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_FAILURE = 'bundle-failure';
 var SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_REGRESSION = 'bundle-regression';
@@ -611,96 +606,11 @@ return view.extend({
 	handleReset: null,
 
 	load: function () {
-		if (OPENWRT_STATIC_PROTOTYPE_MODE)
-			return Promise.all([
-				this.loadHostConfigSnapshot(),
-				L.resolveDefault(callServiceList('ccswitch'), {}),
-				callOpenWrtRuntimeStatus(),
-				this.loadAllStaticPrototypeProviderStates()
-			]);
-
 		return Promise.all([
 			this.loadHostConfigSnapshot(),
 			L.resolveDefault(callServiceList('ccswitch'), {}),
 			callOpenWrtRuntimeStatus()
 		]);
-	},
-
-	renderStaticPrototype: function (data) {
-		var self = this;
-		var bindings = this.getStaticPrototypeBindings(data || []);
-		var workspaceData = this.buildStaticPrototypeWorkspaceData(data || []);
-		var prototypeSrc = OPENWRT_STATIC_PROTOTYPE_PATH + '?' + this.buildStaticPrototypeQuery(bindings);
-		var existingStyle = document.getElementById(STATIC_PROTOTYPE_STYLE_ID);
-		var wrapper = E('div', {
-			'id': 'ccswitch-static-prototype-shell',
-			'style': 'padding:0;margin:0;'
-		});
-		var frame = E('iframe', {
-			'src': prototypeSrc,
-			'title': _('CC Switch OpenWrt prototype'),
-			'style': 'display:block;width:100%;min-height:' + String(STATIC_PROTOTYPE_MIN_HEIGHT) + 'px;border:0;border-radius:28px;background:#fff;overflow:hidden;'
-		});
-		var syncHeight = function () {
-			try {
-				var doc = frame.contentWindow && frame.contentWindow.document;
-				var bodyHeight = doc && doc.body ? doc.body.scrollHeight : 0;
-				var rootHeight = doc && doc.documentElement ? doc.documentElement.scrollHeight : 0;
-				var nextHeight = Math.max(bodyHeight, rootHeight, STATIC_PROTOTYPE_MIN_HEIGHT);
-
-				frame.style.height = nextHeight + 'px';
-			} catch (e) {
-				frame.style.height = String(STATIC_PROTOTYPE_MIN_HEIGHT) + 'px';
-			}
-		};
-		var postWorkspaceData = function () {
-			try {
-				if (frame.contentWindow && typeof frame.contentWindow.postMessage === 'function') {
-					frame.contentWindow.postMessage({
-						type: 'ccswitch-prototype-live-data',
-						payload: workspaceData
-					}, '*');
-				}
-			} catch (e) {
-				/* no-op */
-			}
-		};
-		var postHostState = function () {
-			return self.loadStaticPrototypeHostBindings().then(function (hostBindings) {
-				self.postStaticPrototypeFrameMessage(frame, 'ccswitch-prototype-host-state', hostBindings);
-			});
-		};
-		var handleFrameMessage = function (event) {
-			self.handleStaticPrototypeFrameMessage(frame, event);
-		};
-
-		if (!existingStyle) {
-			existingStyle = E('style', {
-				'id': STATIC_PROTOTYPE_STYLE_ID
-			}, [
-				'.cbi-page-actions, .cbi-page-actions.control-group { display:none !important; }'
-			]);
-			document.head.appendChild(existingStyle);
-		}
-
-		window.addEventListener('message', handleFrameMessage);
-
-		frame.addEventListener('load', function () {
-			postWorkspaceData();
-			postHostState();
-			syncHeight();
-			window.setTimeout(function () {
-				postWorkspaceData();
-				postHostState();
-				syncHeight();
-			}, 50);
-			window.setTimeout(syncHeight, 300);
-			window.setTimeout(syncHeight, 1000);
-		});
-
-		wrapper.appendChild(frame);
-
-		return wrapper;
 	},
 
 	parseServiceState: function (serviceStatus) {
@@ -1124,63 +1034,6 @@ return view.extend({
 		};
 
 		return tryLoad();
-	},
-
-	postStaticPrototypeFrameMessage: function (frame, type, payload) {
-		try {
-			if (frame && frame.contentWindow && typeof frame.contentWindow.postMessage === 'function') {
-				frame.contentWindow.postMessage({
-					type: type,
-					payload: payload
-				}, '*');
-			}
-		} catch (e) {
-			/* no-op */
-		}
-	},
-
-	handleStaticPrototypeFrameMessage: function (frame, event) {
-		if (!frame || !frame.contentWindow || !event || event.source !== frame.contentWindow || !event.data)
-			return Promise.resolve(false);
-
-		if (event.data.type === 'ccswitch-prototype-host-save')
-			return this.saveStaticPrototypeHostConfig(event.data.payload).then(L.bind(function () {
-				return this.loadStaticPrototypeHostBindings().then(L.bind(function (hostBindings) {
-					this.postStaticPrototypeFrameMessage(frame, 'ccswitch-prototype-host-save-result', {
-						ok: true,
-						host: hostBindings
-					});
-					return true;
-				}, this));
-			}, this)).catch(L.bind(function (err) {
-				this.postStaticPrototypeFrameMessage(frame, 'ccswitch-prototype-host-save-result', {
-					ok: false,
-					message: this.rpcFailureMessage(err) || _('Failed to save host settings.')
-				});
-				return true;
-			}, this));
-
-		if (event.data.type === 'ccswitch-prototype-restart-service')
-			return this.restartService().then(L.bind(function (result) {
-				if (!this.isRpcSuccess(result))
-					throw new Error(this.rpcError(result) || _('Failed to restart service.'));
-
-				return this.loadStaticPrototypeHostBindingsAfterRestart().then(L.bind(function (hostBindings) {
-					this.postStaticPrototypeFrameMessage(frame, 'ccswitch-prototype-restart-result', {
-						ok: true,
-						host: hostBindings
-					});
-					return true;
-				}, this));
-			}, this)).catch(L.bind(function (err) {
-				this.postStaticPrototypeFrameMessage(frame, 'ccswitch-prototype-restart-result', {
-					ok: false,
-					message: this.rpcFailureMessage(err) || _('Failed to restart service.')
-				});
-				return true;
-			}, this));
-
-		return Promise.resolve(false);
 	},
 
 	getStaticPrototypeBindings: function (data) {
@@ -3672,116 +3525,21 @@ return view.extend({
 					uiState.mountHandle = self.normalizeMountHandle(handle);
 				});
 			}).catch(function (err) {
-				var fallback = self.renderStaticPrototype([
-					data[0],
-					data[1],
-					data[2],
-					{}
-				]);
-
 				while (wrapper.firstChild)
 					wrapper.removeChild(wrapper.firstChild);
 
 				wrapper.appendChild(self.createInlineStateNotice(
 					'error',
 					_('Native page shell unavailable'),
-					self.rpcFailureMessage(err) || _('Falling back to the packaged prototype surface because the native page shell failed to load.')
+					self.rpcFailureMessage(err) || _('The OpenWrt-native page shell failed to load. Reinstall the package or refresh the page after updating the browser bundle.')
 				));
-				wrapper.appendChild(fallback);
 			});
 		}, 0);
 
 		return wrapper;
 	},
 
-		render: function (data) {
-			if (OPENWRT_STATIC_PROTOTYPE_MODE)
-				return Promise.resolve(this.renderStaticPrototype(data));
-
-			return Promise.resolve(this.renderNativePage(data));
-
-			var selectedApp = this.getSelectedApp();
-			var isRunning = this.parseServiceState(data[1]);
-			var providerState = data[2];
-			var uiState = this.createUiState(isRunning, providerState, selectedApp);
-			var pageHero;
-			var m = new form.Map('ccswitch', _('Open CC Switch'),
-				_('Configure the OpenWrt service, outbound proxy settings, and provider routing for the router proxy.')
-			);
-		var s, o;
-		var self = this;
-
-		s = m.section(form.NamedSection, 'main', 'ccswitch', _('Service'));
-		s.anonymous = true;
-		s.addremove = false;
-
-		o = s.option(form.Flag, 'enabled', _('Enable'));
-		o.rmempty = false;
-
-		o = s.option(form.Value, 'listen_addr', _('Listen Address'),
-			_('Address to bind the proxy server. Use 0.0.0.0 for all interfaces.'));
-		o.datatype = 'ipaddr';
-		o.placeholder = '0.0.0.0';
-		o.rmempty = false;
-
-		o = s.option(form.Value, 'listen_port', _('Listen Port'),
-			_('Port for the proxy server.'));
-		o.datatype = 'port';
-		o.placeholder = '15721';
-		o.rmempty = false;
-
-		s = m.section(form.NamedSection, 'main', 'ccswitch', _('Outbound Proxy'),
-			_('Leave these blank for direct internet access, or point them to another OpenWrt app such as Clash.'));
-		s.anonymous = true;
-		s.addremove = false;
-
-		o = s.option(form.Value, 'http_proxy', _('HTTP Proxy'));
-		o.placeholder = 'http://127.0.0.1:7890';
-		o.rmempty = true;
-
-		o = s.option(form.Value, 'https_proxy', _('HTTPS Proxy'));
-		o.placeholder = 'http://127.0.0.1:7890';
-		o.rmempty = true;
-
-		s = m.section(form.NamedSection, 'main', 'ccswitch', _('Logging'));
-		s.anonymous = true;
-		s.addremove = false;
-
-		o = s.option(form.ListValue, 'log_level', _('Log Level'));
-		o.value('error', _('Error'));
-		o.value('warn', _('Warning'));
-		o.value('info', _('Info'));
-		o.value('debug', _('Debug'));
-		o.value('trace', _('Trace'));
-		o.default = 'info';
-
-		return m.render().then(function (mapEl) {
-			var shellNodes = self.createProviderShell(uiState);
-			var statusNodes = self.createStatusPanel(uiState, shellNodes);
-			var pageShell;
-			var topBlock;
-			var bottomBlock;
-
-			self.ensureHostPageStyles();
-			pageHero = self.createHostPageHero();
-			mapEl = self.decorateMapElement(mapEl);
-			topBlock = E('div', { 'class': 'ccswitch-host-block ccswitch-host-top-block' }, [
-				pageHero,
-				statusNodes.root,
-				mapEl
-			]);
-			bottomBlock = E('div', { 'class': 'ccswitch-host-block ccswitch-host-bottom-block' }, [
-				shellNodes.root
-			]);
-			pageShell = E('div', { 'id': 'ccswitch-host-page-shell' }, [
-				topBlock,
-				bottomBlock
-			]);
-
-			void self.mountSharedRuntimeSurface(uiState, shellNodes);
-			void self.mountSharedProviderUi(uiState, statusNodes, shellNodes);
-
-			return pageShell;
-		});
+	render: function (data) {
+		return Promise.resolve(this.renderNativePage(data));
 	}
 });

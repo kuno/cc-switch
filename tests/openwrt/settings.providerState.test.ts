@@ -120,22 +120,6 @@ type RpcCall = {
 };
 
 type StaticPrototypeSettings = SettingsView & {
-  buildStaticPrototypeQuery(bindings: {
-    app: AppId;
-    health: string;
-    httpProxy: string;
-    httpsProxy: string;
-    listenAddr: string;
-    listenPort: string;
-    logLevel: string;
-    proxyEnabled: string;
-    serviceLabel: string;
-    status: string;
-  }): string;
-  handleStaticPrototypeFrameMessage(
-    frame: { contentWindow: { postMessage: ReturnType<typeof vi.fn> } },
-    event: { data?: { payload?: Record<string, unknown>; type?: string }; source?: unknown },
-  ): Promise<boolean>;
   buildStaticPrototypeWorkspaceData(data: unknown[]): {
     apps: Record<
       AppId,
@@ -899,24 +883,6 @@ describe("OpenWrt settings shared-provider shell", () => {
       serviceLabel: "Router daemon",
       status: "running",
     });
-    expect(
-      Object.fromEntries(
-        new URLSearchParams(
-          staticPrototypeSettings.buildStaticPrototypeQuery(bindings),
-        ),
-      ),
-    ).toStrictEqual({
-      app: "codex",
-      health: "degraded",
-      http_proxy: "http://router-http.internal:7890",
-      https_proxy: "http://router-https.internal:7890",
-      listen_addr: "0.0.0.0",
-      listen_port: "15721",
-      log_level: "debug",
-      proxy_enabled: "0",
-      service_label: "Router daemon",
-      status: "running",
-    });
 
     const failover = staticPrototypeSettings.parseStaticPrototypeFailoverState(
       {
@@ -1237,74 +1203,6 @@ describe("OpenWrt settings shared-provider shell", () => {
       listenAddr: "10.0.0.7",
       listenPort: "28443",
     });
-  });
-
-  it("polls static prototype host bindings after restart until live health is available", async () => {
-    const { settings } = loadSettingsView("codex");
-    const staticPrototypeSettings =
-      settings as unknown as StaticPrototypeSettings;
-    const postMessage = vi.fn();
-    const contentWindow = { postMessage };
-    const frame = { contentWindow };
-    const first = {
-      app: "codex" as const,
-      health: "unknown",
-      httpProxy: "http://router-http.internal:7890",
-      httpsProxy: "http://router-https.internal:7890",
-      listenAddr: "10.0.0.5",
-      listenPort: "18443",
-      logLevel: "debug",
-      proxyEnabled: "0",
-      serviceLabel: "Router daemon",
-      status: "running",
-    };
-    const second = {
-      ...first,
-      health: "healthy",
-    };
-
-    (staticPrototypeSettings as StaticPrototypeSettings & {
-      restartService: ReturnType<typeof vi.fn>;
-    }).restartService = vi.fn().mockResolvedValue({ ok: true });
-    vi.spyOn(window, "setTimeout").mockImplementation((handler: TimerHandler) => {
-      if (typeof handler === "function") {
-        handler();
-      }
-
-      return 1 as unknown as ReturnType<typeof window.setTimeout>;
-    });
-    staticPrototypeSettings.loadStaticPrototypeHostBindings = vi
-      .fn()
-      .mockResolvedValueOnce(first)
-      .mockResolvedValueOnce(second);
-
-    const handled = await staticPrototypeSettings.handleStaticPrototypeFrameMessage(
-      frame,
-      {
-        data: { type: "ccswitch-prototype-restart-service" },
-        source: contentWindow,
-      },
-    );
-
-    expect(handled).toBe(true);
-    expect(
-      (
-        staticPrototypeSettings as StaticPrototypeSettings & {
-          restartService: ReturnType<typeof vi.fn>;
-        }
-      ).restartService,
-    ).toHaveBeenCalledTimes(1);
-    expect(staticPrototypeSettings.loadStaticPrototypeHostBindings).toHaveBeenCalledTimes(2);
-    expect(postMessage).toHaveBeenCalledWith(
-      {
-        type: "ccswitch-prototype-restart-result",
-        payload: {
-          ok: true,
-          host: second,
-        },
-      },
-      "*",
-    );
   });
 
   it("lets the shared bundle update the shell-owned selected app and banner state", () => {
@@ -1723,5 +1621,23 @@ describe("OpenWrt settings shared-provider shell", () => {
     settings.teardownSharedProviderUi(uiState);
 
     expect(unmount).toHaveBeenCalledTimes(1);
+  });
+
+  it("ships a native-only LuCI render path without prototype iframe fallback", () => {
+    const settingsSource = readFileSync(
+      path.resolve(
+        process.cwd(),
+        "openwrt/luci-app-ccswitch/htdocs/luci-static/resources/view/ccswitch/settings.js",
+      ),
+      "utf8",
+    );
+
+    expect(settingsSource).toContain("renderNativePage: function");
+    expect(settingsSource).toContain("api.mountPage");
+    expect(settingsSource).not.toContain("renderStaticPrototype: function");
+    expect(settingsSource).not.toContain("handleStaticPrototypeFrameMessage");
+    expect(settingsSource).not.toContain("OPENWRT_STATIC_PROTOTYPE_MODE");
+    expect(settingsSource).not.toContain("new form.Map(");
+    expect(settingsSource).not.toContain("ccswitch-prototype-restart-result");
   });
 });
