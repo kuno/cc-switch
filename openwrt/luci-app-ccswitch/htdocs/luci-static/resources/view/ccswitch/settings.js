@@ -338,6 +338,13 @@ var callGetUsageSummary = rpc.declare({
 	expect: { '': {} }
 });
 
+var callGetProviderStats = rpc.declare({
+	object: 'ccswitch',
+	method: 'get_provider_stats',
+	params: ['app'],
+	expect: { '': {} }
+});
+
 var callSetHostConfig = rpc.declare({
 	object: 'ccswitch',
 	method: 'set_host_config',
@@ -461,6 +468,14 @@ function callOpenWrtUsageSummary(appId) {
 		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/usage-summary');
 	}, function () {
 		return L.resolveDefault(callGetUsageSummary(appId), { ok: false });
+	});
+}
+
+function callOpenWrtProviderStats(appId) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/provider-stats');
+	}, function () {
+		return L.resolveDefault(callGetProviderStats(appId), { ok: false });
 	});
 }
 
@@ -1095,6 +1110,25 @@ return view.extend({
 		};
 	},
 
+	normalizeProviderStats: function (response) {
+		var payload = response && typeof response === 'object' ? response : {};
+		var providers = Array.isArray(payload.providers) ? payload.providers : (Array.isArray(payload.value) ? payload.value : []);
+
+		return providers.map(function (provider) {
+			var item = provider && typeof provider === 'object' ? provider : {};
+
+			return {
+				providerId: item.providerId != null ? String(item.providerId) : '',
+				providerName: item.providerName != null ? String(item.providerName) : '',
+				requestCount: typeof item.requestCount === 'number' && isFinite(item.requestCount) ? item.requestCount : 0,
+				totalTokens: typeof item.totalTokens === 'number' && isFinite(item.totalTokens) ? item.totalTokens : 0,
+				totalCost: item.totalCost != null ? String(item.totalCost) : '0',
+				successRate: typeof item.successRate === 'number' && isFinite(item.successRate) ? item.successRate : 0,
+				avgLatencyMs: typeof item.avgLatencyMs === 'number' && isFinite(item.avgLatencyMs) ? item.avgLatencyMs : 0
+			};
+		});
+	},
+
 	loadNativeUsageSummary: function (appId) {
 		var selectedApp = this.isSupportedApp(appId) ? appId : this.getSelectedApp();
 
@@ -1103,6 +1137,17 @@ return view.extend({
 				throw new Error(this.rpcFailureMessage(response) || _('Failed to load usage summary.'));
 
 			return this.normalizeUsageSummary(response);
+		}, this));
+	},
+
+	loadNativeProviderStats: function (appId) {
+		var selectedApp = this.isSupportedApp(appId) ? appId : this.getSelectedApp();
+
+		return L.resolveDefault(callOpenWrtProviderStats(selectedApp), { ok: false }).then(L.bind(function (response) {
+			if (!this.isRpcSuccess(response))
+				throw new Error(this.rpcFailureMessage(response) || _('Failed to load provider stats.'));
+
+			return this.normalizeProviderStats(response);
 		}, this));
 	},
 
@@ -2352,6 +2397,9 @@ return view.extend({
 			},
 			getUsageSummary: async function (appId) {
 				return self.loadNativeUsageSummary(appId || uiState.selectedApp);
+			},
+			getProviderStats: async function (appId) {
+				return self.loadNativeProviderStats(appId || uiState.selectedApp);
 			},
 			saveHostConfig: async function (payload) {
 				return self.saveNativeHostConfig(uiState, payload);

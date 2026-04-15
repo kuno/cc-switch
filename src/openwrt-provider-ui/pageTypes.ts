@@ -66,10 +66,21 @@ export interface OpenWrtUsageSummary {
   successRate: number;
 }
 
+export interface OpenWrtProviderStat {
+  providerId: string;
+  providerName: string;
+  requestCount: number;
+  totalTokens: number;
+  totalCost: string;
+  successRate: number;
+  avgLatencyMs: number;
+}
+
 export interface OpenWrtSharedPageShellApi
   extends OpenWrtSharedProviderShellApi {
   getHostState(): OpenWrtHostState;
   getMessage(): OpenWrtPageMessage | null;
+  getProviderStats(appId: SharedProviderAppId): Promise<OpenWrtProviderStat[]>;
   getUsageSummary(appId: SharedProviderAppId): Promise<OpenWrtUsageSummary>;
   refreshHostState(): Promise<OpenWrtHostState>;
   saveHostConfig(host: OpenWrtHostConfigPayload): Promise<OpenWrtHostState>;

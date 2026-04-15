@@ -18,6 +18,7 @@ import type {
   OpenWrtHostState,
   OpenWrtPageMessage,
   OpenWrtPageTheme,
+  OpenWrtProviderStat,
   OpenWrtSharedPageMountOptions,
   OpenWrtUsageSummary,
 } from "./pageTypes";
@@ -36,6 +37,12 @@ type ShellSnapshot = {
 
 type UsageState = {
   summary: OpenWrtUsageSummary | null;
+  loading: boolean;
+  error: string | null;
+};
+
+type ProviderStatsState = {
+  providers: OpenWrtProviderStat[];
   loading: boolean;
   error: string | null;
 };
@@ -183,6 +190,14 @@ function formatUsd(value: string): string {
   }).format(numeric);
 }
 
+function formatLatency(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "n/a";
+  }
+
+  return `${Math.round(value)} ms`;
+}
+
 function getTotalTokenCount(summary: OpenWrtUsageSummary | null): number {
   if (!summary) {
     return 0;
@@ -269,6 +284,11 @@ export function OpenWrtPageShell({
   const [saveInFlight, setSaveInFlight] = useState(false);
   const [usageState, setUsageState] = useState<UsageState>({
     summary: null,
+    loading: true,
+    error: null,
+  });
+  const [providerStatsState, setProviderStatsState] = useState<ProviderStatsState>({
+    providers: [],
     loading: true,
     error: null,
   });
@@ -359,6 +379,45 @@ export function OpenWrtPageShell({
 
         setUsageState({
           summary: null,
+          loading: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [options, snapshot.host.app]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    setProviderStatsState({
+      providers: [],
+      loading: true,
+      error: null,
+    });
+
+    void options.shell
+      .getProviderStats(snapshot.host.app)
+      .then((providers) => {
+        if (cancelled) {
+          return;
+        }
+
+        setProviderStatsState({
+          providers,
+          loading: false,
+          error: null,
+        });
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+
+        setProviderStatsState({
+          providers: [],
           loading: false,
           error: error instanceof Error ? error.message : String(error),
         });
@@ -620,6 +679,55 @@ export function OpenWrtPageShell({
               </div>
             </div>
           )}
+          <div className="ccswitch-openwrt-workspace-shell__provider-usage">
+            <div className="ccswitch-openwrt-workspace-shell__provider-usage-head">
+              <div>
+                <p className="ccswitch-openwrt-daemon-card__eyebrow">
+                  Providers
+                </p>
+                <p className="ccswitch-openwrt-workspace-shell__usage-summary">
+                  Recent local totals grouped by provider for the selected app.
+                </p>
+              </div>
+            </div>
+            {providerStatsState.error ? (
+              <div className="ccswitch-openwrt-page-note ccswitch-openwrt-page-note--info">
+                {providerStatsState.error}
+              </div>
+            ) : providerStatsState.loading ? (
+              <div className="ccswitch-openwrt-workspace-shell__provider-usage-empty">
+                Loading provider usage…
+              </div>
+            ) : providerStatsState.providers.length > 0 ? (
+              <div className="ccswitch-openwrt-workspace-shell__provider-usage-list">
+                {providerStatsState.providers.slice(0, 5).map((provider) => (
+                  <div
+                    className="ccswitch-openwrt-workspace-shell__provider-usage-row"
+                    key={`${provider.providerId}-${provider.providerName}`}
+                  >
+                    <div className="ccswitch-openwrt-workspace-shell__provider-usage-main">
+                      <p className="ccswitch-openwrt-workspace-shell__provider-name">
+                        {provider.providerName || provider.providerId}
+                      </p>
+                      <p className="ccswitch-openwrt-workspace-shell__provider-meta">
+                        {formatCount(provider.requestCount)} requests ·{" "}
+                        {formatCount(provider.totalTokens)} tokens ·{" "}
+                        {formatLatency(provider.avgLatencyMs)}
+                      </p>
+                    </div>
+                    <div className="ccswitch-openwrt-workspace-shell__provider-usage-metrics">
+                      <span>{formatUsd(provider.totalCost)}</span>
+                      <span>{formatPercent(provider.successRate)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="ccswitch-openwrt-workspace-shell__provider-usage-empty">
+                No provider usage has been recorded for this app yet.
+              </div>
+            )}
+          </div>
         </div>
         <div className="ccswitch-openwrt-workspace-shell__body">
           <QueryClientProvider client={queryClient}>

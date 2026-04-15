@@ -276,6 +276,17 @@ function getUsageSummary(app) {
 	);
 }
 
+function getProviderStats(app) {
+	let normalizedApp = normalizeApp(app);
+
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
+
+	return runResultCommand(
+		daemonCommand(`openwrt ${shellquote(normalizedApp)} get-provider-stats`)
+	);
+}
+
 function getAvailableFailoverProviders(app) {
 	let normalizedApp = normalizeApp(app);
 
@@ -507,6 +518,16 @@ return {
 
 			call: function(request) {
 				return getUsageSummary(request.args.app);
+			}
+		},
+
+		get_provider_stats: {
+			args: {
+				app: 'claude'
+			},
+
+			call: function(request) {
+				return getProviderStats(request.args.app);
 			}
 		},
 

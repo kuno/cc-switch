@@ -846,6 +846,26 @@ describe("OpenWrt provider UI bundle", () => {
       clearMessage: vi.fn(),
       getHostState: vi.fn().mockImplementation(() => hostState),
       getMessage: vi.fn().mockReturnValue(null),
+      getProviderStats: vi.fn().mockResolvedValue([
+        {
+          providerId: "claude-primary",
+          providerName: "OpenAI Official",
+          requestCount: 8,
+          totalTokens: 1320,
+          totalCost: "0.82",
+          successRate: 87.5,
+          avgLatencyMs: 418,
+        },
+        {
+          providerId: "claude-backup",
+          providerName: "MiniMax Backup",
+          requestCount: 4,
+          totalTokens: 470,
+          totalCost: "0.41",
+          successRate: 75,
+          avgLatencyMs: 612,
+        },
+      ]),
       getSelectedApp: vi.fn().mockImplementation(() => selectedApp),
       getUsageSummary: vi.fn().mockResolvedValue({
         totalRequests: 12,
@@ -922,6 +942,10 @@ describe("OpenWrt provider UI bundle", () => {
     expect(target).toHaveTextContent("$1.23");
     expect(target).toHaveTextContent("1,790");
     expect(target).toHaveTextContent("83.3%");
+    expect(target).toHaveTextContent("OpenAI Official");
+    expect(target).toHaveTextContent("MiniMax Backup");
+    expect(target).toHaveTextContent("$0.82");
+    expect(target).toHaveTextContent("87.5%");
     expect(
       within(target).getByRole("button", { name: "Save" }),
     ).toBeDisabled();
@@ -954,6 +978,7 @@ describe("OpenWrt provider UI bundle", () => {
       logLevel: "debug",
     });
     expect(shell.getUsageSummary).toHaveBeenCalledWith("claude");
+    expect(shell.getProviderStats).toHaveBeenCalledWith("claude");
 
     await act(async () => {
       if (typeof handle === "function") {
