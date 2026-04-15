@@ -19,7 +19,10 @@ use super::{
 };
 use crate::proxy::providers::codex_oauth_auth::CodexOAuthManager;
 use crate::proxy::providers::copilot_auth::CopilotAuthManager;
-use crate::{app_config::AppType, provider::Provider};
+use crate::{
+    app_config::AppType,
+    provider::{Provider, ProviderProxyConfig},
+};
 use http::Extensions;
 use serde_json::Value;
 use std::sync::Arc;
@@ -60,6 +63,13 @@ pub struct RequestForwarder {
     /// AppHandle for failover UI updates (desktop only)
     #[cfg(feature = "tauri-desktop")]
     app_handle: Option<tauri::AppHandle>,
+}
+
+fn resolve_upstream_proxy_url(proxy_config: Option<&ProviderProxyConfig>) -> Option<String> {
+    proxy_config
+        .filter(|config| config.enabled)
+        .and_then(super::http_client::build_proxy_url_from_config)
+        .or_else(super::http_client::get_current_proxy_url)
 }
 
 impl RequestForwarder {
@@ -1313,10 +1323,7 @@ impl RequestForwarder {
 
         // 解析上游代理 URL（供应商单独代理 > 全局代理 > 无）
         let proxy_config = provider.meta.as_ref().and_then(|m| m.proxy_config.as_ref());
-        let upstream_proxy_url: Option<String> = proxy_config
-            .filter(|c| c.enabled)
-            .and_then(super::http_client::build_proxy_url_from_config)
-            .or_else(super::http_client::get_current_proxy_url);
+        let upstream_proxy_url = resolve_upstream_proxy_url(proxy_config);
 
         // SOCKS5 代理不支持 CONNECT 隧道，需要用 reqwest
         let is_socks_proxy = upstream_proxy_url
@@ -1703,6 +1710,7 @@ mod tests {
     use axum::http::header::{HeaderValue, ACCEPT};
     use axum::http::HeaderMap;
     use serde_json::json;
+    use serial_test::serial;
 
     #[test]
     fn single_provider_retryable_log_uses_single_provider_code() {
@@ -1864,6 +1872,42 @@ mod tests {
             &json!({ "model": "gpt-5" }),
             &headers
         ));
+    }
+
+    #[test]
+    #[serial]
+    fn resolve_upstream_proxy_url_prefers_provider_proxy_over_runtime_global_proxy() {
+        super::super::http_client::update_proxy(Some("http://127.0.0.1:7890"))
+            .expect("set runtime proxy");
+
+        let provider_proxy = ProviderProxyConfig {
+            enabled: true,
+            proxy_type: Some("http".to_string()),
+            proxy_host: Some("provider.proxy".to_string()),
+            proxy_port: Some(8080),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            resolve_upstream_proxy_url(Some(&provider_proxy)).as_deref(),
+            Some("http://provider.proxy:8080")
+        );
+
+        super::super::http_client::update_proxy(None).expect("clear runtime proxy");
+    }
+
+    #[test]
+    #[serial]
+    fn resolve_upstream_proxy_url_falls_back_to_runtime_global_proxy() {
+        super::super::http_client::update_proxy(Some("http://127.0.0.1:7890"))
+            .expect("set runtime proxy");
+
+        assert_eq!(
+            resolve_upstream_proxy_url(None).as_deref(),
+            Some("http://127.0.0.1:7890")
+        );
+
+        super::super::http_client::update_proxy(None).expect("clear runtime proxy");
     }
 
     // ==================== Copilot 动态 endpoint 路由相关测试 ====================

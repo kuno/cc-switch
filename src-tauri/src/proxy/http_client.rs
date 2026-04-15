@@ -207,6 +207,21 @@ pub fn get_current_proxy_url() -> Option<String> {
         .and_then(|url| url.clone())
 }
 
+/// 从 OpenWrt 主机级代理环境变量解析单一全局上游代理 URL。
+///
+/// `forwarder.rs` 的正常 Provider 转发路径只消费一个全局代理真值，因此
+/// OpenWrt 启动时需要把 `https_proxy` / `http_proxy` 折叠成单一运行态来源。
+/// 这里优先使用 `https_proxy`，因为常规 Provider 流量主要走 HTTPS；若未设置，
+/// 再回退到 `http_proxy`。
+pub fn get_host_proxy_url_from_env() -> Option<String> {
+    const KEYS: [&str; 4] = ["https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY"];
+
+    KEYS.iter()
+        .filter_map(|key| env::var(key).ok())
+        .map(|value| value.trim().to_string())
+        .find(|value| !value.is_empty())
+}
+
 /// 检查是否正在使用代理
 #[allow(dead_code)]
 pub fn is_proxy_enabled() -> bool {
@@ -541,6 +556,47 @@ mod tests {
         assert!(!system_proxy_points_to_loopback());
 
         for key in &keys {
+            std::env::remove_var(key);
+        }
+    }
+
+    #[test]
+    fn host_proxy_url_from_env_prefers_https_over_http() {
+        let _guard = env_lock().lock().unwrap();
+
+        for key in ["http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY"] {
+            std::env::remove_var(key);
+        }
+
+        std::env::set_var("http_proxy", "http://127.0.0.1:7890");
+        std::env::set_var("https_proxy", "http://127.0.0.1:9443");
+
+        assert_eq!(
+            get_host_proxy_url_from_env().as_deref(),
+            Some("http://127.0.0.1:9443")
+        );
+
+        for key in ["http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY"] {
+            std::env::remove_var(key);
+        }
+    }
+
+    #[test]
+    fn host_proxy_url_from_env_falls_back_to_http_proxy() {
+        let _guard = env_lock().lock().unwrap();
+
+        for key in ["http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY"] {
+            std::env::remove_var(key);
+        }
+
+        std::env::set_var("HTTP_PROXY", " http://10.0.0.2:8080 ");
+
+        assert_eq!(
+            get_host_proxy_url_from_env().as_deref(),
+            Some("http://10.0.0.2:8080")
+        );
+
+        for key in ["http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY"] {
             std::env::remove_var(key);
         }
     }
