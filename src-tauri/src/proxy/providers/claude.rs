@@ -171,6 +171,9 @@ pub fn transform_claude_request_for_api_format(
 /// Claude 适配器
 pub struct ClaudeAdapter;
 
+const CLAUDE_CLIENT_PASSTHROUGH_AUTH_MODE: &str = "client_passthrough";
+const CLAUDE_OFFICIAL_PROVIDER_ID: &str = "claude-official";
+
 impl ClaudeAdapter {
     pub fn new() -> Self {
         Self
@@ -187,7 +190,7 @@ impl ClaudeAdapter {
     pub fn provider_type(&self, provider: &Provider) -> ProviderType {
         // 检测 Gemini Native 格式
         if self.get_api_format(provider) == "gemini_native" {
-            return match self.extract_key(provider) {
+            return match self.extract_key(provider, false) {
                 Some(key) if key.starts_with("ya29.") || key.starts_with('{') => {
                     ProviderType::GeminiCli
                 }
@@ -238,7 +241,7 @@ impl ClaudeAdapter {
         }
 
         // 方式2: 检查 base_url（兼容旧数据的 fallback，后续应优先依赖 providerType）
-        if let Ok(base_url) = self.extract_base_url(provider) {
+        if let Some(base_url) = self.extract_configured_base_url(provider) {
             if base_url.contains("githubcopilot.com") {
                 return true;
             }
@@ -249,7 +252,7 @@ impl ClaudeAdapter {
 
     /// 检测是否使用 OpenRouter
     fn is_openrouter(&self, provider: &Provider) -> bool {
-        if let Ok(base_url) = self.extract_base_url(provider) {
+        if let Some(base_url) = self.extract_configured_base_url(provider) {
             return base_url.contains("openrouter.ai");
         }
         false
@@ -290,8 +293,55 @@ impl ClaudeAdapter {
         false
     }
 
+    /// 检测是否启用了显式客户端透传模式。
+    ///
+    /// 该模式允许在 provider 自身未配置认证信息时，保留客户端传入的
+    /// `Authorization` header。内置的 `claude-official` 预设默认视为此模式，
+    /// 以兼容已有数据库里的历史 seed 数据。
+    fn is_client_passthrough_mode(&self, provider: &Provider) -> bool {
+        if provider.id == CLAUDE_OFFICIAL_PROVIDER_ID {
+            return true;
+        }
+
+        if let Some(auth_mode) = provider
+            .settings_config
+            .get("auth_mode")
+            .and_then(|v| v.as_str())
+        {
+            if auth_mode == CLAUDE_CLIENT_PASSTHROUGH_AUTH_MODE {
+                return true;
+            }
+        }
+
+        if let Some(env) = provider.settings_config.get("env") {
+            if let Some(auth_mode) = env.get("AUTH_MODE").and_then(|v| v.as_str()) {
+                if auth_mode == CLAUDE_CLIENT_PASSTHROUGH_AUTH_MODE {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    fn extract_configured_base_url(&self, provider: &Provider) -> Option<String> {
+        if let Some(env) = provider.settings_config.get("env") {
+            if let Some(url) = env.get("ANTHROPIC_BASE_URL").and_then(|v| v.as_str()) {
+                return Some(url.trim_end_matches('/').to_string());
+            }
+        }
+
+        provider
+            .settings_config
+            .get("base_url")
+            .or_else(|| provider.settings_config.get("baseURL"))
+            .or_else(|| provider.settings_config.get("apiEndpoint"))
+            .and_then(|v| v.as_str())
+            .map(|url| url.trim_end_matches('/').to_string())
+    }
+
     /// 从 Provider 配置中提取 API Key
-    fn extract_key(&self, provider: &Provider) -> Option<String> {
+    fn extract_key(&self, provider: &Provider, log_missing_warning: bool) -> Option<String> {
         if let Some(env) = provider.settings_config.get("env") {
             // Anthropic 标准 key
             if let Some(key) = env
@@ -347,7 +397,9 @@ impl ClaudeAdapter {
             return Some(key.to_string());
         }
 
-        log::warn!("[Claude] 未找到有效的 API Key");
+        if log_missing_warning {
+            log::warn!("[Claude] 未找到有效的 API Key");
+        }
         None
     }
 }
@@ -370,35 +422,13 @@ impl ProviderAdapter for ClaudeAdapter {
         }
 
         // 1. 从 env 中获取
-        if let Some(env) = provider.settings_config.get("env") {
-            if let Some(url) = env.get("ANTHROPIC_BASE_URL").and_then(|v| v.as_str()) {
-                return Ok(url.trim_end_matches('/').to_string());
-            }
+        // 1. 从配置中获取
+        if let Some(url) = self.extract_configured_base_url(provider) {
+            return Ok(url);
         }
 
-        // 2. 尝试直接获取
-        if let Some(url) = provider
-            .settings_config
-            .get("base_url")
-            .and_then(|v| v.as_str())
-        {
-            return Ok(url.trim_end_matches('/').to_string());
-        }
-
-        if let Some(url) = provider
-            .settings_config
-            .get("baseURL")
-            .and_then(|v| v.as_str())
-        {
-            return Ok(url.trim_end_matches('/').to_string());
-        }
-
-        if let Some(url) = provider
-            .settings_config
-            .get("apiEndpoint")
-            .and_then(|v| v.as_str())
-        {
-            return Ok(url.trim_end_matches('/').to_string());
+        if self.allows_inbound_auth_passthrough(provider) {
+            return Ok(ProviderType::Claude.default_endpoint().to_string());
         }
 
         Err(ProxyError::ConfigError(
@@ -428,7 +458,14 @@ impl ProviderAdapter for ClaudeAdapter {
             ));
         }
 
-        let key = self.extract_key(provider)?;
+        let key = self.extract_key(provider, !self.allows_inbound_auth_passthrough(provider));
+
+        if key.is_none() && self.allows_inbound_auth_passthrough(provider) {
+            log::debug!("[Claude] 使用客户端 Authorization 透传模式");
+            return None;
+        }
+
+        let key = key?;
 
         match provider_type {
             ProviderType::GeminiCli => {
@@ -465,6 +502,14 @@ impl ProviderAdapter for ClaudeAdapter {
             ProviderType::ClaudeAuth => Some(AuthInfo::new(key, AuthStrategy::ClaudeAuth)),
             _ => Some(AuthInfo::new(key, AuthStrategy::Anthropic)),
         }
+    }
+
+    fn allows_inbound_auth_passthrough(&self, provider: &Provider) -> bool {
+        self.is_client_passthrough_mode(provider)
+            && !self.is_codex_oauth(provider)
+            && !self.is_github_copilot(provider)
+            && !self.is_openrouter(provider)
+            && !self.is_bearer_only_mode(provider)
     }
 
     fn build_url(&self, base_url: &str, endpoint: &str) -> String {
@@ -667,6 +712,13 @@ mod tests {
             icon: None,
             icon_color: None,
             in_failover_queue: false,
+        }
+    }
+
+    fn create_provider_with_id(id: &str, config: serde_json::Value) -> Provider {
+        Provider {
+            id: id.to_string(),
+            ..create_provider(config)
         }
     }
 
@@ -915,6 +967,46 @@ mod tests {
         let auth = adapter.extract_auth(&provider).unwrap();
         assert_eq!(auth.access_token.as_deref(), Some("ya29.raw-token-value"));
         assert_eq!(auth.strategy, AuthStrategy::GoogleOAuth);
+    }
+
+    #[test]
+    fn test_extract_base_url_client_passthrough_defaults_to_anthropic() {
+        let adapter = ClaudeAdapter::new();
+        let provider = create_provider(json!({
+            "auth_mode": "client_passthrough",
+            "env": {}
+        }));
+
+        let url = adapter.extract_base_url(&provider).unwrap();
+        assert_eq!(url, "https://api.anthropic.com");
+    }
+
+    #[test]
+    fn test_extract_auth_client_passthrough_without_provider_key() {
+        let adapter = ClaudeAdapter::new();
+        let provider = create_provider(json!({
+            "auth_mode": "client_passthrough",
+            "env": {}
+        }));
+
+        assert!(adapter.extract_auth(&provider).is_none());
+        assert!(adapter.allows_inbound_auth_passthrough(&provider));
+    }
+
+    #[test]
+    fn test_claude_official_seed_defaults_to_client_passthrough() {
+        let adapter = ClaudeAdapter::new();
+        let provider = create_provider_with_id(
+            "claude-official",
+            json!({
+                "env": {}
+            }),
+        );
+
+        let url = adapter.extract_base_url(&provider).unwrap();
+        assert_eq!(url, "https://api.anthropic.com");
+        assert!(adapter.extract_auth(&provider).is_none());
+        assert!(adapter.allows_inbound_auth_passthrough(&provider));
     }
 
     #[test]
