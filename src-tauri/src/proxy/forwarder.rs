@@ -72,6 +72,25 @@ fn resolve_upstream_proxy_url(proxy_config: Option<&ProviderProxyConfig>) -> Opt
         .or_else(super::http_client::get_current_proxy_url)
 }
 
+fn build_effective_auth_headers(
+    incoming_name: &http::HeaderName,
+    incoming_value: &http::HeaderValue,
+    auth_headers: &[(http::HeaderName, http::HeaderValue)],
+    allow_inbound_authorization_passthrough: bool,
+) -> Vec<(http::HeaderName, http::HeaderValue)> {
+    if !auth_headers.is_empty() {
+        return auth_headers.to_vec();
+    }
+
+    if allow_inbound_authorization_passthrough
+        && incoming_name.as_str().eq_ignore_ascii_case("authorization")
+    {
+        return vec![(incoming_name.clone(), incoming_value.clone())];
+    }
+
+    Vec::new()
+}
+
 impl RequestForwarder {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -1064,6 +1083,8 @@ impl RequestForwarder {
         } else {
             Vec::new()
         };
+        let allow_inbound_authorization_passthrough =
+            auth_headers.is_empty() && adapter.allows_inbound_auth_passthrough(provider);
 
         // 注入 Codex OAuth 的 ChatGPT-Account-Id header（如果有 account_id）
         if let Some(ref account_id) = codex_oauth_account_id {
@@ -1199,9 +1220,18 @@ impl RequestForwarder {
                 || key_str.eq_ignore_ascii_case("x-goog-api-key")
             {
                 if !saw_auth {
-                    saw_auth = true;
-                    for (ah_name, ah_value) in &auth_headers {
-                        ordered_headers.append(ah_name.clone(), ah_value.clone());
+                    let effective_auth_headers = build_effective_auth_headers(
+                        key,
+                        value,
+                        &auth_headers,
+                        allow_inbound_authorization_passthrough,
+                    );
+
+                    if !effective_auth_headers.is_empty() {
+                        saw_auth = true;
+                        for (ah_name, ah_value) in effective_auth_headers {
+                            ordered_headers.append(ah_name, ah_value);
+                        }
                     }
                 }
                 continue;
@@ -1908,6 +1938,54 @@ mod tests {
         );
 
         super::super::http_client::update_proxy(None).expect("clear runtime proxy");
+    }
+
+    #[test]
+    fn build_effective_auth_headers_preserves_inbound_authorization_when_enabled() {
+        let headers = build_effective_auth_headers(
+            &http::HeaderName::from_static("authorization"),
+            &http::HeaderValue::from_static("Bearer inbound-token"),
+            &[],
+            true,
+        );
+
+        assert_eq!(headers.len(), 1);
+        assert_eq!(headers[0].0, http::HeaderName::from_static("authorization"));
+        assert_eq!(
+            headers[0].1,
+            http::HeaderValue::from_static("Bearer inbound-token")
+        );
+    }
+
+    #[test]
+    fn build_effective_auth_headers_prefers_provider_auth_over_inbound_authorization() {
+        let headers = build_effective_auth_headers(
+            &http::HeaderName::from_static("authorization"),
+            &http::HeaderValue::from_static("Bearer inbound-token"),
+            &[(
+                http::HeaderName::from_static("authorization"),
+                http::HeaderValue::from_static("Bearer provider-token"),
+            )],
+            true,
+        );
+
+        assert_eq!(headers.len(), 1);
+        assert_eq!(
+            headers[0].1,
+            http::HeaderValue::from_static("Bearer provider-token")
+        );
+    }
+
+    #[test]
+    fn build_effective_auth_headers_does_not_passthrough_non_authorization_headers() {
+        let headers = build_effective_auth_headers(
+            &http::HeaderName::from_static("x-api-key"),
+            &http::HeaderValue::from_static("client-key"),
+            &[],
+            true,
+        );
+
+        assert!(headers.is_empty());
     }
 
     // ==================== Copilot 动态 endpoint 路由相关测试 ====================
