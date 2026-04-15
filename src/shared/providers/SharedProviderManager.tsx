@@ -183,6 +183,7 @@ function createDraftFromPreset(
     baseUrl: preset.baseUrl,
     tokenField: preset.tokenField,
     model: preset.model,
+    authMode: preset.authMode,
   };
 }
 

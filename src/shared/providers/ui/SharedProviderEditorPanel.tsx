@@ -462,14 +462,17 @@ export function SharedProviderEditorPanel({
                           })
                         }
                         placeholder={
-                          mode === "edit" &&
-                          supportsBlankSecretPreserve &&
-                          hasStoredSecret
-                            ? "Leave blank to keep the stored secret"
-                            : "Enter the secret for this provider"
+                          draft.authMode === "client_passthrough"
+                            ? "Optional — client credentials forwarded automatically"
+                            : mode === "edit" &&
+                                supportsBlankSecretPreserve &&
+                                hasStoredSecret
+                              ? "Leave blank to keep the stored secret"
+                              : "Enter the secret for this provider"
                         }
                         required={
-                          mode === "add" || !supportsBlankSecretPreserve
+                          (mode === "add" || !supportsBlankSecretPreserve) &&
+                          draft.authMode !== "client_passthrough"
                         }
                         disabled={disabled}
                       />
