@@ -393,21 +393,6 @@ export function RequestLogTable({
                 <Button variant="outline" size="sm" onClick={handleGoToPage}>
                   {t("usage.goToPage")}
                 </Button>
-                <div className="flex items-center gap-1 ml-2">
-                  <Input
-                    type="text"
-                    value={pageInput}
-                    onChange={(e) => setPageInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleGoToPage();
-                    }}
-                    placeholder={t("usage.pageInputPlaceholder")}
-                    className="h-8 w-16 text-center text-xs"
-                  />
-                  <Button variant="outline" size="sm" onClick={handleGoToPage}>
-                    {t("usage.goToPage")}
-                  </Button>
-                </div>
               </div>
             </div>
           </div>
