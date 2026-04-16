@@ -349,6 +349,17 @@ impl Database {
             [],
         );
 
+        // 19. Rate Limit Snapshots 表 (quota data persisted on shutdown)
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS rate_limit_snapshots (
+                provider_id TEXT PRIMARY KEY,
+                snapshot_json TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
+            )",
+            [],
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
         Ok(())
     }
 
@@ -417,6 +428,11 @@ impl Database {
                         log::info!("迁移数据库从 v7 到 v8（会话日志使用追踪 + 修正模型定价）");
                         Self::migrate_v7_to_v8(conn)?;
                         Self::set_user_version(conn, 8)?;
+                    }
+                    8 => {
+                        log::info!("迁移数据库从 v8 到 v9（Rate limit quota persistence）");
+                        Self::migrate_v8_to_v9(conn)?;
+                        Self::set_user_version(conn, 9)?;
                     }
                     _ => {
                         return Err(AppError::Database(format!(
@@ -1141,6 +1157,21 @@ impl Database {
         }
 
         log::info!("v7 -> v8 迁移完成：data_source 列、session_log_sync 表、修正 13 个模型定价");
+        Ok(())
+    }
+
+    fn migrate_v8_to_v9(conn: &Connection) -> Result<(), AppError> {
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS rate_limit_snapshots (
+                provider_id TEXT PRIMARY KEY,
+                snapshot_json TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
+            )",
+            [],
+        )
+        .map_err(|e| AppError::Database(format!("创建 rate_limit_snapshots 表失败: {e}")))?;
+
+        log::info!("v8 -> v9 迁移完成：rate_limit_snapshots 表");
         Ok(())
     }
 

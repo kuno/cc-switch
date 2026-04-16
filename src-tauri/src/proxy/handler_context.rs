@@ -229,6 +229,7 @@ impl RequestContext {
             self.rectifier_config.clone(),
             self.optimizer_config.clone(),
             self.copilot_optimizer_config.clone(),
+            state.rate_limits.clone(),
             #[cfg(feature = "tauri-desktop")]
             state.app_handle.clone(),
         )

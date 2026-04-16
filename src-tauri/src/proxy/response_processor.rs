@@ -163,6 +163,18 @@ pub async fn handle_streaming(
         );
     }
 
+    // Capture rate limit headers before forwarding
+    {
+        let rl_store = state.rate_limits.clone();
+        let headers = response.headers().clone();
+        let app = ctx.app_type_str.to_string();
+        let pid = ctx.provider.id.clone();
+        let pname = ctx.provider.name.clone();
+        tokio::spawn(async move {
+            super::rate_limit::capture_rate_limits(&rl_store, &headers, &app, &pid, &pname).await;
+        });
+    }
+
     let mut builder = axum::response::Response::builder().status(status);
 
     // 复制响应头
@@ -209,6 +221,18 @@ pub async fn handle_non_streaming(
         };
     let (response_headers, status, body_bytes) =
         read_decoded_body(response, ctx.tag, body_timeout).await?;
+
+    // Capture rate limit headers before forwarding
+    {
+        let rl_store = state.rate_limits.clone();
+        let headers = response_headers.clone();
+        let app = ctx.app_type_str.to_string();
+        let pid = ctx.provider.id.clone();
+        let pname = ctx.provider.name.clone();
+        tokio::spawn(async move {
+            super::rate_limit::capture_rate_limits(&rl_store, &headers, &app, &pid, &pname).await;
+        });
+    }
 
     log::debug!(
         "[{}] 上游响应体内容: {}",
@@ -730,6 +754,7 @@ mod tests {
             #[cfg(feature = "tauri-desktop")]
             app_handle: None,
             failover_manager: Arc::new(FailoverSwitchManager::new(db, current_providers)),
+            rate_limits: crate::proxy::rate_limit::new_rate_limit_store(),
         }
     }
 

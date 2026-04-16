@@ -86,6 +86,8 @@ pub struct ProxyState {
     pub app_handle: Option<tauri::AppHandle>,
     /// 故障转移切换管理器
     pub failover_manager: Arc<FailoverSwitchManager>,
+    /// Per-provider rate limit snapshots from upstream response headers
+    pub rate_limits: super::rate_limit::RateLimitStore,
 }
 
 /// 代理HTTP服务器
@@ -115,6 +117,19 @@ impl ProxyServer {
             current_providers.clone(),
         ));
 
+        let rate_limits = {
+            let store = super::rate_limit::new_rate_limit_store();
+            let snapshots = db.load_rate_limit_snapshots();
+            if !snapshots.is_empty() {
+                log::info!("[RateLimit] loaded {} persisted snapshots from DB", snapshots.len());
+                let mut map = store.try_write().expect("rate_limit store lock on init");
+                for s in snapshots {
+                    map.insert(s.provider_id.clone(), s);
+                }
+            }
+            store
+        };
+
         let state = ProxyState {
             db,
             config: Arc::new(RwLock::new(config.clone())),
@@ -127,6 +142,7 @@ impl ProxyServer {
             #[cfg(feature = "tauri-desktop")]
             app_handle,
             failover_manager,
+            rate_limits,
         };
 
         Self {
@@ -265,6 +281,18 @@ impl ProxyServer {
     }
 
     pub async fn stop(&self) -> Result<(), ProxyError> {
+        // 0. Persist rate limit snapshots to DB before shutdown
+        {
+            let store = self.state.rate_limits.read().await;
+            let snapshots: Vec<_> = store.values().cloned().collect();
+            if !snapshots.is_empty() {
+                match self.state.db.flush_rate_limit_snapshots(&snapshots) {
+                    Ok(()) => log::info!("[RateLimit] flushed {} snapshots to DB", snapshots.len()),
+                    Err(e) => log::warn!("[RateLimit] failed to persist snapshots: {e}"),
+                }
+            }
+        }
+
         // 1. 发送关闭信号
         if let Some(tx) = self.shutdown_tx.write().await.take() {
             let _ = tx.send(());
@@ -333,6 +361,7 @@ impl ProxyServer {
             // 健康检查
             .route("/health", get(handlers::health_check))
             .route("/status", get(handlers::get_status))
+            .route("/api/quota", get(handlers::get_quota))
             // Claude API (支持带前缀和不带前缀两种格式)
             .route("/v1/messages", post(handlers::handle_messages))
             .route("/claude/v1/messages", post(handlers::handle_messages))
