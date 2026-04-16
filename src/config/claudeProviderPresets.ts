@@ -90,6 +90,27 @@ export const providerPresets: ProviderPreset[] = [
     icon: "anthropic",
     iconColor: "#D4915D",
   },
+  {
+    name: "Gemini Native",
+    websiteUrl: "https://ai.google.dev/gemini-api",
+    apiKeyUrl: "https://aistudio.google.com/app/apikey",
+    apiKeyField: "ANTHROPIC_API_KEY",
+    settingsConfig: {
+      env: {
+        ANTHROPIC_BASE_URL: "https://generativelanguage.googleapis.com",
+        ANTHROPIC_API_KEY: "",
+        ANTHROPIC_MODEL: "gemini-2.5-pro",
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: "gemini-2.5-flash",
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "gemini-2.5-pro",
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "gemini-2.5-pro",
+      },
+    },
+    category: "third_party",
+    apiFormat: "gemini_native",
+    endpointCandidates: ["https://generativelanguage.googleapis.com"],
+    icon: "gemini",
+    iconColor: "#4285F4",
+  },
   // ===== 赞助商预设：文件顺序 = 应用内展示顺序，与 README 赞助商表对齐 =====
   {
     name: "Kimi",
