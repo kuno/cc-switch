@@ -56,6 +56,18 @@ pub async fn health_check() -> (StatusCode, Json<Value>) {
     )
 }
 
+pub async fn get_quota(State(state): State<ProxyState>) -> (StatusCode, Json<Value>) {
+    let store = state.rate_limits.read().await;
+    let providers: Vec<_> = store.values().cloned().collect();
+    (
+        StatusCode::OK,
+        Json(json!({
+            "providers": providers,
+            "timestamp": chrono::Utc::now().to_rfc3339(),
+        })),
+    )
+}
+
 /// 获取服务状态
 pub async fn get_status(State(state): State<ProxyState>) -> Result<Json<ProxyStatus>, ProxyError> {
     let mut status = state.status.read().await.clone();

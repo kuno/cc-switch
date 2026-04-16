@@ -349,6 +349,17 @@ impl Database {
             [],
         );
 
+        // 19. Rate Limit Snapshots 表 (quota data persisted on shutdown)
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS rate_limit_snapshots (
+                provider_id TEXT PRIMARY KEY,
+                snapshot_json TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
+            )",
+            [],
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
         Ok(())
     }
 
@@ -419,7 +430,7 @@ impl Database {
                         Self::set_user_version(conn, 8)?;
                     }
                     8 => {
-                        log::info!("迁移数据库从 v8 到 v9（全面补充模型定价）");
+                        log::info!("迁移数据库从 v8 到 v9（模型定价刷新 + Rate limit quota persistence）");
                         Self::migrate_v8_to_v9(conn)?;
                         Self::set_user_version(conn, 9)?;
                     }
@@ -1149,7 +1160,7 @@ impl Database {
         Ok(())
     }
 
-    /// v8 → v9: 全面补充模型定价（清空 + 重新 seed）
+    /// v8 → v9: 全面补充模型定价（清空 + 重新 seed）并新增 rate_limit_snapshots 表
     fn migrate_v8_to_v9(conn: &Connection) -> Result<(), AppError> {
         conn.execute(
             "CREATE TABLE IF NOT EXISTS model_pricing (
@@ -1164,7 +1175,17 @@ impl Database {
         conn.execute("DELETE FROM model_pricing", [])
             .map_err(|e| AppError::Database(format!("清空模型定价失败: {e}")))?;
         Self::seed_model_pricing(conn)?;
-        log::info!("v8 -> v9 迁移完成：已刷新全部模型定价数据");
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS rate_limit_snapshots (
+                provider_id TEXT PRIMARY KEY,
+                snapshot_json TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
+            )",
+            [],
+        )
+        .map_err(|e| AppError::Database(format!("创建 rate_limit_snapshots 表失败: {e}")))?;
+
+        log::info!("v8 -> v9 迁移完成：已刷新全部模型定价数据并新增 rate_limit_snapshots 表");
         Ok(())
     }
 
