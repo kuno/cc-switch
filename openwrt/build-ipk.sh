@@ -28,7 +28,7 @@ DEFAULT_VERSION="$(read_make_var "$DAEMON_MAKEFILE" PKG_VERSION)"
 DEFAULT_RELEASE="$(read_make_var "$DAEMON_MAKEFILE" PKG_RELEASE)"
 CC_SWITCH_LEGACY_OWNERS="luci-app-cc-switch, luci-app-open-cc-switch"
 
-VERSION="${PKG_VERSION_OVERRIDE:-$DEFAULT_VERSION}"
+VERSION="${PKG_VERSION_OVERRIDE:-}"
 PKG_RELEASE="${PKG_RELEASE_OVERRIDE:-$DEFAULT_RELEASE}"
 DIST_DIR="$SCRIPT_DIR/dist"
 ARCH_ALIAS=""
@@ -75,6 +75,10 @@ die() {
 
 require_command() {
 	command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+git_describe_version() {
+	git -C "$PROJECT_DIR" describe --tags --always --dirty 2>/dev/null || true
 }
 
 ensure_openwrt_provider_ui_asset() {
@@ -169,7 +173,7 @@ resolve_target() {
 }
 
 validate_package_metadata() {
-	local luci_version luci_release
+	local luci_version luci_release described_version
 
 	[ -n "$DEFAULT_VERSION" ] || die "failed to determine package version from $DAEMON_MAKEFILE"
 	[ -n "$DEFAULT_RELEASE" ] || die "failed to determine package release from $DAEMON_MAKEFILE"
@@ -179,6 +183,16 @@ validate_package_metadata() {
 
 	[ "$DEFAULT_VERSION" = "$luci_version" ] || die "package version mismatch between daemon and LuCI makefiles"
 	[ "$DEFAULT_RELEASE" = "$luci_release" ] || die "package release mismatch between daemon and LuCI makefiles"
+
+	if [ -z "$VERSION" ]; then
+		described_version="$(git_describe_version)"
+		if [ -n "$described_version" ]; then
+			VERSION="$described_version"
+		else
+			VERSION="$DEFAULT_VERSION"
+		fi
+	fi
+
 	[ -n "$VERSION" ] || die "effective package version is empty"
 	[ -n "$PKG_RELEASE" ] || die "effective package release is empty"
 }

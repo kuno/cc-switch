@@ -40,10 +40,15 @@ Then build the IPKs:
 ./openwrt/build-ipk.sh aarch64
 ```
 
+By default, the standalone builder derives the package version from
+`git describe --tags --always --dirty` so the generated `.ipk` filenames and
+embedded control metadata match the current branch state. Use `--version` only
+when you need to override that derived version explicitly.
+
 This produces:
 
-- `openwrt/dist/cc-switch_0.2.0-1_aarch64_generic.ipk`
-- `openwrt/dist/luci-app-cc-switch_0.2.0-1_all.ipk`
+- `openwrt/dist/cc-switch_<git-describe>-1_aarch64_generic.ipk`
+- `openwrt/dist/luci-app-cc-switch_<git-describe>-1_all.ipk`
 
 Built-in target aliases:
 
