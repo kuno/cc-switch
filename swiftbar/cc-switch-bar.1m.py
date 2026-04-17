@@ -13,12 +13,7 @@ TIMEOUT = 5
 
 APP_ORDER = ["claude", "codex", "gemini"]
 
-STATUS_ICON = {
-    "allowed": "\u2705",
-    "allowed_warning": "\u26a0\ufe0f",
-    "exhausted": "\u274c",
-    "rejected": "\u274c",
-}
+STATUS_ICON = {}
 
 STATUS_COLOR = {
     "allowed": "#4ade80",
@@ -304,7 +299,7 @@ def main():
             total_tok = sum(s.get("totalTokens", 0) for s in app_stats)
             summary_parts = []
             if best_pct is not None:
-                summary_parts.append(f"{best_icon}{best_pct}%")
+                summary_parts.append(f"{best_icon} {best_pct}%".strip())
             if total_req > 0:
                 summary_parts.append(f"{total_req}r/{format_tokens(total_tok)}tok")
             summary = f" {' '.join(summary_parts)}" if summary_parts else ""
@@ -330,7 +325,8 @@ def main():
                 )
                 status = q.get("status") if q else None
                 status_icon = STATUS_ICON.get(status, "") if status else ""
-                print(f"--{status_icon} {name} | size=13")
+                provider_label = f"--{status_icon} {name}" if status_icon else f"--{name}"
+                print(f"{provider_label} | size=13")
 
                 if s:
                     print(render_stats_line(s, "--"))
