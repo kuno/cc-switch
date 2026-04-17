@@ -18,6 +18,7 @@
 
 mod app_store;
 mod openwrt_admin;
+mod version;
 
 #[path = "../../src-tauri/src/app_config.rs"]
 mod app_config;
@@ -91,6 +92,14 @@ async fn main() -> anyhow::Result<()> {
     install_rustls_crypto_provider();
 
     let args: Vec<String> = std::env::args().skip(1).collect();
+
+    if matches!(
+        args.as_slice(),
+        [flag] if matches!(flag.as_str(), "--version" | "-V" | "version")
+    ) {
+        println!("{}", version::build_version());
+        return Ok(());
+    }
 
     if !args.is_empty() {
         init_logger("warn");
@@ -353,7 +362,10 @@ fn sync_openwrt_host_proxy_into_runtime_state(db: &database::Database) -> anyhow
 }
 
 async fn run_daemon() -> anyhow::Result<()> {
-    log::info!("cc-switch proxy daemon starting...");
+    log::info!(
+        "cc-switch proxy daemon starting ({})...",
+        version::build_version()
+    );
 
     // Initialize database (uses ~/.cc-switch/cc-switch.db by default)
     let db =

@@ -36,6 +36,7 @@ export interface OpenWrtHostState {
   health: "healthy" | "degraded" | "stopped" | "unknown";
   listenAddr: string;
   listenPort: string;
+  version: string;
   serviceLabel: string;
   httpProxy: string;
   httpsProxy: string;

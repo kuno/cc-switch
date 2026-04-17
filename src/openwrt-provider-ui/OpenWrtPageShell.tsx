@@ -172,6 +172,12 @@ function getStatusLabel(status: OpenWrtHostState["status"]): string {
   return status === "running" ? "Running" : "Stopped";
 }
 
+function getVersionSummary(version: string): string {
+  const trimmed = version.trim();
+
+  return trimmed ? `Version ${trimmed}` : "Version unavailable";
+}
+
 function getMessageToneClass(message: OpenWrtPageMessage | null): string {
   if (!message) {
     return "";
@@ -612,8 +618,7 @@ export function OpenWrtPageShell({
               </span>
             </div>
             <p className="ccswitch-openwrt-daemon-card__summary">
-              {snapshot.host.listenAddr}:{snapshot.host.listenPort}
-              {snapshot.host.proxyEnabled ? " • outbound proxy enabled" : " • direct route"}
+              {getVersionSummary(snapshot.host.version)}
             </p>
           </div>
 

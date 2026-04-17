@@ -828,6 +828,7 @@ describe("OpenWrt provider UI bundle", () => {
       health: "healthy",
       listenAddr: "0.0.0.0",
       listenPort: "15721",
+      version: "v3.13.0-213-gbe1a81ae",
       serviceLabel: "Router daemon",
       httpProxy: "http://127.0.0.1:7890",
       httpsProxy: "http://127.0.0.1:7890",
@@ -967,7 +968,7 @@ describe("OpenWrt provider UI bundle", () => {
     expect(target).toHaveTextContent("Router daemon");
     expect(target).toHaveTextContent("Running");
     expect(target).toHaveTextContent("Healthy");
-    expect(target).toHaveTextContent("0.0.0.0:15721");
+    expect(target).toHaveTextContent("Version v3.13.0-213-gbe1a81ae");
     expect(target).toHaveTextContent("Usage summary");
     expect(target).toHaveTextContent("$1.23");
     expect(target).toHaveTextContent("1,790");
@@ -1259,6 +1260,7 @@ describe("OpenWrt provider UI bundle", () => {
       health: "healthy",
       listenAddr: "0.0.0.0",
       listenPort: "15721",
+      version: "v3.13.0",
       serviceLabel: "Router daemon",
       httpProxy: "",
       httpsProxy: "",

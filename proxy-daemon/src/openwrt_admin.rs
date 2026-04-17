@@ -9,6 +9,7 @@ use crate::proxy::providers::codex_oauth_store::{
 use crate::proxy::server::populate_status_active_targets;
 use crate::proxy::types::{AppProxyConfig, GlobalProxyConfig, ProviderHealth, ProxyStatus};
 use crate::services::usage_stats::{LogFilters, ProviderStats, UsageSummary};
+use crate::version;
 use anyhow::{anyhow, Context};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -147,6 +148,7 @@ pub struct OpenWrtServiceStatusView {
     pub reachable: bool,
     pub listen_address: String,
     pub listen_port: u16,
+    pub version: String,
     pub proxy_enabled: bool,
     pub enable_logging: bool,
     pub status_source: String,
@@ -520,6 +522,7 @@ pub async fn get_runtime_status(db: &Database) -> anyhow::Result<OpenWrtRuntimeS
             reachable,
             listen_address: service_config.listen_address.clone(),
             listen_port: service_config.listen_port,
+            version: version::build_version().to_string(),
             proxy_enabled: runtime_global_proxy_enabled,
             enable_logging: service_config.enable_logging,
             status_source,

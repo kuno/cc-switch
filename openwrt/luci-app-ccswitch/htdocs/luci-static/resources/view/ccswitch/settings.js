@@ -870,6 +870,7 @@ return view.extend({
 			reachable: !!(service && service.reachable),
 			listenAddress: service && service.listenAddress ? String(service.listenAddress) : '',
 			listenPort: service && service.listenPort != null ? String(service.listenPort) : '',
+			version: service && service.version ? String(service.version) : '',
 			proxyEnabled: !!(service && service.proxyEnabled),
 			enableLogging: !!(service && service.enableLogging),
 			statusSource: service && service.statusSource ? String(service.statusSource) : ''
@@ -1152,6 +1153,7 @@ return view.extend({
 			health: health,
 			listenAddr: hostConfig.listenAddr || runtime.listenAddress || '0.0.0.0',
 			listenPort: hostConfig.listenPort || runtime.listenPort || '15721',
+			version: runtime.version || '',
 			serviceLabel: _('Router daemon'),
 			httpProxy: hostConfig.httpProxy || '',
 			httpsProxy: hostConfig.httpsProxy || '',
@@ -1169,6 +1171,7 @@ return view.extend({
 			health: payload.health || 'unknown',
 			listenAddr: payload.listenAddr != null ? String(payload.listenAddr) : '',
 			listenPort: payload.listenPort != null ? String(payload.listenPort) : '',
+			version: payload.version != null ? String(payload.version) : '',
 			serviceLabel: payload.serviceLabel != null ? String(payload.serviceLabel) : _('Router daemon'),
 			httpProxy: payload.httpProxy != null ? String(payload.httpProxy) : '',
 			httpsProxy: payload.httpsProxy != null ? String(payload.httpsProxy) : '',

@@ -148,6 +148,7 @@ type StaticPrototypeSettings = SettingsView & {
     proxyEnabled: string;
     serviceLabel: string;
     status: string;
+    version: string;
   };
   loadStaticPrototypeHostBindings(): Promise<{
     app: AppId;
@@ -160,6 +161,7 @@ type StaticPrototypeSettings = SettingsView & {
     proxyEnabled: string;
     serviceLabel: string;
     status: string;
+    version: string;
   }>;
   normalizeStaticPrototypeHostPayload(payload: Record<string, unknown>): {
     httpProxy: string;
@@ -191,6 +193,7 @@ type StaticPrototypeSettings = SettingsView & {
     proxyEnabled: string;
     serviceLabel: string;
     status: string;
+    version: string;
   }>;
 };
 
@@ -704,6 +707,7 @@ describe("OpenWrt settings shared-provider shell", () => {
           reachable: true,
           listenAddress: "10.0.0.5",
           listenPort: 18443,
+          version: "v3.13.0-213-gbe1a81ae",
           proxyEnabled: false,
           enableLogging: true,
           statusSource: "live-status",
@@ -728,6 +732,7 @@ describe("OpenWrt settings shared-provider shell", () => {
       listenPort: "15721",
       proxyEnabled: "0",
       status: "running",
+      version: "v3.13.0-213-gbe1a81ae",
     });
     expect(fetchMock).toHaveBeenCalledWith(
       "http://router.example:15721/openwrt/admin/runtime",
@@ -871,6 +876,7 @@ describe("OpenWrt settings shared-provider shell", () => {
           reachable: false,
           listenAddress: "10.0.0.5",
           listenPort: 18443,
+          version: "v3.13.0-213-gbe1a81ae",
           proxyEnabled: false,
           enableLogging: true,
           statusSource: "runtime",
@@ -889,6 +895,7 @@ describe("OpenWrt settings shared-provider shell", () => {
       proxyEnabled: "0",
       serviceLabel: "Router daemon",
       status: "running",
+      version: "v3.13.0-213-gbe1a81ae",
     });
 
     const failover = staticPrototypeSettings.parseStaticPrototypeFailoverState(
