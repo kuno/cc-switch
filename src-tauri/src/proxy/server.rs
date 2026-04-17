@@ -517,6 +517,10 @@ impl ProxyServer {
 mod tests {
     use super::*;
     use crate::database::Database;
+    use crate::provider::Provider;
+    use crate::proxy::rate_limit::RateLimitSnapshot;
+    use axum::{extract::State, http::StatusCode};
+    use serde_json::json;
 
     #[tokio::test]
     async fn get_status_prefers_claude_target_for_legacy_current_provider_fields() {
@@ -544,6 +548,102 @@ mod tests {
         assert_eq!(
             status.current_provider_id.as_deref(),
             Some("claude-provider")
+        );
+    }
+
+    #[tokio::test]
+    async fn get_quota_removes_stale_codex_subscription_snapshots_without_live_refresh_sources() {
+        let db = Arc::new(Database::memory().expect("init db"));
+        let server = ProxyServer::new(
+            ProxyConfig::default(),
+            db,
+            None,
+            None,
+            #[cfg(feature = "tauri-desktop")]
+            None,
+        );
+        let provider = Provider::with_id(
+            "provider-1".to_string(),
+            "Codex OAuth".to_string(),
+            json!({ "auth_mode": "codex_oauth" }),
+            None,
+        );
+        server
+            .state
+            .db
+            .save_provider("codex", &provider)
+            .expect("save codex provider");
+
+        {
+            let mut store = server.state.rate_limits.write().await;
+            store.insert(
+                provider.id.clone(),
+                RateLimitSnapshot {
+                    app_type: "codex".to_string(),
+                    provider_id: provider.id.clone(),
+                    provider_name: provider.name.clone(),
+                    source: Some("subscription_quota".to_string()),
+                    status: None,
+                    windows: Vec::new(),
+                    representative_claim: None,
+                    overage_status: None,
+                    fallback_percentage: None,
+                    requests_limit: None,
+                    requests_remaining: None,
+                    tokens_limit: None,
+                    tokens_remaining: None,
+                    captured_at: 1,
+                },
+            );
+            store.insert(
+                "claude-1".to_string(),
+                RateLimitSnapshot {
+                    app_type: "claude".to_string(),
+                    provider_id: "claude-1".to_string(),
+                    provider_name: "Claude Provider".to_string(),
+                    source: Some("subscription_quota".to_string()),
+                    status: None,
+                    windows: Vec::new(),
+                    representative_claim: None,
+                    overage_status: None,
+                    fallback_percentage: None,
+                    requests_limit: None,
+                    requests_remaining: None,
+                    tokens_limit: None,
+                    tokens_remaining: None,
+                    captured_at: 2,
+                },
+            );
+        }
+
+        let (status, body) = crate::proxy::handlers::get_quota(State(server.state.clone())).await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            body["providers"]
+                .as_array()
+                .expect("providers array")
+                .iter()
+                .all(|snapshot| snapshot["provider_id"] != provider.id),
+            "stale codex subscription quota snapshot should be absent from the quota response"
+        );
+        assert!(
+            body["providers"]
+                .as_array()
+                .expect("providers array")
+                .iter()
+                .any(|snapshot| snapshot["provider_id"] == "claude-1"),
+            "non-codex snapshots should remain present in the quota response"
+        );
+
+        let store = server.state.rate_limits.read().await;
+        assert!(
+            !store.contains_key(&provider.id),
+            "stale codex subscription quota snapshot should be removed when no live refresh source exists"
+        );
+        assert!(
+            store.contains_key("claude-1"),
+            "non-codex snapshots should not be touched by codex quota cleanup"
         );
     }
 }

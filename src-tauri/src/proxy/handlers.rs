@@ -81,54 +81,59 @@ async fn refresh_codex_quota_snapshots(state: &ProxyState) {
         }
     };
 
-    let current_codex_oauth_provider_ids: HashSet<String> = providers
-        .iter()
-        .filter_map(|(provider_id, provider)| {
-            is_codex_oauth_provider(provider).then_some(provider_id.clone())
-        })
-        .collect();
+    let mut live_refresh_provider_ids = HashSet::new();
+    let mut live_fetches = Vec::new();
 
-    let live_fetches = providers
-        .into_values()
-        .filter(is_codex_oauth_provider)
-        .filter_map(|provider| {
-            let auth = load_codex_auth_for_provider(&provider.id)?;
-            Some(async move {
-                let quota = query_codex_quota(
-                    &auth.access_token,
-                    auth.account_id.as_deref(),
-                    "codex_oauth",
-                    "Codex OAuth access token expired or rejected. Please re-login via cc-switch.",
-                )
-                .await;
+    for provider in providers.into_values().filter(is_codex_oauth_provider) {
+        let Some(auth) = load_codex_auth_for_provider(&provider.id) else {
+            continue;
+        };
 
-                if !quota.success {
-                    log::warn!(
-                        "[Quota] live Codex quota refresh failed for {}: {}",
-                        provider.id,
-                        quota
-                            .error
-                            .clone()
-                            .unwrap_or_else(|| "unknown upstream error".to_string())
-                    );
-                    return None;
-                }
+        live_refresh_provider_ids.insert(provider.id.clone());
+        live_fetches.push(async move {
+            let quota = query_codex_quota(
+                &auth.access_token,
+                auth.account_id.as_deref(),
+                "codex_oauth",
+                "Codex OAuth access token expired or rejected. Please re-login via cc-switch.",
+            )
+            .await;
 
-                let previous = {
-                    let store = state.rate_limits.read().await;
-                    store.get(&provider.id).cloned()
-                };
+            if !quota.success {
+                log::warn!(
+                    "[Quota] live Codex quota refresh failed for {}: {}",
+                    provider.id,
+                    quota
+                        .error
+                        .clone()
+                        .unwrap_or_else(|| "unknown upstream error".to_string())
+                );
+                return None;
+            }
 
-                super::rate_limit::snapshot_from_subscription_quota(
-                    "codex",
-                    &provider.id,
-                    &provider.name,
-                    &quota,
-                    previous.as_ref(),
-                )
-            })
-        })
-        .collect::<Vec<_>>();
+            let previous = {
+                let store = state.rate_limits.read().await;
+                store.get(&provider.id).cloned()
+            };
+
+            super::rate_limit::snapshot_from_subscription_quota(
+                "codex",
+                &provider.id,
+                &provider.name,
+                &quota,
+                previous.as_ref(),
+            )
+        });
+    }
+
+    {
+        let mut store = state.rate_limits.write().await;
+        store.retain(|_, snapshot| {
+            !(snapshot.app_type == "codex"
+                && snapshot.source.as_deref() == Some("subscription_quota")
+                && !live_refresh_provider_ids.contains(&snapshot.provider_id))
+        });
+    }
 
     if live_fetches.is_empty() {
         return;
@@ -136,11 +141,6 @@ async fn refresh_codex_quota_snapshots(state: &ProxyState) {
 
     let refreshed = join_all(live_fetches).await;
     let mut store = state.rate_limits.write().await;
-    store.retain(|_, snapshot| {
-        !(snapshot.app_type == "codex"
-            && snapshot.source.as_deref() == Some("subscription_quota")
-            && !current_codex_oauth_provider_ids.contains(&snapshot.provider_id))
-    });
     for snapshot in refreshed.into_iter().flatten() {
         store.insert(snapshot.provider_id.clone(), snapshot);
     }
