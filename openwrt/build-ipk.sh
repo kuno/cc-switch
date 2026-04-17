@@ -469,7 +469,7 @@ build_luci_package() {
 		"luci" \
 		"all" \
 		"cc-switch, luci-base, rpcd-mod-ucode" \
-		"LuCI support for Open CC Switch
+		"LuCI support for CC Switch
  Web UI, rpcd ACLs, and OpenWrt-specific management hooks for cc-switch." \
 		""
 

@@ -13,7 +13,7 @@ PKG_RELEASE:=1
 PKG_LICENSE:=MIT
 PKG_MAINTAINER:=kuno <noreply@github.com>
 
-LUCI_TITLE:=LuCI support for Open CC Switch
+LUCI_TITLE:=LuCI support for CC Switch
 LUCI_DEPENDS:=+cc-switch +luci-base +rpcd-mod-ucode
 LUCI_PKGARCH:=all
 

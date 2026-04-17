@@ -238,7 +238,7 @@ jobs:
             | `*_arm_cortex-a7_neon-vfpv4.ipk` | ARM Cortex-A7 (MT7621 etc.) |
             | `*_mipsel_24kc.ipk` | MIPS Little-Endian (older MediaTek/Ralink) |
 
-            After install, open LuCI at **Services > Open CC Switch**.
+            After install, open LuCI at **Services > CC Switch**.
           files: |
             release-assets/*.ipk
             release-assets/SHA256SUMS.txt

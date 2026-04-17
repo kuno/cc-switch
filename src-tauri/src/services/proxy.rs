@@ -225,6 +225,8 @@ impl ProxyService {
             #[cfg(feature = "tauri-desktop")]
             app_handle,
         );
+        #[cfg(not(feature = "tauri-desktop"))]
+        let server = server.with_route_mounter(crate::openwrt_http::mount_openwrt_admin_routes);
         let info = server
             .start()
             .await

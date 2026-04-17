@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.85.0"
 
+[features]
+default = []
+tauri-desktop = []
+
 [[bin]]
 name = "cc-switch"
 path = "src/main.rs"

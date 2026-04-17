@@ -7,77 +7,14 @@
 //!   cargo build --release --target mips-unknown-linux-musl    (MIPS)
 //!   cargo build --release --target aarch64-unknown-linux-musl (ARM64)
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Re-declare only the modules needed by the proxy subsystem.
-// Each `#[path]` points to the source file in src-tauri/src/.
-// `crate::` in those files resolves to THIS crate root, so every module
-// they reference with `crate::` must also appear here.
-// Sub-modules of directory modules (e.g. database/dao/) are resolved
-// automatically relative to the #[path]-specified file's directory.
-// ─────────────────────────────────────────────────────────────────────────────
-
 mod app_store;
 mod openwrt_admin;
+mod openwrt_http;
+mod shared_core;
 mod version;
 
-#[path = "../../src-tauri/src/app_config.rs"]
-mod app_config;
-
-#[path = "../../src-tauri/src/claude_mcp.rs"]
-mod claude_mcp;
-
-#[path = "../../src-tauri/src/codex_config.rs"]
-mod codex_config;
-
-#[path = "../../src-tauri/src/config.rs"]
-mod config;
-
-#[path = "../../src-tauri/src/database/mod.rs"]
-mod database;
-
-#[path = "../../src-tauri/src/error.rs"]
-mod error;
-
-#[path = "../../src-tauri/src/gemini_config.rs"]
-mod gemini_config;
-
-#[path = "../../src-tauri/src/gemini_mcp.rs"]
-mod gemini_mcp;
-
-#[path = "../../src-tauri/src/mcp/mod.rs"]
-mod mcp;
-
-#[path = "../../src-tauri/src/openclaw_config.rs"]
-mod openclaw_config;
-
-#[path = "../../src-tauri/src/opencode_config.rs"]
-mod opencode_config;
-
-#[path = "../../src-tauri/src/prompt.rs"]
-mod prompt;
-
-#[path = "../../src-tauri/src/prompt_files.rs"]
-mod prompt_files;
-
-#[path = "../../src-tauri/src/provider.rs"]
-mod provider;
-
-#[path = "../../src-tauri/src/provider_defaults.rs"]
-mod provider_defaults;
-
-#[path = "../../src-tauri/src/proxy/mod.rs"]
-mod proxy;
-
-#[path = "../../src-tauri/src/settings.rs"]
-mod settings;
-
-#[path = "../../src-tauri/src/usage_script.rs"]
-mod usage_script;
-
 mod services;
-
-#[path = "../../src-tauri/src/store.rs"]
-mod store;
+pub use shared_core::*;
 
 use std::io::Read;
 use std::str::FromStr;

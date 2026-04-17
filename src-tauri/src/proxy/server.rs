@@ -18,7 +18,7 @@ use crate::proxy::providers::codex_oauth_auth::CodexOAuthManager;
 use crate::proxy::providers::copilot_auth::CopilotAuthManager;
 use axum::{
     extract::DefaultBodyLimit,
-    routing::{get, post, put},
+    routing::{get, post},
     Router,
 };
 use hyper_util::rt::TokioIo;
@@ -27,6 +27,10 @@ use std::sync::Arc;
 use tokio::sync::{oneshot, RwLock};
 use tokio::task::JoinHandle;
 use tower_http::cors::{Any, CorsLayer};
+
+fn identity_router(router: Router<ProxyState>) -> Router<ProxyState> {
+    router
+}
 
 fn active_target_priority(app_type: &str) -> u8 {
     if app_type.eq_ignore_ascii_case("claude") {
@@ -97,6 +101,7 @@ pub struct ProxyState {
 pub struct ProxyServer {
     config: ProxyConfig,
     state: ProxyState,
+    route_mounter: fn(Router<ProxyState>) -> Router<ProxyState>,
     shutdown_tx: Arc<RwLock<Option<oneshot::Sender<()>>>>,
     /// 服务器任务句柄，用于等待服务器实际关闭
     server_handle: Arc<RwLock<Option<JoinHandle<()>>>>,
@@ -155,9 +160,18 @@ impl ProxyServer {
         Self {
             config,
             state,
+            route_mounter: identity_router,
             shutdown_tx: Arc::new(RwLock::new(None)),
             server_handle: Arc::new(RwLock::new(None)),
         }
+    }
+
+    pub fn with_route_mounter(
+        mut self,
+        route_mounter: fn(Router<ProxyState>) -> Router<ProxyState>,
+    ) -> Self {
+        self.route_mounter = route_mounter;
+        self
     }
 
     pub async fn start(&self) -> Result<ProxyServerInfo, ProxyError> {
@@ -364,7 +378,7 @@ impl ProxyServer {
             .allow_methods(Any)
             .allow_headers(Any);
 
-        let router = Router::new()
+        let router: Router<ProxyState> = Router::new()
             // 健康检查
             .route("/health", get(handlers::health_check))
             .route("/status", get(handlers::get_status))
@@ -415,77 +429,7 @@ impl ProxyServer {
             .layer(DefaultBodyLimit::max(200 * 1024 * 1024))
             .layer(cors);
 
-        #[cfg(not(feature = "tauri-desktop"))]
-        let router = router
-            .route(
-                "/openwrt/admin/runtime",
-                get(handlers::openwrt_get_runtime_status),
-            )
-            .route(
-                "/openwrt/admin/apps/:app/runtime",
-                get(handlers::openwrt_get_app_runtime_status),
-            )
-            .route(
-                "/openwrt/admin/apps/:app/usage-summary",
-                get(handlers::openwrt_get_usage_summary),
-            )
-            .route(
-                "/openwrt/admin/apps/:app/provider-stats",
-                get(handlers::openwrt_get_provider_stats),
-            )
-            .route(
-                "/openwrt/admin/apps/:app/recent-activity",
-                get(handlers::openwrt_get_recent_activity),
-            )
-            .route(
-                "/openwrt/admin/apps/:app/providers",
-                get(handlers::openwrt_list_providers).post(handlers::openwrt_upsert_provider),
-            )
-            .route(
-                "/openwrt/admin/apps/:app/providers/active",
-                get(handlers::openwrt_get_active_provider)
-                    .post(handlers::openwrt_upsert_active_provider),
-            )
-            .route(
-                "/openwrt/admin/apps/:app/providers/:provider_id",
-                get(handlers::openwrt_get_provider)
-                    .put(handlers::openwrt_upsert_provider_by_id)
-                    .delete(handlers::openwrt_delete_provider),
-            )
-            .route(
-                "/openwrt/admin/apps/:app/providers/:provider_id/activate",
-                post(handlers::openwrt_activate_provider),
-            )
-            .route(
-                "/openwrt/admin/apps/:app/providers/:provider_id/codex-auth",
-                post(handlers::openwrt_upload_codex_auth)
-                    .delete(handlers::openwrt_remove_codex_auth),
-            )
-            .route(
-                "/openwrt/admin/apps/:app/providers/:provider_id/failover",
-                get(handlers::openwrt_get_provider_failover),
-            )
-            .route(
-                "/openwrt/admin/apps/:app/failover/providers/available",
-                get(handlers::openwrt_get_available_failover_providers),
-            )
-            .route(
-                "/openwrt/admin/apps/:app/failover/providers/:provider_id",
-                post(handlers::openwrt_add_to_failover_queue)
-                    .delete(handlers::openwrt_remove_from_failover_queue),
-            )
-            .route(
-                "/openwrt/admin/apps/:app/failover/queue",
-                put(handlers::openwrt_reorder_failover_queue),
-            )
-            .route(
-                "/openwrt/admin/apps/:app/failover/auto-enabled",
-                put(handlers::openwrt_set_auto_failover_enabled),
-            )
-            .route(
-                "/openwrt/admin/apps/:app/failover/max-retries",
-                put(handlers::openwrt_set_max_retries),
-            );
+        let router = (self.route_mounter)(router);
 
         router.with_state(self.state.clone())
     }
