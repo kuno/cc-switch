@@ -684,11 +684,11 @@ export function SharedProviderManager({
   const currentActiveProvider =
     state?.providers.find((provider) => provider.active) ?? null;
   const editorProvider =
-    (editingProvider?.providerId &&
-      state?.providers.find(
-        (provider) => provider.providerId === editingProvider.providerId,
-      )) ??
-    editingProvider;
+    editingProvider?.providerId == null
+      ? editingProvider
+      : state?.providers.find(
+            (provider) => provider.providerId === editingProvider.providerId,
+          ) ?? editingProvider;
   const selectedProvider =
     (state &&
       filteredProviders.find(
