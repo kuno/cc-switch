@@ -7,9 +7,6 @@
 #[path = "../../src-tauri/src/codex_config.rs"]
 pub mod codex_config;
 
-#[path = "../../src-tauri/src/config.rs"]
-pub mod config;
-
 #[path = "../../src-tauri/src/database/mod.rs"]
 pub mod database;
 
@@ -28,11 +25,5 @@ pub mod prompt_files;
 #[path = "../../src-tauri/src/proxy/mod.rs"]
 pub mod proxy;
 
-#[path = "../../src-tauri/src/settings.rs"]
-pub mod settings;
-
 #[path = "../../src-tauri/src/usage_script.rs"]
 pub mod usage_script;
-
-#[path = "../../src-tauri/src/store.rs"]
-pub mod store;

@@ -9,13 +9,16 @@
 
 mod app_config;
 mod app_store;
+mod config;
 mod error;
 mod openwrt_admin;
 mod openwrt_http;
 mod prompt;
 mod provider;
 mod provider_defaults;
+mod settings;
 mod shared_core;
+mod store;
 mod version;
 
 mod services;
