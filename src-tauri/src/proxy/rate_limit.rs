@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use crate::services::subscription::SubscriptionQuota;
+
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct RateLimitWindow {
     pub name: String,
@@ -15,6 +17,8 @@ pub struct RateLimitSnapshot {
     pub app_type: String,
     pub provider_id: String,
     pub provider_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
     pub status: Option<String>,
     pub windows: Vec<RateLimitWindow>,
     pub representative_claim: Option<String>,
@@ -35,6 +39,63 @@ pub type RateLimitStore = Arc<RwLock<HashMap<String, RateLimitSnapshot>>>;
 
 pub fn new_rate_limit_store() -> RateLimitStore {
     Arc::new(RwLock::new(HashMap::new()))
+}
+
+fn quota_reset_iso_to_unix_ts(value: &str) -> Option<i64> {
+    chrono::DateTime::parse_from_rfc3339(value)
+        .ok()
+        .map(|dt| dt.timestamp())
+}
+
+fn quota_utilization_to_ratio(value: f64) -> f64 {
+    if value > 1.0 {
+        (value / 100.0).clamp(0.0, 1.0)
+    } else {
+        value.clamp(0.0, 1.0)
+    }
+}
+
+pub fn snapshot_from_subscription_quota(
+    app_type: &str,
+    provider_id: &str,
+    provider_name: &str,
+    quota: &SubscriptionQuota,
+    previous: Option<&RateLimitSnapshot>,
+) -> Option<RateLimitSnapshot> {
+    if !quota.success {
+        return None;
+    }
+
+    let windows = quota
+        .tiers
+        .iter()
+        .map(|tier| RateLimitWindow {
+            name: tier.name.clone(),
+            status: None,
+            utilization: Some(quota_utilization_to_ratio(tier.utilization)),
+            reset: tier
+                .resets_at
+                .as_deref()
+                .and_then(quota_reset_iso_to_unix_ts),
+        })
+        .collect();
+
+    Some(RateLimitSnapshot {
+        app_type: app_type.to_string(),
+        provider_id: provider_id.to_string(),
+        provider_name: provider_name.to_string(),
+        source: Some("subscription_quota".to_string()),
+        status: None,
+        windows,
+        representative_claim: None,
+        overage_status: None,
+        fallback_percentage: None,
+        requests_limit: previous.and_then(|snapshot| snapshot.requests_limit),
+        requests_remaining: previous.and_then(|snapshot| snapshot.requests_remaining),
+        tokens_limit: previous.and_then(|snapshot| snapshot.tokens_limit),
+        tokens_remaining: previous.and_then(|snapshot| snapshot.tokens_remaining),
+        captured_at: chrono::Utc::now().timestamp_millis(),
+    })
 }
 
 fn header_str(headers: &http::HeaderMap, name: &str) -> Option<String> {
@@ -184,6 +245,7 @@ pub async fn capture_rate_limits(
             app_type: app_type.to_string(),
             provider_id: provider_id.to_string(),
             provider_name: provider_name.to_string(),
+            source: Some("response_headers".to_string()),
             status: raw.status,
             windows: raw.windows,
             representative_claim: raw.representative_claim,
@@ -211,6 +273,7 @@ pub async fn capture_rate_limits(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::subscription::{CredentialStatus, QuotaTier};
     use http::HeaderMap;
 
     #[test]
@@ -310,5 +373,94 @@ mod tests {
     fn no_rate_limit_headers_returns_none() {
         let headers = HeaderMap::new();
         assert!(extract_rate_limits(&headers).is_none());
+    }
+
+    #[test]
+    fn snapshot_from_subscription_quota_converts_percentages_and_resets() {
+        let quota = SubscriptionQuota {
+            tool: "codex_oauth".to_string(),
+            credential_status: CredentialStatus::Valid,
+            credential_message: None,
+            success: true,
+            tiers: vec![
+                QuotaTier {
+                    name: "five_hour".to_string(),
+                    utilization: 33.0,
+                    resets_at: Some("2026-04-17T12:00:00+00:00".to_string()),
+                },
+                QuotaTier {
+                    name: "seven_day".to_string(),
+                    utilization: 75.0,
+                    resets_at: None,
+                },
+            ],
+            extra_usage: None,
+            error: None,
+            queried_at: Some(1_713_357_200_000),
+        };
+
+        let snapshot =
+            snapshot_from_subscription_quota("codex", "provider-a", "Provider A", &quota, None)
+                .expect("snapshot");
+
+        assert_eq!(snapshot.app_type, "codex");
+        assert_eq!(snapshot.provider_id, "provider-a");
+        assert_eq!(snapshot.source.as_deref(), Some("subscription_quota"));
+        assert_eq!(snapshot.windows.len(), 2);
+        assert_eq!(snapshot.windows[0].name, "five_hour");
+        assert_eq!(snapshot.windows[0].utilization, Some(0.33));
+        assert_eq!(snapshot.windows[0].reset, Some(1_776_427_200));
+        assert_eq!(snapshot.windows[1].name, "seven_day");
+        assert_eq!(snapshot.windows[1].utilization, Some(0.75));
+        assert_eq!(snapshot.windows[1].reset, None);
+    }
+
+    #[test]
+    fn snapshot_from_subscription_quota_preserves_existing_scalar_limits() {
+        let previous = RateLimitSnapshot {
+            app_type: "codex".to_string(),
+            provider_id: "provider-a".to_string(),
+            provider_name: "Provider A".to_string(),
+            source: Some("response_headers".to_string()),
+            status: None,
+            windows: Vec::new(),
+            representative_claim: None,
+            overage_status: None,
+            fallback_percentage: None,
+            requests_limit: Some(1_000),
+            requests_remaining: Some(900),
+            tokens_limit: Some(100_000),
+            tokens_remaining: Some(80_000),
+            captured_at: 0,
+        };
+        let quota = SubscriptionQuota {
+            tool: "codex_oauth".to_string(),
+            credential_status: CredentialStatus::Valid,
+            credential_message: None,
+            success: true,
+            tiers: vec![QuotaTier {
+                name: "five_hour".to_string(),
+                utilization: 20.0,
+                resets_at: None,
+            }],
+            extra_usage: None,
+            error: None,
+            queried_at: Some(1_713_357_200_000),
+        };
+
+        let snapshot = snapshot_from_subscription_quota(
+            "codex",
+            "provider-a",
+            "Provider A",
+            &quota,
+            Some(&previous),
+        )
+        .expect("snapshot");
+
+        assert_eq!(snapshot.requests_limit, Some(1_000));
+        assert_eq!(snapshot.requests_remaining, Some(900));
+        assert_eq!(snapshot.tokens_limit, Some(100_000));
+        assert_eq!(snapshot.tokens_remaining, Some(80_000));
+        assert_eq!(snapshot.windows[0].utilization, Some(0.2));
     }
 }
