@@ -149,7 +149,7 @@ describe("mountSharedProviderManager", () => {
       ).toBeInTheDocument(),
     );
     const claudeCard = within(container)
-      .getByText("Claude Primary")
+      .getByRole("button", { name: "Edit Claude Primary" })
       .closest("article");
 
     expect(claudeCard).not.toBeNull();
@@ -171,7 +171,7 @@ describe("mountSharedProviderManager", () => {
       ).toBeInTheDocument(),
     );
     const geminiCard = within(container)
-      .getByText("Gemini Primary")
+      .getByRole("button", { name: "Edit Gemini Primary" })
       .closest("article");
 
     expect(geminiCard).not.toBeNull();

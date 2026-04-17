@@ -2375,21 +2375,13 @@ mod tests {
 
     #[test]
     #[serial]
-    fn resolve_upstream_proxy_url_prefers_provider_proxy_over_runtime_global_proxy() {
+    fn resolve_upstream_proxy_url_returns_runtime_global_proxy_when_configured() {
         super::super::http_client::update_proxy(Some("http://127.0.0.1:7890"))
             .expect("set runtime proxy");
 
-        let provider_proxy = ProviderProxyConfig {
-            enabled: true,
-            proxy_type: Some("http".to_string()),
-            proxy_host: Some("provider.proxy".to_string()),
-            proxy_port: Some(8080),
-            ..Default::default()
-        };
-
         assert_eq!(
-            resolve_upstream_proxy_url(Some(&provider_proxy)).as_deref(),
-            Some("http://provider.proxy:8080")
+            resolve_upstream_proxy_url().as_deref(),
+            Some("http://127.0.0.1:7890")
         );
 
         super::super::http_client::update_proxy(None).expect("clear runtime proxy");
@@ -2397,16 +2389,10 @@ mod tests {
 
     #[test]
     #[serial]
-    fn resolve_upstream_proxy_url_falls_back_to_runtime_global_proxy() {
-        super::super::http_client::update_proxy(Some("http://127.0.0.1:7890"))
-            .expect("set runtime proxy");
-
-        assert_eq!(
-            resolve_upstream_proxy_url(None).as_deref(),
-            Some("http://127.0.0.1:7890")
-        );
-
+    fn resolve_upstream_proxy_url_returns_none_when_runtime_global_proxy_unset() {
         super::super::http_client::update_proxy(None).expect("clear runtime proxy");
+
+        assert_eq!(resolve_upstream_proxy_url(), None);
     }
 
     #[test]
