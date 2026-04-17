@@ -508,7 +508,7 @@ mod tests {
             None,
         );
         let provider = Provider::with_id(
-            "provider-1".to_string(),
+            "quota-stale-provider".to_string(),
             "Codex OAuth".to_string(),
             json!({ "auth_mode": "codex_oauth" }),
             None,

@@ -9,16 +9,22 @@
 
 mod app_config;
 mod app_store;
+mod codex_config;
 mod config;
 mod error;
+mod gemini_config;
 mod openwrt_admin;
 mod openwrt_http;
+mod openclaw_config;
+mod opencode_config;
 mod prompt;
+mod prompt_files;
 mod provider;
 mod provider_defaults;
 mod settings;
 mod shared_core;
 mod store;
+mod usage_script;
 mod version;
 
 mod services;
