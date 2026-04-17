@@ -143,6 +143,46 @@ pub struct OpenWrtRuntimeStatusView {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct OpenWrtAdminMetaView {
+    pub api_version: u32,
+    pub service: OpenWrtAdminServiceMetaView,
+    pub apps: Vec<OpenWrtAppMetaView>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtAdminServiceMetaView {
+    pub daemon: &'static str,
+    pub package_name: &'static str,
+    pub luci_package_name: &'static str,
+    pub init_script: &'static str,
+    pub config_file: &'static str,
+    pub admin_base_path: &'static str,
+    pub version: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtAppMetaView {
+    pub app: String,
+    pub display_name: &'static str,
+    pub default_provider_id: &'static str,
+    pub default_token_field: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alt_token_field: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_model: Option<&'static str>,
+    pub icon: &'static str,
+    pub icon_color: &'static str,
+    pub supports_failover: bool,
+    pub supports_codex_auth_upload: bool,
+    pub supports_usage_summary: bool,
+    pub supports_provider_stats: bool,
+    pub supports_recent_activity: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OpenWrtServiceStatusView {
     pub running: bool,
     pub reachable: bool,
@@ -217,6 +257,7 @@ pub struct OpenWrtProviderFailoverView {
 #[derive(Clone, Copy)]
 struct OpenWrtAppProfile {
     app_id: &'static str,
+    display_name: &'static str,
     default_provider_id: &'static str,
     provider_id_prefix: &'static str,
     default_token_field: &'static str,
@@ -374,6 +415,44 @@ pub fn get_active_provider(
         .as_ref()
         .map(|provider| provider_to_view(app_type, profile, provider, Some(provider.id.as_str())))
         .unwrap_or_else(|| empty_provider_view(profile)))
+}
+
+pub fn get_admin_meta() -> anyhow::Result<OpenWrtAdminMetaView> {
+    let apps = [AppType::Claude, AppType::Codex, AppType::Gemini]
+        .into_iter()
+        .map(|app_type| {
+            let profile = openwrt_app_profile(&app_type)?;
+            Ok(OpenWrtAppMetaView {
+                app: profile.app_id.to_string(),
+                display_name: profile.display_name,
+                default_provider_id: profile.default_provider_id,
+                default_token_field: profile.default_token_field,
+                alt_token_field: profile.alt_token_field,
+                default_model: profile.default_model,
+                icon: profile.icon,
+                icon_color: profile.icon_color,
+                supports_failover: true,
+                supports_codex_auth_upload: profile.app_id == CODEX_APP_ID,
+                supports_usage_summary: true,
+                supports_provider_stats: true,
+                supports_recent_activity: true,
+            })
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+
+    Ok(OpenWrtAdminMetaView {
+        api_version: 1,
+        service: OpenWrtAdminServiceMetaView {
+            daemon: "cc-switch",
+            package_name: "cc-switch",
+            luci_package_name: "luci-app-cc-switch",
+            init_script: "/etc/init.d/ccswitch",
+            config_file: "/etc/config/ccswitch",
+            admin_base_path: "/openwrt/admin",
+            version: version::build_version().to_string(),
+        },
+        apps,
+    })
 }
 
 pub fn upsert_provider(
@@ -922,6 +1001,7 @@ fn openwrt_app_profile(app_type: &AppType) -> anyhow::Result<OpenWrtAppProfile> 
     match app_type {
         AppType::Claude => Ok(OpenWrtAppProfile {
             app_id: CLAUDE_APP_ID,
+            display_name: "Claude",
             default_provider_id: CLAUDE_DEFAULT_PROVIDER_ID,
             provider_id_prefix: CLAUDE_PROVIDER_ID_PREFIX,
             default_token_field: CLAUDE_DEFAULT_TOKEN_FIELD,
@@ -932,6 +1012,7 @@ fn openwrt_app_profile(app_type: &AppType) -> anyhow::Result<OpenWrtAppProfile> 
         }),
         AppType::Codex => Ok(OpenWrtAppProfile {
             app_id: CODEX_APP_ID,
+            display_name: "Codex",
             default_provider_id: CODEX_DEFAULT_PROVIDER_ID,
             provider_id_prefix: CODEX_PROVIDER_ID_PREFIX,
             default_token_field: CODEX_TOKEN_FIELD,
@@ -942,6 +1023,7 @@ fn openwrt_app_profile(app_type: &AppType) -> anyhow::Result<OpenWrtAppProfile> 
         }),
         AppType::Gemini => Ok(OpenWrtAppProfile {
             app_id: GEMINI_APP_ID,
+            display_name: "Gemini",
             default_provider_id: GEMINI_DEFAULT_PROVIDER_ID,
             provider_id_prefix: GEMINI_PROVIDER_ID_PREFIX,
             default_token_field: GEMINI_TOKEN_FIELD,
@@ -2291,6 +2373,43 @@ mod tests {
                 .as_deref(),
             Some("provider-b")
         );
+    }
+
+    #[test]
+    #[serial]
+    fn admin_meta_reports_supported_apps_and_codex_capability() {
+        let _env = TestEnv::new();
+
+        let meta = get_admin_meta().expect("admin meta");
+        assert_eq!(meta.api_version, 1);
+        assert_eq!(meta.service.daemon, "cc-switch");
+        assert_eq!(meta.service.package_name, "cc-switch");
+        assert_eq!(meta.service.luci_package_name, "luci-app-cc-switch");
+        assert_eq!(meta.service.version, version::build_version());
+        assert_eq!(meta.apps.len(), 3);
+
+        let claude = meta
+            .apps
+            .iter()
+            .find(|entry| entry.app == "claude")
+            .expect("claude meta");
+        let codex = meta
+            .apps
+            .iter()
+            .find(|entry| entry.app == "codex")
+            .expect("codex meta");
+        let gemini = meta
+            .apps
+            .iter()
+            .find(|entry| entry.app == "gemini")
+            .expect("gemini meta");
+
+        assert_eq!(claude.display_name, "Claude");
+        assert!(!claude.supports_codex_auth_upload);
+        assert_eq!(codex.default_token_field, CODEX_TOKEN_FIELD);
+        assert!(codex.supports_codex_auth_upload);
+        assert_eq!(gemini.display_name, "Gemini");
+        assert!(gemini.supports_failover);
     }
 
     #[test]

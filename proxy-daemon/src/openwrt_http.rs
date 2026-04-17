@@ -13,6 +13,7 @@ use serde_json::{json, Value};
 
 pub(crate) fn mount_openwrt_admin_routes(router: Router<ProxyState>) -> Router<ProxyState> {
     router
+        .route("/openwrt/admin/meta", get(openwrt_get_admin_meta))
         .route("/openwrt/admin/runtime", get(openwrt_get_runtime_status))
         .route(
             "/openwrt/admin/apps/:app/runtime",
@@ -128,6 +129,13 @@ fn openwrt_admin_error(error: anyhow::Error) -> (StatusCode, Json<Value>) {
 
 fn parse_openwrt_app(app: &str) -> Result<AppType, anyhow::Error> {
     openwrt_admin::parse_supported_app(app)
+}
+
+async fn openwrt_get_admin_meta() -> (StatusCode, Json<Value>) {
+    match openwrt_admin::get_admin_meta() {
+        Ok(meta) => openwrt_admin_ok(meta),
+        Err(error) => openwrt_admin_error(error),
+    }
 }
 
 async fn openwrt_get_runtime_status(
@@ -521,5 +529,26 @@ mod tests {
             .as_str()
             .expect("error string")
             .contains("64 KiB limit"));
+    }
+
+    #[tokio::test]
+    async fn openwrt_get_admin_meta_returns_supported_apps_and_version() {
+        let (status, body) = openwrt_get_admin_meta().await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["ok"], Value::Bool(true));
+        assert_eq!(body["service"]["daemon"], Value::String("cc-switch".to_string()));
+        assert_eq!(
+            body["service"]["version"],
+            Value::String(crate::version::build_version().to_string())
+        );
+
+        let apps = body["apps"].as_array().expect("apps array");
+        assert_eq!(apps.len(), 3);
+        assert_eq!(apps[0]["app"], Value::String("claude".to_string()));
+        assert_eq!(apps[1]["app"], Value::String("codex".to_string()));
+        assert_eq!(apps[2]["app"], Value::String("gemini".to_string()));
+        assert_eq!(apps[1]["supportsCodexAuthUpload"], Value::Bool(true));
+        assert_eq!(apps[0]["supportsCodexAuthUpload"], Value::Bool(false));
     }
 }
