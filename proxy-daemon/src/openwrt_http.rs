@@ -1,5 +1,5 @@
 use crate::app_config::AppType;
-use crate::openwrt_admin::{self, OpenWrtProviderPayload};
+use crate::openwrt_admin::{self, OpenWrtAppConfigPayload, OpenWrtProviderPayload};
 use crate::proxy::providers::codex_oauth_store::codex_auth_upload_limit_bytes;
 use crate::proxy::server::ProxyState;
 use axum::{
@@ -18,6 +18,10 @@ pub(crate) fn mount_openwrt_admin_routes(router: Router<ProxyState>) -> Router<P
         .route(
             "/openwrt/admin/apps/:app/runtime",
             get(openwrt_get_app_runtime_status),
+        )
+        .route(
+            "/openwrt/admin/apps/:app/config",
+            get(openwrt_get_app_config).put(openwrt_update_app_config),
         )
         .route(
             "/openwrt/admin/apps/:app/usage-summary",
@@ -156,6 +160,20 @@ async fn openwrt_get_app_runtime_status(
             .await
         {
             Ok(status) => openwrt_admin_ok(status),
+            Err(error) => openwrt_admin_error(error),
+        },
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+async fn openwrt_get_app_config(
+    Path(app): Path<String>,
+    State(state): State<ProxyState>,
+) -> (StatusCode, Json<Value>) {
+    match parse_openwrt_app(&app) {
+        Ok(app_type) => match openwrt_admin::get_app_proxy_config(state.db.as_ref(), &app_type).await
+        {
+            Ok(config) => openwrt_admin_ok(config),
             Err(error) => openwrt_admin_error(error),
         },
         Err(error) => openwrt_admin_error(error),
@@ -474,6 +492,26 @@ async fn openwrt_set_max_retries(
     }
 }
 
+async fn openwrt_update_app_config(
+    Path(app): Path<String>,
+    State(state): State<ProxyState>,
+    Json(payload): Json<OpenWrtAppConfigPayload>,
+) -> (StatusCode, Json<Value>) {
+    match parse_openwrt_app(&app) {
+        Ok(app_type) => match openwrt_admin::update_app_proxy_config(
+            state.db.as_ref(),
+            &app_type,
+            payload,
+        )
+        .await
+        {
+            Ok(config) => openwrt_admin_ok(config),
+            Err(error) => openwrt_admin_error(error),
+        },
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -550,5 +588,80 @@ mod tests {
         assert_eq!(apps[2]["app"], Value::String("gemini".to_string()));
         assert_eq!(apps[1]["supportsCodexAuthUpload"], Value::Bool(true));
         assert_eq!(apps[0]["supportsCodexAuthUpload"], Value::Bool(false));
+    }
+
+    #[tokio::test]
+    async fn openwrt_update_app_config_persists_payload_for_path_app() {
+        let state = test_proxy_state();
+        let payload = OpenWrtAppConfigPayload {
+            enabled: true,
+            auto_failover_enabled: true,
+            max_retries: 9,
+            streaming_first_byte_timeout: 75,
+            streaming_idle_timeout: 180,
+            non_streaming_timeout: 900,
+            circuit_failure_threshold: 7,
+            circuit_success_threshold: 3,
+            circuit_timeout_seconds: 120,
+            circuit_error_rate_threshold: 0.55,
+            circuit_min_requests: 14,
+        };
+
+        let (status, body) = openwrt_update_app_config(
+            Path("codex".to_string()),
+            State(state.clone()),
+            Json(payload),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["ok"], Value::Bool(true));
+        assert_eq!(body["appType"], Value::String("codex".to_string()));
+        assert_eq!(body["enabled"], Value::Bool(true));
+        assert_eq!(body["maxRetries"], Value::from(9));
+        assert_eq!(body["circuitErrorRateThreshold"], Value::from(0.55));
+
+        let persisted = state
+            .db
+            .get_proxy_config_for_app("codex")
+            .await
+            .expect("persisted app config");
+        assert!(persisted.enabled);
+        assert!(persisted.auto_failover_enabled);
+        assert_eq!(persisted.max_retries, 9);
+        assert_eq!(persisted.streaming_first_byte_timeout, 75);
+        assert_eq!(persisted.circuit_min_requests, 14);
+    }
+
+    #[tokio::test]
+    async fn openwrt_update_app_config_rejects_invalid_thresholds() {
+        let state = test_proxy_state();
+        let payload = OpenWrtAppConfigPayload {
+            enabled: true,
+            auto_failover_enabled: false,
+            max_retries: 3,
+            streaming_first_byte_timeout: 60,
+            streaming_idle_timeout: 120,
+            non_streaming_timeout: 600,
+            circuit_failure_threshold: 4,
+            circuit_success_threshold: 2,
+            circuit_timeout_seconds: 60,
+            circuit_error_rate_threshold: 1.5,
+            circuit_min_requests: 10,
+        };
+
+        let (status, body) = openwrt_update_app_config(
+            Path("claude".to_string()),
+            State(state),
+            Json(payload),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["ok"], Value::Bool(false));
+        assert!(body["error"]
+            .as_str()
+            .expect("error string")
+            .contains("between 0 and 1"));
     }
 }

@@ -66,6 +66,22 @@ pub struct OpenWrtProviderPayload {
     pub auth_mode: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtAppConfigPayload {
+    pub enabled: bool,
+    pub auto_failover_enabled: bool,
+    pub max_retries: u32,
+    pub streaming_first_byte_timeout: u32,
+    pub streaming_idle_timeout: u32,
+    pub non_streaming_timeout: u32,
+    pub circuit_failure_threshold: u32,
+    pub circuit_success_threshold: u32,
+    pub circuit_timeout_seconds: u32,
+    pub circuit_error_rate_threshold: f64,
+    pub circuit_min_requests: u32,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenWrtProviderView {
@@ -677,6 +693,44 @@ pub fn get_recent_activity(
     Ok(OpenWrtRecentActivityView { entries })
 }
 
+pub async fn get_app_proxy_config(
+    db: &Database,
+    app_type: &AppType,
+) -> anyhow::Result<AppProxyConfig> {
+    let profile = openwrt_app_profile(app_type)?;
+    load_proxy_config_for_app(db, profile).await
+}
+
+pub async fn update_app_proxy_config(
+    db: &Database,
+    app_type: &AppType,
+    payload: OpenWrtAppConfigPayload,
+) -> anyhow::Result<AppProxyConfig> {
+    let profile = openwrt_app_profile(app_type)?;
+    validate_openwrt_app_config_payload(&payload)?;
+
+    let config = AppProxyConfig {
+        app_type: profile.app_id.to_string(),
+        enabled: payload.enabled,
+        auto_failover_enabled: payload.auto_failover_enabled,
+        max_retries: payload.max_retries,
+        streaming_first_byte_timeout: payload.streaming_first_byte_timeout,
+        streaming_idle_timeout: payload.streaming_idle_timeout,
+        non_streaming_timeout: payload.non_streaming_timeout,
+        circuit_failure_threshold: payload.circuit_failure_threshold,
+        circuit_success_threshold: payload.circuit_success_threshold,
+        circuit_timeout_seconds: payload.circuit_timeout_seconds,
+        circuit_error_rate_threshold: payload.circuit_error_rate_threshold,
+        circuit_min_requests: payload.circuit_min_requests,
+    };
+
+    db.update_proxy_config_for_app(config)
+        .await
+        .map_err(|e| anyhow!("failed to update {} proxy config: {e}", profile.app_id))?;
+
+    load_proxy_config_for_app(db, profile).await
+}
+
 pub fn get_available_failover_providers(
     db: &Database,
     app_type: &AppType,
@@ -1174,6 +1228,39 @@ fn load_failover_queue(
 ) -> anyhow::Result<Vec<crate::database::FailoverQueueItem>> {
     db.get_failover_queue(profile.app_id)
         .map_err(|e| anyhow!("failed to list {} failover queue: {e}", profile.app_id))
+}
+
+fn validate_openwrt_app_config_payload(payload: &OpenWrtAppConfigPayload) -> anyhow::Result<()> {
+    if payload.max_retries == 0 {
+        return Err(anyhow!("maxRetries must be greater than 0"));
+    }
+    if payload.streaming_first_byte_timeout == 0 {
+        return Err(anyhow!("streamingFirstByteTimeout must be greater than 0"));
+    }
+    if payload.non_streaming_timeout == 0 {
+        return Err(anyhow!("nonStreamingTimeout must be greater than 0"));
+    }
+    if payload.circuit_failure_threshold == 0 {
+        return Err(anyhow!("circuitFailureThreshold must be greater than 0"));
+    }
+    if payload.circuit_success_threshold == 0 {
+        return Err(anyhow!("circuitSuccessThreshold must be greater than 0"));
+    }
+    if payload.circuit_timeout_seconds == 0 {
+        return Err(anyhow!("circuitTimeoutSeconds must be greater than 0"));
+    }
+    if !payload.circuit_error_rate_threshold.is_finite()
+        || !(0.0..=1.0).contains(&payload.circuit_error_rate_threshold)
+    {
+        return Err(anyhow!(
+            "circuitErrorRateThreshold must be a finite value between 0 and 1"
+        ));
+    }
+    if payload.circuit_min_requests == 0 {
+        return Err(anyhow!("circuitMinRequests must be greater than 0"));
+    }
+
+    Ok(())
 }
 
 async fn ensure_failover_queue_ready_for_enable(
