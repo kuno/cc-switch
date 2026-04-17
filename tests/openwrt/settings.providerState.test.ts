@@ -527,6 +527,41 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(source).toContain("getRecentActivity: async function (appId)");
   });
 
+  it("declares the app request-log contracts for the native page shell", () => {
+    const { rpcDeclares } = loadSettingsView();
+    const source = readFileSync(
+      path.resolve(
+        process.cwd(),
+        "openwrt/luci-app-ccswitch/htdocs/luci-static/resources/view/ccswitch/settings.js",
+      ),
+      "utf8",
+    );
+
+    expect(
+      rpcDeclares.some(
+        (spec) =>
+          spec.object === "ccswitch" && spec.method === "get_request_logs",
+      ),
+    ).toBe(true);
+    expect(
+      rpcDeclares.some(
+        (spec) =>
+          spec.object === "ccswitch" && spec.method === "get_request_detail",
+      ),
+    ).toBe(true);
+    expect(
+      rpcDeclares.some(
+        (spec) =>
+          spec.object === "ccswitch" &&
+          spec.method === "get_request_logs" &&
+          JSON.stringify(spec.params) === JSON.stringify(["app", "page", "page_size"]),
+      ),
+    ).toBe(true);
+    expect(source).toContain("/request-logs");
+    expect(source).toContain("getRequestLogs: async function (appId, page, pageSize)");
+    expect(source).toContain("getRequestDetail: async function (appId, requestId)");
+  });
+
   it("grants LuCI read access to the app usage-summary ubus method", () => {
     const acl = JSON.parse(
       readFileSync(
@@ -551,6 +586,12 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(
       acl["luci-app-ccswitch"]?.read?.ubus?.ccswitch ?? [],
     ).toContain("get_recent_activity");
+    expect(
+      acl["luci-app-ccswitch"]?.read?.ubus?.ccswitch ?? [],
+    ).toContain("get_request_logs");
+    expect(
+      acl["luci-app-ccswitch"]?.read?.ubus?.ccswitch ?? [],
+    ).toContain("get_request_detail");
   });
 
   it("suppresses raw bare rpc failure sentinels so feature-specific fallbacks can render", () => {

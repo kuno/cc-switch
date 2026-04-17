@@ -8,7 +8,9 @@ use crate::proxy::providers::codex_oauth_store::{
 };
 use crate::proxy::server::populate_status_active_targets;
 use crate::proxy::types::{AppProxyConfig, GlobalProxyConfig, ProviderHealth, ProxyStatus};
-use crate::services::usage_stats::{LogFilters, ProviderStats, UsageSummary};
+use crate::services::usage_stats::{
+    LogFilters, PaginatedLogs, ProviderStats, RequestLogDetail, UsageSummary,
+};
 use crate::version;
 use anyhow::{anyhow, Context};
 use serde::{Deserialize, Serialize};
@@ -32,6 +34,8 @@ const CODEX_TOKEN_FIELD: &str = "OPENAI_API_KEY";
 const GEMINI_DEFAULT_PROVIDER_ID: &str = "openwrt-gemini";
 const GEMINI_PROVIDER_ID_PREFIX: &str = "openwrt-gemini-";
 const GEMINI_TOKEN_FIELD: &str = "GEMINI_API_KEY";
+pub const OPENWRT_REQUEST_LOGS_DEFAULT_PAGE_SIZE: u32 = 20;
+pub const OPENWRT_REQUEST_LOGS_MAX_PAGE_SIZE: u32 = 100;
 const CLAUDE_MODEL_KEYS_TO_CLEAR: [&str; 6] = [
     "ANTHROPIC_MODEL",
     "ANTHROPIC_REASONING_MODEL",
@@ -693,6 +697,56 @@ pub fn get_recent_activity(
     Ok(OpenWrtRecentActivityView { entries })
 }
 
+pub fn normalize_request_logs_pagination(page: Option<u32>, page_size: Option<u32>) -> (u32, u32) {
+    let page = page.unwrap_or(0);
+    let page_size = page_size
+        .unwrap_or(OPENWRT_REQUEST_LOGS_DEFAULT_PAGE_SIZE)
+        .clamp(1, OPENWRT_REQUEST_LOGS_MAX_PAGE_SIZE);
+
+    (page, page_size)
+}
+
+pub fn get_request_logs(
+    db: &Database,
+    app_type: &AppType,
+    page: Option<u32>,
+    page_size: Option<u32>,
+    mut filters: LogFilters,
+) -> anyhow::Result<PaginatedLogs> {
+    let profile = openwrt_app_profile(app_type)?;
+    let (page, page_size) = normalize_request_logs_pagination(page, page_size);
+    filters.app_type = Some(profile.app_id.to_string());
+
+    db.get_request_logs(&filters, page, page_size)
+        .map_err(|e| anyhow!("failed to read {} request logs: {e}", profile.app_id))
+}
+
+pub fn get_request_detail(
+    db: &Database,
+    app_type: &AppType,
+    request_id: &str,
+) -> anyhow::Result<RequestLogDetail> {
+    let profile = openwrt_app_profile(app_type)?;
+    let detail = db
+        .get_request_detail(request_id)
+        .map_err(|e| anyhow!("failed to read {} request detail: {e}", profile.app_id))?
+        .ok_or_else(|| {
+            anyhow!(
+                "request log `{request_id}` not found for {}",
+                profile.app_id
+            )
+        })?;
+
+    if detail.app_type != profile.app_id {
+        return Err(anyhow!(
+            "request log `{request_id}` not found for {}",
+            profile.app_id
+        ));
+    }
+
+    Ok(detail)
+}
+
 pub async fn get_app_proxy_config(
     db: &Database,
     app_type: &AppType,
@@ -956,7 +1010,12 @@ fn upsert_provider_with_payload(
 
     db.save_provider(profile.app_id, &provider)
         .map_err(|e| anyhow!("failed to save {} provider: {e}", profile.app_id))?;
-    maybe_cleanup_stored_codex_auth_after_save(profile, &provider.id, previous_auth_mode.as_deref(), &provider);
+    maybe_cleanup_stored_codex_auth_after_save(
+        profile,
+        &provider.id,
+        previous_auth_mode.as_deref(),
+        &provider,
+    );
 
     let active_provider_id = resolve_active_provider_id_for_read(db, app_type, profile)?;
     Ok(provider_to_view(
@@ -1012,7 +1071,12 @@ fn upsert_active_provider_with_payload(
 
     db.save_provider(profile.app_id, &provider)
         .map_err(|e| anyhow!("failed to save {} provider: {e}", profile.app_id))?;
-    maybe_cleanup_stored_codex_auth_after_save(profile, &provider.id, previous_auth_mode.as_deref(), &provider);
+    maybe_cleanup_stored_codex_auth_after_save(
+        profile,
+        &provider.id,
+        previous_auth_mode.as_deref(),
+        &provider,
+    );
     set_active_provider_id(db, app_type, profile, Some(&provider.id))?;
 
     Ok(provider_to_view(
@@ -2363,6 +2427,38 @@ mod tests {
             .expect("status entry for app")
     }
 
+    fn insert_request_log(
+        db: &Database,
+        request_id: &str,
+        provider_id: &str,
+        app_type: &str,
+        model: &str,
+        status_code: u16,
+        created_at: i64,
+    ) {
+        let conn = db.conn.lock().expect("lock conn");
+        conn.execute(
+            "INSERT INTO proxy_request_logs (
+                request_id, provider_id, app_type, model,
+                input_tokens, output_tokens, total_cost_usd,
+                latency_ms, status_code, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            rusqlite::params![
+                request_id,
+                provider_id,
+                app_type,
+                model,
+                120,
+                48,
+                "0.012300",
+                245,
+                status_code,
+                created_at
+            ],
+        )
+        .expect("insert request log");
+    }
+
     async fn spawn_status_server(mut status: ProxyStatus) -> (u16, tokio::task::JoinHandle<()>) {
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
             .await
@@ -2460,6 +2556,84 @@ mod tests {
                 .as_deref(),
             Some("provider-b")
         );
+    }
+
+    #[test]
+    #[serial]
+    fn get_request_logs_scopes_results_to_app_and_applies_pagination() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+
+        insert_request_log(
+            &db,
+            "req-claude-older",
+            "provider-a",
+            "claude",
+            "claude-sonnet",
+            200,
+            100,
+        );
+        insert_request_log(&db, "req-codex", "provider-b", "codex", "gpt-5.4", 200, 200);
+        insert_request_log(
+            &db,
+            "req-claude-newer",
+            "provider-c",
+            "claude",
+            "claude-opus",
+            502,
+            300,
+        );
+
+        let page = get_request_logs(
+            &db,
+            &AppType::Claude,
+            Some(0),
+            Some(1),
+            LogFilters::default(),
+        )
+        .expect("claude request logs");
+
+        assert_eq!(page.total, 2);
+        assert_eq!(page.page, 0);
+        assert_eq!(page.page_size, 1);
+        assert_eq!(page.data.len(), 1);
+        assert_eq!(page.data[0].request_id, "req-claude-newer");
+        assert_eq!(page.data[0].app_type, "claude");
+
+        let failures = get_request_logs(
+            &db,
+            &AppType::Claude,
+            Some(0),
+            Some(10),
+            LogFilters {
+                status_code: Some(502),
+                ..Default::default()
+            },
+        )
+        .expect("filtered request logs");
+
+        assert_eq!(failures.total, 1);
+        assert_eq!(failures.data[0].request_id, "req-claude-newer");
+    }
+
+    #[test]
+    #[serial]
+    fn get_request_detail_rejects_cross_app_lookup() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+
+        insert_request_log(&db, "req-codex", "provider-b", "codex", "gpt-5.4", 200, 200);
+
+        let detail =
+            get_request_detail(&db, &AppType::Codex, "req-codex").expect("codex request detail");
+        assert_eq!(detail.request_id, "req-codex");
+        assert_eq!(detail.app_type, "codex");
+
+        let error = get_request_detail(&db, &AppType::Claude, "req-codex")
+            .expect_err("cross-app lookup should fail");
+        assert!(error
+            .to_string()
+            .contains("request log `req-codex` not found for claude"));
     }
 
     #[test]
@@ -2577,8 +2751,13 @@ mod tests {
             codex_payload("Codex", "", Some("codex_oauth")),
         )
         .expect("create codex provider");
-        upload_codex_auth(&db, &AppType::Codex, "provider-codex", &sample_codex_auth_json())
-            .expect("upload auth");
+        upload_codex_auth(
+            &db,
+            &AppType::Codex,
+            "provider-codex",
+            &sample_codex_auth_json(),
+        )
+        .expect("upload auth");
         assert!(codex_auth_path(&env, "provider-codex").exists());
 
         delete_provider(&db, &AppType::Codex, "provider-codex").expect("delete codex provider");
@@ -2598,8 +2777,13 @@ mod tests {
             codex_payload("Codex", "", Some("codex_oauth")),
         )
         .expect("create codex provider");
-        upload_codex_auth(&db, &AppType::Codex, "provider-codex", &sample_codex_auth_json())
-            .expect("upload auth");
+        upload_codex_auth(
+            &db,
+            &AppType::Codex,
+            "provider-codex",
+            &sample_codex_auth_json(),
+        )
+        .expect("upload auth");
         assert!(codex_auth_path(&env, "provider-codex").exists());
 
         upsert_provider_from_payload(

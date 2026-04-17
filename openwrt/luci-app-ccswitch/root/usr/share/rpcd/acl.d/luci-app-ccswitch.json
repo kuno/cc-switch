@@ -16,6 +16,8 @@
 					"get_usage_summary",
 					"get_provider_stats",
 					"get_recent_activity",
+					"get_request_logs",
+					"get_request_detail",
 					"get_available_failover_providers"
 				]
 			}

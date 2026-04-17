@@ -2,8 +2,9 @@ use crate::app_config::AppType;
 use crate::openwrt_admin::{self, OpenWrtAppConfigPayload, OpenWrtProviderPayload};
 use crate::proxy::providers::codex_oauth_store::codex_auth_upload_limit_bytes;
 use crate::proxy::server::ProxyState;
+use crate::services::usage_stats::LogFilters;
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     routing::{get, post, put},
     Json, Router,
@@ -34,6 +35,14 @@ pub(crate) fn mount_openwrt_admin_routes(router: Router<ProxyState>) -> Router<P
         .route(
             "/openwrt/admin/apps/:app/recent-activity",
             get(openwrt_get_recent_activity),
+        )
+        .route(
+            "/openwrt/admin/apps/:app/request-logs",
+            get(openwrt_get_request_logs),
+        )
+        .route(
+            "/openwrt/admin/apps/:app/request-logs/:request_id",
+            get(openwrt_get_request_detail),
         )
         .route(
             "/openwrt/admin/apps/:app/providers",
@@ -107,6 +116,18 @@ struct OpenWrtCodexAuthUploadPayload {
     auth_json_text: String,
 }
 
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OpenWrtRequestLogsQuery {
+    page: Option<u32>,
+    page_size: Option<u32>,
+    provider_name: Option<String>,
+    model: Option<String>,
+    status_code: Option<u16>,
+    start_date: Option<i64>,
+    end_date: Option<i64>,
+}
+
 fn openwrt_admin_ok<T: serde::Serialize>(value: T) -> (StatusCode, Json<Value>) {
     match serde_json::to_value(value) {
         Ok(Value::Object(mut map)) => {
@@ -135,6 +156,17 @@ fn parse_openwrt_app(app: &str) -> Result<AppType, anyhow::Error> {
     openwrt_admin::parse_supported_app(app)
 }
 
+fn normalize_optional_query_filter(value: Option<String>) -> Option<String> {
+    value.and_then(|value| {
+        let value = value.trim();
+        if value.is_empty() {
+            None
+        } else {
+            Some(value.to_string())
+        }
+    })
+}
+
 async fn openwrt_get_admin_meta() -> (StatusCode, Json<Value>) {
     match openwrt_admin::get_admin_meta() {
         Ok(meta) => openwrt_admin_ok(meta),
@@ -142,9 +174,7 @@ async fn openwrt_get_admin_meta() -> (StatusCode, Json<Value>) {
     }
 }
 
-async fn openwrt_get_runtime_status(
-    State(state): State<ProxyState>,
-) -> (StatusCode, Json<Value>) {
+async fn openwrt_get_runtime_status(State(state): State<ProxyState>) -> (StatusCode, Json<Value>) {
     match openwrt_admin::get_runtime_status(state.db.as_ref()).await {
         Ok(status) => openwrt_admin_ok(status),
         Err(error) => openwrt_admin_error(error),
@@ -156,12 +186,12 @@ async fn openwrt_get_app_runtime_status(
     State(state): State<ProxyState>,
 ) -> (StatusCode, Json<Value>) {
     match parse_openwrt_app(&app) {
-        Ok(app_type) => match openwrt_admin::get_app_runtime_status(state.db.as_ref(), &app_type)
-            .await
-        {
-            Ok(status) => openwrt_admin_ok(status),
-            Err(error) => openwrt_admin_error(error),
-        },
+        Ok(app_type) => {
+            match openwrt_admin::get_app_runtime_status(state.db.as_ref(), &app_type).await {
+                Ok(status) => openwrt_admin_ok(status),
+                Err(error) => openwrt_admin_error(error),
+            }
+        }
         Err(error) => openwrt_admin_error(error),
     }
 }
@@ -171,11 +201,12 @@ async fn openwrt_get_app_config(
     State(state): State<ProxyState>,
 ) -> (StatusCode, Json<Value>) {
     match parse_openwrt_app(&app) {
-        Ok(app_type) => match openwrt_admin::get_app_proxy_config(state.db.as_ref(), &app_type).await
-        {
-            Ok(config) => openwrt_admin_ok(config),
-            Err(error) => openwrt_admin_error(error),
-        },
+        Ok(app_type) => {
+            match openwrt_admin::get_app_proxy_config(state.db.as_ref(), &app_type).await {
+                Ok(config) => openwrt_admin_ok(config),
+                Err(error) => openwrt_admin_error(error),
+            }
+        }
         Err(error) => openwrt_admin_error(error),
     }
 }
@@ -216,6 +247,46 @@ async fn openwrt_get_recent_activity(
     }
 }
 
+async fn openwrt_get_request_logs(
+    Path(app): Path<String>,
+    Query(query): Query<OpenWrtRequestLogsQuery>,
+    State(state): State<ProxyState>,
+) -> (StatusCode, Json<Value>) {
+    let filters = LogFilters {
+        provider_name: normalize_optional_query_filter(query.provider_name),
+        model: normalize_optional_query_filter(query.model),
+        status_code: query.status_code,
+        start_date: query.start_date,
+        end_date: query.end_date,
+        ..Default::default()
+    };
+
+    match parse_openwrt_app(&app).and_then(|app_type| {
+        openwrt_admin::get_request_logs(
+            state.db.as_ref(),
+            &app_type,
+            query.page,
+            query.page_size,
+            filters,
+        )
+    }) {
+        Ok(logs) => openwrt_admin_ok(logs),
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+async fn openwrt_get_request_detail(
+    Path((app, request_id)): Path<(String, String)>,
+    State(state): State<ProxyState>,
+) -> (StatusCode, Json<Value>) {
+    match parse_openwrt_app(&app).and_then(|app_type| {
+        openwrt_admin::get_request_detail(state.db.as_ref(), &app_type, &request_id)
+    }) {
+        Ok(detail) => openwrt_admin_ok(detail),
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
 async fn openwrt_list_providers(
     Path(app): Path<String>,
     State(state): State<ProxyState>,
@@ -244,9 +315,9 @@ async fn openwrt_get_provider(
     Path((app, provider_id)): Path<(String, String)>,
     State(state): State<ProxyState>,
 ) -> (StatusCode, Json<Value>) {
-    match parse_openwrt_app(&app)
-        .and_then(|app_type| openwrt_admin::get_provider(state.db.as_ref(), &app_type, &provider_id))
-    {
+    match parse_openwrt_app(&app).and_then(|app_type| {
+        openwrt_admin::get_provider(state.db.as_ref(), &app_type, &provider_id)
+    }) {
         Ok(view) => openwrt_admin_ok(view),
         Err(error) => openwrt_admin_error(error),
     }
@@ -257,16 +328,14 @@ async fn openwrt_get_provider_failover(
     State(state): State<ProxyState>,
 ) -> (StatusCode, Json<Value>) {
     match parse_openwrt_app(&app) {
-        Ok(app_type) => match openwrt_admin::get_provider_failover(
-            state.db.as_ref(),
-            &app_type,
-            &provider_id,
-        )
-        .await
-        {
-            Ok(view) => openwrt_admin_ok(view),
-            Err(error) => openwrt_admin_error(error),
-        },
+        Ok(app_type) => {
+            match openwrt_admin::get_provider_failover(state.db.as_ref(), &app_type, &provider_id)
+                .await
+            {
+                Ok(view) => openwrt_admin_ok(view),
+                Err(error) => openwrt_admin_error(error),
+            }
+        }
         Err(error) => openwrt_admin_error(error),
     }
 }
@@ -337,9 +406,9 @@ async fn openwrt_delete_provider(
     Path((app, provider_id)): Path<(String, String)>,
     State(state): State<ProxyState>,
 ) -> (StatusCode, Json<Value>) {
-    match parse_openwrt_app(&app)
-        .and_then(|app_type| openwrt_admin::delete_provider(state.db.as_ref(), &app_type, &provider_id))
-    {
+    match parse_openwrt_app(&app).and_then(|app_type| {
+        openwrt_admin::delete_provider(state.db.as_ref(), &app_type, &provider_id)
+    }) {
         Ok(view) => openwrt_admin_ok(view),
         Err(error) => openwrt_admin_error(error),
     }
@@ -349,9 +418,9 @@ async fn openwrt_activate_provider(
     Path((app, provider_id)): Path<(String, String)>,
     State(state): State<ProxyState>,
 ) -> (StatusCode, Json<Value>) {
-    match parse_openwrt_app(&app)
-        .and_then(|app_type| openwrt_admin::activate_provider(state.db.as_ref(), &app_type, &provider_id))
-    {
+    match parse_openwrt_app(&app).and_then(|app_type| {
+        openwrt_admin::activate_provider(state.db.as_ref(), &app_type, &provider_id)
+    }) {
         Ok(view) => openwrt_admin_ok(view),
         Err(error) => openwrt_admin_error(error),
     }
@@ -405,16 +474,14 @@ async fn openwrt_add_to_failover_queue(
     State(state): State<ProxyState>,
 ) -> (StatusCode, Json<Value>) {
     match parse_openwrt_app(&app) {
-        Ok(app_type) => match openwrt_admin::add_to_failover_queue(
-            state.db.as_ref(),
-            &app_type,
-            &provider_id,
-        )
-        .await
-        {
-            Ok(view) => openwrt_admin_ok(view),
-            Err(error) => openwrt_admin_error(error),
-        },
+        Ok(app_type) => {
+            match openwrt_admin::add_to_failover_queue(state.db.as_ref(), &app_type, &provider_id)
+                .await
+            {
+                Ok(view) => openwrt_admin_ok(view),
+                Err(error) => openwrt_admin_error(error),
+            }
+        }
         Err(error) => openwrt_admin_error(error),
     }
 }
@@ -484,10 +551,13 @@ async fn openwrt_set_max_retries(
     Json(payload): Json<OpenWrtMaxRetriesPayload>,
 ) -> (StatusCode, Json<Value>) {
     match parse_openwrt_app(&app) {
-        Ok(app_type) => match openwrt_admin::set_max_retries(state.db.as_ref(), &app_type, payload.value).await {
-            Ok(view) => openwrt_admin_ok(view),
-            Err(error) => openwrt_admin_error(error),
-        },
+        Ok(app_type) => {
+            match openwrt_admin::set_max_retries(state.db.as_ref(), &app_type, payload.value).await
+            {
+                Ok(view) => openwrt_admin_ok(view),
+                Err(error) => openwrt_admin_error(error),
+            }
+        }
         Err(error) => openwrt_admin_error(error),
     }
 }
@@ -498,16 +568,14 @@ async fn openwrt_update_app_config(
     Json(payload): Json<OpenWrtAppConfigPayload>,
 ) -> (StatusCode, Json<Value>) {
     match parse_openwrt_app(&app) {
-        Ok(app_type) => match openwrt_admin::update_app_proxy_config(
-            state.db.as_ref(),
-            &app_type,
-            payload,
-        )
-        .await
-        {
-            Ok(config) => openwrt_admin_ok(config),
-            Err(error) => openwrt_admin_error(error),
-        },
+        Ok(app_type) => {
+            match openwrt_admin::update_app_proxy_config(state.db.as_ref(), &app_type, payload)
+                .await
+            {
+                Ok(config) => openwrt_admin_ok(config),
+                Err(error) => openwrt_admin_error(error),
+            }
+        }
         Err(error) => openwrt_admin_error(error),
     }
 }
@@ -548,6 +616,38 @@ mod tests {
         }
     }
 
+    fn insert_request_log(
+        db: &Database,
+        request_id: &str,
+        provider_id: &str,
+        app_type: &str,
+        model: &str,
+        status_code: u16,
+        created_at: i64,
+    ) {
+        let conn = db.conn.lock().expect("lock conn");
+        conn.execute(
+            "INSERT INTO proxy_request_logs (
+                request_id, provider_id, app_type, model,
+                input_tokens, output_tokens, total_cost_usd,
+                latency_ms, status_code, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            rusqlite::params![
+                request_id,
+                provider_id,
+                app_type,
+                model,
+                120,
+                48,
+                "0.012300",
+                245,
+                status_code,
+                created_at
+            ],
+        )
+        .expect("insert request log");
+    }
+
     #[tokio::test]
     async fn openwrt_upload_codex_auth_rejects_oversized_payload() {
         let state = test_proxy_state();
@@ -575,7 +675,10 @@ mod tests {
 
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["ok"], Value::Bool(true));
-        assert_eq!(body["service"]["daemon"], Value::String("cc-switch".to_string()));
+        assert_eq!(
+            body["service"]["daemon"],
+            Value::String("cc-switch".to_string())
+        );
         assert_eq!(
             body["service"]["version"],
             Value::String(crate::version::build_version().to_string())
@@ -588,6 +691,75 @@ mod tests {
         assert_eq!(apps[2]["app"], Value::String("gemini".to_string()));
         assert_eq!(apps[1]["supportsCodexAuthUpload"], Value::Bool(true));
         assert_eq!(apps[0]["supportsCodexAuthUpload"], Value::Bool(false));
+    }
+
+    #[tokio::test]
+    async fn openwrt_get_request_logs_returns_scoped_page() {
+        let state = test_proxy_state();
+        insert_request_log(
+            state.db.as_ref(),
+            "req-claude",
+            "provider-a",
+            "claude",
+            "claude-sonnet",
+            200,
+            100,
+        );
+        insert_request_log(
+            state.db.as_ref(),
+            "req-codex",
+            "provider-b",
+            "codex",
+            "gpt-5.4",
+            200,
+            200,
+        );
+
+        let (status, body) = openwrt_get_request_logs(
+            Path("claude".to_string()),
+            Query(OpenWrtRequestLogsQuery {
+                page: Some(0),
+                page_size: Some(5),
+                ..Default::default()
+            }),
+            State(state),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["ok"], Value::Bool(true));
+        assert_eq!(body["total"], Value::from(1));
+        assert_eq!(
+            body["data"][0]["requestId"],
+            Value::String("req-claude".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn openwrt_get_request_detail_rejects_cross_app_lookup() {
+        let state = test_proxy_state();
+        insert_request_log(
+            state.db.as_ref(),
+            "req-codex",
+            "provider-b",
+            "codex",
+            "gpt-5.4",
+            200,
+            200,
+        );
+
+        let (status, body) = openwrt_get_request_detail(
+            Path(("claude".to_string(), "req-codex".to_string())),
+            State(state),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["ok"], Value::Bool(false));
+        assert!(body["error"]
+            .as_str()
+            .expect("error string")
+            .contains("request log `req-codex` not found for claude"));
     }
 
     #[tokio::test]
@@ -650,12 +822,9 @@ mod tests {
             circuit_min_requests: 10,
         };
 
-        let (status, body) = openwrt_update_app_config(
-            Path("claude".to_string()),
-            State(state),
-            Json(payload),
-        )
-        .await;
+        let (status, body) =
+            openwrt_update_app_config(Path("claude".to_string()), State(state), Json(payload))
+                .await;
 
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["ok"], Value::Bool(false));

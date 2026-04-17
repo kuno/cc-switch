@@ -308,6 +308,38 @@ function getRecentActivity(app) {
 	};
 }
 
+function getRequestLogs(app, page, pageSize) {
+	let normalizedApp = normalizeApp(app);
+	let pageArg = '';
+	let pageSizeArg = '';
+
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
+
+	if (page != null && page !== '')
+		pageArg = ' ' + shellquote('' + page);
+	if (pageSize != null && pageSize !== '')
+		pageSizeArg = ' ' + shellquote('' + pageSize);
+
+	return runResultCommand(
+		daemonCommand(`openwrt ${shellquote(normalizedApp)} get-request-logs${pageArg}${pageSizeArg}`)
+	);
+}
+
+function getRequestDetail(app, requestId) {
+	let normalizedApp = normalizeApp(app);
+	let missing = requireProviderId(requestId);
+	if (missing)
+		return { ok: false, error: 'request_id is required' };
+
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
+
+	return runResultCommand(
+		daemonCommand(`openwrt ${shellquote(normalizedApp)} get-request-detail ${shellquote(requestId)}`)
+	);
+}
+
 function getAvailableFailoverProviders(app) {
 	let normalizedApp = normalizeApp(app);
 
@@ -593,6 +625,29 @@ return {
 
 			call: function(request) {
 				return getRecentActivity(request.args.app);
+			}
+		},
+
+		get_request_logs: {
+			args: {
+				app: 'claude',
+				page: 0,
+				page_size: 20
+			},
+
+			call: function(request) {
+				return getRequestLogs(request.args.app, request.args.page, request.args.page_size);
+			}
+		},
+
+		get_request_detail: {
+			args: {
+				app: 'claude',
+				request_id: 'request-id'
+			},
+
+			call: function(request) {
+				return getRequestDetail(request.args.app, request.args.request_id);
 			}
 		},
 

@@ -372,6 +372,20 @@ var callGetRecentActivity = rpc.declare({
 	expect: { '': {} }
 });
 
+var callGetRequestLogs = rpc.declare({
+	object: 'ccswitch',
+	method: 'get_request_logs',
+	params: ['app', 'page', 'page_size'],
+	expect: { '': {} }
+});
+
+var callGetRequestDetail = rpc.declare({
+	object: 'ccswitch',
+	method: 'get_request_detail',
+	params: ['app', 'request_id'],
+	expect: { '': {} }
+});
+
 var callSetHostConfig = rpc.declare({
 	object: 'ccswitch',
 	method: 'set_host_config',
@@ -511,6 +525,46 @@ function callOpenWrtRecentActivity(appId) {
 		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/recent-activity');
 	}, function () {
 		return L.resolveDefault(callGetRecentActivity(appId), { ok: false });
+	});
+}
+
+function normalizeOptionalNonNegativeInteger(value, fallbackValue) {
+	if (typeof value === 'number' && isFinite(value) && value >= 0)
+		return Math.floor(value);
+
+	if (typeof value === 'string' && /^\d+$/.test(value))
+		return +value;
+
+	return fallbackValue;
+}
+
+function buildRequestLogsQuery(page, pageSize) {
+	var query = [];
+
+	if (page != null)
+		query.push('page=' + encodeURIComponent(String(page)));
+	if (pageSize != null)
+		query.push('pageSize=' + encodeURIComponent(String(pageSize)));
+
+	return query.length ? ('?' + query.join('&')) : '';
+}
+
+function callOpenWrtRequestLogs(appId, page, pageSize) {
+	var normalizedPage = normalizeOptionalNonNegativeInteger(page, 0);
+	var normalizedPageSize = normalizeOptionalNonNegativeInteger(pageSize, 20);
+
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/request-logs' + buildRequestLogsQuery(normalizedPage, normalizedPageSize));
+	}, function () {
+		return L.resolveDefault(callGetRequestLogs(appId, normalizedPage, normalizedPageSize), { ok: false });
+	});
+}
+
+function callOpenWrtRequestDetail(appId, requestId) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/request-logs/' + encodeURIComponent(requestId));
+	}, function () {
+		return L.resolveDefault(callGetRequestDetail(appId, requestId), { ok: false });
 	});
 }
 
@@ -1250,6 +1304,58 @@ return view.extend({
 		});
 	},
 
+	normalizeRequestLogs: function (response) {
+		var payload = response && typeof response === 'object' ? response : {};
+		var entries = Array.isArray(payload.data) ? payload.data : [];
+
+		return {
+			data: entries.map(function (entry) {
+				var item = entry && typeof entry === 'object' ? entry : {};
+
+				return {
+					requestId: item.requestId != null ? String(item.requestId) : '',
+					providerId: item.providerId != null ? String(item.providerId) : '',
+					providerName: item.providerName != null ? String(item.providerName) : '',
+					appType: item.appType != null ? String(item.appType) : '',
+					model: item.model != null ? String(item.model) : '',
+					requestModel: item.requestModel != null ? String(item.requestModel) : '',
+					costMultiplier: item.costMultiplier != null ? String(item.costMultiplier) : '1',
+					inputTokens: typeof item.inputTokens === 'number' && isFinite(item.inputTokens) ? item.inputTokens : 0,
+					outputTokens: typeof item.outputTokens === 'number' && isFinite(item.outputTokens) ? item.outputTokens : 0,
+					cacheReadTokens: typeof item.cacheReadTokens === 'number' && isFinite(item.cacheReadTokens) ? item.cacheReadTokens : 0,
+					cacheCreationTokens: typeof item.cacheCreationTokens === 'number' && isFinite(item.cacheCreationTokens) ? item.cacheCreationTokens : 0,
+					inputCostUsd: item.inputCostUsd != null ? String(item.inputCostUsd) : '0',
+					outputCostUsd: item.outputCostUsd != null ? String(item.outputCostUsd) : '0',
+					cacheReadCostUsd: item.cacheReadCostUsd != null ? String(item.cacheReadCostUsd) : '0',
+					cacheCreationCostUsd: item.cacheCreationCostUsd != null ? String(item.cacheCreationCostUsd) : '0',
+					totalCostUsd: item.totalCostUsd != null ? String(item.totalCostUsd) : '0',
+					isStreaming: item.isStreaming === true,
+					latencyMs: typeof item.latencyMs === 'number' && isFinite(item.latencyMs) ? item.latencyMs : 0,
+					firstTokenMs: typeof item.firstTokenMs === 'number' && isFinite(item.firstTokenMs) ? item.firstTokenMs : null,
+					durationMs: typeof item.durationMs === 'number' && isFinite(item.durationMs) ? item.durationMs : null,
+					statusCode: typeof item.statusCode === 'number' && isFinite(item.statusCode) ? item.statusCode : 0,
+					errorMessage: item.errorMessage != null ? String(item.errorMessage) : null,
+					createdAt: typeof item.createdAt === 'number' && isFinite(item.createdAt) ? item.createdAt : 0,
+					dataSource: item.dataSource != null ? String(item.dataSource) : null
+				};
+			}),
+			total: typeof payload.total === 'number' && isFinite(payload.total) ? payload.total : 0,
+			page: typeof payload.page === 'number' && isFinite(payload.page) ? payload.page : 0,
+			pageSize: typeof payload.pageSize === 'number' && isFinite(payload.pageSize) ? payload.pageSize : 0
+		};
+	},
+
+	normalizeRequestDetail: function (response) {
+		var logs = this.normalizeRequestLogs({
+			data: [response],
+			total: 1,
+			page: 0,
+			pageSize: 1
+		});
+
+		return logs.data.length ? logs.data[0] : null;
+	},
+
 	loadNativeUsageSummary: function (appId) {
 		var selectedApp = this.isSupportedApp(appId) ? appId : this.getSelectedApp();
 
@@ -1280,6 +1386,33 @@ return view.extend({
 				throw new Error(this.rpcFailureMessage(response) || _('Failed to load recent activity.'));
 
 			return this.normalizeRecentActivity(response);
+		}, this));
+	},
+
+	loadNativeRequestLogs: function (appId, page, pageSize) {
+		var selectedApp = this.isSupportedApp(appId) ? appId : this.getSelectedApp();
+		var normalizedPage = normalizeOptionalNonNegativeInteger(page, 0);
+		var normalizedPageSize = normalizeOptionalNonNegativeInteger(pageSize, 20);
+
+		return L.resolveDefault(callOpenWrtRequestLogs(selectedApp, normalizedPage, normalizedPageSize), { ok: false }).then(L.bind(function (response) {
+			if (!this.isRpcSuccess(response))
+				throw new Error(this.rpcFailureMessage(response) || _('Failed to load request logs.'));
+
+			return this.normalizeRequestLogs(response);
+		}, this));
+	},
+
+	loadNativeRequestDetail: function (appId, requestId) {
+		var selectedApp = this.isSupportedApp(appId) ? appId : this.getSelectedApp();
+
+		if (!requestId)
+			return Promise.reject(new Error(_('Request ID is required.')));
+
+		return L.resolveDefault(callOpenWrtRequestDetail(selectedApp, requestId), { ok: false }).then(L.bind(function (response) {
+			if (!this.isRpcSuccess(response))
+				throw new Error(this.rpcFailureMessage(response) || _('Failed to load request detail.'));
+
+			return this.normalizeRequestDetail(response);
 		}, this));
 	},
 
@@ -2551,6 +2684,12 @@ return view.extend({
 			},
 			getRecentActivity: async function (appId) {
 				return self.loadNativeRecentActivity(appId || uiState.selectedApp);
+			},
+			getRequestLogs: async function (appId, page, pageSize) {
+				return self.loadNativeRequestLogs(appId || uiState.selectedApp, page, pageSize);
+			},
+			getRequestDetail: async function (appId, requestId) {
+				return self.loadNativeRequestDetail(appId || uiState.selectedApp, requestId);
 			},
 			saveHostConfig: async function (payload) {
 				return self.saveNativeHostConfig(uiState, payload);

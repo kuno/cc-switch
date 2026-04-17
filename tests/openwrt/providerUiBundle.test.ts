@@ -897,6 +897,122 @@ describe("OpenWrt provider UI bundle", () => {
           createdAt: 1_712_345_278,
         },
       ]),
+      getRequestDetail: vi.fn().mockImplementation(async (_appId, requestId) => {
+        if (requestId === "req-2") {
+          return {
+            requestId: "req-2",
+            providerId: "claude-backup",
+            providerName: "MiniMax Backup",
+            appType: "claude",
+            model: "claude-haiku-4-5",
+            requestModel: "claude-haiku-4-5",
+            costMultiplier: "1",
+            inputTokens: 160,
+            outputTokens: 60,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            inputCostUsd: "0.04",
+            outputCostUsd: "0.05",
+            cacheReadCostUsd: "0",
+            cacheCreationCostUsd: "0",
+            totalCostUsd: "0.09",
+            isStreaming: false,
+            latencyMs: 910,
+            firstTokenMs: null,
+            durationMs: 1_210,
+            statusCode: 429,
+            errorMessage: "Rate limit from upstream backup provider",
+            createdAt: 1_712_345_278,
+            dataSource: "proxy",
+          };
+        }
+
+        return {
+          requestId: "req-1",
+          providerId: "claude-primary",
+          providerName: "OpenAI Official",
+          appType: "claude",
+          model: "claude-sonnet-4-5",
+          requestModel: "claude-sonnet-4-5",
+          costMultiplier: "1",
+          inputTokens: 420,
+          outputTokens: 180,
+          cacheReadTokens: 20,
+          cacheCreationTokens: 20,
+          inputCostUsd: "0.09",
+          outputCostUsd: "0.12",
+          cacheReadCostUsd: "0",
+          cacheCreationCostUsd: "0",
+          totalCostUsd: "0.21",
+          isStreaming: true,
+          latencyMs: 318,
+          firstTokenMs: 88,
+          durationMs: 510,
+          statusCode: 200,
+          errorMessage: null,
+          createdAt: 1_712_345_678,
+          dataSource: "proxy",
+        };
+      }),
+      getRequestLogs: vi.fn().mockResolvedValue({
+        data: [
+          {
+            requestId: "req-1",
+            providerId: "claude-primary",
+            providerName: "OpenAI Official",
+            appType: "claude",
+            model: "claude-sonnet-4-5",
+            requestModel: "claude-sonnet-4-5",
+            costMultiplier: "1",
+            inputTokens: 420,
+            outputTokens: 180,
+            cacheReadTokens: 20,
+            cacheCreationTokens: 20,
+            inputCostUsd: "0.09",
+            outputCostUsd: "0.12",
+            cacheReadCostUsd: "0",
+            cacheCreationCostUsd: "0",
+            totalCostUsd: "0.21",
+            isStreaming: true,
+            latencyMs: 318,
+            firstTokenMs: 88,
+            durationMs: 510,
+            statusCode: 200,
+            errorMessage: null,
+            createdAt: 1_712_345_678,
+            dataSource: "proxy",
+          },
+          {
+            requestId: "req-2",
+            providerId: "claude-backup",
+            providerName: "MiniMax Backup",
+            appType: "claude",
+            model: "claude-haiku-4-5",
+            requestModel: "claude-haiku-4-5",
+            costMultiplier: "1",
+            inputTokens: 160,
+            outputTokens: 60,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            inputCostUsd: "0.04",
+            outputCostUsd: "0.05",
+            cacheReadCostUsd: "0",
+            cacheCreationCostUsd: "0",
+            totalCostUsd: "0.09",
+            isStreaming: false,
+            latencyMs: 910,
+            firstTokenMs: null,
+            durationMs: 1_210,
+            statusCode: 429,
+            errorMessage: "Rate limit from upstream backup provider",
+            createdAt: 1_712_345_278,
+            dataSource: "proxy",
+          },
+        ],
+        total: 12,
+        page: 0,
+        pageSize: 6,
+      }),
       getSelectedApp: vi.fn().mockImplementation(() => selectedApp),
       getUsageSummary: vi.fn().mockResolvedValue({
         totalRequests: 12,
@@ -982,6 +1098,10 @@ describe("OpenWrt provider UI bundle", () => {
     expect(target).toHaveTextContent("640 tokens");
     expect(target).toHaveTextContent("Success");
     expect(target).toHaveTextContent("HTTP 429");
+    expect(target).toHaveTextContent("Request logs");
+    expect(target).toHaveTextContent("1-2 of 12");
+    expect(target).toHaveTextContent("req-1");
+    expect(target).toHaveTextContent("Request ID");
     expect(target).toHaveClass("ccswitch-openwrt-native-page-host");
     expect(section).toHaveClass("ccswitch-openwrt-native-page-section");
     expect(map).toHaveClass("ccswitch-openwrt-native-page-map");
@@ -1022,6 +1142,21 @@ describe("OpenWrt provider UI bundle", () => {
     expect(shell.getUsageSummary).toHaveBeenCalledWith("claude");
     expect(shell.getProviderStats).toHaveBeenCalledWith("claude");
     expect(shell.getRecentActivity).toHaveBeenCalledWith("claude");
+    expect(shell.getRequestLogs).toHaveBeenCalledWith("claude", 0, 6);
+    expect(shell.getRequestDetail).toHaveBeenCalledWith("claude", "req-1");
+
+    await act(async () => {
+      fireEvent.click(
+        within(target).getByRole("button", { name: /req-2/ }),
+      );
+    });
+
+    await waitFor(() =>
+      expect(target).toHaveTextContent(
+        "Rate limit from upstream backup provider",
+      ),
+    );
+    expect(shell.getRequestDetail).toHaveBeenCalledWith("claude", "req-2");
 
     await act(async () => {
       fireEvent.click(
@@ -1273,6 +1408,13 @@ describe("OpenWrt provider UI bundle", () => {
       getHostState: vi.fn().mockImplementation(() => hostState),
       getMessage: vi.fn().mockReturnValue(null),
       getSelectedApp: vi.fn().mockReturnValue("claude" satisfies SharedProviderAppId),
+      getRequestDetail: vi.fn().mockResolvedValue(null),
+      getRequestLogs: vi.fn().mockResolvedValue({
+        data: [],
+        total: 0,
+        page: 0,
+        pageSize: 6,
+      }),
       getProviderStats: vi.fn().mockResolvedValue([]),
       getRecentActivity: vi.fn().mockResolvedValue([]),
       getRestartState: vi.fn().mockReturnValue({

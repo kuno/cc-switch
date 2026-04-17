@@ -16,9 +16,11 @@ import type { SharedProviderView } from "@/shared/providers/domain";
 import type {
   OpenWrtHostConfigPayload,
   OpenWrtHostState,
+  OpenWrtPaginatedRequestLogs,
   OpenWrtPageMessage,
   OpenWrtPageTheme,
   OpenWrtRecentActivityItem,
+  OpenWrtRequestLog,
   OpenWrtProviderStat,
   OpenWrtSharedPageMountOptions,
   OpenWrtUsageSummary,
@@ -27,6 +29,7 @@ import type {
 const OPENWRT_PAGE_THEME_STORAGE_KEY = "ccswitch-openwrt-native-page-theme";
 const OPENWRT_PAGE_THEME_DARK_CLASS =
   "ccswitch-openwrt-provider-ui-theme-dark";
+const OPENWRT_REQUEST_LOGS_PAGE_SIZE = 6;
 
 type HostDraft = OpenWrtHostConfigPayload;
 
@@ -52,6 +55,17 @@ type ProviderStatsState = {
 
 type RecentActivityState = {
   entries: OpenWrtRecentActivityItem[];
+  loading: boolean;
+  error: string | null;
+};
+
+type RequestLogsState = OpenWrtPaginatedRequestLogs & {
+  loading: boolean;
+  error: string | null;
+};
+
+type RequestLogDetailState = {
+  detail: OpenWrtRequestLog | null;
   loading: boolean;
   error: string | null;
 };
@@ -306,6 +320,27 @@ function getTotalTokenCount(summary: OpenWrtUsageSummary | null): number {
   );
 }
 
+function getRequestLogTokenCount(entry: OpenWrtRequestLog | null): number {
+  if (!entry) {
+    return 0;
+  }
+
+  return (
+    entry.inputTokens +
+    entry.outputTokens +
+    entry.cacheCreationTokens +
+    entry.cacheReadTokens
+  );
+}
+
+function formatRequestLogSource(value: string | null | undefined): string {
+  if (!value) {
+    return "proxy";
+  }
+
+  return value.replace(/_/g, " ");
+}
+
 function getProviderNameFromMutation(
   providerId: string | null,
   providerState: {
@@ -392,6 +427,22 @@ export function OpenWrtPageShell({
     loading: true,
     error: null,
   });
+  const [requestLogsPage, setRequestLogsPage] = useState(0);
+  const [requestLogsState, setRequestLogsState] = useState<RequestLogsState>({
+    data: [],
+    total: 0,
+    page: 0,
+    pageSize: OPENWRT_REQUEST_LOGS_PAGE_SIZE,
+    loading: true,
+    error: null,
+  });
+  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
+  const [requestLogDetailState, setRequestLogDetailState] =
+    useState<RequestLogDetailState>({
+      detail: null,
+      loading: false,
+      error: null,
+    });
   const previousHostDraftRef = useRef(createHostDraft(options.shell.getHostState()));
   const queryClient = useMemo(() => createSharedProviderManagerQueryClient(), []);
   const providerAdapter = useMemo(
@@ -453,6 +504,16 @@ export function OpenWrtPageShell({
     );
     previousHostDraftRef.current = nextDraft;
   }, [snapshot.host]);
+
+  useEffect(() => {
+    setRequestLogsPage(0);
+    setSelectedRequestId(null);
+    setRequestLogDetailState({
+      detail: null,
+      loading: false,
+      error: null,
+    });
+  }, [snapshot.host.app]);
 
   useEffect(() => {
     let cancelled = false;
@@ -571,10 +632,142 @@ export function OpenWrtPageShell({
     };
   }, [options, snapshot.host.app]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    setRequestLogsState((current) => ({
+      ...current,
+      loading: true,
+      error: null,
+    }));
+
+    void options.shell
+      .getRequestLogs(
+        snapshot.host.app,
+        requestLogsPage,
+        OPENWRT_REQUEST_LOGS_PAGE_SIZE,
+      )
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+
+        setRequestLogsState({
+          data: result.data,
+          total: result.total,
+          page: result.page,
+          pageSize: result.pageSize || OPENWRT_REQUEST_LOGS_PAGE_SIZE,
+          loading: false,
+          error: null,
+        });
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+
+        setRequestLogsState({
+          data: [],
+          total: 0,
+          page: requestLogsPage,
+          pageSize: OPENWRT_REQUEST_LOGS_PAGE_SIZE,
+          loading: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [options, requestLogsPage, snapshot.host.app]);
+
+  useEffect(() => {
+    if (!requestLogsState.data.length) {
+      setSelectedRequestId(null);
+      return;
+    }
+
+    setSelectedRequestId((current) => {
+      if (
+        current &&
+        requestLogsState.data.some((entry) => entry.requestId === current)
+      ) {
+        return current;
+      }
+
+      return requestLogsState.data[0]?.requestId || null;
+    });
+  }, [requestLogsState.data]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!selectedRequestId) {
+      setRequestLogDetailState({
+        detail: null,
+        loading: false,
+        error: null,
+      });
+      return;
+    }
+
+    setRequestLogDetailState((current) => ({
+      detail:
+        current.detail?.requestId === selectedRequestId ? current.detail : null,
+      loading: true,
+      error: null,
+    }));
+
+    void options.shell
+      .getRequestDetail(snapshot.host.app, selectedRequestId)
+      .then((detail) => {
+        if (cancelled) {
+          return;
+        }
+
+        setRequestLogDetailState({
+          detail,
+          loading: false,
+          error: detail ? null : "Request detail unavailable.",
+        });
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+
+        setRequestLogDetailState({
+          detail: null,
+          loading: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [options, selectedRequestId, snapshot.host.app]);
+
   const isDirty = useMemo(
     () => !isHostDraftEqual(hostDraft, createHostDraft(snapshot.host)),
     [hostDraft, snapshot.host],
   );
+  const requestLogsTotalPages = Math.max(
+    1,
+    Math.ceil(
+      requestLogsState.total /
+        Math.max(1, requestLogsState.pageSize || OPENWRT_REQUEST_LOGS_PAGE_SIZE),
+    ),
+  );
+  const requestLogsWindowStart = requestLogsState.total
+    ? requestLogsState.page * requestLogsState.pageSize + 1
+    : 0;
+  const requestLogsWindowEnd = requestLogsState.total
+    ? Math.min(
+        requestLogsState.total,
+        requestLogsWindowStart + requestLogsState.data.length - 1,
+      )
+    : 0;
 
   async function handleSave() {
     setSaveInFlight(true);
@@ -930,6 +1123,223 @@ export function OpenWrtPageShell({
             ) : (
               <div className="ccswitch-openwrt-workspace-shell__provider-usage-empty">
                 No recent activity has been recorded for this app yet.
+              </div>
+            )}
+          </div>
+          <div className="ccswitch-openwrt-workspace-shell__request-logs">
+            <div className="ccswitch-openwrt-workspace-shell__provider-usage-head">
+              <div>
+                <p className="ccswitch-openwrt-daemon-card__eyebrow">
+                  Request logs
+                </p>
+                <p className="ccswitch-openwrt-workspace-shell__usage-summary">
+                  Paged local request history for the selected app. Select a row
+                  to inspect full token, duration, and error details.
+                </p>
+              </div>
+              <div className="ccswitch-openwrt-workspace-shell__request-logs-nav">
+                <span className="ccswitch-openwrt-workspace-shell__request-logs-page">
+                  {requestLogsWindowStart && requestLogsWindowEnd
+                    ? `${requestLogsWindowStart}-${requestLogsWindowEnd} of ${formatCount(requestLogsState.total)}`
+                    : `Page ${requestLogsState.page + 1} of ${requestLogsTotalPages}`}
+                </span>
+                <button
+                  type="button"
+                  className="ccswitch-openwrt-workspace-shell__request-logs-button"
+                  onClick={() =>
+                    setRequestLogsPage((current) => Math.max(0, current - 1))
+                  }
+                  disabled={requestLogsPage === 0 || requestLogsState.loading}
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  className="ccswitch-openwrt-workspace-shell__request-logs-button"
+                  onClick={() =>
+                    setRequestLogsPage((current) =>
+                      Math.min(requestLogsTotalPages - 1, current + 1),
+                    )
+                  }
+                  disabled={
+                    requestLogsState.loading ||
+                    requestLogsPage >= requestLogsTotalPages - 1
+                  }
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+            {requestLogsState.error ? (
+              <div className="ccswitch-openwrt-page-note ccswitch-openwrt-page-note--info">
+                {requestLogsState.error}
+              </div>
+            ) : requestLogsState.loading ? (
+              <div className="ccswitch-openwrt-workspace-shell__provider-usage-empty">
+                Loading request logs…
+              </div>
+            ) : requestLogsState.data.length > 0 ? (
+              <>
+                <div className="ccswitch-openwrt-workspace-shell__request-logs-list">
+                  {requestLogsState.data.map((entry) => (
+                    <button
+                      type="button"
+                      className="ccswitch-openwrt-workspace-shell__request-logs-row"
+                      data-selected={selectedRequestId === entry.requestId}
+                      key={entry.requestId}
+                      onClick={() => setSelectedRequestId(entry.requestId)}
+                    >
+                      <div className="ccswitch-openwrt-workspace-shell__request-logs-main">
+                        <div className="ccswitch-openwrt-workspace-shell__recent-activity-title">
+                          <p className="ccswitch-openwrt-workspace-shell__provider-name">
+                            {entry.providerName || entry.providerId}
+                          </p>
+                          <span
+                            className="ccswitch-openwrt-daemon-chip"
+                            data-tone={getRecentActivityStatusTone(entry.statusCode)}
+                          >
+                            {getRecentActivityStatusLabel(entry.statusCode)}
+                          </span>
+                        </div>
+                        <p className="ccswitch-openwrt-workspace-shell__provider-meta">
+                          {entry.model || "Default model"} ·{" "}
+                          {formatRecentActivityTime(entry.createdAt)} ·{" "}
+                          {entry.requestId}
+                        </p>
+                      </div>
+                      <div className="ccswitch-openwrt-workspace-shell__recent-activity-metrics">
+                        <span>
+                          {formatCount(getRequestLogTokenCount(entry))} tokens
+                        </span>
+                        <span>{formatUsd(entry.totalCostUsd)}</span>
+                        <span>{formatLatency(entry.latencyMs)}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                {requestLogDetailState.error ? (
+                  <div className="ccswitch-openwrt-page-note ccswitch-openwrt-page-note--info">
+                    {requestLogDetailState.error}
+                  </div>
+                ) : requestLogDetailState.loading ? (
+                  <div className="ccswitch-openwrt-workspace-shell__provider-usage-empty">
+                    Loading request detail…
+                  </div>
+                ) : requestLogDetailState.detail ? (
+                  <div className="ccswitch-openwrt-workspace-shell__request-detail">
+                    <div className="ccswitch-openwrt-workspace-shell__request-detail-grid">
+                      <div className="ccswitch-openwrt-stat-card ccswitch-openwrt-workspace-shell__usage-card">
+                        <p className="ccswitch-openwrt-workspace-shell__usage-label">
+                          Request ID
+                        </p>
+                        <p className="ccswitch-openwrt-workspace-shell__request-detail-value">
+                          {requestLogDetailState.detail.requestId}
+                        </p>
+                      </div>
+                      <div className="ccswitch-openwrt-stat-card ccswitch-openwrt-workspace-shell__usage-card">
+                        <p className="ccswitch-openwrt-workspace-shell__usage-label">
+                          Provider
+                        </p>
+                        <p className="ccswitch-openwrt-workspace-shell__request-detail-value">
+                          {requestLogDetailState.detail.providerName ||
+                            requestLogDetailState.detail.providerId}
+                        </p>
+                      </div>
+                      <div className="ccswitch-openwrt-stat-card ccswitch-openwrt-workspace-shell__usage-card">
+                        <p className="ccswitch-openwrt-workspace-shell__usage-label">
+                          Tokens
+                        </p>
+                        <p className="ccswitch-openwrt-workspace-shell__request-detail-value">
+                          {formatCount(
+                            getRequestLogTokenCount(requestLogDetailState.detail),
+                          )}
+                        </p>
+                      </div>
+                      <div className="ccswitch-openwrt-stat-card ccswitch-openwrt-workspace-shell__usage-card">
+                        <p className="ccswitch-openwrt-workspace-shell__usage-label">
+                          Cost
+                        </p>
+                        <p className="ccswitch-openwrt-workspace-shell__request-detail-value">
+                          {formatUsd(requestLogDetailState.detail.totalCostUsd)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="ccswitch-openwrt-workspace-shell__request-detail-meta">
+                      <span>
+                        Model: {requestLogDetailState.detail.model || "Default model"}
+                      </span>
+                      <span>
+                        Request model:{" "}
+                        {requestLogDetailState.detail.requestModel ||
+                          "Not overridden"}
+                      </span>
+                      <span>
+                        Duration:{" "}
+                        {formatLatency(
+                          requestLogDetailState.detail.durationMs ||
+                            requestLogDetailState.detail.latencyMs,
+                        )}
+                      </span>
+                      <span>
+                        First token:{" "}
+                        {requestLogDetailState.detail.firstTokenMs
+                          ? formatLatency(requestLogDetailState.detail.firstTokenMs)
+                          : "n/a"}
+                      </span>
+                      <span>
+                        Source:{" "}
+                        {formatRequestLogSource(
+                          requestLogDetailState.detail.dataSource,
+                        )}
+                      </span>
+                      <span>
+                        Streaming:{" "}
+                        {requestLogDetailState.detail.isStreaming ? "yes" : "no"}
+                      </span>
+                    </div>
+                    <div className="ccswitch-openwrt-workspace-shell__request-detail-meta">
+                      <span>
+                        Input:{" "}
+                        {formatCount(requestLogDetailState.detail.inputTokens)}
+                      </span>
+                      <span>
+                        Output:{" "}
+                        {formatCount(requestLogDetailState.detail.outputTokens)}
+                      </span>
+                      <span>
+                        Cache read:{" "}
+                        {formatCount(
+                          requestLogDetailState.detail.cacheReadTokens,
+                        )}
+                      </span>
+                      <span>
+                        Cache create:{" "}
+                        {formatCount(
+                          requestLogDetailState.detail.cacheCreationTokens,
+                        )}
+                      </span>
+                      <span>
+                        Cost multiplier:{" "}
+                        {requestLogDetailState.detail.costMultiplier}
+                      </span>
+                      <span>
+                        Logged:{" "}
+                        {formatRecentActivityTime(
+                          requestLogDetailState.detail.createdAt,
+                        )}
+                      </span>
+                    </div>
+                    {requestLogDetailState.detail.errorMessage ? (
+                      <div className="ccswitch-openwrt-workspace-shell__request-detail-error">
+                        {requestLogDetailState.detail.errorMessage}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <div className="ccswitch-openwrt-workspace-shell__provider-usage-empty">
+                No request logs have been recorded for this app yet.
               </div>
             )}
           </div>
