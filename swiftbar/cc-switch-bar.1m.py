@@ -3,10 +3,12 @@
 # <swiftbar.hideRunInTerminal>true</swiftbar.hideRunInTerminal>
 # <swiftbar.hideDisablePlugin>true</swiftbar.hideDisablePlugin>
 
+import base64
 import json
 import urllib.request
 from collections import OrderedDict
 from datetime import datetime, timezone
+from pathlib import Path
 
 DAEMON = "http://istoreos:15721"
 TIMEOUT = 5
@@ -20,6 +22,21 @@ STATUS_COLOR = {
     "allowed_warning": "#facc15",
     "exhausted": "#f87171",
 }
+
+APP_ICON_FILES = {
+    "claude": [
+        Path("/Applications/Claude.app/Contents/Resources/TrayIconTemplate.png"),
+        Path.home() / "Applications/Claude.app/Contents/Resources/TrayIconTemplate.png",
+    ],
+    "codex": [
+        Path("/Applications/Codex/Contents/Resources/codexTemplate.png"),
+        Path("/Applications/Codex.app/Contents/Resources/codexTemplate.png"),
+        Path.home() / "Applications/Codex/Contents/Resources/codexTemplate.png",
+        Path.home() / "Applications/Codex.app/Contents/Resources/codexTemplate.png",
+    ],
+}
+
+APP_ICON_CACHE = {}
 
 def fetch_json(path):
     url = f"{DAEMON}{path}"
@@ -142,6 +159,31 @@ def sanitize_title_text(text):
     return " ".join(text.split())
 
 
+def load_app_icon_base64(app):
+    cached = APP_ICON_CACHE.get(app)
+    if cached is not None:
+        return cached
+    for path in APP_ICON_FILES.get(app, []):
+        try:
+            encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+            APP_ICON_CACHE[app] = encoded
+            return encoded
+        except FileNotFoundError:
+            continue
+        except OSError:
+            continue
+    APP_ICON_CACHE[app] = ""
+    return ""
+
+
+def render_app_header(app, summary):
+    encoded = load_app_icon_base64(app)
+    if encoded:
+        title = summary.strip() or " "
+        return f"{title} | templateImage={encoded} size=14 color=#e2e8f0"
+    return f"{app.upper()}{summary} | size=14 color=#e2e8f0"
+
+
 def menu_bar_title(quota_groups, stats_by_app):
     parts = []
     for app in APP_ORDER:
@@ -149,24 +191,21 @@ def menu_bar_title(quota_groups, stats_by_app):
         app_stats = stats_by_app.get(app)
         if not providers and not app_stats:
             continue
-        label = app.capitalize()[:6]
         window_pcts = app_window_headline(providers)
         if any(pct is not None for pct in window_pcts.values()):
             short_5h = window_pcts.get("5h")
             short_7d = window_pcts.get("7d")
             if short_5h is not None and short_7d is not None:
-                parts.append(f"{label} [{short_5h}/{short_7d}]%")
+                parts.append(f"[{short_5h}/{short_7d}]%")
             else:
                 fallback_bits = []
                 for window_name, pct in window_pcts.items():
                     if pct is not None:
                         fallback_bits.append(f"{window_name} {pct}%")
-                parts.append(f"{label} {' / '.join(fallback_bits)}")
+                parts.append(" / ".join(fallback_bits))
         elif app_stats:
             total_req = sum(s.get("requestCount", 0) for s in app_stats)
-            parts.append(f"{label} {total_req}r")
-        else:
-            parts.append(label)
+            parts.append(f"{total_req}r")
     # SwiftBar uses ASCII "|" to start item metadata, so use a Unicode vertical bar in title text.
     return sanitize_title_text(" ｜ ".join(parts) if parts else "--")
 
@@ -303,7 +342,7 @@ def main():
             if total_req > 0:
                 summary_parts.append(f"{total_req}r/{format_tokens(total_tok)}tok")
             summary = f" {' '.join(summary_parts)}" if summary_parts else ""
-            print(f"{app.upper()}{summary} | size=14 color=#e2e8f0")
+            print(render_app_header(app, summary))
 
             stats_by_id = {s["providerId"]: s for s in app_stats}
             quota_by_id = {
