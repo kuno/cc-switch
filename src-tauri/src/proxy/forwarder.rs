@@ -18,13 +18,14 @@ use super::{
     ProxyError,
 };
 use crate::proxy::providers::codex_oauth_auth::CodexOAuthManager;
+use crate::proxy::providers::codex_oauth_store::load_codex_auth_for_provider;
 use crate::proxy::providers::copilot_auth::CopilotAuthManager;
 use crate::{
     app_config::AppType,
     provider::{Provider, ProviderProxyConfig},
 };
 use http::Extensions;
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -91,6 +92,48 @@ fn build_effective_auth_headers(
     }
 
     Vec::new()
+}
+
+const CODEX_CHATGPT_BACKEND_BASE_URL: &str = "https://chatgpt.com/backend-api/codex";
+const CODEX_REASONING_ENCRYPTED_CONTENT: &str = "reasoning.encrypted_content";
+const CODEX_OAUTH_AUTH_MODE: &str = "codex_oauth";
+const CODEX_LEGACY_CLIENT_PASSTHROUGH_AUTH_MODE: &str = "client_passthrough";
+
+fn is_codex_oauth_upload_eligible(app_type_str: &str, provider: &Provider, base_url: &str) -> bool {
+    app_type_str == AppType::Codex.as_str()
+        && base_url.contains("api.openai.com")
+        && provider
+            .settings_config
+            .get("auth_mode")
+            .and_then(|value| value.as_str())
+            .is_some_and(|value| {
+                matches!(
+                    value,
+                    CODEX_OAUTH_AUTH_MODE | CODEX_LEGACY_CLIENT_PASSTHROUGH_AUTH_MODE
+                )
+            })
+}
+
+fn apply_codex_oauth_body_contract(body: &mut Value) {
+    let Some(obj) = body.as_object_mut() else {
+        return;
+    };
+
+    obj.insert("store".to_string(), json!(false));
+    obj.insert("stream".to_string(), json!(true));
+
+    let mut includes = obj
+        .get("include")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+    if !includes
+        .iter()
+        .any(|value| value.as_str() == Some(CODEX_REASONING_ENCRYPTED_CONTENT))
+    {
+        includes.push(json!(CODEX_REASONING_ENCRYPTED_CONTENT));
+    }
+    obj.insert("include".to_string(), json!(includes));
 }
 
 impl RequestForwarder {
@@ -928,6 +971,21 @@ impl RequestForwarder {
                 }
             }
         }
+        let tmp_codex_auth = if is_codex_oauth_upload_eligible(app_type_str, provider, &base_url) {
+            load_codex_auth_for_provider(&provider.id)
+        } else {
+            None
+        };
+
+        if tmp_codex_auth.is_some() {
+            log::debug!(
+                "[Codex] 为 provider={} 使用临时 ChatGPT backend base_url: {}",
+                provider.id,
+                CODEX_CHATGPT_BACKEND_BASE_URL
+            );
+            base_url = CODEX_CHATGPT_BACKEND_BASE_URL.to_string();
+        }
+
         let resolved_claude_api_format = if adapter.name() == "Claude" {
             Some(
                 self.resolve_claude_api_format(provider, &mapped_body, is_copilot)
@@ -962,7 +1020,7 @@ impl RequestForwarder {
         };
 
         // 转换请求体（如果需要）
-        let request_body = if needs_transform {
+        let mut request_body = if needs_transform {
             if adapter.name() == "Claude" {
                 let api_format = resolved_claude_api_format
                     .as_deref()
@@ -979,6 +1037,10 @@ impl RequestForwarder {
             mapped_body
         };
 
+        if tmp_codex_auth.is_some() {
+            apply_codex_oauth_body_contract(&mut request_body);
+        }
+
         // 过滤私有参数（以 `_` 开头的字段），防止内部信息泄露到上游
         // 默认使用空白名单，过滤所有 _ 前缀字段
         let filtered_body = filter_private_params_with_whitelist(request_body, &[]);
@@ -989,7 +1051,30 @@ impl RequestForwarder {
         let mut codex_oauth_account_id: Option<String> = None;
 
         // 获取认证头（提前准备，用于内联替换）
-        let mut auth_headers = if let Some(mut auth) = adapter.extract_auth(provider) {
+        let mut auth_headers = if let Some(tmp_auth) = tmp_codex_auth.as_ref() {
+            let bearer = format!("Bearer {}", tmp_auth.access_token);
+            let mut headers = vec![
+                (
+                    http::HeaderName::from_static("authorization"),
+                    http::HeaderValue::from_str(&bearer).map_err(|err| {
+                        ProxyError::AuthError(format!("临时 Codex access_token 非法: {err}"))
+                    })?,
+                ),
+                (
+                    http::HeaderName::from_static("originator"),
+                    http::HeaderValue::from_static("cc-switch"),
+                ),
+            ];
+            if let Some(account_id) = tmp_auth.account_id.as_deref() {
+                headers.push((
+                    http::HeaderName::from_static("chatgpt-account-id"),
+                    http::HeaderValue::from_str(account_id).map_err(|err| {
+                        ProxyError::AuthError(format!("临时 Codex chatgpt-account-id 非法: {err}"))
+                    })?,
+                ));
+            }
+            headers
+        } else if let Some(mut auth) = adapter.extract_auth(provider) {
             // GitHub Copilot 特殊处理：从 CopilotAuthManager 获取真实 token
             if auth.strategy == AuthStrategy::GitHubCopilot {
                 if let Some(copilot_auth_arc) = &self.copilot_auth {
@@ -1424,7 +1509,14 @@ impl RequestForwarder {
                 let pid = provider.id.clone();
                 let pname = provider.name.clone();
                 tokio::spawn(async move {
-                    super::rate_limit::capture_rate_limits(&rl_store, &resp_headers, &app, &pid, &pname).await;
+                    super::rate_limit::capture_rate_limits(
+                        &rl_store,
+                        &resp_headers,
+                        &app,
+                        &pid,
+                        &pname,
+                    )
+                    .await;
                 });
             }
 
@@ -1759,8 +1851,29 @@ mod tests {
     use super::*;
     use axum::http::header::{HeaderValue, ACCEPT};
     use axum::http::HeaderMap;
+    use base64::Engine as _;
     use serde_json::json;
     use serial_test::serial;
+    use std::fs;
+
+    struct ScopedDataDirEnv(Option<String>);
+
+    impl ScopedDataDirEnv {
+        fn set(path: &std::path::Path) -> Self {
+            let original = std::env::var("CC_SWITCH_DATA_DIR").ok();
+            std::env::set_var("CC_SWITCH_DATA_DIR", path);
+            Self(original)
+        }
+    }
+
+    impl Drop for ScopedDataDirEnv {
+        fn drop(&mut self) {
+            match &self.0 {
+                Some(value) => std::env::set_var("CC_SWITCH_DATA_DIR", value),
+                None => std::env::remove_var("CC_SWITCH_DATA_DIR"),
+            }
+        }
+    }
 
     #[test]
     fn single_provider_retryable_log_uses_single_provider_code() {
@@ -1877,6 +1990,124 @@ mod tests {
         let url = append_query_to_full_url("https://relay.example/api?foo=bar", Some("x-id=1"));
 
         assert_eq!(url, "https://relay.example/api?foo=bar&x-id=1");
+    }
+
+    #[test]
+    fn codex_oauth_body_contract_sets_store_and_include_marker_only() {
+        let mut body = json!({
+            "model": "gpt-5",
+            "store": true,
+            "include": ["other"],
+            "stream": false
+        });
+
+        apply_codex_oauth_body_contract(&mut body);
+
+        assert_eq!(body["store"], json!(false));
+        assert_eq!(body["stream"], json!(true));
+        assert_eq!(body["model"], json!("gpt-5"));
+        assert_eq!(
+            body["include"],
+            json!(["other", "reasoning.encrypted_content"])
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn load_codex_oauth_auth_prefers_explicit_account_id() {
+        let temp = tempfile::tempdir().unwrap();
+        let _env = ScopedDataDirEnv::set(temp.path());
+        let provider_id = "provider-explicit";
+        let path = temp.path().join("codex_auth").join(format!("{provider_id}.json"));
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            r#"{"tokens":{"access_token":"access-token","refresh_token":"refresh-token","id_token":"ignored","account_id":"acc-explicit"}}"#,
+        )
+        .unwrap();
+
+        let auth = load_codex_auth_for_provider(provider_id).unwrap();
+        assert_eq!(auth.access_token, "access-token");
+        assert_eq!(auth.account_id.as_deref(), Some("acc-explicit"));
+    }
+
+    #[test]
+    #[serial]
+    fn load_codex_oauth_auth_falls_back_to_id_token_claim() {
+        let temp = tempfile::tempdir().unwrap();
+        let _env = ScopedDataDirEnv::set(temp.path());
+        let provider_id = "provider-jwt";
+        let path = temp.path().join("codex_auth").join(format!("{provider_id}.json"));
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let jwt = format!(
+            "{}.{}.",
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(br#"{"alg":"none"}"#),
+            base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .encode(br#"{"https://api.openai.com/auth":{"chatgpt_account_id":"acc-jwt"}}"#,)
+        );
+        fs::write(
+            &path,
+            json!({
+                "tokens": {
+                    "access_token": "access-token",
+                    "refresh_token": "refresh-token",
+                    "id_token": jwt
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let auth = load_codex_auth_for_provider(provider_id).unwrap();
+        assert_eq!(auth.account_id.as_deref(), Some("acc-jwt"));
+    }
+
+    #[test]
+    fn codex_oauth_upload_is_eligible_for_canonical_codex_oauth_mode() {
+        let provider = Provider {
+            id: "codex".to_string(),
+            name: "Codex".to_string(),
+            settings_config: json!({ "auth_mode": "codex_oauth" }),
+            website_url: None,
+            category: Some("codex".to_string()),
+            created_at: None,
+            sort_index: None,
+            notes: None,
+            meta: None,
+            icon: None,
+            icon_color: None,
+            in_failover_queue: false,
+        };
+
+        assert!(is_codex_oauth_upload_eligible(
+            AppType::Codex.as_str(),
+            &provider,
+            "https://api.openai.com/v1"
+        ));
+    }
+
+    #[test]
+    fn codex_oauth_upload_is_eligible_for_legacy_client_passthrough_mode() {
+        let provider = Provider {
+            id: "codex".to_string(),
+            name: "Codex".to_string(),
+            settings_config: json!({ "auth_mode": "client_passthrough" }),
+            website_url: None,
+            category: Some("codex".to_string()),
+            created_at: None,
+            sort_index: None,
+            notes: None,
+            meta: None,
+            icon: None,
+            icon_color: None,
+            in_failover_queue: false,
+        };
+
+        assert!(is_codex_oauth_upload_eligible(
+            AppType::Codex.as_str(),
+            &provider,
+            "https://api.openai.com/v1"
+        ));
     }
 
     #[test]

@@ -107,6 +107,15 @@ export interface OpenWrtProviderTransport {
     appId: SharedProviderAppId,
     value: number,
   ): Promise<OpenWrtRpcResult | null>;
+  uploadCodexAuth?(
+    appId: SharedProviderAppId,
+    providerId: string,
+    authJsonText: string,
+  ): Promise<OpenWrtRpcResult | null>;
+  removeCodexAuth?(
+    appId: SharedProviderAppId,
+    providerId: string,
+  ): Promise<OpenWrtRpcResult | null>;
   restartService(): Promise<OpenWrtRpcResult>;
 }
 

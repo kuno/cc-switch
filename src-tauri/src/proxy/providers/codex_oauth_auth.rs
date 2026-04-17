@@ -137,6 +137,8 @@ struct IdTokenClaims {
     #[serde(default)]
     email: Option<String>,
     #[serde(default)]
+    exp: Option<i64>,
+    #[serde(default)]
     organizations: Vec<OrgClaim>,
     #[serde(default, rename = "https://api.openai.com/auth")]
     openai_auth: Option<OpenAiAuthClaim>,
@@ -929,6 +931,24 @@ fn parse_jwt_claims(token: &str) -> Option<IdTokenClaims> {
     serde_json::from_slice(&decoded).ok()
 }
 
+/// 从 JWT 中提取 chatgpt_account_id。
+pub(crate) fn parse_chatgpt_account_id_from_jwt(token: &str) -> Option<String> {
+    let claims = parse_jwt_claims(token)?;
+    claims
+        .chatgpt_account_id
+        .or_else(|| {
+            claims
+                .openai_auth
+                .as_ref()
+                .and_then(|auth| auth.chatgpt_account_id.clone())
+        })
+        .or_else(|| claims.organizations.first().and_then(|org| org.id.clone()))
+}
+
+pub(crate) fn parse_jwt_exp_from_jwt(token: &str) -> Option<i64> {
+    parse_jwt_claims(token)?.exp
+}
+
 /// 从 token 响应中提取 (account_id, email)
 fn extract_identity_from_tokens(tokens: &OAuthTokenResponse) -> (Option<String>, Option<String>) {
     let mut account_id: Option<String> = None;
@@ -1066,6 +1086,19 @@ mod tests {
                 .and_then(|o| o.id.clone())
                 .as_deref(),
             Some("org-456")
+        );
+    }
+
+    #[test]
+    fn test_parse_chatgpt_account_id_from_jwt_prefers_top_level_claim() {
+        let header = URL_SAFE_NO_PAD.encode(b"{\"alg\":\"none\"}");
+        let payload = URL_SAFE_NO_PAD.encode(
+            b"{\"chatgpt_account_id\":\"acc-123\",\"https://api.openai.com/auth\":{\"chatgpt_account_id\":\"acc-456\"}}",
+        );
+        let jwt = format!("{header}.{payload}.");
+        assert_eq!(
+            parse_chatgpt_account_id_from_jwt(&jwt).as_deref(),
+            Some("acc-123")
         );
     }
 

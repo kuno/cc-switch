@@ -3,7 +3,10 @@ use crate::error::AppError;
 use crate::proxy::rate_limit::RateLimitSnapshot;
 
 impl Database {
-    pub fn flush_rate_limit_snapshots(&self, snapshots: &[RateLimitSnapshot]) -> Result<(), AppError> {
+    pub fn flush_rate_limit_snapshots(
+        &self,
+        snapshots: &[RateLimitSnapshot],
+    ) -> Result<(), AppError> {
         let conn = lock_conn!(self.conn);
 
         conn.execute("DELETE FROM rate_limit_snapshots", [])

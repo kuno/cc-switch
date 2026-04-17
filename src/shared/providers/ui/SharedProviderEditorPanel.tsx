@@ -1,4 +1,11 @@
-import { type FormEvent, type ReactNode, type RefObject, useId } from "react";
+import {
+  type FormEvent,
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useId,
+  useState,
+} from "react";
 import {
   CheckCircle2,
   KeyRound,
@@ -23,9 +30,11 @@ import { cn } from "@/lib/utils";
 import {
   getGenericPresetDescription,
   type SharedProviderAppId,
+  type SharedProviderCodexAuthSummary,
   type SharedProviderEditorPayload,
   type SharedProviderPreset,
   type SharedProviderTokenField,
+  type SharedProviderView,
 } from "../domain";
 import {
   SHARED_PROVIDER_APP_PRESENTATION,
@@ -35,11 +44,27 @@ import {
 const FIELD_CLASS_NAME =
   "ccswitch-openwrt-field flex h-10 w-full rounded-md border border-border-default bg-background px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:opacity-50";
 
+function allowsOptionalToken(authMode?: string): boolean {
+  return authMode === "client_passthrough" || authMode === "codex_oauth";
+}
+
+function isCodexOpenAiOfficialPreset(
+  appId: SharedProviderAppId,
+  selectedPreset: SharedProviderPreset | null,
+): boolean {
+  return appId === "codex" && selectedPreset?.id === "codex-openai-official";
+}
+
+function getCodexAuthMode(authMode?: string): "api_key" | "codex_oauth" {
+  return authMode === "codex_oauth" ? "codex_oauth" : "api_key";
+}
+
 interface SharedProviderEditorPanelProps {
   open: boolean;
   appId: SharedProviderAppId;
   mode: "add" | "edit";
   draft: SharedProviderEditorPayload;
+  editingProvider: SharedProviderView | null;
   selectedPresetId: string;
   selectedPreset: SharedProviderPreset | null;
   presetGroups: SharedProviderPresetBrowseGroup[];
@@ -56,6 +81,11 @@ interface SharedProviderEditorPanelProps {
   onOpenChange: (open: boolean) => void;
   onPresetChange: (presetId: string) => void;
   onDraftChange: (draft: SharedProviderEditorPayload) => void;
+  onUploadCodexAuth?: (
+    providerId: string,
+    authJsonText: string,
+  ) => Promise<void>;
+  onRemoveCodexAuth?: (providerId: string) => Promise<void>;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }
 
@@ -140,6 +170,7 @@ export function SharedProviderEditorPanel({
   appId,
   mode,
   draft,
+  editingProvider,
   selectedPresetId,
   selectedPreset,
   presetGroups,
@@ -153,11 +184,20 @@ export function SharedProviderEditorPanel({
   onOpenChange,
   onPresetChange,
   onDraftChange,
+  onUploadCodexAuth,
+  onRemoveCodexAuth,
   onSubmit,
 }: SharedProviderEditorPanelProps) {
   const fieldIdPrefix = useId();
+  const [authJsonFile, setAuthJsonFile] = useState<File | null>(null);
+  const [codexAuthPending, setCodexAuthPending] = useState(false);
   const appPresentation = SHARED_PROVIDER_APP_PRESENTATION[appId];
   const appLabel = appPresentation.label;
+  const codexOfficialPreset = isCodexOpenAiOfficialPreset(appId, selectedPreset);
+  const codexAuthMode = getCodexAuthMode(draft.authMode);
+  const showCodexAuthUpload = codexOfficialPreset && codexAuthMode === "codex_oauth";
+  const codexAuthSummary: SharedProviderCodexAuthSummary | undefined =
+    editingProvider?.codexAuth;
   const title =
     mode === "edit"
       ? `Update ${appLabel} provider`
@@ -166,6 +206,43 @@ export function SharedProviderEditorPanel({
     mode === "edit"
       ? `Update the saved ${appLabel} provider for this router.`
       : `Save a new ${appLabel} provider from a preset or a custom draft.`;
+
+  useEffect(() => {
+    if (!showCodexAuthUpload) {
+      setAuthJsonFile(null);
+    }
+  }, [showCodexAuthUpload]);
+
+  async function handleCodexAuthUpload() {
+    if (!editingProvider?.providerId || !authJsonFile || !onUploadCodexAuth) {
+      return;
+    }
+
+    setCodexAuthPending(true);
+    try {
+      await onUploadCodexAuth(
+        editingProvider.providerId,
+        await authJsonFile.text(),
+      );
+      setAuthJsonFile(null);
+    } finally {
+      setCodexAuthPending(false);
+    }
+  }
+
+  async function handleCodexAuthRemove() {
+    if (!editingProvider?.providerId || !onRemoveCodexAuth) {
+      return;
+    }
+
+    setCodexAuthPending(true);
+    try {
+      await onRemoveCodexAuth(editingProvider.providerId);
+      setAuthJsonFile(null);
+    } finally {
+      setCodexAuthPending(false);
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -422,64 +499,161 @@ export function SharedProviderEditorPanel({
                     />
                   </div>
 
-                  <div className="grid gap-4 sm:grid-cols-2">
+                  {codexOfficialPreset ? (
                     <div className="space-y-2">
-                      <Label htmlFor={`${fieldIdPrefix}-token-field`}>
-                        Token field
+                      <Label htmlFor={`${fieldIdPrefix}-codex-auth-mode`}>
+                        Authentication mode
                       </Label>
                       <select
-                        id={`${fieldIdPrefix}-token-field`}
+                        id={`${fieldIdPrefix}-codex-auth-mode`}
                         className={FIELD_CLASS_NAME}
-                        value={draft.tokenField}
+                        value={codexAuthMode}
                         onChange={(event) =>
                           onDraftChange({
                             ...draft,
-                            tokenField: event.target
-                              .value as SharedProviderEditorPayload["tokenField"],
+                            authMode: event.target.value,
                           })
                         }
-                        disabled={disabled}
+                        disabled={disabled || codexAuthPending}
                       >
-                        {tokenFieldOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
+                        <option value="api_key">API key</option>
+                        <option value="codex_oauth">Uploaded auth.json</option>
                       </select>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor={`${fieldIdPrefix}-token`}>
-                        API token
-                      </Label>
-                      <Input
-                        id={`${fieldIdPrefix}-token`}
-                        type="password"
-                        value={draft.token}
-                        onChange={(event) =>
-                          onDraftChange({
-                            ...draft,
-                            token: event.target.value,
-                          })
-                        }
-                        placeholder={
-                          draft.authMode === "client_passthrough"
-                            ? "Optional — client credentials forwarded automatically"
-                            : mode === "edit" &&
-                                supportsBlankSecretPreserve &&
-                                hasStoredSecret
-                              ? "Leave blank to keep the stored secret"
-                              : "Enter the secret for this provider"
-                        }
-                        required={
-                          (mode === "add" || !supportsBlankSecretPreserve) &&
-                          draft.authMode !== "client_passthrough"
-                        }
-                        disabled={disabled}
-                      />
-                    </div>
-                  </div>
+                  ) : null}
 
-                  {mode === "edit" &&
+                  {!showCodexAuthUpload ? (
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor={`${fieldIdPrefix}-token-field`}>
+                          Token field
+                        </Label>
+                        <select
+                          id={`${fieldIdPrefix}-token-field`}
+                          className={FIELD_CLASS_NAME}
+                          value={draft.tokenField}
+                          onChange={(event) =>
+                            onDraftChange({
+                              ...draft,
+                              tokenField: event.target
+                                .value as SharedProviderEditorPayload["tokenField"],
+                            })
+                          }
+                          disabled={disabled}
+                        >
+                          {tokenFieldOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor={`${fieldIdPrefix}-token`}>
+                          API token
+                        </Label>
+                        <Input
+                          id={`${fieldIdPrefix}-token`}
+                          type="password"
+                          value={draft.token}
+                          onChange={(event) =>
+                            onDraftChange({
+                              ...draft,
+                              token: event.target.value,
+                            })
+                          }
+                          placeholder={
+                            allowsOptionalToken(draft.authMode)
+                              ? "Optional — client credentials forwarded automatically"
+                              : mode === "edit" &&
+                                  supportsBlankSecretPreserve &&
+                                  hasStoredSecret
+                                ? "Leave blank to keep the stored secret"
+                                : "Enter the secret for this provider"
+                          }
+                          required={
+                            (mode === "add" || !supportsBlankSecretPreserve) &&
+                            !allowsOptionalToken(draft.authMode)
+                          }
+                          disabled={disabled}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor={`${fieldIdPrefix}-codex-auth-file`}>
+                          auth.json
+                        </Label>
+                        <Input
+                          id={`${fieldIdPrefix}-codex-auth-file`}
+                          type="file"
+                          accept="application/json,.json"
+                          onChange={(event) =>
+                            setAuthJsonFile(event.target.files?.[0] ?? null)
+                          }
+                          disabled={
+                            disabled ||
+                            codexAuthPending ||
+                            !editingProvider?.providerId
+                          }
+                        />
+                      </div>
+                      {!editingProvider?.providerId ? (
+                        <div className="ccswitch-openwrt-inline-note rounded-2xl border border-border-default/70 bg-background px-4 py-3 text-sm text-muted-foreground">
+                          Save this provider first, then upload `auth.json` for the saved provider ID.
+                        </div>
+                      ) : null}
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => void handleCodexAuthUpload()}
+                          disabled={
+                            disabled ||
+                            codexAuthPending ||
+                            !editingProvider?.providerId ||
+                            !authJsonFile
+                          }
+                        >
+                          Upload auth.json
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => void handleCodexAuthRemove()}
+                          disabled={
+                            disabled ||
+                            codexAuthPending ||
+                            !editingProvider?.providerId ||
+                            !codexAuthSummary
+                          }
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                      {codexAuthSummary ? (
+                        <div className="ccswitch-openwrt-inline-note rounded-2xl border border-border-default/70 bg-background px-4 py-3 text-sm text-muted-foreground">
+                          <p className="font-medium text-foreground">
+                            Stored auth.json
+                          </p>
+                          <p>
+                            Account ID: {codexAuthSummary.accountId || "Unavailable"}
+                          </p>
+                          <p>
+                            Refresh token present:{" "}
+                            {codexAuthSummary.refreshTokenPresent ? "yes" : "no"}
+                          </p>
+                          {codexAuthSummary.expiresAt != null ? (
+                            <p>Expires at: {codexAuthSummary.expiresAt}</p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
+
+                  {!showCodexAuthUpload &&
+                  mode === "edit" &&
                   supportsBlankSecretPreserve &&
                   hasStoredSecret ? (
                     <div className="ccswitch-openwrt-inline-note rounded-2xl border border-border-default/70 bg-background px-4 py-3 text-sm text-muted-foreground">

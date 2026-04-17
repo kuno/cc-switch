@@ -121,7 +121,10 @@ impl ProxyServer {
             let store = super::rate_limit::new_rate_limit_store();
             let snapshots = db.load_rate_limit_snapshots();
             if !snapshots.is_empty() {
-                log::info!("[RateLimit] loaded {} persisted snapshots from DB", snapshots.len());
+                log::info!(
+                    "[RateLimit] loaded {} persisted snapshots from DB",
+                    snapshots.len()
+                );
                 let mut map = store.try_write().expect("rate_limit store lock on init");
                 for s in snapshots {
                     map.insert(s.provider_id.clone(), s);
@@ -448,6 +451,11 @@ impl ProxyServer {
             .route(
                 "/openwrt/admin/apps/:app/providers/:provider_id/activate",
                 post(handlers::openwrt_activate_provider),
+            )
+            .route(
+                "/openwrt/admin/apps/:app/providers/:provider_id/codex-auth",
+                post(handlers::openwrt_upload_codex_auth)
+                    .delete(handlers::openwrt_remove_codex_auth),
             )
             .route(
                 "/openwrt/admin/apps/:app/providers/:provider_id/failover",
