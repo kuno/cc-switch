@@ -34,7 +34,9 @@
 					"reorder_failover_queue",
 					"set_max_retries",
 					"set_host_config",
-					"restart_service"
+					"restart_service",
+					"upload_codex_auth",
+					"remove_codex_auth"
 				]
 			}
 		}

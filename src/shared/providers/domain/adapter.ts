@@ -42,6 +42,15 @@ export interface ProviderPlatformAdapter {
     appId: SharedProviderAppId,
     value: number,
   ): Promise<void>;
+  uploadCodexAuth?(
+    appId: SharedProviderAppId,
+    providerId: string,
+    authJsonText: string,
+  ): Promise<void>;
+  removeCodexAuth?(
+    appId: SharedProviderAppId,
+    providerId: string,
+  ): Promise<void>;
   restartServiceIfNeeded(): Promise<void>;
   getCapabilities(
     appId: SharedProviderAppId,

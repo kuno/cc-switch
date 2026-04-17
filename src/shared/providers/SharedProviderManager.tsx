@@ -683,6 +683,12 @@ export function SharedProviderManager({
   const currentPresentation = SHARED_PROVIDER_APP_PRESENTATION[currentApp];
   const currentActiveProvider =
     state?.providers.find((provider) => provider.active) ?? null;
+  const editorProvider =
+    (editingProvider?.providerId &&
+      state?.providers.find(
+        (provider) => provider.providerId === editingProvider.providerId,
+      )) ??
+    editingProvider;
   const selectedProvider =
     (state &&
       filteredProviders.find(
@@ -693,6 +699,9 @@ export function SharedProviderManager({
     null;
   const isRefreshing = stateQuery.isFetching || capabilitiesQuery.isFetching;
   const supportsFailoverControls = supportsProviderFailoverControls(adapter);
+  const supportsCodexAuthUpload =
+    typeof adapter.uploadCodexAuth === "function" &&
+    typeof adapter.removeCodexAuth === "function";
 
   const failoverQuery = useQuery({
     queryKey: failoverQueryKey(currentApp, selectedProvider?.providerId ?? ""),
@@ -793,6 +802,50 @@ export function SharedProviderManager({
     onError: (error) => setNotice(buildErrorNotice("Update max retries", error)),
   });
 
+  const uploadCodexAuthMutation = useMutation({
+    mutationFn: async (variables: {
+      appId: SharedProviderAppId;
+      providerId: string;
+      authJsonText: string;
+    }) => adapter.uploadCodexAuth!(variables.appId, variables.providerId, variables.authJsonText),
+    onSuccess: async (_, variables) => {
+      await queryClient.invalidateQueries({
+        queryKey: stateQueryKey(variables.appId),
+      });
+
+      if (currentAppRef.current === variables.appId) {
+        setNotice({
+          tone: "success",
+          title: "Auth uploaded.",
+          description:
+            "The uploaded auth.json is stored for this provider. Review the account details in the editor.",
+        });
+      }
+    },
+    onError: (error) => setNotice(buildErrorNotice("Upload auth.json", error)),
+  });
+
+  const removeCodexAuthMutation = useMutation({
+    mutationFn: async (variables: {
+      appId: SharedProviderAppId;
+      providerId: string;
+    }) => adapter.removeCodexAuth!(variables.appId, variables.providerId),
+    onSuccess: async (_, variables) => {
+      await queryClient.invalidateQueries({
+        queryKey: stateQueryKey(variables.appId),
+      });
+
+      if (currentAppRef.current === variables.appId) {
+        setNotice({
+          tone: "success",
+          title: "Auth removed.",
+          description: "The stored auth.json was removed for this provider.",
+        });
+      }
+    },
+    onError: (error) => setNotice(buildErrorNotice("Remove auth.json", error)),
+  });
+
   const isMutating =
     saveMutation.isPending ||
     activateMutation.isPending ||
@@ -801,7 +854,9 @@ export function SharedProviderManager({
     removeFromFailoverQueueMutation.isPending ||
     autoFailoverMutation.isPending ||
     reorderFailoverQueueMutation.isPending ||
-    maxRetriesMutation.isPending;
+    maxRetriesMutation.isPending ||
+    uploadCodexAuthMutation.isPending ||
+    removeCodexAuthMutation.isPending;
 
   function getCurrentAppSwitchButton(appId: SharedProviderAppId = currentApp) {
     return appSwitchRefs.current[appId] ?? null;
@@ -1469,6 +1524,7 @@ export function SharedProviderManager({
         appId={currentApp}
         mode={editingProvider ? "edit" : "add"}
         draft={draft}
+        editingProvider={editorProvider}
         selectedPresetId={selectedPresetId}
         selectedPreset={selectedPreset}
         presetGroups={presetGroups}
@@ -1489,6 +1545,27 @@ export function SharedProviderManager({
         }}
         onPresetChange={handlePresetChange}
         onDraftChange={setDraft}
+        onUploadCodexAuth={
+          supportsCodexAuthUpload
+            ? async (providerId, authJsonText) => {
+                await uploadCodexAuthMutation.mutateAsync({
+                  appId: currentApp,
+                  providerId,
+                  authJsonText,
+                });
+              }
+            : undefined
+        }
+        onRemoveCodexAuth={
+          supportsCodexAuthUpload
+            ? async (providerId) => {
+                await removeCodexAuthMutation.mutateAsync({
+                  appId: currentApp,
+                  providerId,
+                });
+              }
+            : undefined
+        }
         onSubmit={handleSubmit}
       />
 

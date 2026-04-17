@@ -1,5 +1,6 @@
 import type {
   SharedProviderAppId,
+  SharedProviderCodexAuthSummary,
   SharedProviderEditorPayload,
   SharedProviderState,
   SharedProviderTokenField,
@@ -32,6 +33,42 @@ function getString(provider: ProviderLike, keys: string[]): string {
   return "";
 }
 
+function getOptionalNumber(provider: ProviderLike, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = provider[key];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+function parseCodexAuthSummary(
+  value: unknown,
+): SharedProviderCodexAuthSummary | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const typedValue = value as ProviderLike;
+  const refreshTokenPresent = getBoolean(typedValue, [
+    "refreshTokenPresent",
+    "refresh_token_present",
+  ]);
+
+  if (!refreshTokenPresent) {
+    return undefined;
+  }
+
+  return {
+    accountId:
+      getString(typedValue, ["accountId", "account_id"]) || undefined,
+    expiresAt: getOptionalNumber(typedValue, ["expiresAt", "expires_at"]),
+    refreshTokenPresent,
+  };
+}
+
 export function emptySharedProviderView(
   appId: SharedProviderAppId,
 ): SharedProviderView {
@@ -46,6 +83,7 @@ export function emptySharedProviderView(
     model: "",
     notes: "",
     active: false,
+    codexAuth: undefined,
   };
 }
 
@@ -113,6 +151,7 @@ export function normalizeSharedProviderView(
     notes: getString(provider, ["notes"]),
     active: isActive,
     authMode: getString(provider, ["authMode", "auth_mode"]) || undefined,
+    codexAuth: parseCodexAuthSummary(provider.codexAuth ?? provider.codex_auth),
   };
 }
 

@@ -78,9 +78,9 @@ struct ExtractedRaw {
 }
 
 fn extract_anthropic_unified(headers: &http::HeaderMap) -> Option<ExtractedRaw> {
-    let has_unified = headers.keys().any(|k| {
-        k.as_str().starts_with("anthropic-ratelimit-unified")
-    });
+    let has_unified = headers
+        .keys()
+        .any(|k| k.as_str().starts_with("anthropic-ratelimit-unified"));
     if !has_unified {
         return None;
     }
@@ -92,7 +92,10 @@ fn extract_anthropic_unified(headers: &http::HeaderMap) -> Option<ExtractedRaw> 
     let fallback_percentage =
         header_f64(headers, "anthropic-ratelimit-unified-fallback-percentage");
 
-    let window_prefixes = [("5h", "anthropic-ratelimit-unified-5h"), ("7d", "anthropic-ratelimit-unified-7d")];
+    let window_prefixes = [
+        ("5h", "anthropic-ratelimit-unified-5h"),
+        ("7d", "anthropic-ratelimit-unified-7d"),
+    ];
     let mut windows = Vec::new();
     for (name, prefix) in &window_prefixes {
         let w_status = header_str(headers, &format!("{prefix}-status"));
@@ -143,9 +146,9 @@ fn extract_anthropic_legacy(headers: &http::HeaderMap) -> Option<ExtractedRaw> {
 }
 
 fn extract_openai(headers: &http::HeaderMap) -> Option<ExtractedRaw> {
-    let has_any = headers.keys().any(|k| {
-        k.as_str().starts_with("x-ratelimit-")
-    });
+    let has_any = headers
+        .keys()
+        .any(|k| k.as_str().starts_with("x-ratelimit-"));
     if !has_any {
         return None;
     }
@@ -198,7 +201,10 @@ pub async fn capture_rate_limits(
             snapshot.status,
             snapshot.windows.len(),
         );
-        store.write().await.insert(provider_id.to_string(), snapshot);
+        store
+            .write()
+            .await
+            .insert(provider_id.to_string(), snapshot);
     }
 }
 
@@ -210,16 +216,46 @@ mod tests {
     #[test]
     fn extract_anthropic_unified_headers() {
         let mut headers = HeaderMap::new();
-        headers.insert("anthropic-ratelimit-unified-status", "allowed".parse().unwrap());
-        headers.insert("anthropic-ratelimit-unified-5h-status", "allowed".parse().unwrap());
-        headers.insert("anthropic-ratelimit-unified-5h-utilization", "0.33".parse().unwrap());
-        headers.insert("anthropic-ratelimit-unified-5h-reset", "1776312000".parse().unwrap());
-        headers.insert("anthropic-ratelimit-unified-7d-status", "allowed".parse().unwrap());
-        headers.insert("anthropic-ratelimit-unified-7d-utilization", "0.75".parse().unwrap());
-        headers.insert("anthropic-ratelimit-unified-7d-reset", "1776607200".parse().unwrap());
-        headers.insert("anthropic-ratelimit-unified-representative-claim", "five_hour".parse().unwrap());
-        headers.insert("anthropic-ratelimit-unified-overage-status", "rejected".parse().unwrap());
-        headers.insert("anthropic-ratelimit-unified-fallback-percentage", "0.5".parse().unwrap());
+        headers.insert(
+            "anthropic-ratelimit-unified-status",
+            "allowed".parse().unwrap(),
+        );
+        headers.insert(
+            "anthropic-ratelimit-unified-5h-status",
+            "allowed".parse().unwrap(),
+        );
+        headers.insert(
+            "anthropic-ratelimit-unified-5h-utilization",
+            "0.33".parse().unwrap(),
+        );
+        headers.insert(
+            "anthropic-ratelimit-unified-5h-reset",
+            "1776312000".parse().unwrap(),
+        );
+        headers.insert(
+            "anthropic-ratelimit-unified-7d-status",
+            "allowed".parse().unwrap(),
+        );
+        headers.insert(
+            "anthropic-ratelimit-unified-7d-utilization",
+            "0.75".parse().unwrap(),
+        );
+        headers.insert(
+            "anthropic-ratelimit-unified-7d-reset",
+            "1776607200".parse().unwrap(),
+        );
+        headers.insert(
+            "anthropic-ratelimit-unified-representative-claim",
+            "five_hour".parse().unwrap(),
+        );
+        headers.insert(
+            "anthropic-ratelimit-unified-overage-status",
+            "rejected".parse().unwrap(),
+        );
+        headers.insert(
+            "anthropic-ratelimit-unified-fallback-percentage",
+            "0.5".parse().unwrap(),
+        );
 
         let raw = extract_rate_limits(&headers).expect("should extract");
         assert_eq!(raw.status.as_deref(), Some("allowed"));
@@ -238,9 +274,15 @@ mod tests {
     fn extract_anthropic_legacy_headers() {
         let mut headers = HeaderMap::new();
         headers.insert("anthropic-ratelimit-requests-limit", "50".parse().unwrap());
-        headers.insert("anthropic-ratelimit-requests-remaining", "42".parse().unwrap());
+        headers.insert(
+            "anthropic-ratelimit-requests-remaining",
+            "42".parse().unwrap(),
+        );
         headers.insert("anthropic-ratelimit-tokens-limit", "80000".parse().unwrap());
-        headers.insert("anthropic-ratelimit-tokens-remaining", "63200".parse().unwrap());
+        headers.insert(
+            "anthropic-ratelimit-tokens-remaining",
+            "63200".parse().unwrap(),
+        );
 
         let raw = extract_rate_limits(&headers).expect("should extract");
         assert_eq!(raw.requests_limit, Some(50));
