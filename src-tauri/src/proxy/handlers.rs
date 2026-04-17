@@ -34,14 +34,18 @@ use crate::app_config::AppType;
 use crate::openwrt_admin::{self, OpenWrtProviderPayload};
 #[cfg(not(feature = "tauri-desktop"))]
 use crate::proxy::providers::codex_oauth_store::codex_auth_upload_limit_bytes;
+use crate::proxy::providers::codex_oauth_store::load_codex_auth_for_provider;
+use crate::services::subscription::query_codex_quota;
 #[cfg(not(feature = "tauri-desktop"))]
 use axum::extract::Path;
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use bytes::Bytes;
+use futures::future::join_all;
 use http_body_util::BodyExt;
 #[cfg(not(feature = "tauri-desktop"))]
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::collections::HashSet;
 
 // ============================================================================
 // 健康检查和状态查询（简单端点）
@@ -58,7 +62,92 @@ pub async fn health_check() -> (StatusCode, Json<Value>) {
     )
 }
 
+fn is_codex_oauth_provider(provider: &crate::provider::Provider) -> bool {
+    matches!(
+        provider
+            .settings_config
+            .get("auth_mode")
+            .and_then(Value::as_str),
+        Some("codex_oauth" | "client_passthrough")
+    )
+}
+
+async fn refresh_codex_quota_snapshots(state: &ProxyState) {
+    let providers = match state.db.get_all_providers("codex") {
+        Ok(providers) => providers,
+        Err(error) => {
+            log::warn!("[Quota] failed to list codex providers for live quota refresh: {error}");
+            return;
+        }
+    };
+
+    let current_codex_oauth_provider_ids: HashSet<String> = providers
+        .iter()
+        .filter_map(|(provider_id, provider)| {
+            is_codex_oauth_provider(provider).then_some(provider_id.clone())
+        })
+        .collect();
+
+    let live_fetches = providers
+        .into_values()
+        .filter(is_codex_oauth_provider)
+        .filter_map(|provider| {
+            let auth = load_codex_auth_for_provider(&provider.id)?;
+            Some(async move {
+                let quota = query_codex_quota(
+                    &auth.access_token,
+                    auth.account_id.as_deref(),
+                    "codex_oauth",
+                    "Codex OAuth access token expired or rejected. Please re-login via cc-switch.",
+                )
+                .await;
+
+                if !quota.success {
+                    log::warn!(
+                        "[Quota] live Codex quota refresh failed for {}: {}",
+                        provider.id,
+                        quota
+                            .error
+                            .clone()
+                            .unwrap_or_else(|| "unknown upstream error".to_string())
+                    );
+                    return None;
+                }
+
+                let previous = {
+                    let store = state.rate_limits.read().await;
+                    store.get(&provider.id).cloned()
+                };
+
+                super::rate_limit::snapshot_from_subscription_quota(
+                    "codex",
+                    &provider.id,
+                    &provider.name,
+                    &quota,
+                    previous.as_ref(),
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+
+    if live_fetches.is_empty() {
+        return;
+    }
+
+    let refreshed = join_all(live_fetches).await;
+    let mut store = state.rate_limits.write().await;
+    store.retain(|_, snapshot| {
+        !(snapshot.app_type == "codex"
+            && snapshot.source.as_deref() == Some("subscription_quota")
+            && !current_codex_oauth_provider_ids.contains(&snapshot.provider_id))
+    });
+    for snapshot in refreshed.into_iter().flatten() {
+        store.insert(snapshot.provider_id.clone(), snapshot);
+    }
+}
+
 pub async fn get_quota(State(state): State<ProxyState>) -> (StatusCode, Json<Value>) {
+    refresh_codex_quota_snapshots(&state).await;
     let store = state.rate_limits.read().await;
     let providers: Vec<_> = store.values().cloned().collect();
     (
@@ -397,11 +486,14 @@ pub async fn openwrt_upload_codex_auth(
 mod tests {
     use super::*;
     use crate::database::Database;
-    use crate::proxy::{
-        failover_switch::FailoverSwitchManager, provider_router::ProviderRouter,
-        rate_limit::new_rate_limit_store, server::ProxyState, types::{ProxyConfig, ProxyStatus},
-    };
     use crate::proxy::providers::codex_oauth_store::codex_auth_upload_limit_bytes;
+    use crate::proxy::{
+        failover_switch::FailoverSwitchManager,
+        provider_router::ProviderRouter,
+        rate_limit::new_rate_limit_store,
+        server::ProxyState,
+        types::{ProxyConfig, ProxyStatus},
+    };
     use axum::extract::Path;
     use std::collections::HashMap;
     use std::sync::Arc;
