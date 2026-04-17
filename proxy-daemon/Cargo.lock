@@ -418,6 +418,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "cc-switch-shared"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "indexmap",
+ "once_cell",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "toml",
+]
+
+[[package]]
 name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1627,6 +1641,7 @@ dependencies = [
  "base64",
  "brotli",
  "bytes",
+ "cc-switch-shared",
  "chrono",
  "dirs",
  "env_logger",

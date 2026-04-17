@@ -795,6 +795,7 @@ dependencies = [
  "base64 0.22.1",
  "brotli 7.0.0",
  "bytes",
+ "cc-switch-shared",
  "chrono",
  "dirs 5.0.1",
  "env_logger",
@@ -850,6 +851,20 @@ dependencies = [
  "webpki-roots 0.26.11",
  "winreg 0.52.0",
  "zip 2.4.2",
+]
+
+[[package]]
+name = "cc-switch-shared"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "indexmap 2.13.0",
+ "once_cell",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "toml 0.8.23",
 ]
 
 [[package]]

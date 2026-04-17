@@ -90,9 +90,10 @@ var PRESET_CATALOG = {
 		createPreset('claude-xiaomi-mimo', 'Xiaomi MiMo', 'https://api.xiaomimimo.com/anthropic', DEFAULT_TOKEN_FIELD, 'mimo-v2-pro')
 	],
 	codex: [
-		createPreset('codex-openai-official', 'OpenAI Official', 'https://api.openai.com/v1', CODEX_TOKEN_FIELD, 'gpt-5.4', {
+		createPreset('codex-official', 'OpenAI Official', 'https://api.openai.com/v1', CODEX_TOKEN_FIELD, 'gpt-5.4', {
 			label: _('OpenAI Official'),
-			description: _('Official OpenAI Responses endpoint for Codex.')
+			description: _('Official OpenAI endpoint. Choose either an API key or an uploaded auth.json for this provider.'),
+			authMode: 'codex_oauth'
 		}),
 		createPreset('codex-azure-openai', 'Azure OpenAI', 'https://YOUR_RESOURCE_NAME.openai.azure.com/openai', CODEX_TOKEN_FIELD, 'gpt-5.4', {
 			label: _('Azure OpenAI'),
@@ -119,7 +120,7 @@ var PRESET_CATALOG = {
 		})
 	],
 	gemini: [
-		createPreset('gemini-google-official', 'Google Official', 'https://generativelanguage.googleapis.com/v1beta', GEMINI_TOKEN_FIELD, 'gemini-3.1-pro', {
+		createPreset('gemini-official', 'Google Official', 'https://generativelanguage.googleapis.com/v1beta', GEMINI_TOKEN_FIELD, 'gemini-3.1-pro', {
 			label: _('Google Official'),
 			description: _('Official Google Gemini API endpoint.')
 		}),

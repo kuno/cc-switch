@@ -13,6 +13,7 @@ name = "cc-switch"
 path = "src/main.rs"
 
 [dependencies]
+cc-switch-shared = { path = "../cc-switch-shared" }
 # Core async runtime
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync", "signal"] }
 # HTTP stack (same versions as parent)

@@ -39,6 +39,10 @@ use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use std::collections::HashSet;
 
+const CODEX_OFFICIAL_PROVIDER_ID: &str = "codex-official";
+const CODEX_OAUTH_AUTH_MODE: &str = "codex_oauth";
+const CODEX_LEGACY_CLIENT_PASSTHROUGH_AUTH_MODE: &str = "client_passthrough";
+
 // ============================================================================
 // 健康检查和状态查询（简单端点）
 // ============================================================================
@@ -55,13 +59,17 @@ pub async fn health_check() -> (StatusCode, Json<Value>) {
 }
 
 fn is_codex_oauth_provider(provider: &crate::provider::Provider) -> bool {
-    matches!(
-        provider
+    provider.id == CODEX_OFFICIAL_PROVIDER_ID
+        || provider
             .settings_config
             .get("auth_mode")
-            .and_then(Value::as_str),
-        Some("codex_oauth" | "client_passthrough")
-    )
+            .and_then(Value::as_str)
+            .is_some_and(|auth_mode| {
+                matches!(
+                    auth_mode,
+                    CODEX_OAUTH_AUTH_MODE | CODEX_LEGACY_CLIENT_PASSTHROUGH_AUTH_MODE
+                )
+            })
 }
 
 async fn refresh_codex_quota_snapshots(state: &ProxyState) {
@@ -748,5 +756,24 @@ async fn log_usage(
         is_streaming,
     ) {
         log::warn!("[USG-001] 记录使用量失败: {e}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_codex_oauth_provider;
+    use crate::provider::Provider;
+    use serde_json::json;
+
+    #[test]
+    fn official_codex_seed_counts_as_codex_oauth_provider() {
+        let provider = Provider::with_id(
+            "codex-official".to_string(),
+            "OpenAI Official".to_string(),
+            json!({ "auth": {}, "config": "" }),
+            None,
+        );
+
+        assert!(is_codex_oauth_provider(&provider));
     }
 }

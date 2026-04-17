@@ -7,9 +7,14 @@
 //!   cargo build --release --target mips-unknown-linux-musl    (MIPS)
 //!   cargo build --release --target aarch64-unknown-linux-musl (ARM64)
 
+mod app_config;
 mod app_store;
+mod error;
 mod openwrt_admin;
 mod openwrt_http;
+mod prompt;
+mod provider;
+mod provider_defaults;
 mod shared_core;
 mod version;
 
