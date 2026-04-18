@@ -14,7 +14,7 @@
     ]
   },
   "include": [
-    "playwright.config.ts",
+    "playwright.openwrt.config.ts",
     "vite.config.ts",
     "vitest.config.ts",
     "vitest.openwrt-component.config.ts"

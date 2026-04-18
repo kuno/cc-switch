@@ -13,6 +13,14 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./tests/setupGlobals.ts", "./tests/setupTests.ts"],
     globals: true,
+    exclude: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/cypress/**",
+      "**/.{idea,git,cache,output,temp}/**",
+      "**/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build,eslint,prettier}.config.*",
+      "tests/openwrt/**",
+    ],
     coverage: {
       reporter: ["text", "lcov"],
     },
