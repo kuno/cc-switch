@@ -56,8 +56,16 @@ body.ccswitch-openwrt-provider-ui-theme .cbi-map {
 .ccswitch-openwrt-provider-ui-shell {
   min-height: 100vh;
   background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 12%, transparent), transparent 30%),
-    linear-gradient(180deg, color-mix(in srgb, var(--panel-strong) 35%, transparent), transparent 24%),
+    radial-gradient(
+      circle at top left,
+      color-mix(in srgb, var(--accent) 12%, transparent),
+      transparent 30%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--panel-strong) 35%, transparent),
+      transparent 24%
+    ),
     var(--bg);
   color: var(--text);
 }
@@ -316,7 +324,8 @@ body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-overlay {
   backdrop-filter: blur(14px) saturate(1.05);
 }
 
-body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-positioner {
+body.ccswitch-openwrt-provider-ui-theme
+  .ccswitch-openwrt-provider-ui-positioner {
   align-items: flex-start;
   padding: max(env(safe-area-inset-top), 0.75rem)
     max(env(safe-area-inset-right), 0.75rem)
@@ -339,11 +348,14 @@ body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog {
   box-shadow: 0 34px 92px -48px rgba(23, 33, 51, 0.42);
 }
 
-body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog--compact {
+body.ccswitch-openwrt-provider-ui-theme
+  .ccswitch-openwrt-provider-ui-dialog--compact {
   width: min(28rem, 100%);
 }
 
-body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog > form {
+body.ccswitch-openwrt-provider-ui-theme
+  .ccswitch-openwrt-provider-ui-dialog
+  > form {
   display: flex;
   min-height: 0;
   flex: 1 1 auto;
@@ -369,7 +381,8 @@ body.ccswitch-openwrt-provider-ui-theme
   box-sizing: border-box;
 }
 
-body.ccswitch-openwrt-provider-ui-theme .cbi-map.ccswitch-openwrt-native-page-map,
+body.ccswitch-openwrt-provider-ui-theme
+  .cbi-map.ccswitch-openwrt-native-page-map,
 body.ccswitch-openwrt-provider-ui-theme
   .cbi-section.ccswitch-openwrt-native-page-section {
   background: transparent;
@@ -389,8 +402,16 @@ body.ccswitch-openwrt-provider-ui-theme
   padding: clamp(0.9rem, 0.75rem + 0.45vw, 1.3rem);
   border-radius: calc(var(--radius-panel) + 0.2rem);
   background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 10%, transparent), transparent 30%),
-    linear-gradient(180deg, color-mix(in srgb, var(--panel-strong) 35%, transparent), transparent 24%),
+    radial-gradient(
+      circle at top left,
+      color-mix(in srgb, var(--accent) 10%, transparent),
+      transparent 30%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--panel-strong) 35%, transparent),
+      transparent 24%
+    ),
     var(--bg);
 }
 
@@ -413,18 +434,28 @@ body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-overlay {
 #ccswitch-shared-runtime-surface-root *:after,
 body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog,
 body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog *,
-body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog *:before,
-body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog *:after,
+body.ccswitch-openwrt-provider-ui-theme
+  .ccswitch-openwrt-provider-ui-dialog
+  *:before,
+body.ccswitch-openwrt-provider-ui-theme
+  .ccswitch-openwrt-provider-ui-dialog
+  *:after,
 body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-overlay,
 body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-overlay *,
-body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-overlay *:before,
-body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-overlay *:after {
+body.ccswitch-openwrt-provider-ui-theme
+  .ccswitch-openwrt-provider-ui-overlay
+  *:before,
+body.ccswitch-openwrt-provider-ui-theme
+  .ccswitch-openwrt-provider-ui-overlay
+  *:after {
   box-sizing: border-box;
 }
 
 #ccswitch-shared-provider-ui-root :focus-visible,
 #ccswitch-shared-runtime-surface-root :focus-visible,
-body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog :focus-visible {
+body.ccswitch-openwrt-provider-ui-theme
+  .ccswitch-openwrt-provider-ui-dialog
+  :focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent) 72%, white 28%);
   outline-offset: 2px;
 }
@@ -463,7 +494,8 @@ body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog :fo
 }
 
 @media (max-width: 719px) {
-  body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-positioner {
+  body.ccswitch-openwrt-provider-ui-theme
+    .ccswitch-openwrt-provider-ui-positioner {
     padding: max(env(safe-area-inset-top), 0.5rem)
       max(env(safe-area-inset-right), 0.5rem)
       max(env(safe-area-inset-bottom), 0.5rem)
@@ -484,7 +516,8 @@ body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog :fo
 }
 
 @media (min-height: 720px) {
-  body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-positioner {
+  body.ccswitch-openwrt-provider-ui-theme
+    .ccswitch-openwrt-provider-ui-positioner {
     align-items: center;
   }
 }
@@ -500,5 +533,508 @@ body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog :fo
 @media (min-width: 1080px) {
   #ccswitch-shared-provider-ui-root [data-ccswitch-layout="stack-to-split"] {
     grid-template-columns: minmax(0, 1.05fr) minmax(18rem, 0.7fr);
+  }
+}
+
+/* Activity drawer — Task C */
+.owt-activity-drawer {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  pointer-events: none;
+}
+
+.owt-activity-drawer[data-open="true"] {
+  pointer-events: auto;
+}
+
+.owt-activity-drawer__scrim {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(15, 20, 27, 0.16),
+    rgba(15, 20, 27, 0.42)
+  );
+  opacity: 0;
+  backdrop-filter: blur(10px);
+  transition: opacity 180ms ease-out;
+}
+
+.owt-activity-drawer[data-open="true"] .owt-activity-drawer__scrim {
+  opacity: 1;
+}
+
+.owt-activity-drawer__panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  width: min(452px, calc(100vw - 16px));
+  max-width: 100%;
+  flex-direction: column;
+  border-left: 1px solid var(--line);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--panel-strong) 42%, transparent),
+      transparent 28%
+    ),
+    var(--panel);
+  box-shadow: -28px 0 64px -42px rgba(23, 33, 51, 0.54);
+  backdrop-filter: blur(22px);
+  transform: translateX(100%);
+  transition: transform 180ms ease-out;
+}
+
+.owt-activity-drawer[data-open="true"] .owt-activity-drawer__panel {
+  transform: translateX(0);
+}
+
+.owt-activity-drawer__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 16px;
+  padding: 22px 22px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.owt-activity-drawer__title-wrap {
+  min-width: 0;
+}
+
+.owt-activity-drawer__title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 720;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.owt-activity-drawer__subtitle {
+  margin: 5px 0 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.owt-activity-drawer__toolbar,
+.owt-activity-drawer__foot,
+.owt-activity-drawer__foot-copy,
+.owt-activity-drawer__pagination,
+.owt-activity-drawer__filter,
+.owt-activity-drawer__row-title,
+.owt-activity-drawer__row-subtitle,
+.owt-activity-drawer__row-metrics {
+  display: flex;
+  align-items: center;
+}
+
+.owt-activity-drawer__toolbar,
+.owt-activity-drawer__foot {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.owt-activity-drawer__toolbar {
+  padding: 14px 22px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+}
+
+.owt-activity-drawer__filter {
+  gap: 6px;
+  min-width: 0;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel-soft) 86%, transparent);
+}
+
+.owt-activity-drawer__filter-button,
+.owt-activity-drawer__secondary-button,
+.owt-activity-drawer__icon-button,
+.owt-activity-drawer__row {
+  border: 0;
+  font: inherit;
+}
+
+.owt-activity-drawer__filter-button,
+.owt-activity-drawer__secondary-button,
+.owt-activity-drawer__icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text);
+  cursor: pointer;
+  transition:
+    background-color 180ms ease-out,
+    border-color 180ms ease-out,
+    color 180ms ease-out,
+    transform 180ms ease-out;
+}
+
+.owt-activity-drawer__filter-button {
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.owt-activity-drawer__filter-button[data-active="true"] {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.owt-activity-drawer__secondary-button {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel-strong) 84%, transparent);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.owt-activity-drawer__icon-button {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-icon);
+  background: color-mix(in srgb, var(--panel-soft) 86%, transparent);
+  color: var(--muted);
+}
+
+.owt-activity-drawer__secondary-button:hover,
+.owt-activity-drawer__icon-button:hover,
+.owt-activity-drawer__filter-button:hover {
+  transform: translateY(-1px);
+}
+
+.owt-activity-drawer__secondary-button:hover,
+.owt-activity-drawer__icon-button:hover {
+  border-color: var(--line-strong);
+  background: var(--panel-strong);
+  color: var(--text);
+}
+
+.owt-activity-drawer__secondary-button:disabled,
+.owt-activity-drawer__icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+  transform: none;
+}
+
+.owt-activity-drawer__list,
+.owt-activity-drawer__detail {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 14px;
+}
+
+.owt-activity-drawer__list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.owt-activity-drawer__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  width: 100%;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--panel-soft) 92%, transparent),
+      transparent
+    ),
+    color-mix(in srgb, var(--panel-strong) 84%, transparent);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 180ms ease-out,
+    background-color 180ms ease-out,
+    transform 180ms ease-out,
+    box-shadow 180ms ease-out;
+}
+
+.owt-activity-drawer__row:hover {
+  border-color: var(--line-strong);
+  transform: translateX(-2px);
+  box-shadow: 0 24px 44px -40px rgba(23, 33, 51, 0.55);
+}
+
+.owt-activity-drawer__row-main {
+  min-width: 0;
+}
+
+.owt-activity-drawer__row-title {
+  gap: 10px;
+  min-width: 0;
+}
+
+.owt-activity-drawer__row-provider {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.owt-activity-drawer__row-subtitle {
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.owt-activity-drawer__row-subtitle span:not(:last-child)::after {
+  content: "·";
+  margin-left: 6px;
+  color: var(--soft);
+}
+
+.owt-activity-drawer__row-metrics {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.owt-activity-drawer__row-metric {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.owt-activity-drawer__row-metric--strong {
+  color: var(--text);
+}
+
+.owt-activity-drawer__status-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.owt-activity-drawer__status-pill[data-tone="success"] {
+  border-color: var(--success-line);
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.owt-activity-drawer__status-pill[data-tone="warning"] {
+  border-color: color-mix(in srgb, var(--accent) 26%, #b47b14 38%);
+  background: color-mix(in srgb, var(--accent-soft) 72%, #fff1d6 28%);
+  color: color-mix(in srgb, var(--accent-text) 52%, #8a5b00 48%);
+}
+
+.owt-activity-drawer__status-pill[data-tone="error"] {
+  border-color: color-mix(in srgb, var(--accent) 16%, #bf4a54 54%);
+  background: color-mix(in srgb, var(--accent-soft) 38%, #ffe6e8 62%);
+  color: color-mix(in srgb, var(--text) 24%, #b63140 76%);
+}
+
+.owt-activity-drawer__status-pill[data-tone="neutral"] {
+  border-color: var(--line);
+  background: color-mix(in srgb, var(--panel-soft) 84%, transparent);
+  color: var(--muted);
+}
+
+.owt-activity-drawer__state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 220px;
+  padding: 32px 18px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--panel-soft) 74%, transparent);
+  color: var(--muted);
+  text-align: center;
+}
+
+.owt-activity-drawer__detail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.owt-activity-drawer__detail-summary,
+.owt-activity-drawer__detail-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.owt-activity-drawer__detail-summary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.owt-activity-drawer__detail-card,
+.owt-activity-drawer__detail-section {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--panel-soft) 86%, transparent),
+      transparent
+    ),
+    color-mix(in srgb, var(--panel-strong) 88%, transparent);
+}
+
+.owt-activity-drawer__detail-card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+}
+
+.owt-activity-drawer__detail-section {
+  padding: 16px;
+}
+
+.owt-activity-drawer__detail-section h3 {
+  margin: 0 0 12px;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-text);
+}
+
+.owt-activity-drawer__detail-label,
+.owt-activity-drawer__detail-grid dt {
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--soft);
+}
+
+.owt-activity-drawer__detail-value,
+.owt-activity-drawer__detail-grid dd {
+  margin: 0;
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.owt-activity-drawer__detail-value--mono {
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+  word-break: break-all;
+}
+
+.owt-activity-drawer__detail-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.owt-activity-drawer__detail-grid div {
+  min-width: 0;
+}
+
+.owt-activity-drawer__detail-grid dd {
+  margin-top: 6px;
+  word-break: break-word;
+}
+
+.owt-activity-drawer__detail-block {
+  margin: 0;
+  padding: 14px;
+  overflow-x: auto;
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--panel-soft) 72%, transparent);
+  color: var(--text);
+  font:
+    0.78rem/1.55 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    "Liberation Mono",
+    "Courier New",
+    monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.owt-activity-drawer__foot {
+  padding: 14px 18px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel-soft) 86%, transparent);
+}
+
+.owt-activity-drawer__foot-copy {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.owt-activity-drawer__page-label {
+  min-width: 86px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-align: center;
+  color: var(--muted);
+}
+
+@media (max-width: 720px) {
+  .owt-activity-drawer__panel {
+    width: 100vw;
+  }
+
+  .owt-activity-drawer__toolbar,
+  .owt-activity-drawer__foot {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .owt-activity-drawer__detail-summary,
+  .owt-activity-drawer__detail-grid,
+  .owt-activity-drawer__row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .owt-activity-drawer__row-metrics {
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  .owt-activity-drawer__pagination {
+    justify-content: space-between;
+    width: 100%;
   }
 }

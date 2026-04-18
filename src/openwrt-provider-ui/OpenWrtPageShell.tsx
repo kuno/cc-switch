@@ -1,10 +1,4 @@
-import {
-  Loader2,
-  MoonStar,
-  RefreshCcw,
-  Save,
-  SunMedium,
-} from "lucide-react";
+import { Loader2, MoonStar, RefreshCcw, Save, SunMedium } from "lucide-react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createOpenWrtProviderAdapter } from "@/platform/openwrt/providers";
@@ -13,6 +7,10 @@ import {
   SharedProviderManager,
 } from "@/shared/providers";
 import type { SharedProviderView } from "@/shared/providers/domain";
+import {
+  ActivityDrawerHost,
+  type ActivityDrawerHostHandle,
+} from "./components/ActivityDrawerHost";
 import type {
   OpenWrtHostConfigPayload,
   OpenWrtHostState,
@@ -27,8 +25,7 @@ import type {
 } from "./pageTypes";
 
 const OPENWRT_PAGE_THEME_STORAGE_KEY = "ccswitch-openwrt-native-page-theme";
-const OPENWRT_PAGE_THEME_DARK_CLASS =
-  "ccswitch-openwrt-provider-ui-theme-dark";
+const OPENWRT_PAGE_THEME_DARK_CLASS = "ccswitch-openwrt-provider-ui-theme-dark";
 const OPENWRT_REQUEST_LOGS_PAGE_SIZE = 6;
 
 type HostDraft = OpenWrtHostConfigPayload;
@@ -357,13 +354,7 @@ function ThemeToggle({
   );
 }
 
-function SlotPlaceholder({
-  task,
-  title,
-}: {
-  task: string;
-  title: string;
-}) {
+function SlotPlaceholder({ task, title }: { task: string; title: string }) {
   return (
     <div className="owt-slot-placeholder">
       <span className="owt-slot-placeholder__task">{task}</span>
@@ -381,7 +372,9 @@ function getProviderNameFromMutation(
 ): string {
   if (providerId) {
     const matchedProvider =
-      providerState.providers.find((provider) => provider.providerId === providerId) ??
+      providerState.providers.find(
+        (provider) => provider.providerId === providerId,
+      ) ??
       (providerState.activeProvider.providerId === providerId
         ? providerState.activeProvider
         : null);
@@ -434,9 +427,8 @@ function getMutationMessage(
   };
 }
 
-export function OpenWrtPageShell({
-  options,
-}: OpenWrtPageShellProps) {
+export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
+  const shell = options.shell;
   const [snapshot, setSnapshot] = useState(() => getHostSnapshot(options));
   const [hostDraft, setHostDraft] = useState(() =>
     createHostDraft(options.shell.getHostState()),
@@ -448,16 +440,18 @@ export function OpenWrtPageShell({
     loading: true,
     error: null,
   });
-  const [providerStatsState, setProviderStatsState] = useState<ProviderStatsState>({
-    providers: [],
-    loading: true,
-    error: null,
-  });
-  const [recentActivityState, setRecentActivityState] = useState<RecentActivityState>({
-    entries: [],
-    loading: true,
-    error: null,
-  });
+  const [providerStatsState, setProviderStatsState] =
+    useState<ProviderStatsState>({
+      providers: [],
+      loading: true,
+      error: null,
+    });
+  const [recentActivityState, setRecentActivityState] =
+    useState<RecentActivityState>({
+      entries: [],
+      loading: true,
+      error: null,
+    });
   const [requestLogsPage, setRequestLogsPage] = useState(0);
   const [requestLogsState, setRequestLogsState] = useState<RequestLogsState>({
     data: [],
@@ -467,15 +461,23 @@ export function OpenWrtPageShell({
     loading: true,
     error: null,
   });
-  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
+  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(
+    null,
+  );
   const [requestLogDetailState, setRequestLogDetailState] =
     useState<RequestLogDetailState>({
       detail: null,
       loading: false,
       error: null,
     });
-  const previousHostDraftRef = useRef(createHostDraft(options.shell.getHostState()));
-  const queryClient = useMemo(() => createSharedProviderManagerQueryClient(), []);
+  const activityHostRef = useRef<ActivityDrawerHostHandle | null>(null);
+  const previousHostDraftRef = useRef(
+    createHostDraft(options.shell.getHostState()),
+  );
+  const queryClient = useMemo(
+    () => createSharedProviderManagerQueryClient(),
+    [],
+  );
   const providerAdapter = useMemo(
     () =>
       createOpenWrtProviderAdapter(options.transport, {
@@ -501,9 +503,12 @@ export function OpenWrtPageShell({
     [options],
   );
 
-  useEffect(() => () => {
-    queryClient.clear();
-  }, [queryClient]);
+  useEffect(
+    () => () => {
+      queryClient.clear();
+    },
+    [queryClient],
+  );
 
   useEffect(() => {
     applyTheme(theme);
@@ -531,7 +536,9 @@ export function OpenWrtPageShell({
     const nextDraft = createHostDraft(snapshot.host);
 
     setHostDraft((current) =>
-      isHostDraftEqual(current, previousHostDraftRef.current) ? nextDraft : current,
+      isHostDraftEqual(current, previousHostDraftRef.current)
+        ? nextDraft
+        : current,
     );
     previousHostDraftRef.current = nextDraft;
   }, [snapshot.host]);
@@ -787,7 +794,10 @@ export function OpenWrtPageShell({
     1,
     Math.ceil(
       requestLogsState.total /
-        Math.max(1, requestLogsState.pageSize || OPENWRT_REQUEST_LOGS_PAGE_SIZE),
+        Math.max(
+          1,
+          requestLogsState.pageSize || OPENWRT_REQUEST_LOGS_PAGE_SIZE,
+        ),
     ),
   );
   const requestLogsWindowStart = requestLogsState.total
@@ -853,7 +863,7 @@ export function OpenWrtPageShell({
         </section>
       </main>
 
-      {/* ActivitySidePanel drawer - Task C */}
+      <ActivityDrawerHost shellRef={activityHostRef} shell={shell} />
       {/* ProviderSidePanel drawer - Task D */}
 
       {/* Preserve the legacy off-screen mount until Tasks C/D/G replace the bridge-backed workspace and dialogs. */}
@@ -1119,7 +1129,10 @@ export function OpenWrtPageShell({
                   {recentActivityState.entries.map((entry) => (
                     <div
                       className="ccswitch-openwrt-workspace-shell__recent-activity-row"
-                      key={entry.requestId || `${entry.providerId}-${entry.createdAt}`}
+                      key={
+                        entry.requestId ||
+                        `${entry.providerId}-${entry.createdAt}`
+                      }
                     >
                       <div className="ccswitch-openwrt-workspace-shell__recent-activity-main">
                         <div className="ccswitch-openwrt-workspace-shell__recent-activity-title">
@@ -1128,7 +1141,9 @@ export function OpenWrtPageShell({
                           </p>
                           <span
                             className="ccswitch-openwrt-daemon-chip"
-                            data-tone={getRecentActivityStatusTone(entry.statusCode)}
+                            data-tone={getRecentActivityStatusTone(
+                              entry.statusCode,
+                            )}
                           >
                             {getRecentActivityStatusLabel(entry.statusCode)}
                           </span>
@@ -1189,7 +1204,9 @@ export function OpenWrtPageShell({
                           </p>
                           <span
                             className="ccswitch-openwrt-daemon-chip"
-                            data-tone={getRecentActivityStatusTone(entry.statusCode)}
+                            data-tone={getRecentActivityStatusTone(
+                              entry.statusCode,
+                            )}
                           >
                             {getRecentActivityStatusLabel(entry.statusCode)}
                           </span>
@@ -1251,7 +1268,9 @@ export function OpenWrtPageShell({
                 }}
                 shellState={{
                   serviceName: snapshot.host.serviceLabel,
-                  serviceStatusLabel: getStatusLabel(snapshot.host.status).toLowerCase(),
+                  serviceStatusLabel: getStatusLabel(
+                    snapshot.host.status,
+                  ).toLowerCase(),
                   restartInFlight: snapshot.restartInFlight,
                   restartPending: snapshot.restartPending,
                 }}
