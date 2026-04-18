@@ -178,7 +178,255 @@ body.ccswitch-openwrt-provider-ui-theme .cbi-map {
 }
 
 .owt-legacy-preserved {
-  display: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* legacy plumbing — keep until Tasks C/D/G own dialogs */
+body.ccswitch-openwrt-provider-ui-theme .cbi-value {
+  display: grid;
+  grid-template-columns: minmax(10rem, 13.5rem) minmax(0, 1fr);
+  gap: 0.6rem 1.25rem;
+}
+
+body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-page-section {
+  position: relative;
+}
+
+body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-page-header {
+  gap: 0.875rem;
+}
+
+body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-page-section--runtime,
+body.ccswitch-openwrt-provider-ui-theme
+  .ccswitch-openwrt-page-section--providers {
+  min-width: 0;
+}
+
+#ccswitch-shared-runtime-surface-root [data-ccswitch-layout="embedded-stack"],
+#ccswitch-shared-provider-ui-root [data-ccswitch-layout="embedded-stack"] {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+
+#ccswitch-shared-runtime-surface-root [data-ccswitch-layout="stack-to-row"] {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+
+#ccswitch-shared-provider-ui-root [data-ccswitch-layout="stack-to-split"] {
+  display: grid;
+  gap: 0.875rem;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+#ccswitch-shared-provider-ui-root [data-ccswitch-layout="wrap-row"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+#ccswitch-shared-runtime-surface-root [data-ccswitch-region="runtime-summary"],
+#ccswitch-shared-runtime-surface-root [data-ccswitch-region="runtime-app-grid"],
+#ccswitch-shared-provider-ui-root
+  [data-ccswitch-region="provider-summary-grid"],
+#ccswitch-shared-provider-ui-root [data-ccswitch-region="provider-toolbar"],
+#ccswitch-shared-provider-ui-root [data-ccswitch-region="provider-card-grid"] {
+  min-width: 0;
+}
+
+#ccswitch-shared-runtime-surface-root [data-ccswitch-layout="responsive-grid"],
+#ccswitch-shared-provider-ui-root [data-ccswitch-layout="responsive-grid"] {
+  display: grid;
+  gap: 0.875rem;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-surface-card,
+body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-card,
+body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-dialog-shell {
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-card);
+  background: linear-gradient(180deg, var(--panel-strong), var(--panel));
+  box-shadow: 0 24px 56px -42px rgba(23, 33, 51, 0.28);
+}
+
+body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-group,
+body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-stat-card,
+body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-inline-note,
+body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-state-shell,
+body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-preset-chip {
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius-control) - 2px);
+  background: linear-gradient(180deg, var(--panel-strong), var(--panel-soft));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.26),
+    0 18px 38px -34px rgba(23, 33, 51, 0.24);
+}
+
+body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-card {
+  padding: 1rem;
+}
+
+#ccswitch-shared-runtime-surface-root .ccswitch-openwrt-group,
+#ccswitch-shared-provider-ui-root .ccswitch-openwrt-group,
+#ccswitch-shared-runtime-surface-root .ccswitch-openwrt-stat-card,
+#ccswitch-shared-provider-ui-root .ccswitch-openwrt-stat-card,
+#ccswitch-shared-runtime-surface-root .ccswitch-openwrt-inline-note,
+#ccswitch-shared-provider-ui-root .ccswitch-openwrt-inline-note,
+#ccswitch-shared-runtime-surface-root .ccswitch-openwrt-state-shell,
+#ccswitch-shared-provider-ui-root .ccswitch-openwrt-state-shell {
+  padding: 0.875rem;
+}
+
+body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-app-switch {
+  min-height: 2.15rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--panel-strong), var(--panel-soft));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 10px 18px -18px rgba(23, 33, 51, 0.28);
+}
+
+body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-state-shell--warning {
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
+}
+
+body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-overlay {
+  background: linear-gradient(
+    180deg,
+    rgba(15, 20, 27, 0.42),
+    rgba(15, 20, 27, 0.56)
+  );
+  backdrop-filter: blur(14px) saturate(1.05);
+}
+
+body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-positioner {
+  align-items: flex-start;
+  padding: max(env(safe-area-inset-top), 0.75rem)
+    max(env(safe-area-inset-right), 0.75rem)
+    max(env(safe-area-inset-bottom), 0.75rem)
+    max(env(safe-area-inset-left), 0.75rem);
+  overscroll-behavior: contain;
+}
+
+body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog {
+  display: flex;
+  width: min(72rem, 100%);
+  max-width: 100%;
+  min-height: 0;
+  max-height: min(60rem, calc(100dvh - 1.5rem));
+  margin: auto;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-panel);
+  background: linear-gradient(180deg, var(--panel-strong), var(--panel));
+  box-shadow: 0 34px 92px -48px rgba(23, 33, 51, 0.42);
+}
+
+body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog--compact {
+  width: min(28rem, 100%);
+}
+
+body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog > form {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  max-height: inherit;
+}
+
+body.ccswitch-openwrt-provider-ui-theme
+  .ccswitch-openwrt-provider-ui-dialog
+  [data-ccswitch-dialog-scroll-region] {
+  min-height: 0;
+  overscroll-behavior: contain;
+}
+
+#ccswitch-openwrt-native-page-root {
+  min-width: 0;
+}
+
+#ccswitch-openwrt-native-page-root,
+#ccswitch-openwrt-native-page-root *,
+#ccswitch-openwrt-native-page-root *:before,
+#ccswitch-openwrt-native-page-root *:after {
+  box-sizing: border-box;
+}
+
+body.ccswitch-openwrt-provider-ui-theme .cbi-map.ccswitch-openwrt-native-page-map,
+body.ccswitch-openwrt-provider-ui-theme
+  .cbi-section.ccswitch-openwrt-native-page-section {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+body.ccswitch-openwrt-provider-ui-theme
+  .cbi-section.ccswitch-openwrt-native-page-section {
+  margin: 0 0 1rem;
+  padding: 0;
+}
+
+#ccswitch-openwrt-native-page-root.ccswitch-openwrt-native-page-host {
+  display: block;
+  width: 100%;
+  padding: clamp(0.9rem, 0.75rem + 0.45vw, 1.3rem);
+  border-radius: calc(var(--radius-panel) + 0.2rem);
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 10%, transparent), transparent 30%),
+    linear-gradient(180deg, color-mix(in srgb, var(--panel-strong) 35%, transparent), transparent 24%),
+    var(--bg);
+}
+
+#ccswitch-shared-provider-ui-root,
+#ccswitch-shared-runtime-surface-root,
+body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog,
+body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-overlay {
+  color: var(--text);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+#ccswitch-shared-provider-ui-root,
+#ccswitch-shared-provider-ui-root *,
+#ccswitch-shared-provider-ui-root *:before,
+#ccswitch-shared-provider-ui-root *:after,
+#ccswitch-shared-runtime-surface-root,
+#ccswitch-shared-runtime-surface-root *,
+#ccswitch-shared-runtime-surface-root *:before,
+#ccswitch-shared-runtime-surface-root *:after,
+body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog,
+body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog *,
+body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog *:before,
+body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog *:after,
+body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-overlay,
+body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-overlay *,
+body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-overlay *:before,
+body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-overlay *:after {
+  box-sizing: border-box;
+}
+
+#ccswitch-shared-provider-ui-root :focus-visible,
+#ccswitch-shared-runtime-surface-root :focus-visible,
+body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog :focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 72%, white 28%);
+  outline-offset: 2px;
 }
 
 @keyframes owt-panel-enter {
@@ -211,5 +459,46 @@ body.ccswitch-openwrt-provider-ui-theme .cbi-map {
 
   .owt-slot-placeholder {
     padding: 20px;
+  }
+}
+
+@media (max-width: 719px) {
+  body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-positioner {
+    padding: max(env(safe-area-inset-top), 0.5rem)
+      max(env(safe-area-inset-right), 0.5rem)
+      max(env(safe-area-inset-bottom), 0.5rem)
+      max(env(safe-area-inset-left), 0.5rem);
+  }
+
+  body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog {
+    max-height: calc(100dvh - 1rem);
+    border-radius: var(--radius-card);
+  }
+}
+
+@media (max-width: 960px) {
+  body.ccswitch-openwrt-provider-ui-theme .cbi-value {
+    grid-template-columns: 1fr;
+    gap: 0.4rem;
+  }
+}
+
+@media (min-height: 720px) {
+  body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-positioner {
+    align-items: center;
+  }
+}
+
+@media (min-width: 720px) {
+  #ccswitch-shared-runtime-surface-root [data-ccswitch-layout="stack-to-row"] {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+}
+
+@media (min-width: 1080px) {
+  #ccswitch-shared-provider-ui-root [data-ccswitch-layout="stack-to-split"] {
+    grid-template-columns: minmax(0, 1.05fr) minmax(18rem, 0.7fr);
   }
 }

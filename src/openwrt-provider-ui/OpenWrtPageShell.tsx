@@ -333,14 +333,6 @@ function getRequestLogTokenCount(entry: OpenWrtRequestLog | null): number {
   );
 }
 
-function formatRequestLogSource(value: string | null | undefined): string {
-  if (!value) {
-    return "proxy";
-  }
-
-  return value.replace(/_/g, " ");
-}
-
 function ThemeToggle({
   theme,
   onToggle,
@@ -825,7 +817,13 @@ export function OpenWrtPageShell({
   }
 
   return (
-    <div className="ccswitch-openwrt-provider-ui-shell">
+    <div
+      className={
+        theme === "dark"
+          ? "ccswitch-openwrt-provider-ui-shell ccswitch-openwrt-page-shell dark"
+          : "ccswitch-openwrt-provider-ui-shell ccswitch-openwrt-page-shell"
+      }
+    >
       <header className="owt-header">
         <div>
           <div className="owt-breadcrumb">OpenWrt / Services</div>
@@ -858,7 +856,8 @@ export function OpenWrtPageShell({
       {/* ActivitySidePanel drawer - Task C */}
       {/* ProviderSidePanel drawer - Task D */}
 
-      <div className="owt-legacy-preserved" hidden>
+      {/* Preserve the legacy off-screen mount until Tasks C/D/G replace the bridge-backed workspace and dialogs. */}
+      <div className="owt-legacy-preserved">
         <section className="ccswitch-openwrt-daemon-card">
           <div className="ccswitch-openwrt-daemon-card__head">
             <div className="ccswitch-openwrt-daemon-card__intro">
@@ -1001,7 +1000,21 @@ export function OpenWrtPageShell({
         </section>
 
         <section className="ccswitch-openwrt-workspace-shell">
+          <div className="ccswitch-openwrt-workspace-shell__head">
+            <div>
+              <h2 className="ccswitch-openwrt-workspace-shell__title">
+                Configure routes and provider details
+              </h2>
+            </div>
+          </div>
           <div className="ccswitch-openwrt-workspace-shell__usage">
+            <div className="ccswitch-openwrt-workspace-shell__usage-head">
+              <div>
+                <p className="ccswitch-openwrt-daemon-card__eyebrow">
+                  Usage summary
+                </p>
+              </div>
+            </div>
             {usageState.error ? (
               <div className="ccswitch-openwrt-page-note ccswitch-openwrt-page-note--info">
                 {usageState.error}
@@ -1094,36 +1107,45 @@ export function OpenWrtPageShell({
                 Loading recent activity…
               </div>
             ) : recentActivityState.entries.length > 0 ? (
-              <div className="ccswitch-openwrt-workspace-shell__recent-activity-list">
-                {recentActivityState.entries.map((entry) => (
-                  <div
-                    className="ccswitch-openwrt-workspace-shell__recent-activity-row"
-                    key={entry.requestId || `${entry.providerId}-${entry.createdAt}`}
-                  >
-                    <div className="ccswitch-openwrt-workspace-shell__recent-activity-main">
-                      <div className="ccswitch-openwrt-workspace-shell__recent-activity-title">
-                        <p className="ccswitch-openwrt-workspace-shell__provider-name">
-                          {entry.providerName || entry.providerId}
-                        </p>
-                        <span
-                          className="ccswitch-openwrt-daemon-chip"
-                          data-tone={getRecentActivityStatusTone(entry.statusCode)}
-                        >
-                          {getRecentActivityStatusLabel(entry.statusCode)}
-                        </span>
-                      </div>
-                      <p className="ccswitch-openwrt-workspace-shell__provider-meta">
-                        {entry.model || "Default model"} ·{" "}
-                        {formatRecentActivityTime(entry.createdAt)}
-                      </p>
-                    </div>
-                    <div className="ccswitch-openwrt-workspace-shell__recent-activity-metrics">
-                      <span>{formatCount(entry.totalTokens)} tokens</span>
-                      <span>{formatUsd(entry.totalCost)}</span>
-                      <span>{formatLatency(entry.latencyMs)}</span>
-                    </div>
+              <div className="ccswitch-openwrt-workspace-shell__recent-activity">
+                <div className="ccswitch-openwrt-workspace-shell__provider-usage-head">
+                  <div>
+                    <p className="ccswitch-openwrt-daemon-card__eyebrow">
+                      Recent activity
+                    </p>
                   </div>
-                ))}
+                </div>
+                <div className="ccswitch-openwrt-workspace-shell__recent-activity-list">
+                  {recentActivityState.entries.map((entry) => (
+                    <div
+                      className="ccswitch-openwrt-workspace-shell__recent-activity-row"
+                      key={entry.requestId || `${entry.providerId}-${entry.createdAt}`}
+                    >
+                      <div className="ccswitch-openwrt-workspace-shell__recent-activity-main">
+                        <div className="ccswitch-openwrt-workspace-shell__recent-activity-title">
+                          <p className="ccswitch-openwrt-workspace-shell__provider-name">
+                            {entry.providerName || entry.providerId}
+                          </p>
+                          <span
+                            className="ccswitch-openwrt-daemon-chip"
+                            data-tone={getRecentActivityStatusTone(entry.statusCode)}
+                          >
+                            {getRecentActivityStatusLabel(entry.statusCode)}
+                          </span>
+                        </div>
+                        <p className="ccswitch-openwrt-workspace-shell__provider-meta">
+                          {entry.model || "Default model"} ·{" "}
+                          {formatRecentActivityTime(entry.createdAt)}
+                        </p>
+                      </div>
+                      <div className="ccswitch-openwrt-workspace-shell__recent-activity-metrics">
+                        <span>{formatCount(entry.totalTokens)} tokens</span>
+                        <span>{formatUsd(entry.totalCost)}</span>
+                        <span>{formatLatency(entry.latencyMs)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             ) : null}
 
@@ -1136,11 +1158,21 @@ export function OpenWrtPageShell({
                 Loading request logs…
               </div>
             ) : requestLogsState.data.length > 0 ? (
-              <>
-                <div>{requestLogsTotalPages}</div>
-                <div>{requestLogsWindowStart}</div>
-                <div>{requestLogsWindowEnd}</div>
-                <div>{requestLogsPage}</div>
+              <div className="ccswitch-openwrt-workspace-shell__request-logs">
+                <div className="ccswitch-openwrt-workspace-shell__provider-usage-head">
+                  <div>
+                    <p className="ccswitch-openwrt-daemon-card__eyebrow">
+                      Request logs
+                    </p>
+                  </div>
+                  <div className="ccswitch-openwrt-workspace-shell__request-logs-nav">
+                    <span className="ccswitch-openwrt-workspace-shell__request-logs-page">
+                      {requestLogsWindowStart && requestLogsWindowEnd
+                        ? `${requestLogsWindowStart}-${requestLogsWindowEnd} of ${formatCount(requestLogsState.total)}`
+                        : `Page ${requestLogsState.page + 1} of ${requestLogsTotalPages}`}
+                    </span>
+                  </div>
+                </div>
                 <div className="ccswitch-openwrt-workspace-shell__request-logs-list">
                   {requestLogsState.data.map((entry) => (
                     <button
@@ -1187,12 +1219,25 @@ export function OpenWrtPageShell({
                     Loading request detail…
                   </div>
                 ) : requestLogDetailState.detail ? (
-                  <div>
-                    <div>{formatRequestLogSource(requestLogDetailState.detail.dataSource)}</div>
-                    <div>{requestLogDetailState.detail.costMultiplier}</div>
+                  <div className="ccswitch-openwrt-workspace-shell__request-detail">
+                    <div className="ccswitch-openwrt-workspace-shell__request-detail-grid">
+                      <div className="ccswitch-openwrt-stat-card ccswitch-openwrt-workspace-shell__usage-card">
+                        <p className="ccswitch-openwrt-workspace-shell__usage-label">
+                          Request ID
+                        </p>
+                        <p className="ccswitch-openwrt-workspace-shell__request-detail-value">
+                          {requestLogDetailState.detail.requestId}
+                        </p>
+                      </div>
+                    </div>
+                    {requestLogDetailState.detail.errorMessage ? (
+                      <div className="ccswitch-openwrt-workspace-shell__request-detail-error">
+                        {requestLogDetailState.detail.errorMessage}
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
-              </>
+              </div>
             ) : null}
           </div>
 
