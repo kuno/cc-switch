@@ -1,13 +1,26 @@
-import type { ComponentProps, ReactElement } from "react";
+import { useEffect, useRef } from "react";
+import type { ComponentProps, ReactElement, ReactNode } from "react";
+import { ActivityDrawerHost, type ActivityDrawerHostHandle } from "@/openwrt-provider-ui/components/ActivityDrawerHost";
+import { ActivitySidePanel } from "@/openwrt-provider-ui/components/ActivitySidePanel";
 import { AlertStrip } from "@/openwrt-provider-ui/components/AlertStrip";
 import { AppCard } from "@/openwrt-provider-ui/components/AppCard";
 import { AppsGrid } from "@/openwrt-provider-ui/components/AppsGrid";
-import type { OpenWrtProviderStat } from "@/openwrt-provider-ui/pageTypes";
 import type {
   OpenWrtHostState,
+  OpenWrtPaginatedRequestLogs,
   OpenWrtPageTheme,
+  OpenWrtProviderStat,
+  OpenWrtRequestLog,
+  OpenWrtSharedPageShellApi,
+  OpenWrtUsageSummary,
 } from "@/openwrt-provider-ui/pageTypes";
 import type { SharedProviderAppId } from "@/shared/providers/domain";
+import {
+  ACTIVITY_DRAWER_APP_LOGS,
+  ACTIVITY_DRAWER_REQUEST_DETAILS,
+  FIXED_ACTIVITY_NOW,
+  createRequestLogsPage,
+} from "../../fixtures/activity";
 import {
   createProviderStat,
   createProviderTransportFixture,
@@ -47,6 +60,8 @@ const READY_HOST: OpenWrtHostState = {
   status: "running",
   health: "healthy",
 };
+
+const EMPTY_REQUEST_LOGS = createRequestLogsPage([]);
 
 const GRID_SUMMARIES = {
   claude: createUsageSummary({
@@ -155,6 +170,224 @@ function createAppCardScenario(
   };
 }
 
+function createActivityShellStub({
+  selectedApp = "claude",
+  host = READY_HOST,
+  requestLogs = {},
+  requestDetails = {},
+  requestLogsPending = false,
+  requestDetailPending = false,
+  requestLogsError = null,
+  requestDetailError = null,
+}: {
+  selectedApp?: SharedProviderAppId;
+  host?: OpenWrtHostState;
+  requestLogs?: Partial<
+    Record<SharedProviderAppId, OpenWrtPaginatedRequestLogs>
+  >;
+  requestDetails?: Partial<
+    Record<SharedProviderAppId, Record<string, OpenWrtRequestLog | null>>
+  >;
+  requestLogsPending?: boolean;
+  requestDetailPending?: boolean;
+  requestLogsError?: string | null;
+  requestDetailError?: string | null;
+}): OpenWrtSharedPageShellApi {
+  let activeApp = selectedApp;
+  const usageSummary: OpenWrtUsageSummary = {
+    totalRequests: 0,
+    totalCost: "0.00",
+    totalInputTokens: 0,
+    totalOutputTokens: 0,
+    totalCacheCreationTokens: 0,
+    totalCacheReadTokens: 0,
+    successRate: 100,
+  };
+
+  return {
+    getSelectedApp: () => activeApp,
+    setSelectedApp: (appId) => {
+      activeApp = appId;
+      return activeApp;
+    },
+    getServiceStatus: () => ({
+      isRunning: true,
+    }),
+    getRestartState: () => ({
+      pending: false,
+      inFlight: false,
+    }),
+    setRestartState: () => {},
+    subscribe: () => () => {},
+    refreshServiceStatus: async () => ({
+      isRunning: true,
+    }),
+    showMessage: () => {},
+    clearMessage: () => {},
+    restartService: async () => ({
+      isRunning: true,
+    }),
+    getHostState: () => host,
+    getMessage: () => null,
+    getProviderStats: async () => [],
+    getRequestDetail: async (appId, requestId) => {
+      if (requestDetailPending) {
+        return await new Promise<OpenWrtRequestLog | null>(() => {});
+      }
+
+      if (requestDetailError) {
+        throw new Error(requestDetailError);
+      }
+
+      return requestDetails[appId]?.[requestId] ?? null;
+    },
+    getRequestLogs: async (appId) => {
+      if (requestLogsPending) {
+        return await new Promise<OpenWrtPaginatedRequestLogs>(() => {});
+      }
+
+      if (requestLogsError) {
+        throw new Error(requestLogsError);
+      }
+
+      return requestLogs[appId] ?? EMPTY_REQUEST_LOGS;
+    },
+    getRecentActivity: async () => [],
+    getUsageSummary: async () => usageSummary,
+    refreshHostState: async () => host,
+    saveHostConfig: async () => host,
+  };
+}
+
+function FrozenNow({ children }: { children: ReactNode }) {
+  const originalNowRef = useRef<typeof Date.now | null>(null);
+
+  if (!originalNowRef.current) {
+    originalNowRef.current = Date.now;
+    Date.now = () => FIXED_ACTIVITY_NOW;
+  }
+
+  useEffect(() => {
+    return () => {
+      if (originalNowRef.current) {
+        Date.now = originalNowRef.current;
+      }
+    };
+  }, []);
+
+  return <>{children}</>;
+}
+
+function DrawerScene({ children }: { children: ReactNode }) {
+  return (
+    <FrozenNow>
+      <div className="owt-visual-harness__drawer-scene">
+        <div className="owt-visual-harness__drawer-preview">
+          <div className="owt-visual-harness__drawer-preview-copy">
+            <span className="owt-visual-harness__drawer-preview-label">
+              Visual fixture
+            </span>
+            <strong>OpenWrt provider shell scaffold</strong>
+            <p>
+              Stable backdrop content for Activity drawer regression coverage.
+            </p>
+          </div>
+
+          <div className="owt-visual-harness__drawer-preview-tiles">
+            <div className="owt-visual-harness__drawer-preview-tile" />
+            <div className="owt-visual-harness__drawer-preview-tile" />
+            <div className="owt-visual-harness__drawer-preview-tile" />
+          </div>
+        </div>
+
+        {children}
+      </div>
+    </FrozenNow>
+  );
+}
+
+function ActivityDrawerHostHarness({
+  openOnMount = false,
+  selectedApp = "claude",
+  shell,
+}: {
+  openOnMount?: boolean;
+  selectedApp?: SharedProviderAppId;
+  shell: OpenWrtSharedPageShellApi;
+}) {
+  const shellRef = useRef<ActivityDrawerHostHandle | null>(null);
+
+  useEffect(() => {
+    if (!openOnMount) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      shellRef.current?.openForApp(selectedApp);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [openOnMount, selectedApp]);
+
+  return (
+    <DrawerScene>
+      <ActivityDrawerHost shell={shell} shellRef={shellRef} />
+    </DrawerScene>
+  );
+}
+
+function ActivitySidePanelHarness({
+  appId = "claude",
+  autoOpenDetail = false,
+  shell,
+}: {
+  appId?: SharedProviderAppId;
+  autoOpenDetail?: boolean;
+  shell: OpenWrtSharedPageShellApi;
+}) {
+  const detailOpenedRef = useRef(false);
+
+  useEffect(() => {
+    if (!autoOpenDetail) {
+      return;
+    }
+
+    let frame = 0;
+
+    const tryOpenDetail = () => {
+      if (detailOpenedRef.current) {
+        return;
+      }
+
+      const row = document.querySelector<HTMLButtonElement>(
+        ".owt-activity-drawer__row",
+      );
+
+      if (row) {
+        detailOpenedRef.current = true;
+        row.click();
+        return;
+      }
+
+      frame = window.requestAnimationFrame(tryOpenDetail);
+    };
+
+    frame = window.requestAnimationFrame(tryOpenDetail);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [autoOpenDetail]);
+
+  return (
+    <DrawerScene>
+      <ActivitySidePanel open appId={appId} onClose={() => {}} shell={shell} />
+    </DrawerScene>
+  );
+}
+
 const HARNESSES: Record<string, Record<string, HarnessScenario>> = {
   AlertStrip: {
     stopped: {
@@ -166,6 +399,81 @@ const HARNESSES: Record<string, Record<string, HarnessScenario>> = {
           restartInFlight={false}
           message={null}
           onRestart={() => {}}
+        />
+      ),
+    },
+  },
+  ActivityDrawerHost: {
+    closed: {
+      canvasClassName: "owt-visual-harness__canvas--drawer",
+      render: () => (
+        <ActivityDrawerHostHarness
+          shell={createActivityShellStub({
+            requestLogs: {
+              claude: EMPTY_REQUEST_LOGS,
+            },
+          })}
+        />
+      ),
+    },
+    "open-empty": {
+      canvasClassName: "owt-visual-harness__canvas--drawer",
+      render: () => (
+        <ActivityDrawerHostHarness
+          openOnMount
+          shell={createActivityShellStub({
+            requestLogs: {
+              claude: EMPTY_REQUEST_LOGS,
+            },
+          })}
+        />
+      ),
+    },
+  },
+  ActivitySidePanel: {
+    populated: {
+      canvasClassName: "owt-visual-harness__canvas--drawer",
+      render: () => (
+        <ActivitySidePanelHarness
+          shell={createActivityShellStub({
+            requestLogs: {
+              claude: ACTIVITY_DRAWER_APP_LOGS.claude,
+            },
+          })}
+        />
+      ),
+    },
+    detail: {
+      canvasClassName: "owt-visual-harness__canvas--drawer",
+      render: () => (
+        <ActivitySidePanelHarness
+          autoOpenDetail
+          shell={createActivityShellStub({
+            requestLogs: {
+              claude: ACTIVITY_DRAWER_APP_LOGS.claude,
+            },
+            requestDetails: ACTIVITY_DRAWER_REQUEST_DETAILS,
+          })}
+        />
+      ),
+    },
+    loading: {
+      canvasClassName: "owt-visual-harness__canvas--drawer",
+      render: () => (
+        <ActivitySidePanelHarness
+          shell={createActivityShellStub({
+            requestLogsPending: true,
+          })}
+        />
+      ),
+    },
+    error: {
+      canvasClassName: "owt-visual-harness__canvas--drawer",
+      render: () => (
+        <ActivitySidePanelHarness
+          shell={createActivityShellStub({
+            requestLogsError: "Request log feed unavailable.",
+          })}
         />
       ),
     },
