@@ -13,6 +13,7 @@ import {
   SharedProviderManager,
 } from "@/shared/providers";
 import type { SharedProviderView } from "@/shared/providers/domain";
+import { AlertStrip } from "./components/AlertStrip";
 import type {
   OpenWrtHostConfigPayload,
   OpenWrtHostState,
@@ -841,7 +842,15 @@ export function OpenWrtPageShell({
 
       <main className="owt-main">
         <section className="owt-slot owt-slot-alert" data-slot="alert-strip">
-          <SlotPlaceholder task="Task F" title="AlertStrip" />
+          <AlertStrip
+            host={snapshot.host}
+            isRunning={snapshot.isRunning}
+            restartInFlight={snapshot.restartInFlight}
+            message={snapshot.message}
+            onRestart={() => {
+              void handleRestart();
+            }}
+          />
         </section>
 
         <section className="owt-slot owt-slot-apps" data-slot="apps-grid">
