@@ -20,6 +20,7 @@
     "test:component:watch": "vitest watch --config vitest.openwrt-component.config.ts tests/openwrt/component",
     "test:visual": "playwright test",
     "test:visual:update": "playwright test --update-snapshots",
+    "test:visual:update:linux": "docker run --rm -u \"$(id -u):$(id -g)\" -v \"$PWD\":/work -w /work mcr.microsoft.com/playwright:v1.59.1-jammy bash -lc 'corepack enable && pnpm install --frozen-lockfile && pnpm test:visual:update'",
     "test:visual:ci": "playwright test",
     "test:phase12:verification": "vitest run tests/shared/providers/SharedProviderManager.test.tsx tests/shared/providers/ui/SharedProviderCard.test.tsx tests/shared/runtime/SharedRuntimeSurface.test.tsx tests/shared/runtime/ui/SharedRuntimeAppCard.test.tsx tests/openwrt/settings.providerState.test.ts tests/openwrt/providerUiBundle.test.ts",
     "test:unit:watch": "vitest watch"

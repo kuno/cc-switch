@@ -79,6 +79,7 @@ Visual tests:
 
 - `pnpm test:visual`
 - `pnpm test:visual:update`
+- `pnpm test:visual:update:linux`
 
 Builds and existing OpenWrt contract:
 
@@ -112,8 +113,15 @@ Jobs:
 ## Known limitations and notes
 
 - Playwright is configured for Chromium only. Keep new visual specs Chromium-safe.
-- The committed baselines are project-scoped, not platform-scoped, so Linux CI
-  can reuse snapshots generated on macOS.
+- All committed baselines must be Linux-rendered via:
+  `docker run --rm -u "$(id -u):$(id -g)" -v "$PWD":/work -w /work mcr.microsoft.com/playwright:v1.59.1-jammy bash -lc 'corepack enable && pnpm install --frozen-lockfile && pnpm test:visual:update'`
+- `pnpm test:visual:update:linux` wraps that Docker command and is the preferred
+  refresh path before committing snapshot PNGs.
+- macOS local `pnpm test:visual` may show diffs against the committed Linux
+  baselines. That is expected.
+- macOS local `pnpm test:visual:update` is for temporary iteration only. Do not
+  commit PNGs produced by that command; always regenerate Linux baselines before
+  committing.
 - `actionlint` was not available in this environment, and `gh workflow view`
   cannot validate an unpublished workflow file from the remote default branch.
   H0 validated YAML syntax locally with Ruby's `YAML.load_file`.
@@ -130,6 +138,6 @@ Jobs:
 - `pnpm vitest run tests/openwrt/providerUiBundle.test.ts`
 - `pnpm test:component`
 - `pnpm build:openwrt-visual-harness`
-- `pnpm test:visual:update`
-- `pnpm test:visual`
+- `pnpm test:visual:update:linux`
+- `docker run --rm -u "$(id -u):$(id -g)" -v "$PWD":/work -w /work mcr.microsoft.com/playwright:v1.59.1-jammy bash -lc 'corepack enable && pnpm install --frozen-lockfile && pnpm test:visual'`
 - Ruby YAML parse of `.github/workflows/openwrt-ui-regression.yml`
