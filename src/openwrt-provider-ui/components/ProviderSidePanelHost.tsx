@@ -32,13 +32,6 @@ import {
 } from "./ProviderSidePanel";
 import type { ProviderSidePanelPresetGroup } from "./ProviderSidePanelPresetTab";
 
-const PROVIDER_PANEL_OPEN_EVENT = "ccswitch:provider-side-panel-open";
-
-type ProviderSidePanelOpenDetail = {
-  appId?: SharedProviderAppId;
-  providerId?: string | null;
-};
-
 type ProviderSidePanelMode = "new" | "edit";
 
 type ProviderSidePanelHostProps = {
@@ -480,42 +473,6 @@ export const ProviderSidePanelHost = forwardRef<
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [open]);
-
-  useEffect(() => {
-    function handleOpenEvent(event: Event) {
-      const customEvent = event as CustomEvent<ProviderSidePanelOpenDetail>;
-      openForApp(customEvent.detail?.appId ?? selectedApp, customEvent.detail?.providerId ?? undefined);
-    }
-
-    window.addEventListener(
-      PROVIDER_PANEL_OPEN_EVENT,
-      handleOpenEvent as EventListener,
-    );
-    return () => {
-      window.removeEventListener(
-        PROVIDER_PANEL_OPEN_EVENT,
-        handleOpenEvent as EventListener,
-      );
-    };
-  }, [selectedApp]);
-
-  useEffect(() => {
-    const appsSlot = document.querySelector<HTMLElement>('[data-slot="apps-grid"]');
-    const placeholder = appsSlot?.querySelector(".owt-slot-placeholder");
-
-    if (!appsSlot || !placeholder) {
-      return;
-    }
-
-    function handlePlaceholderClick() {
-      openForApp(selectedApp);
-    }
-
-    appsSlot.addEventListener("click", handlePlaceholderClick);
-    return () => {
-      appsSlot.removeEventListener("click", handlePlaceholderClick);
-    };
-  }, [selectedApp]);
 
   function handleAddProvider() {
     setMode("new");
