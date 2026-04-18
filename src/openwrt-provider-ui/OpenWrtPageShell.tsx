@@ -854,7 +854,7 @@ export function OpenWrtPageShell({
         </section>
       </main>
 
-      {/* ActivitySidePanel drawer - Task C */}
+      {/* ProviderSidePanel drawer - Task D */}
       <ProviderSidePanelHost
         selectedApp={snapshot.host.app}
         shell={options.shell}

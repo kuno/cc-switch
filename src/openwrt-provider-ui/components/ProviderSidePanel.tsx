@@ -7,6 +7,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
+import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef } from "react";
 import type {
   SharedProviderAppId,
   SharedProviderEditorPayload,
@@ -79,6 +80,15 @@ const APP_LABELS: Record<SharedProviderAppId, string> = {
   gemini: "Gemini",
 };
 
+const FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(", ");
+
 function getPanelSubtitle(
   appId: SharedProviderAppId,
   mode: "new" | "edit",
@@ -100,6 +110,20 @@ function getStatusLabel(
   }
 
   return provider?.active ? "Active" : "Saved";
+}
+
+function getFocusableElements(container: HTMLElement | null): HTMLElement[] {
+  if (!container) {
+    return [];
+  }
+
+  return Array.from(
+    container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+  ).filter(
+    (element) =>
+      !element.hasAttribute("disabled") &&
+      element.getAttribute("aria-hidden") !== "true",
+  );
 }
 
 export function ProviderSidePanel({
@@ -149,6 +173,79 @@ export function ProviderSidePanel({
     (mode === "new"
       ? draft.name.trim() || "New provider"
       : selectedProvider?.name.trim()) || "Provider";
+  const panelRef = useRef<HTMLElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  const wasOpenRef = useRef(open);
+
+  useEffect(() => {
+    if (open && !wasOpenRef.current) {
+      previouslyFocusedRef.current =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
+
+      const animationFrameId = window.requestAnimationFrame(() => {
+        const focusTarget =
+          closeButtonRef.current ||
+          getFocusableElements(panelRef.current)[0] ||
+          panelRef.current;
+
+        focusTarget?.focus();
+      });
+
+      wasOpenRef.current = true;
+      return () => {
+        window.cancelAnimationFrame(animationFrameId);
+      };
+    }
+
+    if (!open && wasOpenRef.current) {
+      if (previouslyFocusedRef.current?.isConnected) {
+        previouslyFocusedRef.current.focus();
+      }
+      wasOpenRef.current = false;
+    }
+
+    return undefined;
+  }, [open]);
+
+  function handleTrapFocus(event: ReactKeyboardEvent<HTMLElement>) {
+    if (!open || event.key !== "Tab") {
+      return;
+    }
+
+    const focusableElements = getFocusableElements(panelRef.current);
+
+    if (focusableElements.length === 0) {
+      event.preventDefault();
+      panelRef.current?.focus();
+      return;
+    }
+
+    const firstElement = focusableElements[0];
+    const lastElement = focusableElements[focusableElements.length - 1];
+    const activeElement =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    const focusInsidePanel = Boolean(
+      activeElement && panelRef.current?.contains(activeElement),
+    );
+
+    if (event.shiftKey) {
+      if (!focusInsidePanel || activeElement === firstElement) {
+        event.preventDefault();
+        lastElement.focus();
+      }
+      return;
+    }
+
+    if (!focusInsidePanel || activeElement === lastElement) {
+      event.preventDefault();
+      firstElement.focus();
+    }
+  }
 
   return (
     <div className="owt-provider-panel-shell" data-open={open}>
@@ -164,7 +261,11 @@ export function ProviderSidePanel({
         className="owt-provider-panel"
         aria-hidden={!open}
         aria-label={`${APP_LABELS[appId]} providers`}
+        aria-modal="true"
         role="dialog"
+        ref={panelRef}
+        tabIndex={-1}
+        onKeyDown={handleTrapFocus}
       >
         <header className="owt-provider-panel__header">
           <div className="owt-provider-panel__app-badge" data-app={appId}>
@@ -181,6 +282,7 @@ export function ProviderSidePanel({
             className="owt-provider-panel__close"
             onClick={onClose}
             aria-label="Close provider panel"
+            ref={closeButtonRef}
           >
             <X className="h-4 w-4" />
           </button>
