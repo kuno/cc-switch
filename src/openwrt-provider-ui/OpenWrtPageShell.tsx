@@ -1,10 +1,4 @@
-import {
-  Loader2,
-  MoonStar,
-  RefreshCcw,
-  Save,
-  SunMedium,
-} from "lucide-react";
+import { MoonStar, SunMedium } from "lucide-react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createOpenWrtProviderAdapter } from "@/platform/openwrt/providers";
@@ -13,6 +7,7 @@ import {
   SharedProviderManager,
 } from "@/shared/providers";
 import type { SharedProviderView } from "@/shared/providers/domain";
+import { DaemonCard } from "./components/DaemonCard";
 import type {
   OpenWrtHostConfigPayload,
   OpenWrtHostState,
@@ -27,8 +22,7 @@ import type {
 } from "./pageTypes";
 
 const OPENWRT_PAGE_THEME_STORAGE_KEY = "ccswitch-openwrt-native-page-theme";
-const OPENWRT_PAGE_THEME_DARK_CLASS =
-  "ccswitch-openwrt-provider-ui-theme-dark";
+const OPENWRT_PAGE_THEME_DARK_CLASS = "ccswitch-openwrt-provider-ui-theme-dark";
 const OPENWRT_REQUEST_LOGS_PAGE_SIZE = 6;
 
 type HostDraft = OpenWrtHostConfigPayload;
@@ -156,40 +150,8 @@ function clearTheme() {
   delete document.body.dataset.ccswitchTheme;
 }
 
-function getHealthTone(health: OpenWrtHostState["health"]): string {
-  switch (health) {
-    case "healthy":
-      return "healthy";
-    case "degraded":
-      return "warning";
-    case "stopped":
-      return "muted";
-    default:
-      return "neutral";
-  }
-}
-
-function getHealthLabel(health: OpenWrtHostState["health"]): string {
-  switch (health) {
-    case "healthy":
-      return "Healthy";
-    case "degraded":
-      return "Degraded";
-    case "stopped":
-      return "Stopped";
-    default:
-      return "Unknown";
-  }
-}
-
 function getStatusLabel(status: OpenWrtHostState["status"]): string {
   return status === "running" ? "Running" : "Stopped";
-}
-
-function getVersionSummary(version: string): string {
-  const trimmed = version.trim();
-
-  return trimmed ? `Version ${trimmed}` : "Version unavailable";
 }
 
 function getMessageToneClass(message: OpenWrtPageMessage | null): string {
@@ -357,13 +319,7 @@ function ThemeToggle({
   );
 }
 
-function SlotPlaceholder({
-  task,
-  title,
-}: {
-  task: string;
-  title: string;
-}) {
+function SlotPlaceholder({ task, title }: { task: string; title: string }) {
   return (
     <div className="owt-slot-placeholder">
       <span className="owt-slot-placeholder__task">{task}</span>
@@ -381,7 +337,9 @@ function getProviderNameFromMutation(
 ): string {
   if (providerId) {
     const matchedProvider =
-      providerState.providers.find((provider) => provider.providerId === providerId) ??
+      providerState.providers.find(
+        (provider) => provider.providerId === providerId,
+      ) ??
       (providerState.activeProvider.providerId === providerId
         ? providerState.activeProvider
         : null);
@@ -434,9 +392,7 @@ function getMutationMessage(
   };
 }
 
-export function OpenWrtPageShell({
-  options,
-}: OpenWrtPageShellProps) {
+export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
   const [snapshot, setSnapshot] = useState(() => getHostSnapshot(options));
   const [hostDraft, setHostDraft] = useState(() =>
     createHostDraft(options.shell.getHostState()),
@@ -448,16 +404,18 @@ export function OpenWrtPageShell({
     loading: true,
     error: null,
   });
-  const [providerStatsState, setProviderStatsState] = useState<ProviderStatsState>({
-    providers: [],
-    loading: true,
-    error: null,
-  });
-  const [recentActivityState, setRecentActivityState] = useState<RecentActivityState>({
-    entries: [],
-    loading: true,
-    error: null,
-  });
+  const [providerStatsState, setProviderStatsState] =
+    useState<ProviderStatsState>({
+      providers: [],
+      loading: true,
+      error: null,
+    });
+  const [recentActivityState, setRecentActivityState] =
+    useState<RecentActivityState>({
+      entries: [],
+      loading: true,
+      error: null,
+    });
   const [requestLogsPage, setRequestLogsPage] = useState(0);
   const [requestLogsState, setRequestLogsState] = useState<RequestLogsState>({
     data: [],
@@ -467,15 +425,22 @@ export function OpenWrtPageShell({
     loading: true,
     error: null,
   });
-  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
+  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(
+    null,
+  );
   const [requestLogDetailState, setRequestLogDetailState] =
     useState<RequestLogDetailState>({
       detail: null,
       loading: false,
       error: null,
     });
-  const previousHostDraftRef = useRef(createHostDraft(options.shell.getHostState()));
-  const queryClient = useMemo(() => createSharedProviderManagerQueryClient(), []);
+  const previousHostDraftRef = useRef(
+    createHostDraft(options.shell.getHostState()),
+  );
+  const queryClient = useMemo(
+    () => createSharedProviderManagerQueryClient(),
+    [],
+  );
   const providerAdapter = useMemo(
     () =>
       createOpenWrtProviderAdapter(options.transport, {
@@ -501,9 +466,12 @@ export function OpenWrtPageShell({
     [options],
   );
 
-  useEffect(() => () => {
-    queryClient.clear();
-  }, [queryClient]);
+  useEffect(
+    () => () => {
+      queryClient.clear();
+    },
+    [queryClient],
+  );
 
   useEffect(() => {
     applyTheme(theme);
@@ -531,7 +499,9 @@ export function OpenWrtPageShell({
     const nextDraft = createHostDraft(snapshot.host);
 
     setHostDraft((current) =>
-      isHostDraftEqual(current, previousHostDraftRef.current) ? nextDraft : current,
+      isHostDraftEqual(current, previousHostDraftRef.current)
+        ? nextDraft
+        : current,
     );
     previousHostDraftRef.current = nextDraft;
   }, [snapshot.host]);
@@ -787,7 +757,10 @@ export function OpenWrtPageShell({
     1,
     Math.ceil(
       requestLogsState.total /
-        Math.max(1, requestLogsState.pageSize || OPENWRT_REQUEST_LOGS_PAGE_SIZE),
+        Math.max(
+          1,
+          requestLogsState.pageSize || OPENWRT_REQUEST_LOGS_PAGE_SIZE,
+        ),
     ),
   );
   const requestLogsWindowStart = requestLogsState.total
@@ -849,7 +822,29 @@ export function OpenWrtPageShell({
         </section>
 
         <section className="owt-slot owt-slot-daemon" data-slot="daemon-card">
-          <SlotPlaceholder task="Task E" title="DaemonCard" />
+          <DaemonCard
+            host={snapshot.host}
+            draft={hostDraft}
+            isRunning={snapshot.isRunning}
+            isDirty={isDirty}
+            saveInFlight={saveInFlight}
+            restartInFlight={snapshot.restartInFlight}
+            restartPending={snapshot.restartPending}
+            message={snapshot.message}
+            messageToneClass={getMessageToneClass(snapshot.message)}
+            onDraftChange={(key, value) =>
+              setHostDraft((current) => ({
+                ...current,
+                [key]: value,
+              }))
+            }
+            onSave={() => {
+              void handleSave();
+            }}
+            onRestart={() => {
+              void handleRestart();
+            }}
+          />
         </section>
       </main>
 
@@ -858,146 +853,11 @@ export function OpenWrtPageShell({
 
       {/* Preserve the legacy off-screen mount until Tasks C/D/G replace the bridge-backed workspace and dialogs. */}
       <div className="owt-legacy-preserved">
-        <section className="ccswitch-openwrt-daemon-card">
-          <div className="ccswitch-openwrt-daemon-card__head">
-            <div className="ccswitch-openwrt-daemon-card__intro">
-              <p className="ccswitch-openwrt-daemon-card__eyebrow">
-                {snapshot.host.serviceLabel}
-              </p>
-              <div className="ccswitch-openwrt-daemon-card__status-row">
-                <h2 className="ccswitch-openwrt-daemon-card__title">
-                  {getStatusLabel(snapshot.host.status)}
-                </h2>
-                <span
-                  className="ccswitch-openwrt-daemon-chip"
-                  data-tone={getHealthTone(snapshot.host.health)}
-                >
-                  {getHealthLabel(snapshot.host.health)}
-                </span>
-              </div>
-              <p className="ccswitch-openwrt-daemon-card__summary">
-                {getVersionSummary(snapshot.host.version)}
-              </p>
-            </div>
-
-            <div className="ccswitch-openwrt-daemon-card__actions">
-              <button
-                type="button"
-                className="ccswitch-openwrt-daemon-button"
-                onClick={() => {
-                  void handleRestart();
-                }}
-                disabled={snapshot.restartInFlight}
-              >
-                {snapshot.restartInFlight ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <RefreshCcw className="h-4 w-4" />
-                )}
-                Restart
-              </button>
-              <button
-                type="button"
-                className="ccswitch-openwrt-daemon-button ccswitch-openwrt-daemon-button--primary"
-                onClick={() => {
-                  void handleSave();
-                }}
-                disabled={!isDirty || saveInFlight}
-              >
-                {saveInFlight ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Save className="h-4 w-4" />
-                )}
-                Save
-              </button>
-            </div>
-          </div>
-
-          {snapshot.message ? (
-            <div
-              className={`ccswitch-openwrt-page-note ${getMessageToneClass(snapshot.message)}`}
-            >
-              {snapshot.message.text}
-            </div>
-          ) : null}
-
-          <div className="ccswitch-openwrt-daemon-card__divider" />
-
-          <div className="ccswitch-openwrt-daemon-grid">
-            <label className="ccswitch-openwrt-daemon-field">
-              <span>Listen address</span>
-              <input
-                type="text"
-                value={hostDraft.listenAddr}
-                onChange={(event) =>
-                  setHostDraft((current) => ({
-                    ...current,
-                    listenAddr: event.target.value,
-                  }))
-                }
-              />
-            </label>
-            <label className="ccswitch-openwrt-daemon-field">
-              <span>Listen port</span>
-              <input
-                type="text"
-                inputMode="numeric"
-                value={hostDraft.listenPort}
-                onChange={(event) =>
-                  setHostDraft((current) => ({
-                    ...current,
-                    listenPort: event.target.value,
-                  }))
-                }
-              />
-            </label>
-            <label className="ccswitch-openwrt-daemon-field ccswitch-openwrt-daemon-field--wide">
-              <span>HTTP proxy</span>
-              <input
-                type="text"
-                value={hostDraft.httpProxy}
-                onChange={(event) =>
-                  setHostDraft((current) => ({
-                    ...current,
-                    httpProxy: event.target.value,
-                  }))
-                }
-              />
-            </label>
-            <label className="ccswitch-openwrt-daemon-field ccswitch-openwrt-daemon-field--wide">
-              <span>HTTPS proxy</span>
-              <input
-                type="text"
-                value={hostDraft.httpsProxy}
-                onChange={(event) =>
-                  setHostDraft((current) => ({
-                    ...current,
-                    httpsProxy: event.target.value,
-                  }))
-                }
-              />
-            </label>
-            <label className="ccswitch-openwrt-daemon-field">
-              <span>Logging</span>
-              <select
-                value={hostDraft.logLevel}
-                onChange={(event) =>
-                  setHostDraft((current) => ({
-                    ...current,
-                    logLevel: event.target.value,
-                  }))
-                }
-              >
-                <option value="error">error</option>
-                <option value="warn">warn</option>
-                <option value="info">info</option>
-                <option value="debug">debug</option>
-                <option value="trace">trace</option>
-              </select>
-            </label>
-          </div>
-        </section>
+        <section
+          className="ccswitch-openwrt-daemon-card"
+          aria-hidden="true"
+          hidden
+        />
 
         <section className="ccswitch-openwrt-workspace-shell">
           <div className="ccswitch-openwrt-workspace-shell__head">
@@ -1119,7 +979,10 @@ export function OpenWrtPageShell({
                   {recentActivityState.entries.map((entry) => (
                     <div
                       className="ccswitch-openwrt-workspace-shell__recent-activity-row"
-                      key={entry.requestId || `${entry.providerId}-${entry.createdAt}`}
+                      key={
+                        entry.requestId ||
+                        `${entry.providerId}-${entry.createdAt}`
+                      }
                     >
                       <div className="ccswitch-openwrt-workspace-shell__recent-activity-main">
                         <div className="ccswitch-openwrt-workspace-shell__recent-activity-title">
@@ -1128,7 +991,9 @@ export function OpenWrtPageShell({
                           </p>
                           <span
                             className="ccswitch-openwrt-daemon-chip"
-                            data-tone={getRecentActivityStatusTone(entry.statusCode)}
+                            data-tone={getRecentActivityStatusTone(
+                              entry.statusCode,
+                            )}
                           >
                             {getRecentActivityStatusLabel(entry.statusCode)}
                           </span>
@@ -1189,7 +1054,9 @@ export function OpenWrtPageShell({
                           </p>
                           <span
                             className="ccswitch-openwrt-daemon-chip"
-                            data-tone={getRecentActivityStatusTone(entry.statusCode)}
+                            data-tone={getRecentActivityStatusTone(
+                              entry.statusCode,
+                            )}
                           >
                             {getRecentActivityStatusLabel(entry.statusCode)}
                           </span>
@@ -1251,7 +1118,9 @@ export function OpenWrtPageShell({
                 }}
                 shellState={{
                   serviceName: snapshot.host.serviceLabel,
-                  serviceStatusLabel: getStatusLabel(snapshot.host.status).toLowerCase(),
+                  serviceStatusLabel: getStatusLabel(
+                    snapshot.host.status,
+                  ).toLowerCase(),
                   restartInFlight: snapshot.restartInFlight,
                   restartPending: snapshot.restartPending,
                 }}
