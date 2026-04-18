@@ -13,6 +13,7 @@ import {
   SharedProviderManager,
 } from "@/shared/providers";
 import type { SharedProviderView } from "@/shared/providers/domain";
+import { AppsGrid } from "./components/AppsGrid";
 import type {
   OpenWrtHostConfigPayload,
   OpenWrtHostState,
@@ -845,7 +846,7 @@ export function OpenWrtPageShell({
         </section>
 
         <section className="owt-slot owt-slot-apps" data-slot="apps-grid">
-          <SlotPlaceholder task="Task B" title="AppsGrid" />
+          <AppsGrid options={options} onOpenActivity={() => {}} onOpenProviderPanel={() => {}} />
         </section>
 
         <section className="owt-slot owt-slot-daemon" data-slot="daemon-card">
