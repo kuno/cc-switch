@@ -29,6 +29,7 @@ import {
   createShellStub,
   createUsageSummary,
 } from "../../fixtures/openwrtProviderUi";
+import { PROVIDER_SIDE_PANEL_HARNESSES } from "./provider-side-panel";
 
 type HarnessScenario = {
   canvasClassName?: string;
@@ -584,6 +585,7 @@ const HARNESSES: Record<string, Record<string, HarnessScenario>> = {
       loading: false,
     }),
   },
+  ProviderSidePanel: PROVIDER_SIDE_PANEL_HARNESSES,
 };
 
 export function getHarnessRequest(url: URL): HarnessRequest {

@@ -104,3 +104,29 @@
     ),
     color-mix(in srgb, var(--panel-strong) 88%, transparent);
 }
+
+.owt-visual-harness__canvas--panel {
+  width: min(1180px, 100%);
+  padding: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at top left, rgba(63, 111, 255, 0.08), transparent 26%),
+    linear-gradient(180deg, color-mix(in srgb, var(--panel) 96%, transparent), color-mix(in srgb, var(--panel-soft) 94%, transparent));
+}
+
+.owt-provider-panel-harness-root {
+  position: relative;
+  min-height: 780px;
+  overflow: hidden;
+}
+
+.owt-provider-panel-harness-root .owt-provider-panel-shell {
+  position: absolute;
+  inset: 0;
+}
+
+.owt-provider-panel-harness-root .owt-provider-panel__scrim,
+.owt-provider-panel-harness-root .owt-provider-panel {
+  animation: none !important;
+  transition: none !important;
+}
