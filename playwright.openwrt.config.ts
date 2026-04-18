@@ -59,7 +59,7 @@ export default defineConfig({
   ],
   webServer: {
     command:
-      "pnpm build:openwrt-visual-harness && pnpm preview:openwrt-visual-harness",
+      "corepack pnpm build:openwrt-visual-harness && corepack pnpm preview:openwrt-visual-harness",
     port: VISUAL_HARNESS_PORT,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
