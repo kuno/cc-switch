@@ -44,6 +44,10 @@
   width: min(1040px, 100%);
 }
 
+.owt-visual-harness__canvas--narrow {
+  width: min(720px, 100%);
+}
+
 .owt-visual-harness__canvas--drawer {
   min-height: 720px;
   overflow: hidden;
@@ -111,7 +115,11 @@
   overflow: hidden;
   background:
     radial-gradient(circle at top left, rgba(63, 111, 255, 0.08), transparent 26%),
-    linear-gradient(180deg, color-mix(in srgb, var(--panel) 96%, transparent), color-mix(in srgb, var(--panel-soft) 94%, transparent));
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--panel) 96%, transparent),
+      color-mix(in srgb, var(--panel-soft) 94%, transparent)
+    );
 }
 
 .owt-provider-panel-harness-root {

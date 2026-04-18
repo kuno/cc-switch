@@ -73,6 +73,22 @@ const UNKNOWN_HOST: OpenWrtHostState = {
   health: "unknown",
 };
 
+const UNREACHABLE_HOST: OpenWrtHostState = {
+  ...READY_HOST,
+  health: "degraded",
+};
+
+const RESTART_FAILED_MESSAGE: OpenWrtPageMessage = {
+  kind: "error",
+  text: "Restart failed: The daemon timed out while reconnecting to 127.0.0.1:15721.",
+};
+
+const LONG_RESTART_FAILED_MESSAGE: OpenWrtPageMessage = {
+  kind: "error",
+  text:
+    "Restart failed: The daemon timed out while reloading the provider routes for Claude, Codex, and Gemini after the restart request. Verify the upstream bridge, proxy listeners, and provider credentials before trying again.",
+};
+
 const EMPTY_REQUEST_LOGS = createRequestLogsPage([]);
 
 const GRID_SUMMARIES = {
@@ -426,6 +442,28 @@ function getMessageToneClass(message: OpenWrtPageMessage | null): string {
   return "ccswitch-openwrt-page-note--info";
 }
 
+function renderAlertStrip({
+  host = READY_HOST,
+  isRunning = true,
+  restartInFlight = false,
+  message = null,
+}: {
+  host?: OpenWrtHostState;
+  isRunning?: boolean;
+  restartInFlight?: boolean;
+  message?: OpenWrtPageMessage | null;
+}) {
+  return (
+    <AlertStrip
+      host={host}
+      isRunning={isRunning}
+      restartInFlight={restartInFlight}
+      message={message}
+      onRestart={() => {}}
+    />
+  );
+}
+
 function renderDaemonCardScenario({
   host,
   isRunning,
@@ -459,17 +497,45 @@ function renderDaemonCardScenario({
 
 const HARNESSES: Record<string, Record<string, HarnessScenario>> = {
   AlertStrip: {
+    healthy: {
+      canvasClassName: "owt-visual-harness__canvas--wide",
+      render: () => renderAlertStrip({}),
+    },
     stopped: {
       canvasClassName: "owt-visual-harness__canvas--wide",
-      render: () => (
-        <AlertStrip
-          host={STOPPED_HOST}
-          isRunning={false}
-          restartInFlight={false}
-          message={null}
-          onRestart={() => {}}
-        />
-      ),
+      render: () =>
+        renderAlertStrip({
+          host: STOPPED_HOST,
+          isRunning: false,
+        }),
+    },
+    unreachable: {
+      canvasClassName: "owt-visual-harness__canvas--wide",
+      render: () =>
+        renderAlertStrip({
+          host: UNREACHABLE_HOST,
+        }),
+    },
+    restarting: {
+      canvasClassName: "owt-visual-harness__canvas--wide",
+      render: () =>
+        renderAlertStrip({
+          restartInFlight: true,
+        }),
+    },
+    "restart-failed": {
+      canvasClassName: "owt-visual-harness__canvas--wide",
+      render: () =>
+        renderAlertStrip({
+          message: RESTART_FAILED_MESSAGE,
+        }),
+    },
+    "restart-failed-long": {
+      canvasClassName: "owt-visual-harness__canvas--narrow",
+      render: () =>
+        renderAlertStrip({
+          message: LONG_RESTART_FAILED_MESSAGE,
+        }),
     },
   },
   ActivityDrawerHost: {
