@@ -13,6 +13,7 @@ import {
   SharedProviderManager,
 } from "@/shared/providers";
 import type { SharedProviderView } from "@/shared/providers/domain";
+import { ProviderSidePanelHost } from "./components/ProviderSidePanelHost";
 import type {
   OpenWrtHostConfigPayload,
   OpenWrtHostState,
@@ -854,7 +855,11 @@ export function OpenWrtPageShell({
       </main>
 
       {/* ActivitySidePanel drawer - Task C */}
-      {/* ProviderSidePanel drawer - Task D */}
+      <ProviderSidePanelHost
+        selectedApp={snapshot.host.app}
+        shell={options.shell}
+        transport={options.transport}
+      />
 
       {/* Preserve the legacy off-screen mount until Tasks C/D/G replace the bridge-backed workspace and dialogs. */}
       <div className="owt-legacy-preserved">
