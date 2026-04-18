@@ -1,0 +1,45 @@
+.owt-visual-harness {
+  min-height: 100vh;
+  padding: 32px;
+}
+
+.owt-visual-harness__meta {
+  max-width: 960px;
+  margin: 0 auto 24px;
+}
+
+.owt-visual-harness__eyebrow {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent-text);
+}
+
+.owt-visual-harness__title {
+  margin: 0;
+  font-size: clamp(2rem, 4vw, 3.25rem);
+  line-height: 0.95;
+  letter-spacing: -0.045em;
+}
+
+.owt-visual-harness__detail {
+  margin: 12px 0 0;
+  color: var(--muted);
+}
+
+.owt-visual-harness__canvas {
+  width: min(960px, 100%);
+  margin: 0 auto;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  background: var(--panel);
+  box-shadow: 0 30px 70px -52px rgba(23, 33, 51, 0.32);
+  backdrop-filter: blur(22px);
+}
+
+.owt-visual-harness__canvas--wide {
+  width: min(1040px, 100%);
+}
