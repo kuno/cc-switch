@@ -58,7 +58,9 @@ export interface BridgeFixtureOptions {
   requestDetails?: Partial<
     Record<SharedProviderAppId, Record<string, OpenWrtRequestLog | null>>
   >;
-  requestLogs?: Partial<Record<SharedProviderAppId, OpenWrtPaginatedRequestLogs>>;
+  requestLogs?: Partial<
+    Record<SharedProviderAppId, OpenWrtPaginatedRequestLogs>
+  >;
   recentActivity?: Partial<
     Record<SharedProviderAppId, OpenWrtRecentActivityItem[]>
   >;
@@ -72,6 +74,24 @@ function getAppRecord<T>(
   fallback: T,
 ): T {
   return value?.[appId] ?? fallback;
+}
+
+function paginateRequestLogs(
+  response: OpenWrtPaginatedRequestLogs,
+  page = 0,
+  pageSize = response.pageSize || 20,
+): OpenWrtPaginatedRequestLogs {
+  const safePage = Math.max(0, page);
+  const safePageSize = Math.max(1, pageSize);
+  const start = safePage * safePageSize;
+  const end = start + safePageSize;
+
+  return {
+    data: response.data.slice(start, end),
+    total: response.total ?? response.data.length,
+    page: safePage,
+    pageSize: safePageSize,
+  };
 }
 
 export function createBridgeFixture(
@@ -125,8 +145,12 @@ export function createBridgeFixture(
       async (appId: SharedProviderAppId, requestId: string) =>
         options.requestDetails?.[appId]?.[requestId] ?? null,
     ),
-    getRequestLogs: vi.fn(async (appId) =>
-      getAppRecord(options.requestLogs, appId, DEFAULT_REQUEST_LOGS),
+    getRequestLogs: vi.fn(async (appId, page, pageSize) =>
+      paginateRequestLogs(
+        getAppRecord(options.requestLogs, appId, DEFAULT_REQUEST_LOGS),
+        page,
+        pageSize,
+      ),
     ),
     getRecentActivity: vi.fn(async (appId) =>
       getAppRecord(options.recentActivity, appId, []),

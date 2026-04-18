@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { ComponentProps, ReactElement, ReactNode } from "react";
+import { OpenWrtPageShell } from "@/openwrt-provider-ui/OpenWrtPageShell";
 import {
   ActivityDrawerHost,
   type ActivityDrawerHostHandle,
@@ -22,6 +23,11 @@ import type {
 } from "@/openwrt-provider-ui/pageTypes";
 import type { SharedProviderAppId } from "@/shared/providers/domain";
 import {
+  createPlainPageShellBridge,
+  createProviderTransportFixture as createPageShellTransportFixture,
+  REALISTIC_HOST_STATE,
+} from "../../component/fixtures/pageShell";
+import {
   ACTIVITY_DRAWER_APP_LOGS,
   ACTIVITY_DRAWER_REQUEST_DETAILS,
   FIXED_ACTIVITY_NOW,
@@ -39,7 +45,7 @@ import { PROVIDER_SIDE_PANEL_HARNESSES } from "./provider-side-panel";
 
 type HarnessScenario = {
   canvasClassName?: string;
-  render: () => ReactElement;
+  render: (request: HarnessRequest) => ReactElement;
 };
 
 export type HarnessRequest = {
@@ -76,6 +82,12 @@ const UNKNOWN_HOST: OpenWrtHostState = {
 const UNREACHABLE_HOST: OpenWrtHostState = {
   ...READY_HOST,
   health: "degraded",
+};
+
+const SHELL_STOPPED_HOST: OpenWrtHostState = {
+  ...REALISTIC_HOST_STATE,
+  health: "stopped",
+  status: "stopped",
 };
 
 const RESTART_FAILED_MESSAGE: OpenWrtPageMessage = {
@@ -770,6 +782,41 @@ const HARNESSES: Record<string, Record<string, HarnessScenario>> = {
             text: "Restart failed: daemon status unavailable.",
           },
         }),
+    },
+  },
+  shell: {
+    default: {
+      canvasClassName: "owt-visual-harness__canvas--shell",
+      render: () => (
+        <OpenWrtPageShell
+          options={{
+            shell: createPlainPageShellBridge(),
+            target: document.createElement("div"),
+            transport: createPageShellTransportFixture(),
+          }}
+        />
+      ),
+    },
+    stopped: {
+      canvasClassName: "owt-visual-harness__canvas--shell",
+      render: () => (
+        <OpenWrtPageShell
+          options={{
+            shell: createPlainPageShellBridge({
+              host: SHELL_STOPPED_HOST,
+              restartState: {
+                inFlight: false,
+                pending: true,
+              },
+              serviceStatus: {
+                isRunning: false,
+              },
+            }),
+            target: document.createElement("div"),
+            transport: createPageShellTransportFixture(),
+          }}
+        />
+      ),
     },
   },
 };

@@ -3,6 +3,10 @@
   padding: 32px;
 }
 
+.owt-visual-harness--fullscreen {
+  padding: 0;
+}
+
 .owt-visual-harness__meta {
   max-width: 960px;
   margin: 0 auto 24px;
@@ -51,6 +55,31 @@
 .owt-visual-harness__canvas--drawer {
   min-height: 720px;
   overflow: hidden;
+}
+
+.owt-visual-harness__canvas--panel {
+  width: min(1180px, 100%);
+  padding: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at top left, rgba(63, 111, 255, 0.08), transparent 26%),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--panel) 96%, transparent),
+      color-mix(in srgb, var(--panel-soft) 94%, transparent)
+    );
+}
+
+.owt-visual-harness__canvas--shell {
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
 }
 
 .owt-visual-harness__drawer-scene {
@@ -107,19 +136,6 @@
       color-mix(in srgb, var(--panel-soft) 82%, transparent)
     ),
     color-mix(in srgb, var(--panel-strong) 88%, transparent);
-}
-
-.owt-visual-harness__canvas--panel {
-  width: min(1180px, 100%);
-  padding: 0;
-  overflow: hidden;
-  background:
-    radial-gradient(circle at top left, rgba(63, 111, 255, 0.08), transparent 26%),
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--panel) 96%, transparent),
-      color-mix(in srgb, var(--panel-soft) 94%, transparent)
-    );
 }
 
 .owt-provider-panel-harness-root {
