@@ -1,13 +1,19 @@
 import { useEffect, useRef } from "react";
 import type { ComponentProps, ReactElement, ReactNode } from "react";
-import { ActivityDrawerHost, type ActivityDrawerHostHandle } from "@/openwrt-provider-ui/components/ActivityDrawerHost";
+import {
+  ActivityDrawerHost,
+  type ActivityDrawerHostHandle,
+} from "@/openwrt-provider-ui/components/ActivityDrawerHost";
 import { ActivitySidePanel } from "@/openwrt-provider-ui/components/ActivitySidePanel";
 import { AlertStrip } from "@/openwrt-provider-ui/components/AlertStrip";
 import { AppCard } from "@/openwrt-provider-ui/components/AppCard";
 import { AppsGrid } from "@/openwrt-provider-ui/components/AppsGrid";
+import { DaemonCard } from "@/openwrt-provider-ui/components/DaemonCard";
 import type {
+  OpenWrtHostConfigPayload,
   OpenWrtHostState,
   OpenWrtPaginatedRequestLogs,
+  OpenWrtPageMessage,
   OpenWrtPageTheme,
   OpenWrtProviderStat,
   OpenWrtRequestLog,
@@ -60,6 +66,11 @@ const READY_HOST: OpenWrtHostState = {
   ...STOPPED_HOST,
   status: "running",
   health: "healthy",
+};
+
+const UNKNOWN_HOST: OpenWrtHostState = {
+  ...READY_HOST,
+  health: "unknown",
 };
 
 const EMPTY_REQUEST_LOGS = createRequestLogsPage([]);
@@ -389,6 +400,63 @@ function ActivitySidePanelHarness({
   );
 }
 
+function createDraft(host: OpenWrtHostState): OpenWrtHostConfigPayload {
+  return {
+    listenAddr: host.listenAddr,
+    listenPort: host.listenPort,
+    httpProxy: host.httpProxy,
+    httpsProxy: host.httpsProxy,
+    logLevel: host.logLevel,
+  };
+}
+
+function getMessageToneClass(message: OpenWrtPageMessage | null): string {
+  if (!message) {
+    return "";
+  }
+
+  if (message.kind === "success") {
+    return "ccswitch-openwrt-page-note--success";
+  }
+
+  if (message.kind === "error") {
+    return "ccswitch-openwrt-page-note--error";
+  }
+
+  return "ccswitch-openwrt-page-note--info";
+}
+
+function renderDaemonCardScenario({
+  host,
+  isRunning,
+  message = null,
+  restartInFlight = false,
+  restartPending = false,
+}: {
+  host: OpenWrtHostState;
+  isRunning: boolean;
+  message?: OpenWrtPageMessage | null;
+  restartInFlight?: boolean;
+  restartPending?: boolean;
+}) {
+  return (
+    <DaemonCard
+      host={host}
+      draft={createDraft(host)}
+      isRunning={isRunning}
+      isDirty={false}
+      saveInFlight={false}
+      restartInFlight={restartInFlight}
+      restartPending={restartPending}
+      message={message}
+      messageToneClass={getMessageToneClass(message)}
+      onDraftChange={() => {}}
+      onSave={() => {}}
+      onRestart={() => {}}
+    />
+  );
+}
+
 const HARNESSES: Record<string, Record<string, HarnessScenario>> = {
   AlertStrip: {
     stopped: {
@@ -586,6 +654,58 @@ const HARNESSES: Record<string, Record<string, HarnessScenario>> = {
     }),
   },
   ProviderSidePanel: PROVIDER_SIDE_PANEL_HARNESSES,
+  DaemonCard: {
+    running: {
+      canvasClassName: "owt-visual-harness__canvas--wide",
+      render: () =>
+        renderDaemonCardScenario({
+          host: READY_HOST,
+          isRunning: true,
+        }),
+    },
+    stopped: {
+      canvasClassName: "owt-visual-harness__canvas--wide",
+      render: () =>
+        renderDaemonCardScenario({
+          host: STOPPED_HOST,
+          isRunning: false,
+        }),
+    },
+    pending: {
+      canvasClassName: "owt-visual-harness__canvas--wide",
+      render: () =>
+        renderDaemonCardScenario({
+          host: READY_HOST,
+          isRunning: true,
+          restartPending: true,
+          message: {
+            kind: "info",
+            text: "Provider changes were saved and need a restart.",
+          },
+        }),
+    },
+    restarting: {
+      canvasClassName: "owt-visual-harness__canvas--wide",
+      render: () =>
+        renderDaemonCardScenario({
+          host: READY_HOST,
+          isRunning: true,
+          restartInFlight: true,
+        }),
+    },
+    error: {
+      canvasClassName: "owt-visual-harness__canvas--wide",
+      render: () =>
+        renderDaemonCardScenario({
+          host: UNKNOWN_HOST,
+          isRunning: true,
+          message: {
+            kind: "error",
+            text: "Restart failed: daemon status unavailable.",
+          },
+        }),
+    },
+  },
 };
 
 export function getHarnessRequest(url: URL): HarnessRequest {
