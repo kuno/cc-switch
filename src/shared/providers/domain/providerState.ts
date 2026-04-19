@@ -112,6 +112,7 @@ export function normalizeSharedProviderView(
     model: getString(provider, ["model"]),
     notes: getString(provider, ["notes"]),
     active: isActive,
+    authMode: getString(provider, ["authMode", "auth_mode"]) || undefined,
   };
 }
 
