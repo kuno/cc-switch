@@ -837,16 +837,21 @@ mod tests {
     }
 
     fn build_state(db: Arc<Database>) -> ProxyState {
+        let current_providers = Arc::new(RwLock::new(HashMap::new()));
+
         ProxyState {
             db: db.clone(),
             config: Arc::new(RwLock::new(ProxyConfig::default())),
             status: Arc::new(RwLock::new(ProxyStatus::default())),
             start_time: Arc::new(RwLock::new(None)),
-            current_providers: Arc::new(RwLock::new(HashMap::new())),
+            current_providers: current_providers.clone(),
             provider_router: Arc::new(ProviderRouter::new(db.clone())),
             gemini_shadow: Arc::new(GeminiShadowStore::default()),
+            copilot_auth: None,
+            codex_oauth_auth: None,
+            #[cfg(feature = "tauri-desktop")]
             app_handle: None,
-            failover_manager: Arc::new(FailoverSwitchManager::new(db)),
+            failover_manager: Arc::new(FailoverSwitchManager::new(db, current_providers)),
         }
     }
 
