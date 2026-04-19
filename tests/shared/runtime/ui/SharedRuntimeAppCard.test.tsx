@@ -1,3 +1,4 @@
+import { QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type {
@@ -5,7 +6,10 @@ import type {
   SharedRuntimeFailoverQueueEntry,
   SharedRuntimeProviderHealth,
 } from "@/shared/runtime";
-import { SharedRuntimeAppCard } from "@/shared/runtime";
+import {
+  createSharedRuntimeSurfaceQueryClient,
+  SharedRuntimeAppCard,
+} from "@/shared/runtime";
 import type { SharedProviderView } from "@/shared/providers";
 
 function createProvider(
@@ -84,37 +88,45 @@ function createStatus(
 }
 
 describe("SharedRuntimeAppCard", () => {
+  function renderCard(status: SharedRuntimeAppStatus) {
+    const queryClient = createSharedRuntimeSurfaceQueryClient();
+
+    return render(
+      <QueryClientProvider client={queryClient}>
+        <SharedRuntimeAppCard status={status} />
+      </QueryClientProvider>,
+    );
+  }
+
   it("renders the active provider, queue depth, and health counts without mutation controls", () => {
-    render(
-      <SharedRuntimeAppCard
-        status={createStatus({
-          failoverQueue: [
-            createQueueEntry({
+    renderCard(
+      createStatus({
+        failoverQueue: [
+          createQueueEntry({
+            providerId: "provider-b",
+            providerName: "Provider B",
+            sortIndex: 1,
+            health: createHealth({
               providerId: "provider-b",
-              providerName: "Provider B",
-              sortIndex: 1,
-              health: createHealth({
-                providerId: "provider-b",
-                observed: true,
-                healthy: false,
-                consecutiveFailures: 3,
-                lastError: "upstream timeout",
-              }),
+              observed: true,
+              healthy: false,
+              consecutiveFailures: 3,
+              lastError: "upstream timeout",
             }),
-            createQueueEntry({
+          }),
+          createQueueEntry({
+            providerId: "provider-c",
+            providerName: "Provider C",
+            sortIndex: 2,
+            health: createHealth({
               providerId: "provider-c",
-              providerName: "Provider C",
-              sortIndex: 2,
-              health: createHealth({
-                providerId: "provider-c",
-                observed: true,
-                healthy: true,
-              }),
+              observed: true,
+              healthy: true,
             }),
-          ],
-          failoverQueueDepth: 2,
-        })}
-      />,
+          }),
+        ],
+        failoverQueueDepth: 2,
+      }),
     );
 
     expect(screen.getByText("Provider A")).toBeInTheDocument();
@@ -128,42 +140,40 @@ describe("SharedRuntimeAppCard", () => {
   });
 
   it("keeps unobserved health neutral and surfaces queue ordering", () => {
-    render(
-      <SharedRuntimeAppCard
-        status={createStatus({
-          activeProviderHealth: createHealth({
-            observed: false,
-            healthy: false,
-            consecutiveFailures: 0,
-          }),
-          failoverQueue: [
-            createQueueEntry({
+    renderCard(
+      createStatus({
+        activeProviderHealth: createHealth({
+          observed: false,
+          healthy: false,
+          consecutiveFailures: 0,
+        }),
+        failoverQueue: [
+          createQueueEntry({
+            providerId: "provider-c",
+            providerName: "Provider C",
+            sortIndex: 9,
+            health: createHealth({
               providerId: "provider-c",
-              providerName: "Provider C",
-              sortIndex: 9,
-              health: createHealth({
-                providerId: "provider-c",
-                observed: false,
-                healthy: false,
-                consecutiveFailures: 0,
-              }),
+              observed: false,
+              healthy: false,
+              consecutiveFailures: 0,
             }),
-            createQueueEntry({
+          }),
+          createQueueEntry({
+            providerId: "provider-b",
+            providerName: "Provider B",
+            sortIndex: 2,
+            active: true,
+            health: createHealth({
               providerId: "provider-b",
-              providerName: "Provider B",
-              sortIndex: 2,
-              active: true,
-              health: createHealth({
-                providerId: "provider-b",
-                observed: true,
-                healthy: false,
-                consecutiveFailures: 4,
-                lastError: "TLS handshake failed",
-              }),
+              observed: true,
+              healthy: false,
+              consecutiveFailures: 4,
+              lastError: "TLS handshake failed",
             }),
-          ],
-        })}
-      />,
+          }),
+        ],
+      }),
     );
 
     expect(screen.getAllByText("Unknown")[0]).toBeInTheDocument();

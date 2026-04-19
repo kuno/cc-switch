@@ -10,7 +10,9 @@
 					"get_provider",
 					"get_active_provider",
 					"get_runtime_status",
-					"get_app_runtime_status"
+					"get_app_runtime_status",
+					"get_available_failover_providers",
+					"get_available_providers_for_failover"
 				]
 			}
 		},
@@ -22,6 +24,9 @@
 					"upsert_active_provider",
 					"delete_provider",
 					"activate_provider",
+					"add_to_failover_queue",
+					"remove_from_failover_queue",
+					"set_auto_failover_enabled",
 					"restart_service"
 				]
 			}
