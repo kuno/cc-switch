@@ -79,6 +79,7 @@ mod services;
 mod store;
 
 use std::sync::Arc;
+use std::str::FromStr;
 use tokio::sync::RwLock;
 
 #[tokio::main]
@@ -111,49 +112,62 @@ fn init_logger(default_filter: &str) {
 async fn run_cli(args: Vec<String>) -> anyhow::Result<()> {
     let db = database::Database::init().map_err(|e| anyhow::anyhow!("DB init failed: {e}"))?;
 
-    match args.as_slice() {
-        [namespace, command] if namespace == "openwrt" && command == "get-active-provider" => {
-            print_json(&openwrt_admin::get_active_claude_provider(&db)?)?;
+    if args.first().map(String::as_str) != Some("openwrt") {
+        return Err(anyhow::anyhow!(
+            "unsupported command. expected namespace: `cc-switch openwrt ...`"
+        ));
+    }
+
+    let (app_type, command_offset) = match args.get(1) {
+        Some(value) => match crate::app_config::AppType::from_str(value) {
+            Ok(_app_type) => (openwrt_admin::parse_supported_app(value)?, 2usize),
+            Err(_) => (crate::app_config::AppType::Claude, 1usize),
+        },
+        None => {
+            return Err(anyhow::anyhow!(
+                "unsupported command. expected one of: `cc-switch openwrt [claude|codex|gemini] get-active-provider`, `cc-switch openwrt [claude|codex|gemini] upsert-active-provider`, `cc-switch openwrt [claude|codex|gemini] list-providers`, `cc-switch openwrt [claude|codex|gemini] get-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] upsert-provider [provider-id]`, `cc-switch openwrt [claude|codex|gemini] delete-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] activate-provider <provider-id>`"
+            ));
+        }
+    };
+
+    let command = args.get(command_offset).map(String::as_str);
+    let tail = &args[(command_offset + 1).min(args.len())..];
+
+    match (command, tail) {
+        (Some("get-active-provider"), []) => {
+            print_json(&openwrt_admin::get_active_provider(&db, &app_type)?)?;
             Ok(())
         }
-        [namespace, command] if namespace == "openwrt" && command == "upsert-active-provider" => {
-            print_json(&openwrt_admin::upsert_active_claude_provider(&db)?)?;
+        (Some("upsert-active-provider"), []) => {
+            print_json(&openwrt_admin::upsert_active_provider(&db, &app_type)?)?;
             Ok(())
         }
-        [namespace, command] if namespace == "openwrt" && command == "list-providers" => {
-            print_json(&openwrt_admin::list_claude_providers(&db)?)?;
+        (Some("list-providers"), []) => {
+            print_json(&openwrt_admin::list_providers(&db, &app_type)?)?;
             Ok(())
         }
-        [namespace, command, provider_id]
-            if namespace == "openwrt" && command == "get-provider" =>
-        {
-            print_json(&openwrt_admin::get_claude_provider(&db, provider_id)?)?;
+        (Some("get-provider"), [provider_id]) => {
+            print_json(&openwrt_admin::get_provider(&db, &app_type, provider_id)?)?;
             Ok(())
         }
-        [namespace, command] if namespace == "openwrt" && command == "upsert-provider" => {
-            print_json(&openwrt_admin::upsert_claude_provider(&db, None)?)?;
+        (Some("upsert-provider"), []) => {
+            print_json(&openwrt_admin::upsert_provider(&db, &app_type, None)?)?;
             Ok(())
         }
-        [namespace, command, provider_id]
-            if namespace == "openwrt" && command == "upsert-provider" =>
-        {
-            print_json(&openwrt_admin::upsert_claude_provider(&db, Some(provider_id))?)?;
+        (Some("upsert-provider"), [provider_id]) => {
+            print_json(&openwrt_admin::upsert_provider(&db, &app_type, Some(provider_id))?)?;
             Ok(())
         }
-        [namespace, command, provider_id]
-            if namespace == "openwrt" && command == "delete-provider" =>
-        {
-            print_json(&openwrt_admin::delete_claude_provider(&db, provider_id)?)?;
+        (Some("delete-provider"), [provider_id]) => {
+            print_json(&openwrt_admin::delete_provider(&db, &app_type, provider_id)?)?;
             Ok(())
         }
-        [namespace, command, provider_id]
-            if namespace == "openwrt" && command == "activate-provider" =>
-        {
-            print_json(&openwrt_admin::activate_claude_provider(&db, provider_id)?)?;
+        (Some("activate-provider"), [provider_id]) => {
+            print_json(&openwrt_admin::activate_provider(&db, &app_type, provider_id)?)?;
             Ok(())
         }
         _ => Err(anyhow::anyhow!(
-            "unsupported command. expected one of: `cc-switch openwrt list-providers`, `cc-switch openwrt get-provider <id>`, `cc-switch openwrt upsert-provider [id]`, `cc-switch openwrt delete-provider <id>`, `cc-switch openwrt activate-provider <id>`, `cc-switch openwrt get-active-provider`, `cc-switch openwrt upsert-active-provider`"
+            "unsupported command. expected one of: `cc-switch openwrt [claude|codex|gemini] get-active-provider`, `cc-switch openwrt [claude|codex|gemini] upsert-active-provider`, `cc-switch openwrt [claude|codex|gemini] list-providers`, `cc-switch openwrt [claude|codex|gemini] get-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] upsert-provider [provider-id]`, `cc-switch openwrt [claude|codex|gemini] delete-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] activate-provider <provider-id>`"
         )),
     }
 }
