@@ -539,6 +539,42 @@ impl Database {
         }
     }
 
+    /// 列出指定应用已有的 Provider 健康记录
+    pub async fn list_provider_health_records(
+        &self,
+        app_type: &str,
+    ) -> Result<Vec<ProviderHealth>, AppError> {
+        let conn = lock_conn!(self.conn);
+        let mut stmt = conn
+            .prepare(
+                "SELECT provider_id, app_type, is_healthy, consecutive_failures,
+                        last_success_at, last_failure_at, last_error, updated_at
+                 FROM provider_health
+                 WHERE app_type = ?1
+                 ORDER BY provider_id ASC",
+            )
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        let records = stmt
+            .query_map([app_type], |row| {
+                Ok(ProviderHealth {
+                    provider_id: row.get(0)?,
+                    app_type: row.get(1)?,
+                    is_healthy: row.get::<_, i64>(2)? != 0,
+                    consecutive_failures: row.get::<_, i64>(3)? as u32,
+                    last_success_at: row.get(4)?,
+                    last_failure_at: row.get(5)?,
+                    last_error: row.get(6)?,
+                    updated_at: row.get(7)?,
+                })
+            })
+            .map_err(|e| AppError::Database(e.to_string()))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        Ok(records)
+    }
+
     /// 更新Provider健康状态
     ///
     /// 使用默认阈值（5）判断是否健康，建议使用 `update_provider_health_with_threshold` 传入配置的阈值
