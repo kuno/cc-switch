@@ -35,8 +35,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-const OPENWRT_COMMAND_HELP: &str = "unsupported command. expected one of: `cc-switch openwrt get-meta`, `cc-switch openwrt get-runtime-status`, `cc-switch openwrt [claude|codex|gemini] get-runtime-status`, `cc-switch openwrt [claude|codex|gemini] get-config`, `cc-switch openwrt [claude|codex|gemini] set-config`, `cc-switch openwrt [claude|codex|gemini] get-usage-summary`, `cc-switch openwrt [claude|codex|gemini] get-provider-stats`, `cc-switch openwrt [claude|codex|gemini] get-recent-activity`, `cc-switch openwrt [claude|codex|gemini] get-request-logs [page] [page-size]`, `cc-switch openwrt [claude|codex|gemini] get-request-detail <request-id>`, `cc-switch openwrt [claude|codex|gemini] get-active-provider`, `cc-switch openwrt [claude|codex|gemini] upsert-active-provider`, `cc-switch openwrt [claude|codex|gemini] list-providers`, `cc-switch openwrt [claude|codex|gemini] get-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] get-provider-failover <provider-id>`, `cc-switch openwrt [claude|codex|gemini] upsert-provider [provider-id]`, `cc-switch openwrt [claude|codex|gemini] delete-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] activate-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] get-available-failover-providers`, `cc-switch openwrt [claude|codex|gemini] add-to-failover-queue <provider-id>`, `cc-switch openwrt [claude|codex|gemini] remove-from-failover-queue <provider-id>`, `cc-switch openwrt [claude|codex|gemini] reorder-failover-queue`, `cc-switch openwrt [claude|codex|gemini] set-auto-failover-enabled <true|false>`, `cc-switch openwrt [claude|codex|gemini] set-max-retries <value>`, `cc-switch openwrt codex upload-codex-auth <provider-id>`, `cc-switch openwrt codex remove-codex-auth <provider-id>`";
-const CODEX_AUTH_UPLOAD_LIMIT_BYTES: usize = 64 * 1024;
+const OPENWRT_COMMAND_HELP: &str = "unsupported command. expected one of: `cc-switch openwrt get-meta`, `cc-switch openwrt get-runtime-status`, `cc-switch openwrt [claude|codex|gemini] get-runtime-status`, `cc-switch openwrt [claude|codex|gemini] get-config`, `cc-switch openwrt [claude|codex|gemini] set-config`, `cc-switch openwrt [claude|codex|gemini] get-usage-summary`, `cc-switch openwrt [claude|codex|gemini] get-provider-stats`, `cc-switch openwrt [claude|codex|gemini] get-recent-activity`, `cc-switch openwrt [claude|codex|gemini] get-request-logs [page] [page-size]`, `cc-switch openwrt [claude|codex|gemini] get-request-detail <request-id>`, `cc-switch openwrt [claude|codex|gemini] get-active-provider`, `cc-switch openwrt [claude|codex|gemini] upsert-active-provider`, `cc-switch openwrt [claude|codex|gemini] list-providers`, `cc-switch openwrt [claude|codex|gemini] get-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] get-provider-failover <provider-id>`, `cc-switch openwrt [claude|codex|gemini] upsert-provider [provider-id]`, `cc-switch openwrt [claude|codex|gemini] delete-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] activate-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] get-available-failover-providers`, `cc-switch openwrt [claude|codex|gemini] add-to-failover-queue <provider-id>`, `cc-switch openwrt [claude|codex|gemini] remove-from-failover-queue <provider-id>`, `cc-switch openwrt [claude|codex|gemini] reorder-failover-queue`, `cc-switch openwrt [claude|codex|gemini] set-auto-failover-enabled <true|false>`, `cc-switch openwrt [claude|codex|gemini] set-max-retries <value>`, `cc-switch openwrt claude upload-claude-auth <provider-id>`, `cc-switch openwrt claude remove-claude-auth <provider-id>`, `cc-switch openwrt codex upload-codex-auth <provider-id>`, `cc-switch openwrt codex remove-codex-auth <provider-id>`";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -262,8 +261,22 @@ async fn run_cli(args: Vec<String>) -> anyhow::Result<()> {
             Ok(())
         }
         (Some("upload-codex-auth"), [provider_id]) => {
-            let raw_bytes = read_bytes_from_stdin()?;
+            let raw_bytes = read_bytes_from_stdin(
+                crate::proxy::providers::codex_oauth_store::codex_auth_upload_limit_bytes(),
+            )?;
             print_json(&openwrt_admin::upload_codex_auth(
+                &db,
+                &app_type,
+                provider_id,
+                &raw_bytes,
+            )?)?;
+            Ok(())
+        }
+        (Some("upload-claude-auth"), [provider_id]) => {
+            let raw_bytes = read_bytes_from_stdin(
+                crate::proxy::providers::claude_oauth_store::claude_auth_upload_limit_bytes(),
+            )?;
+            print_json(&openwrt_admin::upload_claude_auth(
                 &db,
                 &app_type,
                 provider_id,
@@ -273,6 +286,14 @@ async fn run_cli(args: Vec<String>) -> anyhow::Result<()> {
         }
         (Some("remove-codex-auth"), [provider_id]) => {
             print_json(&openwrt_admin::remove_codex_auth(
+                &db,
+                &app_type,
+                provider_id,
+            )?)?;
+            Ok(())
+        }
+        (Some("remove-claude-auth"), [provider_id]) => {
+            print_json(&openwrt_admin::remove_claude_auth(
                 &db,
                 &app_type,
                 provider_id,
@@ -315,9 +336,9 @@ fn read_string_array_from_stdin() -> anyhow::Result<Vec<String>> {
     Ok(parsed)
 }
 
-fn read_bytes_from_stdin() -> anyhow::Result<Vec<u8>> {
+fn read_bytes_from_stdin(limit: usize) -> anyhow::Result<Vec<u8>> {
     let mut stdin = std::io::stdin();
-    let input = read_bounded_bytes(&mut stdin, CODEX_AUTH_UPLOAD_LIMIT_BYTES)?;
+    let input = read_bounded_bytes(&mut stdin, limit)?;
     if input.is_empty() {
         return Err(anyhow::anyhow!("stdin payload is required"));
     }
@@ -481,9 +502,9 @@ mod tests {
 
     #[test]
     fn read_bounded_bytes_rejects_payloads_over_limit() {
-        let mut cursor = Cursor::new(vec![b'x'; CODEX_AUTH_UPLOAD_LIMIT_BYTES + 1]);
-        let error = read_bounded_bytes(&mut cursor, CODEX_AUTH_UPLOAD_LIMIT_BYTES)
-            .expect_err("oversized payload");
+        let limit = crate::proxy::providers::codex_oauth_store::codex_auth_upload_limit_bytes();
+        let mut cursor = Cursor::new(vec![b'x'; limit + 1]);
+        let error = read_bounded_bytes(&mut cursor, limit).expect_err("oversized payload");
         assert!(error.to_string().contains("64 KiB limit"));
     }
 
