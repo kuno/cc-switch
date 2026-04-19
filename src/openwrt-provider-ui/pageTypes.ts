@@ -56,10 +56,47 @@ export interface OpenWrtPageMessage {
   text: string;
 }
 
+export interface OpenWrtUsageSummary {
+  totalRequests: number;
+  totalCost: string;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCacheCreationTokens: number;
+  totalCacheReadTokens: number;
+  successRate: number;
+}
+
+export interface OpenWrtProviderStat {
+  providerId: string;
+  providerName: string;
+  requestCount: number;
+  totalTokens: number;
+  totalCost: string;
+  successRate: number;
+  avgLatencyMs: number;
+}
+
+export interface OpenWrtRecentActivityItem {
+  requestId: string;
+  providerId: string;
+  providerName: string;
+  model: string;
+  totalTokens: number;
+  totalCost: string;
+  statusCode: number;
+  latencyMs: number;
+  createdAt: number;
+}
+
 export interface OpenWrtSharedPageShellApi
   extends OpenWrtSharedProviderShellApi {
   getHostState(): OpenWrtHostState;
   getMessage(): OpenWrtPageMessage | null;
+  getProviderStats(appId: SharedProviderAppId): Promise<OpenWrtProviderStat[]>;
+  getRecentActivity(
+    appId: SharedProviderAppId,
+  ): Promise<OpenWrtRecentActivityItem[]>;
+  getUsageSummary(appId: SharedProviderAppId): Promise<OpenWrtUsageSummary>;
   refreshHostState(): Promise<OpenWrtHostState>;
   saveHostConfig(host: OpenWrtHostConfigPayload): Promise<OpenWrtHostState>;
 }
