@@ -23,6 +23,12 @@ pub trait ProviderAdapter: Send + Sync {
     /// 从 Provider 配置中提取认证信息
     fn extract_auth(&self, provider: &Provider) -> Option<AuthInfo>;
 
+    /// Whether inbound client auth may be forwarded unchanged when provider
+    /// config does not supply its own auth.
+    fn allows_inbound_auth_passthrough(&self, _provider: &Provider) -> bool {
+        false
+    }
+
     /// 构建请求 URL
     fn build_url(&self, base_url: &str, endpoint: &str) -> String;
 
