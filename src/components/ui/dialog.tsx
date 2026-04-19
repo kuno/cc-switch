@@ -65,10 +65,16 @@ const DialogContent = React.forwardRef<
       alert: "z-[60]",
       top: "z-[110]",
     };
+    const positionerZIndexMap = {
+      base: "z-[41]",
+      nested: "z-[51]",
+      alert: "z-[61]",
+      top: "z-[111]",
+    };
 
     const positionerClass = {
       default:
-        "pointer-events-none fixed inset-0 flex items-center justify-center overflow-y-auto overscroll-contain p-4 sm:p-6",
+        "pointer-events-none fixed inset-0 flex items-start justify-center overflow-y-auto overscroll-contain p-4 sm:items-center sm:p-6",
       fullscreen: "pointer-events-none fixed inset-0",
     }[variant];
 
@@ -91,6 +97,7 @@ const DialogContent = React.forwardRef<
         <div
           className={cn(
             positionerClass,
+            positionerZIndexMap[zIndex],
             isOpenWrtHostedDialog && "ccswitch-openwrt-provider-ui-positioner",
           )}
         >
