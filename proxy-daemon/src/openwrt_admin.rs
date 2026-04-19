@@ -8,7 +8,10 @@ use crate::proxy::providers::codex_oauth_store::{
 };
 use crate::proxy::server::populate_status_active_targets;
 use crate::proxy::types::{AppProxyConfig, GlobalProxyConfig, ProviderHealth, ProxyStatus};
-use crate::services::usage_stats::{LogFilters, ProviderStats, UsageSummary};
+use crate::services::usage_stats::{
+    LogFilters, PaginatedLogs, ProviderStats, RequestLogDetail, UsageSummary,
+};
+use crate::version;
 use anyhow::{anyhow, Context};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -31,6 +34,8 @@ const CODEX_TOKEN_FIELD: &str = "OPENAI_API_KEY";
 const GEMINI_DEFAULT_PROVIDER_ID: &str = "openwrt-gemini";
 const GEMINI_PROVIDER_ID_PREFIX: &str = "openwrt-gemini-";
 const GEMINI_TOKEN_FIELD: &str = "GEMINI_API_KEY";
+pub const OPENWRT_REQUEST_LOGS_DEFAULT_PAGE_SIZE: u32 = 20;
+pub const OPENWRT_REQUEST_LOGS_MAX_PAGE_SIZE: u32 = 100;
 const CLAUDE_MODEL_KEYS_TO_CLEAR: [&str; 6] = [
     "ANTHROPIC_MODEL",
     "ANTHROPIC_REASONING_MODEL",
@@ -63,6 +68,22 @@ pub struct OpenWrtProviderPayload {
     pub notes: String,
     #[serde(default)]
     pub auth_mode: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtAppConfigPayload {
+    pub enabled: bool,
+    pub auto_failover_enabled: bool,
+    pub max_retries: u32,
+    pub streaming_first_byte_timeout: u32,
+    pub streaming_idle_timeout: u32,
+    pub non_streaming_timeout: u32,
+    pub circuit_failure_threshold: u32,
+    pub circuit_success_threshold: u32,
+    pub circuit_timeout_seconds: u32,
+    pub circuit_error_rate_threshold: f64,
+    pub circuit_min_requests: u32,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -142,11 +163,52 @@ pub struct OpenWrtRuntimeStatusView {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct OpenWrtAdminMetaView {
+    pub api_version: u32,
+    pub service: OpenWrtAdminServiceMetaView,
+    pub apps: Vec<OpenWrtAppMetaView>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtAdminServiceMetaView {
+    pub daemon: &'static str,
+    pub package_name: &'static str,
+    pub luci_package_name: &'static str,
+    pub init_script: &'static str,
+    pub config_file: &'static str,
+    pub admin_base_path: &'static str,
+    pub version: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtAppMetaView {
+    pub app: String,
+    pub display_name: &'static str,
+    pub default_provider_id: &'static str,
+    pub default_token_field: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alt_token_field: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_model: Option<&'static str>,
+    pub icon: &'static str,
+    pub icon_color: &'static str,
+    pub supports_failover: bool,
+    pub supports_codex_auth_upload: bool,
+    pub supports_usage_summary: bool,
+    pub supports_provider_stats: bool,
+    pub supports_recent_activity: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OpenWrtServiceStatusView {
     pub running: bool,
     pub reachable: bool,
     pub listen_address: String,
     pub listen_port: u16,
+    pub version: String,
     pub proxy_enabled: bool,
     pub enable_logging: bool,
     pub status_source: String,
@@ -215,6 +277,7 @@ pub struct OpenWrtProviderFailoverView {
 #[derive(Clone, Copy)]
 struct OpenWrtAppProfile {
     app_id: &'static str,
+    display_name: &'static str,
     default_provider_id: &'static str,
     provider_id_prefix: &'static str,
     default_token_field: &'static str,
@@ -374,6 +437,44 @@ pub fn get_active_provider(
         .unwrap_or_else(|| empty_provider_view(profile)))
 }
 
+pub fn get_admin_meta() -> anyhow::Result<OpenWrtAdminMetaView> {
+    let apps = [AppType::Claude, AppType::Codex, AppType::Gemini]
+        .into_iter()
+        .map(|app_type| {
+            let profile = openwrt_app_profile(&app_type)?;
+            Ok(OpenWrtAppMetaView {
+                app: profile.app_id.to_string(),
+                display_name: profile.display_name,
+                default_provider_id: profile.default_provider_id,
+                default_token_field: profile.default_token_field,
+                alt_token_field: profile.alt_token_field,
+                default_model: profile.default_model,
+                icon: profile.icon,
+                icon_color: profile.icon_color,
+                supports_failover: true,
+                supports_codex_auth_upload: profile.app_id == CODEX_APP_ID,
+                supports_usage_summary: true,
+                supports_provider_stats: true,
+                supports_recent_activity: true,
+            })
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+
+    Ok(OpenWrtAdminMetaView {
+        api_version: 1,
+        service: OpenWrtAdminServiceMetaView {
+            daemon: "cc-switch",
+            package_name: "cc-switch",
+            luci_package_name: "luci-app-cc-switch",
+            init_script: "/etc/init.d/ccswitch",
+            config_file: "/etc/config/ccswitch",
+            admin_base_path: "/openwrt/admin",
+            version: version::build_version().to_string(),
+        },
+        apps,
+    })
+}
+
 pub fn upsert_provider(
     db: &Database,
     app_type: &AppType,
@@ -520,6 +621,7 @@ pub async fn get_runtime_status(db: &Database) -> anyhow::Result<OpenWrtRuntimeS
             reachable,
             listen_address: service_config.listen_address.clone(),
             listen_port: service_config.listen_port,
+            version: version::build_version().to_string(),
             proxy_enabled: runtime_global_proxy_enabled,
             enable_logging: service_config.enable_logging,
             status_source,
@@ -593,6 +695,94 @@ pub fn get_recent_activity(
         .collect();
 
     Ok(OpenWrtRecentActivityView { entries })
+}
+
+pub fn normalize_request_logs_pagination(page: Option<u32>, page_size: Option<u32>) -> (u32, u32) {
+    let page = page.unwrap_or(0);
+    let page_size = page_size
+        .unwrap_or(OPENWRT_REQUEST_LOGS_DEFAULT_PAGE_SIZE)
+        .clamp(1, OPENWRT_REQUEST_LOGS_MAX_PAGE_SIZE);
+
+    (page, page_size)
+}
+
+pub fn get_request_logs(
+    db: &Database,
+    app_type: &AppType,
+    page: Option<u32>,
+    page_size: Option<u32>,
+    mut filters: LogFilters,
+) -> anyhow::Result<PaginatedLogs> {
+    let profile = openwrt_app_profile(app_type)?;
+    let (page, page_size) = normalize_request_logs_pagination(page, page_size);
+    filters.app_type = Some(profile.app_id.to_string());
+
+    db.get_request_logs(&filters, page, page_size)
+        .map_err(|e| anyhow!("failed to read {} request logs: {e}", profile.app_id))
+}
+
+pub fn get_request_detail(
+    db: &Database,
+    app_type: &AppType,
+    request_id: &str,
+) -> anyhow::Result<RequestLogDetail> {
+    let profile = openwrt_app_profile(app_type)?;
+    let detail = db
+        .get_request_detail(request_id)
+        .map_err(|e| anyhow!("failed to read {} request detail: {e}", profile.app_id))?
+        .ok_or_else(|| {
+            anyhow!(
+                "request log `{request_id}` not found for {}",
+                profile.app_id
+            )
+        })?;
+
+    if detail.app_type != profile.app_id {
+        return Err(anyhow!(
+            "request log `{request_id}` not found for {}",
+            profile.app_id
+        ));
+    }
+
+    Ok(detail)
+}
+
+pub async fn get_app_proxy_config(
+    db: &Database,
+    app_type: &AppType,
+) -> anyhow::Result<AppProxyConfig> {
+    let profile = openwrt_app_profile(app_type)?;
+    load_proxy_config_for_app(db, profile).await
+}
+
+pub async fn update_app_proxy_config(
+    db: &Database,
+    app_type: &AppType,
+    payload: OpenWrtAppConfigPayload,
+) -> anyhow::Result<AppProxyConfig> {
+    let profile = openwrt_app_profile(app_type)?;
+    validate_openwrt_app_config_payload(&payload)?;
+
+    let config = AppProxyConfig {
+        app_type: profile.app_id.to_string(),
+        enabled: payload.enabled,
+        auto_failover_enabled: payload.auto_failover_enabled,
+        max_retries: payload.max_retries,
+        streaming_first_byte_timeout: payload.streaming_first_byte_timeout,
+        streaming_idle_timeout: payload.streaming_idle_timeout,
+        non_streaming_timeout: payload.non_streaming_timeout,
+        circuit_failure_threshold: payload.circuit_failure_threshold,
+        circuit_success_threshold: payload.circuit_success_threshold,
+        circuit_timeout_seconds: payload.circuit_timeout_seconds,
+        circuit_error_rate_threshold: payload.circuit_error_rate_threshold,
+        circuit_min_requests: payload.circuit_min_requests,
+    };
+
+    db.update_proxy_config_for_app(config)
+        .await
+        .map_err(|e| anyhow!("failed to update {} proxy config: {e}", profile.app_id))?;
+
+    load_proxy_config_for_app(db, profile).await
 }
 
 pub fn get_available_failover_providers(
@@ -820,7 +1010,12 @@ fn upsert_provider_with_payload(
 
     db.save_provider(profile.app_id, &provider)
         .map_err(|e| anyhow!("failed to save {} provider: {e}", profile.app_id))?;
-    maybe_cleanup_stored_codex_auth_after_save(profile, &provider.id, previous_auth_mode.as_deref(), &provider);
+    maybe_cleanup_stored_codex_auth_after_save(
+        profile,
+        &provider.id,
+        previous_auth_mode.as_deref(),
+        &provider,
+    );
 
     let active_provider_id = resolve_active_provider_id_for_read(db, app_type, profile)?;
     Ok(provider_to_view(
@@ -876,7 +1071,12 @@ fn upsert_active_provider_with_payload(
 
     db.save_provider(profile.app_id, &provider)
         .map_err(|e| anyhow!("failed to save {} provider: {e}", profile.app_id))?;
-    maybe_cleanup_stored_codex_auth_after_save(profile, &provider.id, previous_auth_mode.as_deref(), &provider);
+    maybe_cleanup_stored_codex_auth_after_save(
+        profile,
+        &provider.id,
+        previous_auth_mode.as_deref(),
+        &provider,
+    );
     set_active_provider_id(db, app_type, profile, Some(&provider.id))?;
 
     Ok(provider_to_view(
@@ -919,6 +1119,7 @@ fn openwrt_app_profile(app_type: &AppType) -> anyhow::Result<OpenWrtAppProfile> 
     match app_type {
         AppType::Claude => Ok(OpenWrtAppProfile {
             app_id: CLAUDE_APP_ID,
+            display_name: "Claude",
             default_provider_id: CLAUDE_DEFAULT_PROVIDER_ID,
             provider_id_prefix: CLAUDE_PROVIDER_ID_PREFIX,
             default_token_field: CLAUDE_DEFAULT_TOKEN_FIELD,
@@ -929,6 +1130,7 @@ fn openwrt_app_profile(app_type: &AppType) -> anyhow::Result<OpenWrtAppProfile> 
         }),
         AppType::Codex => Ok(OpenWrtAppProfile {
             app_id: CODEX_APP_ID,
+            display_name: "Codex",
             default_provider_id: CODEX_DEFAULT_PROVIDER_ID,
             provider_id_prefix: CODEX_PROVIDER_ID_PREFIX,
             default_token_field: CODEX_TOKEN_FIELD,
@@ -939,6 +1141,7 @@ fn openwrt_app_profile(app_type: &AppType) -> anyhow::Result<OpenWrtAppProfile> 
         }),
         AppType::Gemini => Ok(OpenWrtAppProfile {
             app_id: GEMINI_APP_ID,
+            display_name: "Gemini",
             default_provider_id: GEMINI_DEFAULT_PROVIDER_ID,
             provider_id_prefix: GEMINI_PROVIDER_ID_PREFIX,
             default_token_field: GEMINI_TOKEN_FIELD,
@@ -1089,6 +1292,39 @@ fn load_failover_queue(
 ) -> anyhow::Result<Vec<crate::database::FailoverQueueItem>> {
     db.get_failover_queue(profile.app_id)
         .map_err(|e| anyhow!("failed to list {} failover queue: {e}", profile.app_id))
+}
+
+fn validate_openwrt_app_config_payload(payload: &OpenWrtAppConfigPayload) -> anyhow::Result<()> {
+    if payload.max_retries == 0 {
+        return Err(anyhow!("maxRetries must be greater than 0"));
+    }
+    if payload.streaming_first_byte_timeout == 0 {
+        return Err(anyhow!("streamingFirstByteTimeout must be greater than 0"));
+    }
+    if payload.non_streaming_timeout == 0 {
+        return Err(anyhow!("nonStreamingTimeout must be greater than 0"));
+    }
+    if payload.circuit_failure_threshold == 0 {
+        return Err(anyhow!("circuitFailureThreshold must be greater than 0"));
+    }
+    if payload.circuit_success_threshold == 0 {
+        return Err(anyhow!("circuitSuccessThreshold must be greater than 0"));
+    }
+    if payload.circuit_timeout_seconds == 0 {
+        return Err(anyhow!("circuitTimeoutSeconds must be greater than 0"));
+    }
+    if !payload.circuit_error_rate_threshold.is_finite()
+        || !(0.0..=1.0).contains(&payload.circuit_error_rate_threshold)
+    {
+        return Err(anyhow!(
+            "circuitErrorRateThreshold must be a finite value between 0 and 1"
+        ));
+    }
+    if payload.circuit_min_requests == 0 {
+        return Err(anyhow!("circuitMinRequests must be greater than 0"));
+    }
+
+    Ok(())
 }
 
 async fn ensure_failover_queue_ready_for_enable(
@@ -2191,6 +2427,38 @@ mod tests {
             .expect("status entry for app")
     }
 
+    fn insert_request_log(
+        db: &Database,
+        request_id: &str,
+        provider_id: &str,
+        app_type: &str,
+        model: &str,
+        status_code: u16,
+        created_at: i64,
+    ) {
+        let conn = db.conn.lock().expect("lock conn");
+        conn.execute(
+            "INSERT INTO proxy_request_logs (
+                request_id, provider_id, app_type, model,
+                input_tokens, output_tokens, total_cost_usd,
+                latency_ms, status_code, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            rusqlite::params![
+                request_id,
+                provider_id,
+                app_type,
+                model,
+                120,
+                48,
+                "0.012300",
+                245,
+                status_code,
+                created_at
+            ],
+        )
+        .expect("insert request log");
+    }
+
     async fn spawn_status_server(mut status: ProxyStatus) -> (u16, tokio::task::JoinHandle<()>) {
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
             .await
@@ -2292,6 +2560,121 @@ mod tests {
 
     #[test]
     #[serial]
+    fn get_request_logs_scopes_results_to_app_and_applies_pagination() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+
+        insert_request_log(
+            &db,
+            "req-claude-older",
+            "provider-a",
+            "claude",
+            "claude-sonnet",
+            200,
+            100,
+        );
+        insert_request_log(&db, "req-codex", "provider-b", "codex", "gpt-5.4", 200, 200);
+        insert_request_log(
+            &db,
+            "req-claude-newer",
+            "provider-c",
+            "claude",
+            "claude-opus",
+            502,
+            300,
+        );
+
+        let page = get_request_logs(
+            &db,
+            &AppType::Claude,
+            Some(0),
+            Some(1),
+            LogFilters::default(),
+        )
+        .expect("claude request logs");
+
+        assert_eq!(page.total, 2);
+        assert_eq!(page.page, 0);
+        assert_eq!(page.page_size, 1);
+        assert_eq!(page.data.len(), 1);
+        assert_eq!(page.data[0].request_id, "req-claude-newer");
+        assert_eq!(page.data[0].app_type, "claude");
+
+        let failures = get_request_logs(
+            &db,
+            &AppType::Claude,
+            Some(0),
+            Some(10),
+            LogFilters {
+                status_code: Some(502),
+                ..Default::default()
+            },
+        )
+        .expect("filtered request logs");
+
+        assert_eq!(failures.total, 1);
+        assert_eq!(failures.data[0].request_id, "req-claude-newer");
+    }
+
+    #[test]
+    #[serial]
+    fn get_request_detail_rejects_cross_app_lookup() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+
+        insert_request_log(&db, "req-codex", "provider-b", "codex", "gpt-5.4", 200, 200);
+
+        let detail =
+            get_request_detail(&db, &AppType::Codex, "req-codex").expect("codex request detail");
+        assert_eq!(detail.request_id, "req-codex");
+        assert_eq!(detail.app_type, "codex");
+
+        let error = get_request_detail(&db, &AppType::Claude, "req-codex")
+            .expect_err("cross-app lookup should fail");
+        assert!(error
+            .to_string()
+            .contains("request log `req-codex` not found for claude"));
+    }
+
+    #[test]
+    #[serial]
+    fn admin_meta_reports_supported_apps_and_codex_capability() {
+        let _env = TestEnv::new();
+
+        let meta = get_admin_meta().expect("admin meta");
+        assert_eq!(meta.api_version, 1);
+        assert_eq!(meta.service.daemon, "cc-switch");
+        assert_eq!(meta.service.package_name, "cc-switch");
+        assert_eq!(meta.service.luci_package_name, "luci-app-cc-switch");
+        assert_eq!(meta.service.version, version::build_version());
+        assert_eq!(meta.apps.len(), 3);
+
+        let claude = meta
+            .apps
+            .iter()
+            .find(|entry| entry.app == "claude")
+            .expect("claude meta");
+        let codex = meta
+            .apps
+            .iter()
+            .find(|entry| entry.app == "codex")
+            .expect("codex meta");
+        let gemini = meta
+            .apps
+            .iter()
+            .find(|entry| entry.app == "gemini")
+            .expect("gemini meta");
+
+        assert_eq!(claude.display_name, "Claude");
+        assert!(!claude.supports_codex_auth_upload);
+        assert_eq!(codex.default_token_field, CODEX_TOKEN_FIELD);
+        assert!(codex.supports_codex_auth_upload);
+        assert_eq!(gemini.display_name, "Gemini");
+        assert!(gemini.supports_failover);
+    }
+
+    #[test]
+    #[serial]
     fn activate_provider_trims_whitespace_padded_id() {
         let _env = TestEnv::new();
         let db = Database::memory().expect("db");
@@ -2368,8 +2751,13 @@ mod tests {
             codex_payload("Codex", "", Some("codex_oauth")),
         )
         .expect("create codex provider");
-        upload_codex_auth(&db, &AppType::Codex, "provider-codex", &sample_codex_auth_json())
-            .expect("upload auth");
+        upload_codex_auth(
+            &db,
+            &AppType::Codex,
+            "provider-codex",
+            &sample_codex_auth_json(),
+        )
+        .expect("upload auth");
         assert!(codex_auth_path(&env, "provider-codex").exists());
 
         delete_provider(&db, &AppType::Codex, "provider-codex").expect("delete codex provider");
@@ -2389,8 +2777,13 @@ mod tests {
             codex_payload("Codex", "", Some("codex_oauth")),
         )
         .expect("create codex provider");
-        upload_codex_auth(&db, &AppType::Codex, "provider-codex", &sample_codex_auth_json())
-            .expect("upload auth");
+        upload_codex_auth(
+            &db,
+            &AppType::Codex,
+            "provider-codex",
+            &sample_codex_auth_json(),
+        )
+        .expect("upload auth");
         assert!(codex_auth_path(&env, "provider-codex").exists());
 
         upsert_provider_from_payload(
