@@ -458,6 +458,12 @@ fn settings_store() -> &'static RwLock<AppSettings> {
     SETTINGS_STORE.get_or_init(|| RwLock::new(AppSettings::load_from_file()))
 }
 
+#[cfg(test)]
+pub(crate) fn test_env_lock() -> &'static std::sync::Mutex<()> {
+    static LOCK: OnceLock<std::sync::Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| std::sync::Mutex::new(()))
+}
+
 fn resolve_override_path(raw: &str) -> PathBuf {
     if raw == "~" {
         if let Some(home) = dirs::home_dir() {
@@ -646,13 +652,7 @@ pub fn get_effective_current_provider(
 mod tests {
     use super::*;
     use serde_json::Value;
-    use std::sync::{Mutex, OnceLock};
     use tempfile::TempDir;
-
-    fn env_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-    }
 
     struct TestEnv {
         _guard: std::sync::MutexGuard<'static, ()>,
@@ -665,7 +665,7 @@ mod tests {
 
     impl TestEnv {
         fn new() -> Self {
-            let guard = env_lock().lock().expect("lock test env");
+            let guard = test_env_lock().lock().expect("lock test env");
             let tmp = TempDir::new().expect("create temp dir");
             let home = tmp.path().join("home");
             let data = tmp.path().join("data");
