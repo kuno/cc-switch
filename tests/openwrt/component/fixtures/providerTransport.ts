@@ -6,7 +6,12 @@ import type {
   SharedProviderState,
   SharedProviderView,
 } from "@/shared/providers/domain";
-import { createCodexAuthSummary, createProviderState, createProviderView } from "../../provider-panel-fixtures";
+import {
+  createClaudeAuthSummary,
+  createCodexAuthSummary,
+  createProviderState,
+  createProviderView,
+} from "../../provider-panel-fixtures";
 
 type ProviderStateMap = Partial<Record<SharedProviderAppId, SharedProviderState>>;
 
@@ -15,6 +20,7 @@ function toResponseProvider(provider: SharedProviderView) {
     active: provider.active,
     authMode: provider.authMode,
     baseUrl: provider.baseUrl,
+    claudeAuth: provider.claudeAuth,
     codexAuth: provider.codexAuth,
     configured: provider.configured,
     model: provider.model,
@@ -122,6 +128,7 @@ export function createProviderTransportFixture(
       notes: draft.notes,
       active: currentProvider?.active ?? false,
       authMode: draft.authMode ?? currentProvider?.authMode,
+      claudeAuth: currentProvider?.claudeAuth,
       codexAuth: currentProvider?.codexAuth,
     });
   }
@@ -236,6 +243,27 @@ export function createProviderTransportFixture(
       updateProvider(appId, providerId, (provider) => ({
         ...provider,
         codexAuth: undefined,
+      }));
+
+      return {
+        ok: true,
+      };
+    }),
+    uploadClaudeAuth: vi.fn(async (appId, providerId) => {
+      updateProvider(appId, providerId, (provider) => ({
+        ...provider,
+        authMode: "claude_oauth",
+        claudeAuth: createClaudeAuthSummary(),
+      }));
+
+      return {
+        ok: true,
+      };
+    }),
+    removeClaudeAuth: vi.fn(async (appId, providerId) => {
+      updateProvider(appId, providerId, (provider) => ({
+        ...provider,
+        claudeAuth: undefined,
       }));
 
       return {

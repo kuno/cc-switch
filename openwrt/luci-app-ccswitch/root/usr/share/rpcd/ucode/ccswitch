@@ -7,6 +7,7 @@ const DATA_DIR = '/etc/cc-switch';
 const BINARY = '/usr/bin/cc-switch';
 const INIT_SCRIPT = '/etc/init.d/ccswitch';
 const DEFAULT_APP = 'claude';
+const CLAUDE_AUTH_UPLOAD_LIMIT = 64 * 1024;
 const CODEX_AUTH_UPLOAD_LIMIT = 64 * 1024;
 
 function shellquote(value) {
@@ -434,6 +435,26 @@ function uploadCodexAuth(app, providerId, authJsonText) {
 	);
 }
 
+function uploadClaudeAuth(app, providerId, authJsonText) {
+	let normalizedApp = normalizeApp(app);
+	let missing = requireProviderId(providerId);
+	if (missing)
+		return missing;
+
+	if (authJsonText == null)
+		return { ok: false, error: 'auth_json_text is required' };
+
+	if (length('' + authJsonText) > CLAUDE_AUTH_UPLOAD_LIMIT)
+		return { ok: false, error: 'auth_json_text exceeds 64 KiB limit' };
+
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
+
+	return runResultCommand(
+		`printf '%s' ${shellquote('' + authJsonText)} | ${daemonCommand(`openwrt ${shellquote(normalizedApp)} upload-claude-auth ${shellquote(providerId)}`)}`
+	);
+}
+
 function removeCodexAuth(app, providerId) {
 	let normalizedApp = normalizeApp(app);
 	let missing = requireProviderId(providerId);
@@ -445,6 +466,20 @@ function removeCodexAuth(app, providerId) {
 
 	return runResultCommand(
 		daemonCommand(`openwrt ${shellquote(normalizedApp)} remove-codex-auth ${shellquote(providerId)}`)
+	);
+}
+
+function removeClaudeAuth(app, providerId) {
+	let normalizedApp = normalizeApp(app);
+	let missing = requireProviderId(providerId);
+	if (missing)
+		return missing;
+
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
+
+	return runResultCommand(
+		daemonCommand(`openwrt ${shellquote(normalizedApp)} remove-claude-auth ${shellquote(providerId)}`)
 	);
 }
 
@@ -718,6 +753,18 @@ return {
 			}
 		},
 
+		upload_claude_auth: {
+			args: {
+				app: 'claude',
+				provider_id: 'provider-id',
+				auth_json_text: ''
+			},
+
+			call: function(request) {
+				return uploadClaudeAuth(request.args.app, request.args.provider_id, request.args.auth_json_text);
+			}
+		},
+
 		remove_codex_auth: {
 			args: {
 				app: 'codex',
@@ -726,6 +773,17 @@ return {
 
 			call: function(request) {
 				return removeCodexAuth(request.args.app, request.args.provider_id);
+			}
+		},
+
+		remove_claude_auth: {
+			args: {
+				app: 'claude',
+				provider_id: 'provider-id'
+			},
+
+			call: function(request) {
+				return removeClaudeAuth(request.args.app, request.args.provider_id);
 			}
 		},
 

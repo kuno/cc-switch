@@ -295,12 +295,21 @@ struct ApiExtraUsage {
 const KNOWN_TIERS: &[&str] = &[
     "five_hour",
     "seven_day",
+    "seven_day_omelette",
     "seven_day_opus",
     "seven_day_sonnet",
 ];
 
+fn remap_tier_name(raw: &str) -> &str {
+    if raw == "seven_day_omelette" {
+        "seven_day_claude_design"
+    } else {
+        raw
+    }
+}
+
 /// 查询 Claude 官方订阅额度
-async fn query_claude_quota(access_token: &str) -> SubscriptionQuota {
+pub(crate) async fn query_claude_quota(access_token: &str) -> SubscriptionQuota {
     let client = crate::proxy::http_client::get();
 
     let resp = client
@@ -360,7 +369,7 @@ async fn query_claude_quota(access_token: &str) -> SubscriptionQuota {
             if let Ok(w) = serde_json::from_value::<ApiUsageWindow>(window.clone()) {
                 if let Some(util) = w.utilization {
                     tiers.push(QuotaTier {
-                        name: tier_name.to_string(),
+                        name: remap_tier_name(tier_name).to_string(),
                         utilization: util,
                         resets_at: w.resets_at,
                     });
@@ -378,7 +387,7 @@ async fn query_claude_quota(access_token: &str) -> SubscriptionQuota {
             if let Ok(w) = serde_json::from_value::<ApiUsageWindow>(value.clone()) {
                 if let Some(util) = w.utilization {
                     tiers.push(QuotaTier {
-                        name: key.clone(),
+                        name: remap_tier_name(key).to_string(),
                         utilization: util,
                         resets_at: w.resets_at,
                     });
@@ -1306,4 +1315,23 @@ fn now_millis() -> i64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{remap_tier_name, KNOWN_TIERS};
+
+    #[test]
+    fn known_tiers_include_claude_design_upstream_name() {
+        assert!(KNOWN_TIERS.contains(&"seven_day_omelette"));
+    }
+
+    #[test]
+    fn remap_tier_name_maps_claude_design_alias() {
+        assert_eq!(
+            remap_tier_name("seven_day_omelette"),
+            "seven_day_claude_design"
+        );
+        assert_eq!(remap_tier_name("seven_day"), "seven_day");
+    }
 }

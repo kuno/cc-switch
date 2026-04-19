@@ -172,6 +172,7 @@ pub fn transform_claude_request_for_api_format(
 pub struct ClaudeAdapter;
 
 const CLAUDE_CLIENT_PASSTHROUGH_AUTH_MODE: &str = "client_passthrough";
+const CLAUDE_OAUTH_AUTH_MODE: &str = "claude_oauth";
 const CLAUDE_OFFICIAL_PROVIDER_ID: &str = "claude-official";
 
 impl ClaudeAdapter {
@@ -297,7 +298,8 @@ impl ClaudeAdapter {
     ///
     /// 该模式允许在 provider 自身未配置认证信息时，保留客户端传入的
     /// `Authorization` header。内置的 `claude-official` 预设默认视为此模式，
-    /// 以兼容已有数据库里的历史 seed 数据。
+    /// 以兼容已有数据库里的历史 seed 数据。`claude_oauth` 也沿用该行为，
+    /// 因为上传的 auth.json 仅用于路由器自身的额度查询。
     fn is_client_passthrough_mode(&self, provider: &Provider) -> bool {
         if provider.id == CLAUDE_OFFICIAL_PROVIDER_ID {
             return true;
@@ -308,14 +310,20 @@ impl ClaudeAdapter {
             .get("auth_mode")
             .and_then(|v| v.as_str())
         {
-            if auth_mode == CLAUDE_CLIENT_PASSTHROUGH_AUTH_MODE {
+            if matches!(
+                auth_mode,
+                CLAUDE_CLIENT_PASSTHROUGH_AUTH_MODE | CLAUDE_OAUTH_AUTH_MODE
+            ) {
                 return true;
             }
         }
 
         if let Some(env) = provider.settings_config.get("env") {
             if let Some(auth_mode) = env.get("AUTH_MODE").and_then(|v| v.as_str()) {
-                if auth_mode == CLAUDE_CLIENT_PASSTHROUGH_AUTH_MODE {
+                if matches!(
+                    auth_mode,
+                    CLAUDE_CLIENT_PASSTHROUGH_AUTH_MODE | CLAUDE_OAUTH_AUTH_MODE
+                ) {
                     return true;
                 }
             }
@@ -986,6 +994,18 @@ mod tests {
         let adapter = ClaudeAdapter::new();
         let provider = create_provider(json!({
             "auth_mode": "client_passthrough",
+            "env": {}
+        }));
+
+        assert!(adapter.extract_auth(&provider).is_none());
+        assert!(adapter.allows_inbound_auth_passthrough(&provider));
+    }
+
+    #[test]
+    fn test_extract_auth_claude_oauth_without_provider_key() {
+        let adapter = ClaudeAdapter::new();
+        let provider = create_provider(json!({
+            "auth_mode": "claude_oauth",
             "env": {}
         }));
 

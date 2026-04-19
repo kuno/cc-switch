@@ -565,7 +565,7 @@ mod tests {
                     app_type: "claude".to_string(),
                     provider_id: "claude-1".to_string(),
                     provider_name: "Claude Provider".to_string(),
-                    source: Some("subscription_quota".to_string()),
+                    source: Some("response_headers".to_string()),
                     status: None,
                     windows: Vec::new(),
                     representative_claim: None,
@@ -597,7 +597,7 @@ mod tests {
                 .expect("providers array")
                 .iter()
                 .any(|snapshot| snapshot["provider_id"] == "claude-1"),
-            "non-codex snapshots should remain present in the quota response"
+            "live non-codex snapshots should remain present in the quota response"
         );
 
         let store = server.state.rate_limits.read().await;
@@ -607,7 +607,7 @@ mod tests {
         );
         assert!(
             store.contains_key("claude-1"),
-            "non-codex snapshots should not be touched by codex quota cleanup"
+            "live non-codex snapshots should not be touched by codex quota cleanup"
         );
     }
 

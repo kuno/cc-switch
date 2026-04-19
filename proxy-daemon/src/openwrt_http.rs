@@ -1,6 +1,9 @@
 use crate::app_config::AppType;
 use crate::openwrt_admin::{self, OpenWrtAppConfigPayload, OpenWrtProviderPayload};
-use crate::proxy::providers::codex_oauth_store::codex_auth_upload_limit_bytes;
+use crate::proxy::providers::{
+    claude_oauth_store::claude_auth_upload_limit_bytes,
+    codex_oauth_store::codex_auth_upload_limit_bytes,
+};
 use crate::proxy::server::ProxyState;
 use crate::services::usage_stats::LogFilters;
 use axum::{
@@ -67,6 +70,10 @@ pub(crate) fn mount_openwrt_admin_routes(router: Router<ProxyState>) -> Router<P
             post(openwrt_upload_codex_auth).delete(openwrt_remove_codex_auth),
         )
         .route(
+            "/openwrt/admin/apps/:app/providers/:provider_id/claude-auth",
+            post(openwrt_upload_claude_auth).delete(openwrt_remove_claude_auth),
+        )
+        .route(
             "/openwrt/admin/apps/:app/providers/:provider_id/failover",
             get(openwrt_get_provider_failover),
         )
@@ -113,6 +120,12 @@ struct OpenWrtMaxRetriesPayload {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OpenWrtCodexAuthUploadPayload {
+    auth_json_text: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OpenWrtClaudeAuthUploadPayload {
     auth_json_text: String,
 }
 
@@ -469,6 +482,49 @@ async fn openwrt_remove_codex_auth(
     }
 }
 
+async fn openwrt_upload_claude_auth(
+    Path((app, provider_id)): Path<(String, String)>,
+    State(state): State<ProxyState>,
+    Json(payload): Json<OpenWrtClaudeAuthUploadPayload>,
+) -> (StatusCode, Json<Value>) {
+    if payload.auth_json_text.as_bytes().len() > claude_auth_upload_limit_bytes() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "ok": false,
+                "error": format!(
+                    "auth_json_text exceeds {} KiB limit",
+                    claude_auth_upload_limit_bytes() / 1024
+                )
+            })),
+        );
+    }
+
+    match parse_openwrt_app(&app).and_then(|app_type| {
+        openwrt_admin::upload_claude_auth(
+            state.db.as_ref(),
+            &app_type,
+            &provider_id,
+            payload.auth_json_text.as_bytes(),
+        )
+    }) {
+        Ok(view) => openwrt_admin_ok(view),
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+async fn openwrt_remove_claude_auth(
+    Path((app, provider_id)): Path<(String, String)>,
+    State(state): State<ProxyState>,
+) -> (StatusCode, Json<Value>) {
+    match parse_openwrt_app(&app).and_then(|app_type| {
+        openwrt_admin::remove_claude_auth(state.db.as_ref(), &app_type, &provider_id)
+    }) {
+        Ok(view) => openwrt_admin_ok(view),
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
 async fn openwrt_add_to_failover_queue(
     Path((app, provider_id)): Path<(String, String)>,
     State(state): State<ProxyState>,
@@ -670,6 +726,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn openwrt_upload_claude_auth_rejects_oversized_payload() {
+        let state = test_proxy_state();
+        let payload = OpenWrtClaudeAuthUploadPayload {
+            auth_json_text: "x".repeat(claude_auth_upload_limit_bytes() + 1),
+        };
+
+        let (status, body) = openwrt_upload_claude_auth(
+            Path(("claude".to_string(), "provider-1".to_string())),
+            State(state),
+            Json(payload),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(body["error"]
+            .as_str()
+            .expect("error string")
+            .contains("64 KiB limit"));
+    }
+
+    #[tokio::test]
     async fn openwrt_get_admin_meta_returns_supported_apps_and_version() {
         let (status, body) = openwrt_get_admin_meta().await;
 
@@ -689,6 +766,7 @@ mod tests {
         assert_eq!(apps[0]["app"], Value::String("claude".to_string()));
         assert_eq!(apps[1]["app"], Value::String("codex".to_string()));
         assert_eq!(apps[2]["app"], Value::String("gemini".to_string()));
+        assert_eq!(apps[0]["supportsClaudeAuthUpload"], Value::Bool(true));
         assert_eq!(apps[1]["supportsCodexAuthUpload"], Value::Bool(true));
         assert_eq!(apps[0]["supportsCodexAuthUpload"], Value::Bool(false));
     }

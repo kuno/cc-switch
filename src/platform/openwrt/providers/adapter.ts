@@ -743,6 +743,22 @@ export function createOpenWrtProviderAdapter(
       );
   }
 
+  if (
+    typeof transport.uploadClaudeAuth === "function" &&
+    typeof transport.removeClaudeAuth === "function"
+  ) {
+    adapter.uploadClaudeAuth = async (appId, providerId, authJsonText) =>
+      runFailoverMutation(
+        () => transport.uploadClaudeAuth!(appId, providerId, authJsonText),
+        `Failed to upload auth.json for ${providerId}.`,
+      );
+    adapter.removeClaudeAuth = async (appId, providerId) =>
+      runFailoverMutation(
+        () => transport.removeClaudeAuth!(appId, providerId),
+        `Failed to remove auth.json for ${providerId}.`,
+      );
+  }
+
   return adapter;
 }
 
