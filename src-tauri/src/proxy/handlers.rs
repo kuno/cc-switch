@@ -174,8 +174,7 @@ async fn refresh_claude_quota_snapshots(state: &ProxyState) {
 
     let mut store = state.rate_limits.write().await;
     store.retain(|_, snapshot| {
-        snapshot.app_type != "claude"
-            || live_claude_provider_ids.contains(&snapshot.provider_id)
+        snapshot.app_type != "claude" || live_claude_provider_ids.contains(&snapshot.provider_id)
     });
 }
 
