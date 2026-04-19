@@ -177,6 +177,19 @@ pub fn is_sse_response(response: &ProxyResponse) -> bool {
     response.is_sse()
 }
 
+#[inline]
+fn should_handle_as_streaming(response: &ProxyResponse, request_is_streaming: bool) -> bool {
+    should_handle_as_streaming_from_flags(is_sse_response(response), request_is_streaming)
+}
+
+#[inline]
+fn should_handle_as_streaming_from_flags(
+    response_is_sse: bool,
+    request_is_streaming: bool,
+) -> bool {
+    response_is_sse || request_is_streaming
+}
+
 /// 处理流式响应
 pub async fn handle_streaming(
     response: ProxyResponse,
@@ -373,8 +386,15 @@ pub async fn process_response(
     state: &ProxyState,
     parser_config: &UsageParserConfig,
     connection_guard: Option<ActiveConnectionGuard>,
+    request_is_streaming: bool,
 ) -> Result<Response, ProxyError> {
-    if is_sse_response(&response) {
+    if should_handle_as_streaming(&response, request_is_streaming) {
+        if request_is_streaming && !is_sse_response(&response) {
+            log::debug!(
+                "[{}] 上游响应缺少 text/event-stream，按请求 stream=true 回退为流式透传",
+                ctx.tag
+            );
+        }
         Ok(handle_streaming(response, ctx, state, parser_config, connection_guard).await)
     } else {
         handle_non_streaming(response, ctx, state, parser_config, connection_guard).await
@@ -954,6 +974,13 @@ mod tests {
             headers.get(axum::http::header::CONTENT_TYPE),
             Some(&axum::http::HeaderValue::from_static("text/event-stream"))
         );
+    }
+
+    #[test]
+    fn test_should_handle_as_streaming_uses_request_hint_when_header_missing() {
+        assert!(super::should_handle_as_streaming_from_flags(false, true));
+        assert!(super::should_handle_as_streaming_from_flags(true, false));
+        assert!(!super::should_handle_as_streaming_from_flags(false, false));
     }
 
     fn build_state(db: Arc<Database>) -> ProxyState {
