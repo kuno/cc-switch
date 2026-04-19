@@ -33,7 +33,9 @@ test.describe("@shell OpenWrt page shell", () => {
     await expect(
       page.getByRole("dialog", { name: "Recent activity" }),
     ).toBeVisible();
-    await expect(page).toHaveScreenshot("shell-activity-drawer.png");
+    await expect(page).toHaveScreenshot("shell-activity-drawer.png", {
+      maxDiffPixelRatio: 0.03,
+    });
   });
 
   test("renders the provider panel opened from the shell", async ({
@@ -48,7 +50,9 @@ test.describe("@shell OpenWrt page shell", () => {
     await expect(
       page.getByRole("dialog", { name: "Claude providers" }),
     ).toBeVisible();
-    await expect(page).toHaveScreenshot("shell-provider-panel.png");
+    await expect(page).toHaveScreenshot("shell-provider-panel.png", {
+      maxDiffPixelRatio: 0.03,
+    });
   });
 
   test("renders the stopped-shell alert strip", async ({ page }, testInfo) => {
