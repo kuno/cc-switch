@@ -109,4 +109,40 @@ describe("SharedProviderCard", () => {
     ).not.toBeInTheDocument();
     expect(screen.queryByText("Secret stored")).not.toBeInTheDocument();
   });
+
+  it("surfaces busy semantics on the active action controls", () => {
+    const provider = createProvider({
+      providerId: "gamma",
+      name: "Gamma",
+      baseUrl: "https://gamma.example.com/v1",
+      active: false,
+    });
+
+    render(
+      <SharedProviderCard
+        appId="codex"
+        provider={provider}
+        actionVisibility={getSharedProviderCardActionVisibility(
+          fullCapabilities,
+          provider,
+        )}
+        isBusy
+        isActivatePending
+        onEdit={vi.fn()}
+        onActivate={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Gamma").closest("article")).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Activate Gamma" })).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Edit Gamma" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Delete Gamma" })).toBeDisabled();
+  });
 });

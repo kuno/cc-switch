@@ -457,9 +457,17 @@ body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-overlay {
 
 body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog {
   width: min(calc(100vw - 1.5rem), 72rem);
-  max-height: min(88vh, 60rem);
+  max-width: calc(100vw - 1.5rem);
+  max-height: min(calc(100dvh - 1.5rem), 60rem);
   border-radius: 1.55rem;
   box-shadow: var(--ccswitch-page-shadow-strong);
+  overflow: hidden;
+}
+
+body.ccswitch-openwrt-provider-ui-theme
+  .ccswitch-openwrt-provider-ui-dialog
+  > form {
+  max-height: inherit;
 }
 
 body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-dialog-shell {
@@ -479,6 +487,15 @@ body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-preset-chip {
   body.ccswitch-openwrt-provider-ui-theme .cbi-section {
     border-radius: 1.35rem;
     padding: 1rem;
+  }
+}
+
+@media (max-width: 720px) {
+  body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog {
+    width: min(calc(100vw - 1rem), 72rem);
+    max-width: calc(100vw - 1rem);
+    max-height: calc(100dvh - 1rem);
+    border-radius: 1.2rem;
   }
 }
 

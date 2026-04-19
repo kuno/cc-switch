@@ -14,6 +14,7 @@
     "format": "prettier --write \"src/**/*.{js,jsx,ts,tsx,css,json}\"",
     "format:check": "prettier --check \"src/**/*.{js,jsx,ts,tsx,css,json}\"",
     "test:unit": "vitest run",
+    "test:phase12:verification": "vitest run tests/shared/providers/SharedProviderManager.test.tsx tests/shared/providers/ui/SharedProviderCard.test.tsx tests/shared/runtime/SharedRuntimeSurface.test.tsx tests/shared/runtime/ui/SharedRuntimeAppCard.test.tsx tests/openwrt/settings.providerState.test.ts tests/openwrt/providerUiBundle.test.ts",
     "test:unit:watch": "vitest watch"
   },
   "keywords": [],

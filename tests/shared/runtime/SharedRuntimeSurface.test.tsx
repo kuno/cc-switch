@@ -1,5 +1,12 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { emptySharedProviderView } from "@/shared/providers/domain";
 import {
@@ -282,7 +289,9 @@ function renderSurface(adapter: RuntimeSurfacePlatformAdapter) {
 }
 
 function getAppCard(appLabel: "Claude" | "Codex" | "Gemini") {
-  return within(screen.getByRole("region", { name: `${appLabel} runtime card` }));
+  return within(
+    screen.getByRole("region", { name: `${appLabel} runtime card` }),
+  );
 }
 
 describe("SharedRuntimeSurface", () => {
@@ -382,7 +391,7 @@ describe("SharedRuntimeSurface", () => {
     const adapter = createControlAdapter({
       addToFailoverQueue: vi.fn().mockImplementation(() => addDeferred.promise),
     });
-
+    const user = userEvent.setup();
     renderSurface(adapter);
 
     await waitFor(() =>
@@ -395,23 +404,25 @@ describe("SharedRuntimeSurface", () => {
     const claudeCard = getAppCard("Claude");
 
     await waitFor(() =>
-      expect(codexCard.getByRole("button", { name: "Add to queue" })).toBeEnabled(),
-    );
-
-    fireEvent.click(codexCard.getByRole("button", { name: "Add to queue" }));
-
-    await waitFor(() => {
       expect(
         codexCard.getByRole("button", { name: "Add to queue" }),
-      ).toBeDisabled();
+      ).toBeEnabled(),
+    );
+
+    const addToQueueButton = codexCard.getByRole("button", {
+      name: "Add to queue",
+    });
+    addToQueueButton.focus();
+    await user.keyboard("{Enter}");
+
+    await waitFor(() => {
+      expect(codexCard.getByRole("button", { name: "Add to queue" })).toBeDisabled();
       expect(
         codexCard.getByRole("switch", { name: "Codex auto-failover" }),
       ).toBeDisabled();
     });
 
-    expect(
-      claudeCard.getByRole("button", { name: "Add to queue" }),
-    ).toBeEnabled();
+    expect(claudeCard.getByRole("button", { name: "Add to queue" })).toBeEnabled();
     expect(
       claudeCard.getByRole("switch", { name: "Claude auto-failover" }),
     ).toBeEnabled();
@@ -419,9 +430,7 @@ describe("SharedRuntimeSurface", () => {
     addDeferred.resolve();
 
     await waitFor(() =>
-      expect(
-        codexCard.getByRole("button", { name: "Add to queue" }),
-      ).toBeEnabled(),
+      expect(codexCard.getByRole("button", { name: "Add to queue" })).toBeEnabled(),
     );
   });
 
@@ -437,6 +446,7 @@ describe("SharedRuntimeSurface", () => {
         : app,
     );
     const adapter = createControlAdapter({}, [initialState, updatedState]);
+    const user = userEvent.setup();
 
     renderSurface(adapter);
 
@@ -454,9 +464,11 @@ describe("SharedRuntimeSurface", () => {
       ).toBeEnabled(),
     );
 
-    fireEvent.click(
-      claudeCard.getByRole("switch", { name: "Claude auto-failover" }),
-    );
+    const autoFailoverSwitch = claudeCard.getByRole("switch", {
+      name: "Claude auto-failover",
+    });
+    autoFailoverSwitch.focus();
+    await user.keyboard("{Enter}");
 
     await waitFor(() =>
       expect(adapter.setAutoFailoverEnabled).toHaveBeenCalledWith(
@@ -471,6 +483,72 @@ describe("SharedRuntimeSurface", () => {
       expect(
         claudeCard.getByText("Auto-failover disabled"),
       ).toBeInTheDocument(),
+    );
+  });
+
+  it("keeps keyboard-triggered failover toggles behind explicit switch semantics", async () => {
+    const initialState = createRuntimeSurfaceState();
+    const updatedState = createRuntimeSurfaceState();
+    updatedState.apps = updatedState.apps.map((app) =>
+      app.app === "claude"
+        ? {
+            ...app,
+            autoFailoverEnabled: false,
+          }
+        : app,
+    );
+    const toggleDeferred = createDeferred<void>();
+    const adapter = createControlAdapter(
+      {
+        setAutoFailoverEnabled: vi
+          .fn()
+          .mockImplementation(() => toggleDeferred.promise),
+      },
+      [initialState, updatedState],
+    );
+    const user = userEvent.setup();
+
+    renderSurface(adapter);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("region", { name: "Claude runtime card" }),
+      ).toBeInTheDocument(),
+    );
+
+    const claudeCard = getAppCard("Claude");
+    const toggle = claudeCard.getByRole("switch", {
+      name: "Claude auto-failover",
+    });
+
+    toggle.focus();
+    expect(toggle).toHaveFocus();
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+
+    await user.keyboard("[Space]");
+
+    await waitFor(() =>
+      expect(adapter.setAutoFailoverEnabled).toHaveBeenCalledWith(
+        "claude",
+        false,
+      ),
+    );
+    expect(toggle).toBeDisabled();
+    expect(claudeCard.getByText("Updating...")).toBeInTheDocument();
+
+    toggleDeferred.resolve();
+
+    await waitFor(() =>
+      expect(
+        getAppCard("Claude").getByText("Auto-failover disabled"),
+      ).toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(
+        getAppCard("Claude").getByRole("switch", {
+          name: "Claude auto-failover",
+        }),
+      ).toHaveAttribute("aria-checked", "false"),
     );
   });
 
