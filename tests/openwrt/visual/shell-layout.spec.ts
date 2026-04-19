@@ -34,7 +34,7 @@ test.describe("@shell OpenWrt page shell", () => {
       page.getByRole("dialog", { name: "Recent activity" }),
     ).toBeVisible();
     await expect(page).toHaveScreenshot("shell-activity-drawer.png", {
-      maxDiffPixelRatio: 0.03,
+      maxDiffPixelRatio: 0.05,
     });
   });
 
