@@ -386,6 +386,13 @@ var callRestartService = rpc.declare({
 	expect: { '': {} }
 });
 
+var callUciCommit = rpc.declare({
+	object: 'uci',
+	method: 'commit',
+	params: ['config'],
+	expect: { '': {} }
+});
+
 return view.extend({
 	handleSaveApply: null,
 	handleSave: null,
@@ -408,6 +415,7 @@ return view.extend({
 	},
 
 	renderStaticPrototype: function (data) {
+		var self = this;
 		var bindings = this.getStaticPrototypeBindings(data || []);
 		var workspaceData = this.buildStaticPrototypeWorkspaceData(data || []);
 		var prototypeSrc = OPENWRT_STATIC_PROTOTYPE_PATH + '?' + this.buildStaticPrototypeQuery(bindings);
@@ -445,6 +453,14 @@ return view.extend({
 				/* no-op */
 			}
 		};
+		var postHostState = function () {
+			return self.loadStaticPrototypeHostBindings().then(function (hostBindings) {
+				self.postStaticPrototypeFrameMessage(frame, 'ccswitch-prototype-host-state', hostBindings);
+			});
+		};
+		var handleFrameMessage = function (event) {
+			self.handleStaticPrototypeFrameMessage(frame, event);
+		};
 
 		if (!existingStyle) {
 			existingStyle = E('style', {
@@ -455,11 +471,15 @@ return view.extend({
 			document.head.appendChild(existingStyle);
 		}
 
+		window.addEventListener('message', handleFrameMessage);
+
 		frame.addEventListener('load', function () {
 			postWorkspaceData();
+			postHostState();
 			syncHeight();
 			window.setTimeout(function () {
 				postWorkspaceData();
+				postHostState();
 				syncHeight();
 			}, 50);
 			window.setTimeout(syncHeight, 300);
@@ -667,6 +687,239 @@ return view.extend({
 		};
 	},
 
+	isStaticPrototypeValidIpv4Address: function (value) {
+		var parts;
+		var i;
+
+		if (!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(value))
+			return false;
+
+		parts = value.split('.');
+
+		for (i = 0; i < parts.length; i++) {
+			if (parts[i].length > 1 && parts[i].charAt(0) === '0')
+				return false;
+			if (+parts[i] < 0 || +parts[i] > 255)
+				return false;
+		}
+
+		return true;
+	},
+
+	isStaticPrototypeValidIpv6Address: function (value) {
+		var parts;
+		var emptyIndex;
+		var hasIpv4Tail;
+		var segmentCount;
+		var ipv4Part;
+		var compressedParts;
+		var i;
+
+		if (!/^[0-9A-Fa-f:.]+$/.test(value) || value.indexOf(':::') >= 0)
+			return false;
+
+		hasIpv4Tail = value.indexOf('.') >= 0;
+		ipv4Part = null;
+
+		if (hasIpv4Tail) {
+			ipv4Part = value.substring(value.lastIndexOf(':') + 1);
+			if (!this.isStaticPrototypeValidIpv4Address(ipv4Part))
+				return false;
+
+			value = value.substring(0, value.lastIndexOf(':')) + ':ipv4';
+		}
+
+		parts = value.split('::');
+		if (parts.length > 2)
+			return false;
+
+		emptyIndex = value.indexOf('::');
+		if (emptyIndex < 0) {
+			compressedParts = value.split(':');
+			segmentCount = compressedParts.length;
+			if (hasIpv4Tail)
+				segmentCount += 1;
+			if (segmentCount !== 8)
+				return false;
+		} else {
+			compressedParts = (parts[0] ? parts[0].split(':') : []).concat(parts[1] ? parts[1].split(':') : []);
+			segmentCount = compressedParts.length;
+			if (hasIpv4Tail)
+				segmentCount += 1;
+			if (segmentCount >= 8)
+				return false;
+		}
+
+		for (i = 0; i < compressedParts.length; i++) {
+			if (!compressedParts[i])
+				return false;
+			if (compressedParts[i] === 'ipv4')
+				continue;
+			if (!/^[0-9A-Fa-f]{1,4}$/.test(compressedParts[i]))
+				return false;
+		}
+
+		return true;
+	},
+
+	isStaticPrototypeValidIpAddress: function (value) {
+		if (typeof value !== 'string' || !value)
+			return false;
+
+		return this.isStaticPrototypeValidIpv4Address(value) || this.isStaticPrototypeValidIpv6Address(value);
+	},
+
+	isStaticPrototypeValidPort: function (value) {
+		if (typeof value !== 'string' || !/^\d+$/.test(value))
+			return false;
+
+		value = +value;
+		return value >= 1 && value <= 65535;
+	},
+
+	normalizeStaticPrototypeHostPayload: function (payload) {
+		var snapshot = this.getHostConfigSnapshot();
+		var listenAddr = payload && payload.listenAddr != null ? String(payload.listenAddr).trim() : snapshot.listenAddr || '';
+		var listenPort = payload && payload.listenPort != null ? String(payload.listenPort).trim() : snapshot.listenPort || '';
+		var logLevel = payload && typeof payload.logLevel === 'string'
+			? String(payload.logLevel).toLowerCase()
+			: (snapshot.logLevel || 'info');
+		var allowedLogLevels = {
+			error: true,
+			warn: true,
+			info: true,
+			debug: true,
+			trace: true
+		};
+
+		if (!allowedLogLevels[logLevel])
+			logLevel = snapshot.logLevel || 'info';
+
+		if (!this.isStaticPrototypeValidIpAddress(listenAddr))
+			listenAddr = snapshot.listenAddr || '';
+
+		if (!this.isStaticPrototypeValidPort(listenPort))
+			listenPort = snapshot.listenPort || '';
+
+		return {
+			listenAddr: listenAddr,
+			listenPort: listenPort,
+			httpProxy: payload && payload.httpProxy != null ? String(payload.httpProxy) : snapshot.httpProxy || '',
+			httpsProxy: payload && payload.httpsProxy != null ? String(payload.httpsProxy) : snapshot.httpsProxy || '',
+			logLevel: logLevel
+		};
+	},
+
+	saveStaticPrototypeHostConfig: function (payload) {
+		var next = this.normalizeStaticPrototypeHostPayload(payload);
+
+		uci.set('ccswitch', 'main', 'listen_addr', next.listenAddr);
+		uci.set('ccswitch', 'main', 'listen_port', next.listenPort);
+		uci.set('ccswitch', 'main', 'http_proxy', next.httpProxy);
+		uci.set('ccswitch', 'main', 'https_proxy', next.httpsProxy);
+		uci.set('ccswitch', 'main', 'log_level', next.logLevel);
+
+		return Promise.resolve(uci.save()).then(function () {
+			return callUciCommit('ccswitch');
+		}).then(function () {
+			return next;
+		});
+	},
+
+	loadStaticPrototypeHostBindings: function () {
+		return Promise.all([
+			L.resolveDefault(callServiceList('ccswitch'), {}),
+			L.resolveDefault(callGetRuntimeStatus(), { ok: false })
+		]).then(L.bind(function (results) {
+			return this.getStaticPrototypeBindings([
+				null,
+				results[0],
+				results[1]
+			]);
+		}, this));
+	},
+
+	loadStaticPrototypeHostBindingsAfterRestart: function () {
+		var self = this;
+		var attempts = 0;
+		var maxAttempts = 6;
+		var delayMs = 500;
+
+		var tryLoad = function () {
+			return self.loadStaticPrototypeHostBindings().then(function (hostBindings) {
+				if (hostBindings && hostBindings.status === 'running' && hostBindings.health !== 'unknown')
+					return hostBindings;
+
+				attempts += 1;
+				if (attempts >= maxAttempts)
+					return hostBindings;
+
+				return new Promise(function (resolve) {
+					window.setTimeout(resolve, delayMs);
+				}).then(tryLoad);
+			});
+		};
+
+		return tryLoad();
+	},
+
+	postStaticPrototypeFrameMessage: function (frame, type, payload) {
+		try {
+			if (frame && frame.contentWindow && typeof frame.contentWindow.postMessage === 'function') {
+				frame.contentWindow.postMessage({
+					type: type,
+					payload: payload
+				}, '*');
+			}
+		} catch (e) {
+			/* no-op */
+		}
+	},
+
+	handleStaticPrototypeFrameMessage: function (frame, event) {
+		if (!frame || !frame.contentWindow || !event || event.source !== frame.contentWindow || !event.data)
+			return Promise.resolve(false);
+
+		if (event.data.type === 'ccswitch-prototype-host-save')
+			return this.saveStaticPrototypeHostConfig(event.data.payload).then(L.bind(function () {
+				return this.loadStaticPrototypeHostBindings().then(L.bind(function (hostBindings) {
+					this.postStaticPrototypeFrameMessage(frame, 'ccswitch-prototype-host-save-result', {
+						ok: true,
+						host: hostBindings
+					});
+					return true;
+				}, this));
+			}, this)).catch(L.bind(function (err) {
+				this.postStaticPrototypeFrameMessage(frame, 'ccswitch-prototype-host-save-result', {
+					ok: false,
+					message: this.rpcFailureMessage(err) || _('Failed to save host settings.')
+				});
+				return true;
+			}, this));
+
+		if (event.data.type === 'ccswitch-prototype-restart-service')
+			return this.restartService().then(L.bind(function (result) {
+				if (!this.isRpcSuccess(result))
+					throw new Error(this.rpcError(result) || _('Failed to restart service.'));
+
+				return this.loadStaticPrototypeHostBindingsAfterRestart().then(L.bind(function (hostBindings) {
+					this.postStaticPrototypeFrameMessage(frame, 'ccswitch-prototype-restart-result', {
+						ok: true,
+						host: hostBindings
+					});
+					return true;
+				}, this));
+			}, this)).catch(L.bind(function (err) {
+				this.postStaticPrototypeFrameMessage(frame, 'ccswitch-prototype-restart-result', {
+					ok: false,
+					message: this.rpcFailureMessage(err) || _('Failed to restart service.')
+				});
+				return true;
+			}, this));
+
+		return Promise.resolve(false);
+	},
+
 	getStaticPrototypeBindings: function (data) {
 		var serviceStatus = data && data[1] ? data[1] : {};
 		var runtimeResponse = data && data[2] ? data[2] : {};
@@ -685,8 +938,8 @@ return view.extend({
 			app: this.getSelectedApp(),
 			status: isRunning ? 'running' : 'stopped',
 			health: health,
-			listenAddr: runtime.listenAddress || hostConfig.listenAddr || '0.0.0.0',
-			listenPort: runtime.listenPort || hostConfig.listenPort || '15721',
+			listenAddr: hostConfig.listenAddr || runtime.listenAddress || '0.0.0.0',
+			listenPort: hostConfig.listenPort || runtime.listenPort || '15721',
 			serviceLabel: _('Router daemon'),
 			httpProxy: hostConfig.httpProxy || '',
 			httpsProxy: hostConfig.httpsProxy || '',
@@ -1406,6 +1659,8 @@ return view.extend({
 			'#ccswitch-host-page-shell .ccswitch-host-actions{display:flex;flex-wrap:wrap;gap:.65rem;margin-top:.85rem}',
 			'#ccswitch-host-page-shell .ccswitch-host-actions .cbi-button,#ccswitch-host-page-shell .ccswitch-host-map .cbi-page-actions .cbi-button{min-height:2.75rem;padding:.7rem 1.1rem;border:1px solid var(--ccswitch-host-border-strong);border-radius:14px;background:linear-gradient(180deg,var(--ccswitch-host-input-top) 0%,var(--ccswitch-host-input-bottom) 100%);box-shadow:var(--ccswitch-host-shadow-soft);color:var(--ccswitch-host-foreground)}',
 			'#ccswitch-host-page-shell .ccswitch-host-actions .cbi-button:hover,#ccswitch-host-page-shell .ccswitch-host-map .cbi-page-actions .cbi-button:hover{border-color:var(--ccswitch-host-emphasis-border);background:linear-gradient(180deg,var(--ccswitch-host-surface-top) 0%,var(--ccswitch-host-chip-bg) 100%)}',
+			'#ccswitch-host-page-shell .ccswitch-host-nonlive-shell .ccswitch-host-shell-note{opacity:.72}',
+			'#ccswitch-host-page-shell .ccswitch-host-nonlive-shell .ccswitch-host-shared-mount{opacity:.9}',
 			'#ccswitch-host-page-shell .ccswitch-host-map{margin:0;padding:0;background:transparent;border:0;box-shadow:none}',
 			'#ccswitch-host-page-shell .ccswitch-host-map > h2,#ccswitch-host-page-shell .ccswitch-host-map > .cbi-map-descr{display:none!important}',
 			'#ccswitch-host-page-shell .ccswitch-host-settings-grid{display:grid;gap:.9rem;align-items:start;grid-template-columns:repeat(2,minmax(0,1fr))}',
@@ -1689,7 +1944,7 @@ return view.extend({
 				)
 			]),
 			E('div', { 'class': 'ccswitch-host-shell-grid' }, [
-				E('section', { 'class': 'ccswitch-host-surface ccswitch-host-runtime-shell' }, [
+				E('section', { 'class': 'ccswitch-host-surface ccswitch-host-runtime-shell ccswitch-host-nonlive-shell' }, [
 					this.createSectionIntro(
 						_('Shared Runtime'),
 						_('Runtime Status'),
@@ -1697,7 +1952,7 @@ return view.extend({
 					),
 					runtimeMountRoot
 				]),
-				E('section', { 'class': 'ccswitch-host-surface ccswitch-host-provider-shell' }, [
+				E('section', { 'class': 'ccswitch-host-surface ccswitch-host-provider-shell ccswitch-host-nonlive-shell' }, [
 					this.createSectionIntro(
 						_('Shared Provider Surface'),
 						_('Provider Manager'),
@@ -2641,13 +2896,17 @@ return view.extend({
 	},
 
 	createSharedProviderMountOptions: function (uiState, statusNodes, shellNodes) {
+		var transport = this.createProviderTransport();
+
+		delete transport.restartService;
+
 		return {
 			target: shellNodes.mountRoot,
 			appId: uiState.selectedApp,
 			serviceStatus: {
 				isRunning: uiState.isRunning
 			},
-			transport: this.createProviderTransport(),
+			transport: transport,
 			shell: this.createShellBridge(uiState, statusNodes, shellNodes)
 		};
 	},
