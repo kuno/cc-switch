@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   getGenericPresetDescription,
   getSharedProviderPresetById,
+  getSharedProviderPresetGroups,
   getSharedProviderPresets,
   inferSharedProviderPresetId,
   OPENWRT_SUPPORTED_PROVIDER_APPS,
@@ -22,6 +23,7 @@ describe("shared provider preset catalog", () => {
         expect(preset.appId).toBe(appId);
         expect(preset.providerName).not.toHaveLength(0);
         expect(preset.baseUrl).toMatch(/^https:\/\/\S+$/);
+        expect(preset.category).toBeTruthy();
         expect(preset.supportedOn).toEqual({
           desktop: true,
           openwrt: true,
@@ -105,6 +107,45 @@ describe("shared provider preset catalog", () => {
     ).toBe("");
     expect(getGenericPresetDescription()).toBe(
       "Preset selected. You can still adjust the fields below before saving.",
+    );
+  });
+
+  it("groups presets into visible categories with concise hints", () => {
+    const claudeGroups = getSharedProviderPresetGroups("claude");
+    const codexGroups = getSharedProviderPresetGroups("codex");
+
+    expect(claudeGroups[0]).toEqual(
+      expect.objectContaining({
+        category: expect.objectContaining({
+          id: "official",
+          label: "Official",
+          hint: expect.stringContaining("First-party"),
+        }),
+      }),
+    );
+    expect(
+      claudeGroups.find((group) => group.category.id === "cn_official"),
+    ).toEqual(
+      expect.objectContaining({
+        category: expect.objectContaining({
+          label: "Regional",
+        }),
+        presets: expect.arrayContaining([
+          expect.objectContaining({ id: "claude-deepseek" }),
+        ]),
+      }),
+    );
+    expect(
+      codexGroups.find((group) => group.category.id === "aggregator"),
+    ).toEqual(
+      expect.objectContaining({
+        category: expect.objectContaining({
+          label: "Aggregators",
+        }),
+        presets: expect.arrayContaining([
+          expect.objectContaining({ id: "codex-openrouter" }),
+        ]),
+      }),
     );
   });
 

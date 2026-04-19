@@ -1,4 +1,5 @@
 import type { AppId } from "@/lib/api";
+import type { ProviderCategory } from "@/types";
 
 export type SharedProviderAppId = Extract<AppId, "claude" | "codex" | "gemini">;
 
@@ -7,6 +8,17 @@ export type SharedProviderTokenField =
   | "ANTHROPIC_API_KEY"
   | "OPENAI_API_KEY"
   | "GEMINI_API_KEY";
+
+export type SharedProviderPresetCategoryId = Extract<
+  ProviderCategory,
+  "official" | "cn_official" | "cloud_provider" | "aggregator" | "third_party"
+>;
+
+export interface SharedProviderPresetCategory {
+  id: SharedProviderPresetCategoryId;
+  label: string;
+  hint: string;
+}
 
 export interface SharedProviderPreset {
   id: string;
@@ -18,10 +30,19 @@ export interface SharedProviderPreset {
   model: string;
   description: string;
   sourcePresetName: string;
+  category: SharedProviderPresetCategoryId;
+  icon?: string;
+  iconColor?: string;
+  accentColor?: string;
   supportedOn: {
     desktop: boolean;
     openwrt: boolean;
   };
+}
+
+export interface SharedProviderPresetGroup {
+  category: SharedProviderPresetCategory;
+  presets: SharedProviderPreset[];
 }
 
 export interface SharedProviderView {
