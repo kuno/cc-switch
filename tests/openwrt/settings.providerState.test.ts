@@ -82,6 +82,7 @@ type SettingsView = {
   createStatusPanel(uiState: UiState): StatusNodes;
   createUiState(isRunning: boolean, selectedApp: AppId): UiState;
   getBundleAssetPath(): string;
+  getBundleStylePath(): string;
   getSelectedApp(): AppId;
   loadSharedProviderBundle(): Promise<{
     capabilities?: { providerManager?: boolean; runtimeSurface?: boolean };
@@ -282,12 +283,15 @@ beforeEach(() => {
 });
 
 describe("OpenWrt settings shared-provider shell", () => {
-  it("keeps selected-app persistence in the LuCI shell and exposes the fixed bundle path", () => {
+  it("keeps selected-app persistence in the LuCI shell and exposes the fixed bundle and stylesheet paths", () => {
     const { settings, localStorage } = loadSettingsView("gemini");
 
     expect(settings.getSelectedApp()).toBe("gemini");
     expect(settings.getBundleAssetPath()).toBe(
       "/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js",
+    );
+    expect(settings.getBundleStylePath()).toBe(
+      "/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.css",
     );
 
     settings.saveSelectedApp("codex");
@@ -314,6 +318,44 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(appendChildSpy).not.toHaveBeenCalled();
 
     appendChildSpy.mockRestore();
+  });
+
+  it("injects the shared bundle stylesheet once while loading the mount script", async () => {
+    const { settings } = loadSettingsView();
+    const api = {
+      mount: vi.fn(),
+    };
+
+    const loadPromise = settings.loadSharedProviderBundle();
+    const stylesheet = document.head.querySelector(
+      'link[rel="stylesheet"]',
+    ) as HTMLLinkElement | null;
+    const script = document.getElementById(
+      SHARED_PROVIDER_UI_SCRIPT_ID,
+    ) as HTMLScriptElement | null;
+
+    expect(stylesheet).not.toBeNull();
+    expect(stylesheet?.getAttribute("href")).toBe(
+      "/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.css",
+    );
+    expect(script).not.toBeNull();
+    expect(script?.getAttribute("src")).toBe(
+      "/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js",
+    );
+
+    (window as unknown as Record<string, unknown>)[
+      SHARED_PROVIDER_UI_GLOBAL_KEY
+    ] = api;
+    script?.dispatchEvent(new Event("load"));
+
+    await expect(loadPromise).resolves.toBe(api);
+    await expect(settings.loadSharedProviderBundle()).resolves.toBe(api);
+    expect(
+      document.head.querySelectorAll('link[rel="stylesheet"]').length,
+    ).toBe(1);
+    expect(
+      document.querySelectorAll(`#${SHARED_PROVIDER_UI_SCRIPT_ID}`).length,
+    ).toBe(1);
   });
 
   it("wires raw rpc transport methods for the shared provider bundle", async () => {
