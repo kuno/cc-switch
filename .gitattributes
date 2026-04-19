@@ -27,6 +27,7 @@
 
 # Denote all files that are truly binary and should not be modified.
 *.png binary
+tests/openwrt/visual/**/*.png binary
 *.jpg binary
 *.jpeg binary
 *.gif binary
