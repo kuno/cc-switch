@@ -10,8 +10,7 @@ use std::sync::Arc;
 use tauri::State;
 use tokio::sync::RwLock;
 
-/// Copilot 认证状态
-pub struct CopilotAuthState(pub Arc<RwLock<CopilotAuthManager>>);
+pub use crate::proxy::auth_state::CopilotAuthState;
 
 // ==================== 设备码流程 ====================
 
