@@ -551,7 +551,7 @@ pub fn get_provider_stats(
 ) -> anyhow::Result<OpenWrtProviderStatsView> {
     let profile = openwrt_app_profile(app_type)?;
     let providers = db
-        .get_provider_stats(Some(profile.app_id))
+        .get_provider_stats(None, None, Some(profile.app_id))
         .map_err(|e| anyhow!("failed to read {} provider stats: {e}", profile.app_id))?;
 
     Ok(OpenWrtProviderStatsView { providers })
