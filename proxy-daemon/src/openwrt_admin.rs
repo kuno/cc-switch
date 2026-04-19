@@ -152,6 +152,22 @@ pub struct OpenWrtFailoverQueueStatusView {
     pub health: OpenWrtProviderHealthView,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtProviderFailoverView {
+    pub provider_id: String,
+    pub proxy_enabled: bool,
+    pub auto_failover_enabled: bool,
+    pub max_retries: u32,
+    pub active_provider_id: Option<String>,
+    pub in_failover_queue: bool,
+    pub queue_position: Option<usize>,
+    pub sort_index: Option<usize>,
+    pub provider_health: OpenWrtProviderHealthView,
+    pub failover_queue_depth: usize,
+    pub failover_queue: Vec<OpenWrtFailoverQueueStatusView>,
+}
+
 #[derive(Clone, Copy)]
 struct OpenWrtAppProfile {
     app_id: &'static str,
@@ -202,6 +218,65 @@ pub fn get_provider(
         &provider,
         active_provider_id.as_deref(),
     ))
+}
+
+pub async fn get_provider_failover(
+    db: &Database,
+    app_type: &AppType,
+    provider_id: &str,
+) -> anyhow::Result<OpenWrtProviderFailoverView> {
+    let profile = openwrt_app_profile(app_type)?;
+    load_provider(db, profile, provider_id)?;
+
+    let active_provider_id = resolve_active_provider_id_for_read(db, app_type, profile)?;
+    let app_config = load_proxy_config_for_app(db, profile).await?;
+    let health_records = db
+        .list_provider_health_records(profile.app_id)
+        .await
+        .map_err(|e| {
+            anyhow!(
+                "failed to list {} provider health records: {e}",
+                profile.app_id
+            )
+        })?;
+    let health_by_provider: HashMap<String, ProviderHealth> = health_records
+        .into_iter()
+        .map(|record| (record.provider_id.clone(), record))
+        .collect();
+    let failover_queue = load_failover_queue(db, profile)?
+        .into_iter()
+        .map(|item| OpenWrtFailoverQueueStatusView {
+            active: active_provider_id.as_deref() == Some(item.provider_id.as_str()),
+            health: build_provider_health_view(
+                &item.provider_id,
+                health_by_provider.get(&item.provider_id),
+            ),
+            provider_id: item.provider_id,
+            provider_name: item.provider_name,
+            sort_index: item.sort_index,
+        })
+        .collect::<Vec<_>>();
+    let queue_entry = failover_queue
+        .iter()
+        .enumerate()
+        .find(|(_, entry)| entry.provider_id == provider_id);
+
+    Ok(OpenWrtProviderFailoverView {
+        provider_id: provider_id.to_string(),
+        proxy_enabled: app_config.enabled,
+        auto_failover_enabled: app_config.auto_failover_enabled,
+        max_retries: app_config.max_retries,
+        active_provider_id,
+        in_failover_queue: queue_entry.is_some(),
+        queue_position: queue_entry.map(|(index, _)| index),
+        sort_index: queue_entry.and_then(|(_, entry)| entry.sort_index),
+        provider_health: build_provider_health_view(
+            provider_id,
+            health_by_provider.get(provider_id),
+        ),
+        failover_queue_depth: failover_queue.len(),
+        failover_queue,
+    })
 }
 
 pub fn get_active_provider(
@@ -418,6 +493,26 @@ pub async fn remove_from_failover_queue(
     build_app_runtime_status(db, app_type).await
 }
 
+pub async fn reorder_failover_queue(
+    db: &Database,
+    app_type: &AppType,
+    provider_ids: &[String],
+) -> anyhow::Result<OpenWrtAppRuntimeStatusView> {
+    let profile = openwrt_app_profile(app_type)?;
+
+    if provider_ids.is_empty() {
+        return Err(anyhow!(
+            "{} failover queue reorder requires at least one queued provider",
+            profile.app_id
+        ));
+    }
+
+    db.reorder_failover_queue(profile.app_id, provider_ids)
+        .map_err(|e| anyhow!("failed to reorder {} failover queue: {e}", profile.app_id))?;
+
+    build_app_runtime_status(db, app_type).await
+}
+
 pub async fn set_auto_failover_enabled(
     db: &Database,
     app_type: &AppType,
@@ -436,6 +531,21 @@ pub async fn set_auto_failover_enabled(
             profile.app_id
         )
     })?;
+
+    build_app_runtime_status(db, app_type).await
+}
+
+pub async fn set_max_retries(
+    db: &Database,
+    app_type: &AppType,
+    value: u32,
+) -> anyhow::Result<OpenWrtAppRuntimeStatusView> {
+    let profile = openwrt_app_profile(app_type)?;
+    let mut config = load_proxy_config_for_app(db, profile).await?;
+    config.max_retries = value;
+    db.update_proxy_config_for_app(config)
+        .await
+        .map_err(|e| anyhow!("failed to update {} max retries: {e}", profile.app_id))?;
 
     build_app_runtime_status(db, app_type).await
 }
