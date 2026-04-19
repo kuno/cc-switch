@@ -162,6 +162,7 @@ export function SharedRuntimeAppCard({
         className="gap-1.5"
         disabled={Boolean(pendingAction)}
         aria-label={`Remove ${entry.providerName || entry.providerId} from ${appPresentation.label} failover queue`}
+        aria-busy={pendingAction === `remove-${entry.providerId}-${index}`}
         onClick={() => {
           void runMutation(
             `remove-${entry.providerId}-${index}`,
@@ -201,6 +202,7 @@ export function SharedRuntimeAppCard({
     <Card
       role="region"
       aria-label={`${appPresentation.label} runtime card`}
+      aria-busy={Boolean(pendingAction) || availableProvidersQuery.isFetching}
       className={cn(
         "ccswitch-openwrt-surface-card ccswitch-openwrt-surface-card--runtime rounded-3xl border shadow-sm",
         appPresentation.panelClassName,
@@ -359,6 +361,7 @@ export function SharedRuntimeAppCard({
                     checked={status.autoFailoverEnabled}
                     disabled={Boolean(pendingAction)}
                     aria-label={`${appPresentation.label} auto-failover`}
+                    aria-busy={pendingAction === "toggle-auto-failover"}
                     onCheckedChange={(enabled) => {
                       void runMutation("toggle-auto-failover", () =>
                         failoverControls!.setAutoFailoverEnabled(
@@ -389,6 +392,7 @@ export function SharedRuntimeAppCard({
                   </label>
                   <select
                     id={`${status.app}-failover-provider`}
+                    aria-label={`Saved providers available for ${appPresentation.label} failover queue`}
                     className="ccswitch-openwrt-field h-10 w-full rounded-md border border-border-default bg-background px-3 text-sm shadow-sm focus:border-border-active focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                     value={selectedProviderId}
                     disabled={addDisabled}
@@ -418,6 +422,7 @@ export function SharedRuntimeAppCard({
                     type="button"
                     className="gap-1.5"
                     disabled={addDisabled}
+                    aria-busy={pendingAction === `add-${selectedProviderId}`}
                     onClick={() => {
                       if (!selectedProviderId) {
                         return;
