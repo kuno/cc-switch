@@ -1269,6 +1269,7 @@ impl ProviderService {
                         variant.category,
                     )?;
                     state.db.delete_provider(app_type.as_str(), id)?;
+                    Self::evict_rate_limit_snapshot(state, id);
                     if was_current {
                         crate::services::OmoService::delete_config_file(variant)?;
                     }
@@ -1294,6 +1295,7 @@ impl ProviderService {
                 }
             }
             state.db.delete_provider(app_type.as_str(), id)?;
+            Self::evict_rate_limit_snapshot(state, id);
             return Ok(());
         }
 
@@ -1307,7 +1309,19 @@ impl ProviderService {
             ));
         }
 
-        state.db.delete_provider(app_type.as_str(), id)
+        state.db.delete_provider(app_type.as_str(), id)?;
+        Self::evict_rate_limit_snapshot(state, id);
+        Ok(())
+    }
+
+    /// 删除 Provider 时同步清理其速率限制快照（内存 + 持久化）
+    ///
+    /// `/api/quota` reads the in-memory `rate_limits` map directly; leaving a
+    /// snapshot behind after deletion surfaces as a ghost entry until the
+    /// read-time refresh catches it. This keeps both caches in sync with the
+    /// provider list.
+    fn evict_rate_limit_snapshot(state: &AppState, provider_id: &str) {
+        futures::executor::block_on(state.proxy_service.evict_rate_limit_snapshot(provider_id));
     }
 
     /// Remove provider from live config only (for additive mode apps like OpenCode, OpenClaw)
@@ -2421,14 +2435,17 @@ impl ProviderService {
             if p.apps.claude {
                 let claude_id = format!("universal-claude-{id}");
                 let _ = state.db.delete_provider("claude", &claude_id);
+                Self::evict_rate_limit_snapshot(state, &claude_id);
             }
             if p.apps.codex {
                 let codex_id = format!("universal-codex-{id}");
                 let _ = state.db.delete_provider("codex", &codex_id);
+                Self::evict_rate_limit_snapshot(state, &codex_id);
             }
             if p.apps.gemini {
                 let gemini_id = format!("universal-gemini-{id}");
                 let _ = state.db.delete_provider("gemini", &gemini_id);
+                Self::evict_rate_limit_snapshot(state, &gemini_id);
             }
         }
 

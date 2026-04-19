@@ -551,6 +551,14 @@ pub fn delete_provider(
             )
         })?;
 
+    if let Err(error) = db.delete_rate_limit_snapshot(&normalized_provider_id) {
+        log::warn!(
+            "failed to delete persisted rate limit snapshot for {}: {}",
+            normalized_provider_id,
+            error
+        );
+    }
+
     if profile.app_id == CODEX_APP_ID {
         if let Err(error) = delete_codex_auth_for_provider(&normalized_provider_id) {
             log::warn!(
