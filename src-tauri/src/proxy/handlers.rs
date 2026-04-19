@@ -490,6 +490,7 @@ mod tests {
     use crate::proxy::{
         failover_switch::FailoverSwitchManager,
         provider_router::ProviderRouter,
+        providers::gemini_shadow::GeminiShadowStore,
         rate_limit::new_rate_limit_store,
         server::ProxyState,
         types::{ProxyConfig, ProxyStatus},
@@ -510,6 +511,7 @@ mod tests {
             start_time: Arc::new(RwLock::new(None)),
             current_providers: current_providers.clone(),
             provider_router: Arc::new(ProviderRouter::new(db.clone())),
+            gemini_shadow: Arc::new(GeminiShadowStore::default()),
             copilot_auth: None,
             codex_oauth_auth: None,
             failover_manager: Arc::new(FailoverSwitchManager::new(db, current_providers)),
