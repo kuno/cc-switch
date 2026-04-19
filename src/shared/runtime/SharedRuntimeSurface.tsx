@@ -142,12 +142,12 @@ export function SharedRuntimeSurface({
       >
         <div className="space-y-1.5">
           <h2 className="text-2xl font-semibold tracking-tight">
-            Runtime Surface
+            Runtime status
           </h2>
           <p className="max-w-2xl text-sm text-muted-foreground">
             {failoverControls
-              ? "Shared runtime composition for service status, app health, and bounded failover controls."
-              : "Shared read-only runtime composition for service status, app health, and failover queue previews."}
+              ? "Review service status, provider health, and failover controls from one shared runtime surface."
+              : "Review service status, provider health, and failover state from one shared runtime surface."}
           </p>
         </div>
 
@@ -173,7 +173,7 @@ export function SharedRuntimeSurface({
 
       {refreshError ? (
         <SharedRuntimeInlineNote
-          title="Latest refresh failed"
+          title="Refresh failed. Showing the last available status."
           description={refreshError}
           tone="warning"
         />

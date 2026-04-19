@@ -133,7 +133,7 @@ describe("SharedRuntimeAppCard", () => {
     expect(screen.getByText("Active provider ID: provider-a")).toBeInTheDocument();
     expect(screen.getByText("Proxy enabled")).toBeInTheDocument();
     expect(screen.getByText("Auto-failover enabled")).toBeInTheDocument();
-    expect(screen.getByText("Read only")).toBeInTheDocument();
+    expect(screen.getByText("Read-only")).toBeInTheDocument();
     expect(screen.getByText("3")).toBeInTheDocument();
     expect(screen.getByText("2 queued")).toBeInTheDocument();
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
