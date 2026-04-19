@@ -129,6 +129,7 @@ export function SharedRuntimeSurface({
     <section
       data-ccswitch-region="runtime-surface"
       data-ccswitch-layout="embedded-stack"
+      aria-busy={runtimeQuery.isFetching}
       className={cn(
         "ccswitch-openwrt-page-section ccswitch-openwrt-page-section--runtime space-y-5",
         className,
@@ -155,6 +156,7 @@ export function SharedRuntimeSurface({
           variant="outline"
           size="sm"
           className="ccswitch-openwrt-page-action"
+          aria-busy={runtimeQuery.isFetching}
           onClick={() => {
             void runtimeQuery.refetch();
           }}
