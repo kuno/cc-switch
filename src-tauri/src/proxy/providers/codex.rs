@@ -1162,6 +1162,12 @@ mod tests {
         }
     }
 
+    fn create_provider_with_id(id: &str, config: serde_json::Value) -> Provider {
+        let mut provider = create_provider(config);
+        provider.id = id.to_string();
+        provider
+    }
+
     #[test]
     fn grok_build_toml_exposes_upstream_credentials_and_model() {
         let adapter = CodexAdapter::new();
@@ -1471,6 +1477,21 @@ experimental_bearer_token = "sk-config-key"
         let provider = create_provider(json!({
             "auth_mode": "client_passthrough"
         }));
+
+        assert!(adapter.extract_auth(&provider).is_none());
+        assert!(adapter.allows_inbound_auth_passthrough(&provider));
+    }
+
+    #[test]
+    fn test_extract_auth_official_provider_without_auth_mode_allows_passthrough() {
+        let adapter = CodexAdapter::new();
+        let provider = create_provider_with_id(
+            "codex-official",
+            json!({
+                "auth": {},
+                "config": ""
+            }),
+        );
 
         assert!(adapter.extract_auth(&provider).is_none());
         assert!(adapter.allows_inbound_auth_passthrough(&provider));
