@@ -16,7 +16,7 @@ export function SharedRuntimeStatusChip({
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium",
+        "ccswitch-openwrt-status-chip inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium",
         SHARED_RUNTIME_CHIP_CLASSNAMES[tone],
         className,
       )}

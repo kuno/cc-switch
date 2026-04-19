@@ -4,10 +4,7 @@ import { Loader2, RefreshCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { emptySharedProviderView } from "@/shared/providers/domain";
-import type {
-  SharedRuntimeAppId,
-  SharedRuntimeAppStatus,
-} from "./domain";
+import type { SharedRuntimeAppId, SharedRuntimeAppStatus } from "./domain";
 import {
   supportsRuntimeFailoverControls,
   type RuntimeSurfacePlatformAdapter,
@@ -22,8 +19,11 @@ import {
 } from "./ui";
 
 const RUNTIME_QUERY_KEY = ["shared-runtime-surface"] as const;
-const RUNTIME_APP_ORDER = ["claude", "codex", "gemini"] as const satisfies
-  readonly SharedRuntimeAppId[];
+const RUNTIME_APP_ORDER = [
+  "claude",
+  "codex",
+  "gemini",
+] as const satisfies readonly SharedRuntimeAppId[];
 
 export interface SharedRuntimeSurfaceProps {
   adapter: RuntimeSurfacePlatformAdapter;
@@ -38,7 +38,9 @@ function getErrorMessage(error: unknown): string {
   return "Unable to load runtime status.";
 }
 
-function createEmptyAppStatus(appId: SharedRuntimeAppId): SharedRuntimeAppStatus {
+function createEmptyAppStatus(
+  appId: SharedRuntimeAppId,
+): SharedRuntimeAppStatus {
   return {
     app: appId,
     providerCount: 0,
@@ -124,9 +126,14 @@ export function SharedRuntimeSurface({
   }
 
   return (
-    <section className={cn("space-y-6", className)}>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-1">
+    <section
+      className={cn(
+        "ccswitch-openwrt-page-section ccswitch-openwrt-page-section--runtime space-y-6",
+        className,
+      )}
+    >
+      <div className="ccswitch-openwrt-page-header flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1.5">
           <h2 className="text-2xl font-semibold tracking-tight">
             Runtime Surface
           </h2>
@@ -141,6 +148,7 @@ export function SharedRuntimeSurface({
           type="button"
           variant="outline"
           size="sm"
+          className="ccswitch-openwrt-page-action"
           onClick={() => {
             void runtimeQuery.refetch();
           }}

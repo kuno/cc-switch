@@ -306,7 +306,7 @@ function getProviderRegionDescription(
 
 function LoadingState() {
   return (
-    <div className="space-y-4 rounded-2xl border border-dashed border-border-default bg-muted/10 p-5">
+    <div className="ccswitch-openwrt-state-shell space-y-4 rounded-2xl border border-dashed border-border-default bg-muted/10 p-5">
       <div className="flex items-center gap-3 text-sm text-muted-foreground">
         <Loader2 className="h-5 w-5 animate-spin" />
         <p>Loading providers...</p>
@@ -315,7 +315,7 @@ function LoadingState() {
         {Array.from({ length: 2 }).map((_, index) => (
           <div
             key={index}
-            className="space-y-3 rounded-2xl border border-border-default/70 bg-background p-4"
+            className="ccswitch-openwrt-group ccswitch-openwrt-group--raised space-y-3 rounded-2xl border border-border-default/70 bg-background p-4"
           >
             <div className="h-4 w-1/3 animate-pulse rounded bg-muted" />
             <div className="h-3 w-4/5 animate-pulse rounded bg-muted" />
@@ -332,7 +332,7 @@ function LoadingState() {
 
 function ErrorState({ onRetry }: { onRetry: () => void }) {
   return (
-    <div className="flex min-h-56 flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-destructive/40 px-6 text-center">
+    <div className="ccswitch-openwrt-state-shell ccswitch-openwrt-state-shell--warning flex min-h-56 flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-destructive/40 px-6 text-center">
       <div className="rounded-full bg-destructive/10 p-3 text-destructive">
         <AlertCircle className="h-6 w-6" />
       </div>
@@ -359,7 +359,7 @@ function EmptyState({
   onAdd: () => void;
 }) {
   return (
-    <div className="flex min-h-64 flex-col items-center justify-center gap-4 rounded-2xl border border-dashed px-6 text-center">
+    <div className="ccswitch-openwrt-state-shell flex min-h-64 flex-col items-center justify-center gap-4 rounded-2xl border border-dashed px-6 text-center">
       <div className="rounded-full bg-muted p-3 text-muted-foreground">
         <Plus className="h-6 w-6" />
       </div>
@@ -392,7 +392,7 @@ function SearchEmptyState({
   onClear: () => void;
 }) {
   return (
-    <div className="flex min-h-56 flex-col items-center justify-center gap-3 rounded-2xl border border-dashed px-6 text-center">
+    <div className="ccswitch-openwrt-state-shell flex min-h-56 flex-col items-center justify-center gap-3 rounded-2xl border border-dashed px-6 text-center">
       <div className="rounded-full bg-muted p-3 text-muted-foreground">
         <AlertCircle className="h-5 w-5" />
       </div>
@@ -750,9 +750,14 @@ export function SharedProviderManager({
   }
 
   return (
-    <div className={cn("space-y-4", className)}>
-      <Card className="overflow-hidden rounded-[28px] border-border-default/80 shadow-sm">
-        <CardHeader className="gap-5 border-b border-border-default bg-gradient-to-br from-background via-background to-muted/30">
+    <div
+      className={cn(
+        "ccswitch-openwrt-page-section ccswitch-openwrt-page-section--providers space-y-4",
+        className,
+      )}
+    >
+      <Card className="ccswitch-openwrt-surface-card overflow-hidden rounded-[28px] border-border-default/80 shadow-sm">
+        <CardHeader className="ccswitch-openwrt-page-header gap-5 border-b border-border-default bg-gradient-to-br from-background via-background to-muted/30">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="space-y-2">
               <CardTitle className="text-xl">Provider manager</CardTitle>
@@ -772,6 +777,7 @@ export function SharedProviderManager({
                     type="button"
                     className={cn(
                       "rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors",
+                      "ccswitch-openwrt-app-switch",
                       active
                         ? appPresentation.accentClassName
                         : "border-border-default bg-background text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -789,7 +795,7 @@ export function SharedProviderManager({
           </div>
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.6fr)]">
-            <section className="rounded-[24px] border border-border-default/80 bg-background/80 p-4 shadow-sm sm:p-5">
+            <section className="ccswitch-openwrt-group ccswitch-openwrt-group--raised rounded-[24px] border border-border-default/80 bg-background/80 p-4 shadow-sm sm:p-5">
               <div className="flex flex-wrap items-center gap-2">
                 <span
                   className={cn(
@@ -826,7 +832,7 @@ export function SharedProviderManager({
 
             <section
               className={cn(
-                "rounded-[24px] border p-4 shadow-sm sm:p-5",
+                "ccswitch-openwrt-group rounded-[24px] border p-4 shadow-sm sm:p-5",
                 currentActiveProvider
                   ? currentPresentation.panelClassName
                   : "border-border-default/80 bg-muted/15",
@@ -854,6 +860,7 @@ export function SharedProviderManager({
             <Alert
               variant={notice.tone === "error" ? "destructive" : "default"}
               className={cn(
+                "ccswitch-openwrt-shell-alert",
                 notice.tone === "success" &&
                   "border-emerald-500/30 bg-emerald-500/5 text-emerald-950 dark:text-emerald-100",
               )}
@@ -986,7 +993,7 @@ export function SharedProviderManager({
         }}
       >
         <DialogContent
-          className="ccswitch-openwrt-provider-ui-dialog max-w-sm"
+          className="ccswitch-openwrt-provider-ui-dialog ccswitch-openwrt-dialog-shell max-w-sm"
           overlayClassName="ccswitch-openwrt-provider-ui-overlay"
           zIndex="alert"
         >
