@@ -2,11 +2,13 @@
 
 set -eu
 
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
-PROJECT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+SCRIPT_DIR=$(
+	CDPATH='' cd -- "$(dirname "$0")" && pwd
+)
+PROJECT_DIR=$(
+	CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd
+)
 EMITTED_DIR="$SCRIPT_DIR/luci-app-ccswitch/htdocs/luci-static/resources/ccswitch/provider-ui"
-EMITTED_BUNDLE="$EMITTED_DIR/ccswitch-provider-ui.js"
-EMITTED_STYLESHEET="$EMITTED_DIR/ccswitch-provider-ui.css"
 STAGED_DIR="$SCRIPT_DIR/provider-ui-dist"
 STAGED_BUNDLE="$STAGED_DIR/ccswitch-provider-ui.js"
 STAGED_STYLESHEET="$STAGED_DIR/ccswitch-provider-ui.css"
@@ -48,21 +50,6 @@ copy_optional_stylesheet() {
 	cp "$src" "$dest"
 }
 
-stage_bundle() {
-	src="$1"
-	stylesheet="$2"
-
-	[ -f "$src" ] || die "bundle source does not exist: $src"
-
-	if [ "$src" != "$STAGED_BUNDLE" ]; then
-		copy_bundle "$src" "$STAGED_DIR"
-	fi
-	copy_optional_stylesheet "$stylesheet" "$STAGED_DIR"
-
-	copy_bundle "$STAGED_BUNDLE" "$OUTPUT_DIR"
-	copy_optional_stylesheet "$STAGED_STYLESHEET" "$OUTPUT_DIR"
-}
-
 usage() {
 	cat <<'EOF'
 Usage:
@@ -71,8 +58,7 @@ Usage:
 Resolution order:
   1. $CCSWITCH_OPENWRT_PROVIDER_UI_BUNDLE if set
   2. staged bundle under openwrt/provider-ui-dist/
-  3. existing emitted bundle under luci-app-ccswitch/htdocs/...
-  4. build via `pnpm build:openwrt-provider-ui`
+  3. build via `pnpm build:openwrt-provider-ui`
 
 Note:
   An explicit CCSWITCH_OPENWRT_PROVIDER_UI_BUNDLE is copied only to the
@@ -116,11 +102,6 @@ if [ -f "$STAGED_BUNDLE" ]; then
 	exit 0
 fi
 
-if [ -f "$EMITTED_BUNDLE" ]; then
-	stage_bundle "$EMITTED_BUNDLE" "$EMITTED_STYLESHEET"
-	exit 0
-fi
-
 if command -v pnpm >/dev/null 2>&1; then
 	(
 		cd "$PROJECT_DIR"
@@ -133,4 +114,4 @@ if command -v pnpm >/dev/null 2>&1; then
 	exit 0
 fi
 
-die "OpenWrt provider UI bundle is missing. Either stage $STAGED_BUNDLE, set CCSWITCH_OPENWRT_PROVIDER_UI_BUNDLE, or make pnpm available to build it."
+die "OpenWrt provider UI bundle is missing. Either stage $STAGED_BUNDLE, set CCSWITCH_OPENWRT_PROVIDER_UI_BUNDLE, or make pnpm available so the bundle can be rebuilt."
