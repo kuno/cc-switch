@@ -1,5 +1,6 @@
 node_modules/
 dist/
+target/
 openwrt/luci-app-ccswitch/htdocs/luci-static/resources/ccswitch/provider-ui/
 release/
 .DS_Store

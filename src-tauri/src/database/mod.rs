@@ -25,10 +25,11 @@
 
 pub(crate) mod backup;
 mod dao;
+#[cfg(feature = "tauri-desktop")]
 mod migration;
 mod schema;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "tauri-desktop"))]
 mod tests;
 
 // DAO 类型导出供外部使用
