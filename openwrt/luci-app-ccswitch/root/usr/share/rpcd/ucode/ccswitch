@@ -265,6 +265,48 @@ function getAppRuntimeStatus(app) {
 	);
 }
 
+function getUsageSummary(app) {
+	let normalizedApp = normalizeApp(app);
+
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
+
+	return runResultCommand(
+		daemonCommand(`openwrt ${shellquote(normalizedApp)} get-usage-summary`)
+	);
+}
+
+function getProviderStats(app) {
+	let normalizedApp = normalizeApp(app);
+
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
+
+	return runResultCommand(
+		daemonCommand(`openwrt ${shellquote(normalizedApp)} get-provider-stats`)
+	);
+}
+
+function getRecentActivity(app) {
+	let normalizedApp = normalizeApp(app);
+	let result;
+
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
+
+	result = runReadCommand(
+		daemonCommand(`openwrt ${shellquote(normalizedApp)} get-recent-activity`)
+	);
+
+	if (!result.ok)
+		return commandFailure(result);
+
+	return {
+		ok: true,
+		recentActivityJson: result.output
+	};
+}
+
 function getAvailableFailoverProviders(app) {
 	let normalizedApp = normalizeApp(app);
 
@@ -486,6 +528,36 @@ return {
 
 			call: function(request) {
 				return getAppRuntimeStatus(request.args.app);
+			}
+		},
+
+		get_usage_summary: {
+			args: {
+				app: 'claude'
+			},
+
+			call: function(request) {
+				return getUsageSummary(request.args.app);
+			}
+		},
+
+		get_provider_stats: {
+			args: {
+				app: 'claude'
+			},
+
+			call: function(request) {
+				return getProviderStats(request.args.app);
+			}
+		},
+
+		get_recent_activity: {
+			args: {
+				app: 'claude'
+			},
+
+			call: function(request) {
+				return getRecentActivity(request.args.app);
 			}
 		},
 

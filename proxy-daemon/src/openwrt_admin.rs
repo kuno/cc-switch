@@ -4,6 +4,7 @@ use crate::database::Database;
 use crate::provider::Provider;
 use crate::proxy::server::populate_status_active_targets;
 use crate::proxy::types::{AppProxyConfig, GlobalProxyConfig, ProviderHealth, ProxyStatus};
+use crate::services::usage_stats::{LogFilters, ProviderStats, UsageSummary};
 use anyhow::{anyhow, Context};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -78,6 +79,32 @@ pub struct OpenWrtProviderView {
 pub struct OpenWrtProviderListView {
     pub active_provider_id: Option<String>,
     pub providers: Vec<OpenWrtProviderView>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtProviderStatsView {
+    pub providers: Vec<ProviderStats>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtRecentActivityItem {
+    pub request_id: String,
+    pub provider_id: String,
+    pub provider_name: String,
+    pub model: String,
+    pub total_tokens: u32,
+    pub total_cost: String,
+    pub status_code: u16,
+    pub latency_ms: u64,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtRecentActivityView {
+    pub entries: Vec<OpenWrtRecentActivityItem>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -444,6 +471,66 @@ pub async fn get_app_runtime_status(
 ) -> anyhow::Result<OpenWrtAppRuntimeStatusView> {
     openwrt_app_profile(app_type)?;
     build_app_runtime_status(db, app_type).await
+}
+
+pub fn get_usage_summary(
+    db: &Database,
+    app_type: &AppType,
+) -> anyhow::Result<UsageSummary> {
+    let profile = openwrt_app_profile(app_type)?;
+
+    db.get_usage_summary(None, None, Some(profile.app_id))
+        .map_err(|e| anyhow!("failed to read {} usage summary: {e}", profile.app_id))
+}
+
+pub fn get_provider_stats(
+    db: &Database,
+    app_type: &AppType,
+) -> anyhow::Result<OpenWrtProviderStatsView> {
+    let profile = openwrt_app_profile(app_type)?;
+    let providers = db
+        .get_provider_stats(Some(profile.app_id))
+        .map_err(|e| anyhow!("failed to read {} provider stats: {e}", profile.app_id))?;
+
+    Ok(OpenWrtProviderStatsView { providers })
+}
+
+pub fn get_recent_activity(
+    db: &Database,
+    app_type: &AppType,
+) -> anyhow::Result<OpenWrtRecentActivityView> {
+    let profile = openwrt_app_profile(app_type)?;
+    let logs = db
+        .get_request_logs(
+            &LogFilters {
+                app_type: Some(profile.app_id.to_string()),
+                ..Default::default()
+            },
+            0,
+            6,
+        )
+        .map_err(|e| anyhow!("failed to read {} recent activity: {e}", profile.app_id))?;
+
+    let entries = logs
+        .data
+        .into_iter()
+        .map(|item| OpenWrtRecentActivityItem {
+            request_id: item.request_id,
+            provider_id: item.provider_id.clone(),
+            provider_name: item.provider_name.unwrap_or(item.provider_id),
+            model: item.model,
+            total_tokens: item.input_tokens
+                + item.output_tokens
+                + item.cache_creation_tokens
+                + item.cache_read_tokens,
+            total_cost: item.total_cost_usd,
+            status_code: item.status_code,
+            latency_ms: item.latency_ms,
+            created_at: item.created_at,
+        })
+        .collect();
+
+    Ok(OpenWrtRecentActivityView { entries })
 }
 
 pub fn get_available_failover_providers(
