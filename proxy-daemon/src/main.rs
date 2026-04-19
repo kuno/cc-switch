@@ -7,83 +7,35 @@
 //!   cargo build --release --target mips-unknown-linux-musl    (MIPS)
 //!   cargo build --release --target aarch64-unknown-linux-musl (ARM64)
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Re-declare only the modules needed by the proxy subsystem.
-// Each `#[path]` points to the source file in src-tauri/src/.
-// `crate::` in those files resolves to THIS crate root, so every module
-// they reference with `crate::` must also appear here.
-// Sub-modules of directory modules (e.g. database/dao/) are resolved
-// automatically relative to the #[path]-specified file's directory.
-// ─────────────────────────────────────────────────────────────────────────────
-
-mod app_store;
-mod openwrt_admin;
-
-#[path = "../../src-tauri/src/app_config.rs"]
 mod app_config;
-
-#[path = "../../src-tauri/src/claude_mcp.rs"]
-mod claude_mcp;
-
-#[path = "../../src-tauri/src/codex_config.rs"]
+mod app_store;
 mod codex_config;
-
-#[path = "../../src-tauri/src/config.rs"]
 mod config;
-
-#[path = "../../src-tauri/src/database/mod.rs"]
-mod database;
-
-#[path = "../../src-tauri/src/error.rs"]
 mod error;
-
-#[path = "../../src-tauri/src/gemini_config.rs"]
 mod gemini_config;
-
-#[path = "../../src-tauri/src/gemini_mcp.rs"]
-mod gemini_mcp;
-
-#[path = "../../src-tauri/src/mcp/mod.rs"]
-mod mcp;
-
-#[path = "../../src-tauri/src/openclaw_config.rs"]
 mod openclaw_config;
-
-#[path = "../../src-tauri/src/opencode_config.rs"]
 mod opencode_config;
-
-#[path = "../../src-tauri/src/prompt.rs"]
+mod openwrt_admin;
+mod openwrt_http;
 mod prompt;
-
-#[path = "../../src-tauri/src/prompt_files.rs"]
 mod prompt_files;
-
-#[path = "../../src-tauri/src/provider.rs"]
 mod provider;
-
-#[path = "../../src-tauri/src/provider_defaults.rs"]
 mod provider_defaults;
-
-#[path = "../../src-tauri/src/proxy/mod.rs"]
-mod proxy;
-
-#[path = "../../src-tauri/src/settings.rs"]
 mod settings;
-
-#[path = "../../src-tauri/src/usage_script.rs"]
+mod shared_core;
+mod store;
 mod usage_script;
+mod version;
 
 mod services;
-
-#[path = "../../src-tauri/src/store.rs"]
-mod store;
+pub use shared_core::*;
 
 use std::io::Read;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-const OPENWRT_COMMAND_HELP: &str = "unsupported command. expected one of: `cc-switch openwrt get-runtime-status`, `cc-switch openwrt [claude|codex|gemini] get-runtime-status`, `cc-switch openwrt [claude|codex|gemini] get-usage-summary`, `cc-switch openwrt [claude|codex|gemini] get-provider-stats`, `cc-switch openwrt [claude|codex|gemini] get-recent-activity`, `cc-switch openwrt [claude|codex|gemini] get-active-provider`, `cc-switch openwrt [claude|codex|gemini] upsert-active-provider`, `cc-switch openwrt [claude|codex|gemini] list-providers`, `cc-switch openwrt [claude|codex|gemini] get-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] get-provider-failover <provider-id>`, `cc-switch openwrt [claude|codex|gemini] upsert-provider [provider-id]`, `cc-switch openwrt [claude|codex|gemini] delete-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] activate-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] get-available-failover-providers`, `cc-switch openwrt [claude|codex|gemini] add-to-failover-queue <provider-id>`, `cc-switch openwrt [claude|codex|gemini] remove-from-failover-queue <provider-id>`, `cc-switch openwrt [claude|codex|gemini] reorder-failover-queue`, `cc-switch openwrt [claude|codex|gemini] set-auto-failover-enabled <true|false>`, `cc-switch openwrt [claude|codex|gemini] set-max-retries <value>`, `cc-switch openwrt codex upload-codex-auth <provider-id>`, `cc-switch openwrt codex remove-codex-auth <provider-id>`";
+const OPENWRT_COMMAND_HELP: &str = "unsupported command. expected one of: `cc-switch openwrt get-meta`, `cc-switch openwrt get-runtime-status`, `cc-switch openwrt [claude|codex|gemini] get-runtime-status`, `cc-switch openwrt [claude|codex|gemini] get-config`, `cc-switch openwrt [claude|codex|gemini] set-config`, `cc-switch openwrt [claude|codex|gemini] get-usage-summary`, `cc-switch openwrt [claude|codex|gemini] get-provider-stats`, `cc-switch openwrt [claude|codex|gemini] get-recent-activity`, `cc-switch openwrt [claude|codex|gemini] get-request-logs [page] [page-size]`, `cc-switch openwrt [claude|codex|gemini] get-request-detail <request-id>`, `cc-switch openwrt [claude|codex|gemini] get-active-provider`, `cc-switch openwrt [claude|codex|gemini] upsert-active-provider`, `cc-switch openwrt [claude|codex|gemini] list-providers`, `cc-switch openwrt [claude|codex|gemini] get-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] get-provider-failover <provider-id>`, `cc-switch openwrt [claude|codex|gemini] upsert-provider [provider-id]`, `cc-switch openwrt [claude|codex|gemini] delete-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] activate-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] get-available-failover-providers`, `cc-switch openwrt [claude|codex|gemini] add-to-failover-queue <provider-id>`, `cc-switch openwrt [claude|codex|gemini] remove-from-failover-queue <provider-id>`, `cc-switch openwrt [claude|codex|gemini] reorder-failover-queue`, `cc-switch openwrt [claude|codex|gemini] set-auto-failover-enabled <true|false>`, `cc-switch openwrt [claude|codex|gemini] set-max-retries <value>`, `cc-switch openwrt codex upload-codex-auth <provider-id>`, `cc-switch openwrt codex remove-codex-auth <provider-id>`";
 const CODEX_AUTH_UPLOAD_LIMIT_BYTES: usize = 64 * 1024;
 
 #[tokio::main]
@@ -91,6 +43,14 @@ async fn main() -> anyhow::Result<()> {
     install_rustls_crypto_provider();
 
     let args: Vec<String> = std::env::args().skip(1).collect();
+
+    if matches!(
+        args.as_slice(),
+        [flag] if matches!(flag.as_str(), "--version" | "-V" | "version")
+    ) {
+        println!("{}", version::build_version());
+        return Ok(());
+    }
 
     if !args.is_empty() {
         init_logger("warn");
@@ -136,12 +96,28 @@ async fn run_cli(args: Vec<String>) -> anyhow::Result<()> {
     let tail = &args[(command_offset + 1).min(args.len())..];
 
     match (command, tail) {
+        (Some("get-meta"), []) => {
+            print_json(&openwrt_admin::get_admin_meta()?)?;
+            Ok(())
+        }
         (Some("get-runtime-status"), []) => {
             if command_offset == 1 {
                 print_json(&openwrt_admin::get_runtime_status(&db).await?)?;
             } else {
                 print_json(&openwrt_admin::get_app_runtime_status(&db, &app_type).await?)?;
             }
+            Ok(())
+        }
+        (Some("get-config"), []) => {
+            print_json(&openwrt_admin::get_app_proxy_config(&db, &app_type).await?)?;
+            Ok(())
+        }
+        (Some("set-config"), []) => {
+            let payload = serde_json::from_reader::<_, openwrt_admin::OpenWrtAppConfigPayload>(
+                std::io::stdin(),
+            )
+            .map_err(|e| anyhow::anyhow!("failed to parse app config JSON from stdin: {e}"))?;
+            print_json(&openwrt_admin::update_app_proxy_config(&db, &app_type, payload).await?)?;
             Ok(())
         }
         (Some("get-usage-summary"), []) => {
@@ -154,6 +130,45 @@ async fn run_cli(args: Vec<String>) -> anyhow::Result<()> {
         }
         (Some("get-recent-activity"), []) => {
             print_json(&openwrt_admin::get_recent_activity(&db, &app_type)?)?;
+            Ok(())
+        }
+        (Some("get-request-logs"), []) => {
+            print_json(&openwrt_admin::get_request_logs(
+                &db,
+                &app_type,
+                None,
+                None,
+                crate::services::usage_stats::LogFilters::default(),
+            )?)?;
+            Ok(())
+        }
+        (Some("get-request-logs"), [page]) => {
+            let page = parse_u32_arg("page", page)?;
+            print_json(&openwrt_admin::get_request_logs(
+                &db,
+                &app_type,
+                Some(page),
+                None,
+                crate::services::usage_stats::LogFilters::default(),
+            )?)?;
+            Ok(())
+        }
+        (Some("get-request-logs"), [page, page_size]) => {
+            let page = parse_u32_arg("page", page)?;
+            let page_size = parse_u32_arg("page size", page_size)?;
+            print_json(&openwrt_admin::get_request_logs(
+                &db,
+                &app_type,
+                Some(page),
+                Some(page_size),
+                crate::services::usage_stats::LogFilters::default(),
+            )?)?;
+            Ok(())
+        }
+        (Some("get-request-detail"), [request_id]) => {
+            print_json(&openwrt_admin::get_request_detail(
+                &db, &app_type, request_id,
+            )?)?;
             Ok(())
         }
         (Some("get-active-provider"), []) => {
@@ -278,6 +293,13 @@ fn parse_bool_flag(value: &str) -> anyhow::Result<bool> {
     }
 }
 
+fn parse_u32_arg(label: &str, value: &str) -> anyhow::Result<u32> {
+    value
+        .trim()
+        .parse::<u32>()
+        .map_err(|e| anyhow::anyhow!("invalid {label} `{value}`: {e}"))
+}
+
 fn print_json<T: serde::Serialize>(value: &T) -> anyhow::Result<()> {
     serde_json::to_writer_pretty(std::io::stdout(), value)?;
     println!();
@@ -353,7 +375,10 @@ fn sync_openwrt_host_proxy_into_runtime_state(db: &database::Database) -> anyhow
 }
 
 async fn run_daemon() -> anyhow::Result<()> {
-    log::info!("cc-switch proxy daemon starting...");
+    log::info!(
+        "cc-switch proxy daemon starting ({})...",
+        version::build_version()
+    );
 
     // Initialize database (uses ~/.cc-switch/cc-switch.db by default)
     let db =

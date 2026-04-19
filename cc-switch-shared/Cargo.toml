@@ -1,0 +1,15 @@
+[package]
+name = "cc-switch-shared"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85.0"
+
+[dependencies]
+chrono = { version = "0.4", features = ["serde"] }
+indexmap = { version = "2", features = ["serde"] }
+once_cell = "1.21.3"
+rusqlite = { version = "0.31", features = ["bundled", "backup", "hooks"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["preserve_order"] }
+thiserror = "2.0"
+toml = "0.8"

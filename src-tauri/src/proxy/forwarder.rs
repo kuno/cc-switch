@@ -96,22 +96,24 @@ fn build_effective_auth_headers(
 
 const CODEX_CHATGPT_BACKEND_BASE_URL: &str = "https://chatgpt.com/backend-api/codex";
 const CODEX_REASONING_ENCRYPTED_CONTENT: &str = "reasoning.encrypted_content";
+const CODEX_OFFICIAL_PROVIDER_ID: &str = "codex-official";
 const CODEX_OAUTH_AUTH_MODE: &str = "codex_oauth";
 const CODEX_LEGACY_CLIENT_PASSTHROUGH_AUTH_MODE: &str = "client_passthrough";
 
 fn is_codex_oauth_upload_eligible(app_type_str: &str, provider: &Provider, base_url: &str) -> bool {
     app_type_str == AppType::Codex.as_str()
         && base_url.contains("api.openai.com")
-        && provider
-            .settings_config
-            .get("auth_mode")
-            .and_then(|value| value.as_str())
-            .is_some_and(|value| {
-                matches!(
-                    value,
-                    CODEX_OAUTH_AUTH_MODE | CODEX_LEGACY_CLIENT_PASSTHROUGH_AUTH_MODE
-                )
-            })
+        && (provider.id == CODEX_OFFICIAL_PROVIDER_ID
+            || provider
+                .settings_config
+                .get("auth_mode")
+                .and_then(|value| value.as_str())
+                .is_some_and(|value| {
+                    matches!(
+                        value,
+                        CODEX_OAUTH_AUTH_MODE | CODEX_LEGACY_CLIENT_PASSTHROUGH_AUTH_MODE
+                    )
+                }))
 }
 
 fn apply_codex_oauth_body_contract(body: &mut Value) {
@@ -2310,6 +2312,30 @@ mod tests {
             id: "codex".to_string(),
             name: "Codex".to_string(),
             settings_config: json!({ "auth_mode": "client_passthrough" }),
+            website_url: None,
+            category: Some("codex".to_string()),
+            created_at: None,
+            sort_index: None,
+            notes: None,
+            meta: None,
+            icon: None,
+            icon_color: None,
+            in_failover_queue: false,
+        };
+
+        assert!(is_codex_oauth_upload_eligible(
+            AppType::Codex.as_str(),
+            &provider,
+            "https://api.openai.com/v1"
+        ));
+    }
+
+    #[test]
+    fn codex_oauth_upload_is_eligible_for_official_provider_without_auth_mode() {
+        let provider = Provider {
+            id: "codex-official".to_string(),
+            name: "OpenAI Official".to_string(),
+            settings_config: json!({ "auth": {}, "config": "" }),
             website_url: None,
             category: Some("codex".to_string()),
             created_at: None,
