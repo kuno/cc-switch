@@ -15,7 +15,6 @@ use serde_json::Value;
 use crate::app_config::AppType;
 use crate::error::AppError;
 use crate::provider::{Provider, UsageResult};
-use crate::services::mcp::McpService;
 use crate::settings::CustomEndpoint;
 use crate::store::AppState;
 
@@ -39,6 +38,16 @@ use live::{
     remove_opencode_provider_from_live, write_gemini_live,
 };
 use usage::validate_usage_script;
+
+#[cfg(feature = "tauri-desktop")]
+fn sync_enabled_mcp(state: &AppState) -> Result<(), AppError> {
+    crate::services::mcp::McpService::sync_all_enabled(state)
+}
+
+#[cfg(not(feature = "tauri-desktop"))]
+fn sync_enabled_mcp(_state: &AppState) -> Result<(), AppError> {
+    Ok(())
+}
 
 /// Provider business logic service
 pub struct ProviderService;
@@ -1230,8 +1239,7 @@ impl ProviderService {
                 }
             } else {
                 write_live_with_common_config(state.db.as_ref(), &app_type, &provider)?;
-                // Sync MCP
-                McpService::sync_all_enabled(state)?;
+                sync_enabled_mcp(state)?;
             }
         }
 
@@ -1577,8 +1585,7 @@ impl ProviderService {
             }
         }
 
-        // Sync MCP
-        McpService::sync_all_enabled(state)?;
+        sync_enabled_mcp(state)?;
 
         Ok(result)
     }
