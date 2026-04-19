@@ -1,17 +1,15 @@
+use crate::config::get_app_config_dir;
 use anyhow::{anyhow, Context};
 use serde::{Deserialize, Serialize};
 use std::fs;
 #[cfg(unix)]
 use std::fs::File;
 use std::io::Write;
-use std::path::{Component, PathBuf};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
-use crate::config::get_app_config_dir;
+use std::path::{Component, PathBuf};
 
-use super::codex_oauth_auth::{
-    parse_chatgpt_account_id_from_jwt, parse_jwt_exp_from_jwt,
-};
+use super::codex_oauth_auth::{parse_chatgpt_account_id_from_jwt, parse_jwt_exp_from_jwt};
 
 const CODEX_AUTH_DIR: &str = "codex_auth";
 const CODEX_AUTH_UPLOAD_LIMIT_BYTES: usize = 64 * 1024;
@@ -66,9 +64,10 @@ fn validate_provider_id(provider_id: &str) -> anyhow::Result<()> {
         return Err(anyhow!("provider id must be relative"));
     }
 
-    if path.components().any(|component| {
-        !matches!(component, Component::Normal(_))
-    }) {
+    if path
+        .components()
+        .any(|component| !matches!(component, Component::Normal(_)))
+    {
         return Err(anyhow!("provider id contains invalid path components"));
     }
 
@@ -152,15 +151,20 @@ pub(crate) fn save_codex_auth_for_provider(
         .parent()
         .ok_or_else(|| anyhow!("invalid codex auth path"))?;
 
-    fs::create_dir_all(parent)
-        .with_context(|| format!("failed to create {}", parent.display()))?;
+    fs::create_dir_all(parent).with_context(|| format!("failed to create {}", parent.display()))?;
 
     let mut temp_file = tempfile::NamedTempFile::new_in(parent)
         .with_context(|| format!("failed to create temp file in {}", parent.display()))?;
     #[cfg(unix)]
     {
-        fs::set_permissions(temp_file.path(), fs::Permissions::from_mode(0o600))
-            .with_context(|| format!("failed to set permissions on {}", temp_file.path().display()))?;
+        fs::set_permissions(temp_file.path(), fs::Permissions::from_mode(0o600)).with_context(
+            || {
+                format!(
+                    "failed to set permissions on {}",
+                    temp_file.path().display()
+                )
+            },
+        )?;
     }
     temp_file
         .write_all(raw_bytes)
@@ -382,11 +386,9 @@ mod tests {
         .to_string();
         let error = save_codex_auth_for_provider("provider-1", payload.as_bytes())
             .expect_err("missing access token should fail");
-        assert!(
-            error
-                .to_string()
-                .contains("tokens.access_token must be a non-empty string")
-        );
+        assert!(error
+            .to_string()
+            .contains("tokens.access_token must be a non-empty string"));
     }
 
     #[cfg(unix)]
