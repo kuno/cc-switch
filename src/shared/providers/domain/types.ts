@@ -58,6 +58,39 @@ export interface SharedProviderView {
   active: boolean;
 }
 
+export interface SharedProviderHealth {
+  providerId: string;
+  observed: boolean;
+  healthy: boolean;
+  consecutiveFailures: number;
+  lastSuccessAt: string | null;
+  lastFailureAt: string | null;
+  lastError: string | null;
+  updatedAt: string | null;
+}
+
+export interface SharedProviderFailoverQueueEntry {
+  providerId: string;
+  providerName: string;
+  sortIndex: number | null;
+  active: boolean;
+  health: SharedProviderHealth;
+}
+
+export interface SharedProviderFailoverState {
+  providerId: string;
+  proxyEnabled: boolean;
+  autoFailoverEnabled: boolean;
+  maxRetries: number;
+  activeProviderId: string | null;
+  inFailoverQueue: boolean;
+  queuePosition: number | null;
+  sortIndex: number | null;
+  providerHealth: SharedProviderHealth;
+  failoverQueueDepth: number;
+  failoverQueue: SharedProviderFailoverQueueEntry[];
+}
+
 export interface SharedProviderState {
   phase2Available: boolean;
   providers: SharedProviderView[];
