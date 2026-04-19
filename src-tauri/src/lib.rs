@@ -68,6 +68,12 @@ use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use tauri::RunEvent;
 use tauri::{Emitter, Manager};
 
+fn install_rustls_crypto_provider() {
+    if rustls::crypto::CryptoProvider::get_default().is_none() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    }
+}
+
 fn redact_url_for_log(url_str: &str) -> String {
     match url::Url::parse(url_str) {
         Ok(url) => {
@@ -201,6 +207,8 @@ fn macos_tray_icon() -> Option<Image<'static>> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    install_rustls_crypto_provider();
+
     // 设置 panic hook，在应用崩溃时记录日志到 <app_config_dir>/crash.log（默认 ~/.cc-switch/crash.log）
     panic_hook::setup_panic_hook();
 
