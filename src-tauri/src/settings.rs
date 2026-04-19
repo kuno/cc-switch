@@ -7,16 +7,7 @@ use std::sync::{OnceLock, RwLock};
 use crate::app_config::AppType;
 use crate::error::AppError;
 use crate::services::skill::{SkillStorageLocation, SyncMethod};
-
-/// 自定义端点配置（历史兼容，实际存储在 provider.meta.custom_endpoints）
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CustomEndpoint {
-    pub url: String,
-    pub added_at: i64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub last_used: Option<i64>,
-}
+pub use cc_switch_shared::settings::CustomEndpoint;
 
 fn default_true() -> bool {
     true

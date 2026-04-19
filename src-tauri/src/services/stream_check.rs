@@ -19,6 +19,10 @@ use crate::proxy::providers::transform_gemini::anthropic_to_gemini;
 use crate::proxy::providers::transform_responses::anthropic_to_responses;
 use crate::proxy::providers::{get_adapter, AuthInfo, AuthStrategy};
 
+const CODEX_OFFICIAL_PROVIDER_ID: &str = "codex-official";
+const CODEX_OAUTH_AUTH_MODE: &str = "codex_oauth";
+const CODEX_LEGACY_CLIENT_PASSTHROUGH_AUTH_MODE: &str = "client_passthrough";
+
 /// 健康状态枚举
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -48,6 +52,25 @@ pub struct StreamCheckConfig {
 
 fn default_test_prompt() -> String {
     "Who are you?".to_string()
+}
+
+fn is_codex_oauth_provider(provider: &Provider) -> bool {
+    provider.id == CODEX_OFFICIAL_PROVIDER_ID
+        || provider
+            .meta
+            .as_ref()
+            .and_then(|meta| meta.provider_type.as_deref())
+            == Some(CODEX_OAUTH_AUTH_MODE)
+        || provider
+            .settings_config
+            .get("auth_mode")
+            .and_then(|value| value.as_str())
+            .is_some_and(|auth_mode| {
+                matches!(
+                    auth_mode,
+                    CODEX_OAUTH_AUTH_MODE | CODEX_LEGACY_CLIENT_PASSTHROUGH_AUTH_MODE
+                )
+            })
 }
 
 impl Default for StreamCheckConfig {
@@ -353,11 +376,7 @@ impl StreamCheckService {
         });
         // Codex OAuth (ChatGPT Plus/Pro 反代) 需要 store:false + include 标记，
         // 否则 Stream Check 会和生产路径一样被服务端 400 拒绝。
-        let is_codex_oauth = provider
-            .meta
-            .as_ref()
-            .and_then(|m| m.provider_type.as_deref())
-            == Some("codex_oauth");
+        let is_codex_oauth = is_codex_oauth_provider(provider);
 
         let body = if is_openai_responses {
             anthropic_to_responses(anthropic_body, Some(&provider.id), is_codex_oauth)
@@ -1832,5 +1851,17 @@ mod tests {
                 "https://api.openai.com/v1/responses",
             ]
         );
+    }
+
+    #[test]
+    fn test_official_codex_provider_uses_codex_oauth_stream_contract() {
+        let provider = Provider::with_id(
+            "codex-official".to_string(),
+            "OpenAI Official".to_string(),
+            serde_json::json!({ "auth": {}, "config": "" }),
+            None,
+        );
+
+        assert!(is_codex_oauth_provider(&provider));
     }
 }
