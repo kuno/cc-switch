@@ -511,6 +511,8 @@ describe("OpenWrt settings shared-provider shell", () => {
     const restartButtons = Array.from(
       shellNodes.root.querySelectorAll("button"),
     ).map((button) => button.textContent?.trim());
+    const runtimeShell = shellNodes.runtimeMountRoot.closest("section");
+    const providerShell = shellNodes.mountRoot.closest("section");
 
     expect(statusNodes.summaryValue.textContent).toBe(
       "Provider changes are saved in the shared editor. Use the LuCI restart control to apply them on the running service.",
@@ -519,6 +521,9 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(shellChildren).toHaveLength(2);
     expect(shellChildren[0]).toBe(shellNodes.sharedChromeRoot);
     expect(shellChildren[1].className).toBe("ccswitch-host-shell-grid");
+    expect(shellNodes.sharedChromeRoot?.className).toContain(
+      "ccswitch-host-shell-chrome",
+    );
     expect(shellText).toContain("Runtime Status");
     expect(shellText).toContain("Provider Manager");
     expect(shellText).toContain(
@@ -534,6 +539,18 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(restartButtons).toEqual(["Restart Service"]);
     expect(shellNodes.runtimeMountRoot.id).toBe("ccswitch-shared-runtime-surface-root");
     expect(shellNodes.mountRoot.id).toBe("ccswitch-shared-provider-ui-root");
+    expect(shellNodes.runtimeMountRoot.className).toBe(
+      "ccswitch-host-shared-mount ccswitch-host-runtime-mount",
+    );
+    expect(shellNodes.mountRoot.className).toBe(
+      "ccswitch-host-shared-mount ccswitch-host-provider-mount",
+    );
+    expect(runtimeShell?.className).toBe(
+      "ccswitch-host-surface ccswitch-host-runtime-shell",
+    );
+    expect(providerShell?.className).toBe(
+      "ccswitch-host-surface ccswitch-host-provider-shell",
+    );
     expect(shellChildren[1].contains(shellNodes.runtimeMountRoot)).toBe(true);
     expect(shellChildren[1].contains(shellNodes.mountRoot)).toBe(true);
     expect(shellNodes.root.querySelector("main, nav, aside, [role='navigation']")).toBeNull();
@@ -541,6 +558,38 @@ describe("OpenWrt settings shared-provider shell", () => {
     for (const phrase of FORBIDDEN_DESKTOP_SHELL_PHRASES) {
       expect(combinedText).not.toContain(phrase);
     }
+  });
+
+  it("injects explicit host-shell layout fallbacks for narrow widths", () => {
+    const { settings } = loadSettingsView("claude");
+    const uiState = settings.createUiState(true, "claude");
+
+    settings.createStatusPanel(uiState);
+
+    const styleNode = document.getElementById(
+      "ccswitch-openwrt-host-page-shell-styles",
+    );
+    const styleText = styleNode?.textContent ?? "";
+
+    expect(styleNode).not.toBeNull();
+    expect(styleText).toContain(
+      "#ccswitch-host-page-shell .ccswitch-host-shell-grid{display:grid;gap:.9rem;align-items:start;grid-template-columns:minmax(0,1fr) minmax(0,1.12fr)}",
+    );
+    expect(styleText).toContain(
+      "#ccswitch-host-page-shell .ccswitch-host-shell-grid>.ccswitch-host-surface,#ccswitch-host-page-shell .ccswitch-host-settings-grid>.ccswitch-host-surface{min-width:0}",
+    );
+    expect(styleText).toContain(
+      "#ccswitch-host-page-shell .ccswitch-host-map .cbi-value{display:grid;grid-template-columns:minmax(0,10.5rem) minmax(0,1fr);column-gap:.9rem;row-gap:.35rem;align-items:flex-start;margin:0;padding:.8rem 0;border-top:1px solid #eef2f7}",
+    );
+    expect(styleText).toContain(
+      "@media (max-width:1120px){#ccswitch-host-page-shell .ccswitch-host-shell-grid,#ccswitch-host-page-shell .ccswitch-host-settings-grid{grid-template-columns:minmax(0,1fr)}#ccswitch-host-page-shell .ccswitch-host-section-title{font-size:1.18rem}}",
+    );
+    expect(styleText).toContain(
+      "@media (max-width:820px){#ccswitch-host-page-shell .ccswitch-host-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}#ccswitch-host-page-shell .ccswitch-host-map .cbi-value{grid-template-columns:minmax(0,1fr);row-gap:.4rem}#ccswitch-host-page-shell .ccswitch-host-surface{padding:.95rem}#ccswitch-host-page-shell .ccswitch-host-shared-mount,#ccswitch-host-page-shell #ccswitch-shared-provider-ui-root,#ccswitch-host-page-shell #ccswitch-shared-runtime-surface-root{margin-top:.75rem}}",
+    );
+    expect(styleText).toContain(
+      "@media (max-width:640px){#ccswitch-host-page-shell .ccswitch-host-status-grid{grid-template-columns:minmax(0,1fr)}#ccswitch-host-page-shell .ccswitch-host-actions,#ccswitch-host-page-shell .ccswitch-host-map .cbi-page-actions,#ccswitch-host-page-shell .ccswitch-host-fallback-card-header,#ccswitch-host-page-shell .ccswitch-host-fallback-card-actions{flex-direction:column;align-items:stretch}#ccswitch-host-page-shell .ccswitch-host-actions .cbi-button,#ccswitch-host-page-shell .ccswitch-host-map .cbi-page-actions .cbi-button{width:100%}}",
+    );
   });
 
   it("mounts the runtime surface above the provider manager through a separate bundle contract", async () => {

@@ -909,71 +909,75 @@ return view.extend({
 		style = document.createElement('style');
 		style.id = HOST_PAGE_STYLE_ID;
 		style.textContent = [
-			'#ccswitch-host-page-shell{display:flex;flex-direction:column;gap:1.25rem;margin-top:0.25rem;color:#111827}',
-			'#ccswitch-host-page-shell .ccswitch-host-surface{position:relative;margin:0;border:1px solid #e4e4e7;border-radius:22px;background:linear-gradient(180deg,#ffffff 0%,#fcfcfd 100%);box-shadow:0 20px 45px -34px rgba(15,23,42,.42);padding:1.25rem 1.35rem}',
+			'#ccswitch-host-page-shell{display:flex;flex-direction:column;gap:1rem;margin-top:0.2rem;color:#111827}',
+			'#ccswitch-host-page-shell .ccswitch-host-surface{position:relative;margin:0;border:1px solid #e4e4e7;border-radius:18px;background:linear-gradient(180deg,#ffffff 0%,#fcfcfd 100%);box-shadow:0 18px 36px -32px rgba(15,23,42,.42);padding:1.05rem 1.1rem}',
 			'#ccswitch-host-page-shell .ccswitch-host-surface-muted{background:linear-gradient(180deg,#fcfcfd 0%,#f8fafc 100%)}',
-			'#ccswitch-host-page-shell .ccswitch-host-shell-stack{display:flex;flex-direction:column;gap:1rem}',
-			'#ccswitch-host-page-shell .ccswitch-host-shell-grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}',
+			'#ccswitch-host-page-shell .ccswitch-host-shell-stack{display:flex;flex-direction:column;gap:.9rem}',
+			'#ccswitch-host-page-shell .ccswitch-host-shell-grid{display:grid;gap:.9rem;align-items:start;grid-template-columns:minmax(0,1fr) minmax(0,1.12fr)}',
+			'#ccswitch-host-page-shell .ccswitch-host-shell-grid>.ccswitch-host-surface,#ccswitch-host-page-shell .ccswitch-host-settings-grid>.ccswitch-host-surface{min-width:0}',
+			'#ccswitch-host-page-shell .ccswitch-host-runtime-shell,#ccswitch-host-page-shell .ccswitch-host-provider-shell{display:flex;flex-direction:column;gap:.8rem}',
 			'#ccswitch-host-page-shell .ccswitch-host-eyebrow{margin:0 0 .45rem;font-size:.72rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#2563eb}',
-			'#ccswitch-host-page-shell .ccswitch-host-section-title{margin:0;font-size:1.35rem;line-height:1.25;font-weight:700;color:#0f172a}',
-			'#ccswitch-host-page-shell .ccswitch-host-section-description{margin:.55rem 0 0;color:#475569;max-width:58rem;line-height:1.6}',
-			'#ccswitch-host-page-shell .ccswitch-host-chip-row{display:flex;flex-wrap:wrap;gap:.65rem;margin-top:1rem}',
-			'#ccswitch-host-page-shell .ccswitch-host-chip{display:inline-flex;align-items:center;gap:.4rem;padding:.45rem .8rem;border:1px solid #dbe4f0;border-radius:999px;background:#f8fafc;color:#334155;font-size:.82rem;font-weight:600}',
+			'#ccswitch-host-page-shell .ccswitch-host-section-title{margin:0;font-size:1.28rem;line-height:1.24;font-weight:700;color:#0f172a}',
+			'#ccswitch-host-page-shell .ccswitch-host-section-description{margin:.45rem 0 0;color:#475569;max-width:58rem;line-height:1.55}',
+			'#ccswitch-host-page-shell .ccswitch-host-chip-row{display:flex;flex-wrap:wrap;gap:.55rem;margin-top:.85rem}',
+			'#ccswitch-host-page-shell .ccswitch-host-chip{display:inline-flex;align-items:center;gap:.35rem;padding:.38rem .72rem;border:1px solid #dbe4f0;border-radius:999px;background:#f8fafc;color:#334155;font-size:.8rem;font-weight:600}',
 			'#ccswitch-host-page-shell .ccswitch-host-status-grid{display:grid;gap:.8rem;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-top:1rem}',
-			'#ccswitch-host-page-shell .ccswitch-host-stat{padding:.95rem 1rem;border:1px solid #e5e7eb;border-radius:18px;background:#f8fafc}',
+			'#ccswitch-host-page-shell .ccswitch-host-stat{padding:.82rem .9rem;border:1px solid #e5e7eb;border-radius:16px;background:#f8fafc}',
 			'#ccswitch-host-page-shell .ccswitch-host-stat-label{display:block;font-size:.75rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#64748b}',
-			'#ccswitch-host-page-shell .ccswitch-host-stat-value{display:block;margin-top:.3rem;font-size:1rem;font-weight:700;line-height:1.35;color:#0f172a}',
-			'#ccswitch-host-page-shell .ccswitch-host-summary{margin:1rem 0 0;padding:1rem 1.05rem;border:1px solid #dbe4f0;border-radius:18px;background:linear-gradient(135deg,rgba(239,246,255,.96) 0%,rgba(248,250,252,.98) 100%)}',
+			'#ccswitch-host-page-shell .ccswitch-host-stat-value{display:block;margin-top:.25rem;font-size:1rem;font-weight:700;line-height:1.3;color:#0f172a}',
+			'#ccswitch-host-page-shell .ccswitch-host-summary{margin:.9rem 0 0;padding:.88rem .95rem;border:1px solid #dbe4f0;border-radius:16px;background:linear-gradient(135deg,rgba(239,246,255,.96) 0%,rgba(248,250,252,.98) 100%)}',
 			'#ccswitch-host-page-shell .ccswitch-host-summary-label{display:block;font-size:.78rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#1d4ed8}',
-			'#ccswitch-host-page-shell .ccswitch-host-summary-text{display:block;margin-top:.45rem;color:#334155;line-height:1.7}',
-			'#ccswitch-host-page-shell .ccswitch-host-inline-banner{display:block;padding:.9rem 1rem;border:1px solid #dbe4f0;border-radius:18px;background:#f8fafc;color:#334155}',
+			'#ccswitch-host-page-shell .ccswitch-host-summary-text{display:block;margin-top:.35rem;color:#334155;line-height:1.6}',
+			'#ccswitch-host-page-shell .ccswitch-host-inline-banner{display:block;padding:.78rem .9rem;border:1px solid #dbe4f0;border-radius:16px;background:#f8fafc;color:#334155}',
 			'#ccswitch-host-page-shell .ccswitch-host-inline-banner[data-kind="success"]{border-color:#bbf7d0;background:#f0fdf4;color:#166534}',
 			'#ccswitch-host-page-shell .ccswitch-host-inline-banner[data-kind="warning"]{border-color:#fed7aa;background:#fff7ed;color:#9a3412}',
 			'#ccswitch-host-page-shell .ccswitch-host-inline-banner[data-kind="error"]{border-color:#fecaca;background:#fff7f7;color:#991b1b}',
 			'#ccswitch-host-page-shell .ccswitch-host-inline-banner[data-kind="info"]{border-color:#bfdbfe;background:#eff6ff;color:#1d4ed8}',
 			'#ccswitch-host-page-shell .ccswitch-host-inline-banner[hidden]{display:none!important}',
 			'#ccswitch-host-page-shell .ccswitch-host-inline-banner strong{display:block;font-size:.92rem}',
-			'#ccswitch-host-page-shell .ccswitch-host-inline-banner div+div{margin-top:.45rem}',
-			'#ccswitch-host-page-shell .ccswitch-host-actions{display:flex;flex-wrap:wrap;gap:.75rem;margin-top:1rem}',
+			'#ccswitch-host-page-shell .ccswitch-host-inline-banner div+div{margin-top:.4rem}',
+			'#ccswitch-host-page-shell .ccswitch-host-actions{display:flex;flex-wrap:wrap;gap:.65rem;margin-top:.85rem}',
 			'#ccswitch-host-page-shell .ccswitch-host-actions .cbi-button,#ccswitch-host-page-shell .ccswitch-host-map .cbi-page-actions .cbi-button{min-height:2.75rem;padding:.7rem 1.1rem;border-radius:14px;box-shadow:none}',
 			'#ccswitch-host-page-shell .ccswitch-host-map{margin:0;padding:0;background:transparent;border:0;box-shadow:none}',
 			'#ccswitch-host-page-shell .ccswitch-host-map > h2,#ccswitch-host-page-shell .ccswitch-host-map > .cbi-map-descr{display:none!important}',
-			'#ccswitch-host-page-shell .ccswitch-host-settings-grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}',
-			'#ccswitch-host-page-shell .ccswitch-host-map .cbi-section{margin:0}',
-			'#ccswitch-host-page-shell .ccswitch-host-form-section h3{margin:0 0 .35rem;font-size:1.02rem;font-weight:700;color:#0f172a}',
-			'#ccswitch-host-page-shell .ccswitch-host-form-section > .cbi-section-descr,#ccswitch-host-page-shell .ccswitch-host-form-section > p{margin:.45rem 0 0;color:#475569;line-height:1.6}',
-			'#ccswitch-host-page-shell .ccswitch-host-map .cbi-value{display:grid;grid-template-columns:minmax(0,175px) minmax(0,1fr);gap:1rem;align-items:flex-start;margin:0;padding:.9rem 0;border-top:1px solid #eef2f7}',
+			'#ccswitch-host-page-shell .ccswitch-host-settings-grid{display:grid;gap:.9rem;align-items:start;grid-template-columns:repeat(2,minmax(0,1fr))}',
+			'#ccswitch-host-page-shell .ccswitch-host-map .cbi-section{margin:0;min-width:0}',
+			'#ccswitch-host-page-shell .ccswitch-host-form-section h3{margin:0 0 .3rem;font-size:1rem;font-weight:700;color:#0f172a}',
+			'#ccswitch-host-page-shell .ccswitch-host-form-section > .cbi-section-descr,#ccswitch-host-page-shell .ccswitch-host-form-section > p{margin:.38rem 0 0;color:#475569;line-height:1.55}',
+			'#ccswitch-host-page-shell .ccswitch-host-map .cbi-value{display:grid;grid-template-columns:minmax(0,10.5rem) minmax(0,1fr);column-gap:.9rem;row-gap:.35rem;align-items:flex-start;margin:0;padding:.8rem 0;border-top:1px solid #eef2f7}',
 			'#ccswitch-host-page-shell .ccswitch-host-map .cbi-value:first-of-type{border-top:0;padding-top:.35rem}',
 			'#ccswitch-host-page-shell .ccswitch-host-map .cbi-value:last-of-type{padding-bottom:0}',
-			'#ccswitch-host-page-shell .ccswitch-host-map .cbi-value-title{margin:0;font-size:.83rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#64748b}',
+			'#ccswitch-host-page-shell .ccswitch-host-map .cbi-value-title{margin:0;font-size:.8rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#64748b}',
 			'#ccswitch-host-page-shell .ccswitch-host-map .cbi-value-field{min-width:0}',
-			'#ccswitch-host-page-shell .ccswitch-host-map .cbi-value-description{margin-top:.45rem;color:#64748b;line-height:1.55}',
+			'#ccswitch-host-page-shell .ccswitch-host-map .cbi-value-description{margin-top:.38rem;color:#64748b;line-height:1.5}',
 			'#ccswitch-host-page-shell .ccswitch-host-map input[type="text"],#ccswitch-host-page-shell .ccswitch-host-map input[type="password"],#ccswitch-host-page-shell .ccswitch-host-map input[type="number"],#ccswitch-host-page-shell .ccswitch-host-map select,#ccswitch-host-page-shell .ccswitch-host-map textarea{width:100%;min-height:2.65rem;padding:.6rem .8rem;border:1px solid #d7dee8;border-radius:14px;background:#fff;box-shadow:inset 0 1px 2px rgba(15,23,42,.04)}',
-			'#ccswitch-host-page-shell .ccswitch-host-map .cbi-page-actions{display:flex;flex-wrap:wrap;gap:.75rem;margin:1rem 0 0;padding:0}',
-			'#ccswitch-host-page-shell .ccswitch-host-shell-note{margin:0;color:#475569;line-height:1.65}',
-			'#ccswitch-host-page-shell .ccswitch-host-fallback-list{display:flex;flex-direction:column;gap:.9rem;margin-bottom:1.25rem}',
+			'#ccswitch-host-page-shell .ccswitch-host-map .cbi-page-actions{display:flex;flex-wrap:wrap;gap:.65rem;margin:.9rem 0 0;padding:0}',
+			'#ccswitch-host-page-shell .ccswitch-host-shell-note{margin:0;color:#475569;line-height:1.6}',
+			'#ccswitch-host-page-shell .ccswitch-host-fallback-list{display:flex;flex-direction:column;gap:.8rem;margin-bottom:1.05rem}',
 			'#ccswitch-host-page-shell .ccswitch-host-fallback-list-title{margin:0;color:#0f172a;font-size:1rem;font-weight:700}',
-			'#ccswitch-host-page-shell .ccswitch-host-fallback-empty{margin:0;padding:1rem 1.05rem;border:1px dashed #cbd5e1;border-radius:18px;background:#f8fafc;color:#475569;line-height:1.6}',
-			'#ccswitch-host-page-shell .ccswitch-host-fallback-card{padding:1rem 1.05rem;border:1px solid #dbe4f0;border-radius:18px;background:linear-gradient(180deg,#ffffff 0%,#f8fafc 100%);box-shadow:0 14px 32px -28px rgba(15,23,42,.45)}',
+			'#ccswitch-host-page-shell .ccswitch-host-fallback-empty{margin:0;padding:.9rem .95rem;border:1px dashed #cbd5e1;border-radius:16px;background:#f8fafc;color:#475569;line-height:1.55}',
+			'#ccswitch-host-page-shell .ccswitch-host-fallback-card{padding:.9rem .95rem;border:1px solid #dbe4f0;border-radius:16px;background:linear-gradient(180deg,#ffffff 0%,#f8fafc 100%);box-shadow:0 12px 28px -26px rgba(15,23,42,.45)}',
 			'#ccswitch-host-page-shell .ccswitch-host-fallback-card[data-active="true"]{border-color:#86efac;background:linear-gradient(180deg,#f0fdf4 0%,#ffffff 100%)}',
-			'#ccswitch-host-page-shell .ccswitch-host-fallback-card-header{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap}',
+			'#ccswitch-host-page-shell .ccswitch-host-fallback-card-header{display:flex;justify-content:space-between;align-items:flex-start;gap:.8rem;flex-wrap:wrap}',
 			'#ccswitch-host-page-shell .ccswitch-host-fallback-card-title{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;font-weight:700;color:#0f172a}',
 			'#ccswitch-host-page-shell .ccswitch-host-fallback-card-actions{display:flex;flex-wrap:wrap;gap:.5rem}',
-			'#ccswitch-host-page-shell .ccswitch-host-fallback-card-url{margin-top:.55rem;color:#475569;word-break:break-all;line-height:1.55}',
-			'#ccswitch-host-page-shell .ccswitch-host-fallback-card-meta{display:flex;flex-direction:column;gap:.45rem;margin-top:.7rem}',
+			'#ccswitch-host-page-shell .ccswitch-host-fallback-card-url{margin-top:.45rem;color:#475569;word-break:break-all;line-height:1.5}',
+			'#ccswitch-host-page-shell .ccswitch-host-fallback-card-meta{display:flex;flex-direction:column;gap:.4rem;margin-top:.65rem}',
 			'#ccswitch-host-page-shell .ccswitch-host-fallback-card-meta-row{color:#475569;line-height:1.55}',
 			'#ccswitch-host-page-shell .ccswitch-host-fallback-badge{display:inline-flex;align-items:center;padding:.18rem .55rem;border-radius:999px;font-size:.75rem;font-weight:700;border:1px solid transparent}',
 			'#ccswitch-host-page-shell .ccswitch-host-fallback-badge[data-kind="active"]{background:#dcfce7;border-color:#86efac;color:#166534}',
 			'#ccswitch-host-page-shell .ccswitch-host-fallback-badge[data-kind="warning"]{background:#fee2e2;border-color:#fecaca;color:#991b1b}',
-			'#ccswitch-host-page-shell .ccswitch-host-fallback-editor{margin-top:1rem;padding:1rem 1.05rem;border:1px solid #dbe4f0;border-radius:18px;background:linear-gradient(180deg,#fcfcfd 0%,#f8fafc 100%)}',
+			'#ccswitch-host-page-shell .ccswitch-host-fallback-editor{margin-top:.9rem;padding:.9rem .95rem;border:1px solid #dbe4f0;border-radius:16px;background:linear-gradient(180deg,#fcfcfd 0%,#f8fafc 100%)}',
 			'#ccswitch-host-page-shell .ccswitch-host-fallback-editor h4{margin:0;color:#0f172a;font-size:1rem;font-weight:700}',
-			'#ccswitch-host-page-shell .ccswitch-host-fallback-editor .ccswitch-host-shell-note{margin-top:.45rem}',
-			'#ccswitch-host-page-shell #ccswitch-shared-provider-ui-root,#ccswitch-host-page-shell #ccswitch-shared-runtime-surface-root{margin-top:1rem;min-height:1px}',
+			'#ccswitch-host-page-shell .ccswitch-host-fallback-editor .ccswitch-host-shell-note{margin-top:.38rem}',
+			'#ccswitch-host-page-shell .ccswitch-host-shared-mount,#ccswitch-host-page-shell #ccswitch-shared-provider-ui-root,#ccswitch-host-page-shell #ccswitch-shared-runtime-surface-root{margin-top:.85rem;min-height:1px;min-width:0}',
 			'#ccswitch-host-page-shell .ccswitch-host-stat-value[data-tone="success"]{color:#166534}',
 			'#ccswitch-host-page-shell .ccswitch-host-stat-value[data-tone="warning"]{color:#b45309}',
 			'#ccswitch-host-page-shell .ccswitch-host-stat-value[data-tone="error"]{color:#b91c1c}',
 			'#ccswitch-host-page-shell .ccswitch-host-stat-value[data-tone="info"]{color:#1d4ed8}',
-			'@media (max-width:900px){#ccswitch-host-page-shell .ccswitch-host-map .cbi-value{grid-template-columns:minmax(0,1fr);gap:.45rem}#ccswitch-host-page-shell .ccswitch-host-surface{padding:1rem}#ccswitch-host-page-shell .ccswitch-host-section-title{font-size:1.18rem}}'
+			'@media (max-width:1120px){#ccswitch-host-page-shell .ccswitch-host-shell-grid,#ccswitch-host-page-shell .ccswitch-host-settings-grid{grid-template-columns:minmax(0,1fr)}#ccswitch-host-page-shell .ccswitch-host-section-title{font-size:1.18rem}}',
+			'@media (max-width:820px){#ccswitch-host-page-shell .ccswitch-host-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}#ccswitch-host-page-shell .ccswitch-host-map .cbi-value{grid-template-columns:minmax(0,1fr);row-gap:.4rem}#ccswitch-host-page-shell .ccswitch-host-surface{padding:.95rem}#ccswitch-host-page-shell .ccswitch-host-shared-mount,#ccswitch-host-page-shell #ccswitch-shared-provider-ui-root,#ccswitch-host-page-shell #ccswitch-shared-runtime-surface-root{margin-top:.75rem}}',
+			'@media (max-width:640px){#ccswitch-host-page-shell .ccswitch-host-status-grid{grid-template-columns:minmax(0,1fr)}#ccswitch-host-page-shell .ccswitch-host-actions,#ccswitch-host-page-shell .ccswitch-host-map .cbi-page-actions,#ccswitch-host-page-shell .ccswitch-host-fallback-card-header,#ccswitch-host-page-shell .ccswitch-host-fallback-card-actions{flex-direction:column;align-items:stretch}#ccswitch-host-page-shell .ccswitch-host-actions .cbi-button,#ccswitch-host-page-shell .ccswitch-host-map .cbi-page-actions .cbi-button{width:100%}}'
 		].join('');
 		document.head.appendChild(style);
 	},
@@ -1270,12 +1274,14 @@ return view.extend({
 				await self.restartServiceFromShellBridge(uiState, statusNodes, shellNodes);
 			})
 		}, [_('Restart Service')]);
-		var sharedChromeRoot = E('section', { 'class': 'ccswitch-host-surface ccswitch-host-surface-muted' });
+		var sharedChromeRoot = E('section', { 'class': 'ccswitch-host-surface ccswitch-host-surface-muted ccswitch-host-shell-chrome' });
 		var runtimeMountRoot = E('div', {
-			'id': 'ccswitch-shared-runtime-surface-root'
+			'id': 'ccswitch-shared-runtime-surface-root',
+			'class': 'ccswitch-host-shared-mount ccswitch-host-runtime-mount'
 		});
 		var mountRoot = E('div', {
-			'id': 'ccswitch-shared-provider-ui-root'
+			'id': 'ccswitch-shared-provider-ui-root',
+			'class': 'ccswitch-host-shared-mount ccswitch-host-provider-mount'
 		});
 		var shellNodes = {
 			sharedChromeRoot: sharedChromeRoot,
@@ -1289,7 +1295,7 @@ return view.extend({
 		var root = E('div', { 'class': 'ccswitch-host-shell-stack' }, [
 			sharedChromeRoot,
 			E('div', { 'class': 'ccswitch-host-shell-grid' }, [
-				E('section', { 'class': 'ccswitch-host-surface' }, [
+				E('section', { 'class': 'ccswitch-host-surface ccswitch-host-runtime-shell' }, [
 					this.createSectionIntro(
 						_('Shared Runtime'),
 						_('Runtime Status'),
@@ -1297,7 +1303,7 @@ return view.extend({
 					),
 					runtimeMountRoot
 				]),
-				E('section', { 'class': 'ccswitch-host-surface' }, [
+				E('section', { 'class': 'ccswitch-host-surface ccswitch-host-provider-shell' }, [
 					this.createSectionIntro(
 						_('Shared Provider Surface'),
 						_('Provider Manager'),
