@@ -2,11 +2,15 @@ use crate::app_config::AppType;
 use crate::config::sanitize_provider_name;
 use crate::database::Database;
 use crate::provider::Provider;
+use crate::proxy::server::populate_status_active_targets;
+use crate::proxy::types::{AppProxyConfig, GlobalProxyConfig, ProviderHealth, ProxyStatus};
 use anyhow::{anyhow, Context};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::io::Read;
 use std::str::FromStr;
+use std::time::Duration;
 use uuid::Uuid;
 
 const CLAUDE_APP_ID: &str = "claude";
@@ -82,6 +86,70 @@ pub struct OpenWrtProviderDeleteView {
     pub deleted_provider_id: String,
     pub active_provider_id: Option<String>,
     pub providers_remaining: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtRuntimeStatusView {
+    pub service: OpenWrtServiceStatusView,
+    pub runtime: ProxyStatus,
+    pub apps: Vec<OpenWrtAppRuntimeStatusView>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtServiceStatusView {
+    pub running: bool,
+    pub reachable: bool,
+    pub listen_address: String,
+    pub listen_port: u16,
+    pub proxy_enabled: bool,
+    pub enable_logging: bool,
+    pub status_source: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtAppRuntimeStatusView {
+    pub app: String,
+    pub provider_count: usize,
+    pub proxy_enabled: bool,
+    pub auto_failover_enabled: bool,
+    pub max_retries: u32,
+    pub active_provider_id: Option<String>,
+    pub active_provider: OpenWrtProviderView,
+    pub active_provider_health: Option<OpenWrtProviderHealthView>,
+    pub using_legacy_default: bool,
+    pub failover_queue_depth: usize,
+    pub failover_queue: Vec<OpenWrtFailoverQueueStatusView>,
+    pub observed_provider_count: usize,
+    pub healthy_provider_count: usize,
+    pub unhealthy_provider_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtProviderHealthView {
+    pub provider_id: String,
+    pub observed: bool,
+    pub healthy: bool,
+    pub consecutive_failures: u32,
+    pub last_success_at: Option<String>,
+    pub last_failure_at: Option<String>,
+    pub last_error: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtFailoverQueueStatusView {
+    pub provider_id: String,
+    pub provider_name: String,
+    pub sort_index: Option<usize>,
+    pub active: bool,
+    pub health: OpenWrtProviderHealthView,
 }
 
 #[derive(Clone, Copy)]
@@ -179,7 +247,12 @@ pub fn activate_provider(
     let provider_id = normalize_provider_id(provider_id)?;
     let provider = load_provider(db, profile, &provider_id)?;
     set_active_provider_id(db, app_type, profile, Some(&provider_id))?;
-    Ok(provider_to_view(app_type, profile, &provider, Some(&provider_id)))
+    Ok(provider_to_view(
+        app_type,
+        profile,
+        &provider,
+        Some(&provider_id),
+    ))
 }
 
 pub fn delete_provider(
@@ -192,20 +265,27 @@ pub fn delete_provider(
     load_provider(db, profile, &normalized_provider_id)?;
 
     let effective_current = resolve_active_provider_id(db, app_type)?;
-    let db_current = db
-        .get_current_provider(profile.app_id)
-        .map_err(|e| anyhow!("failed to read database current {} provider: {e}", profile.app_id))?;
-
-    db.delete_provider(profile.app_id, &normalized_provider_id).map_err(|e| {
+    let db_current = db.get_current_provider(profile.app_id).map_err(|e| {
         anyhow!(
-            "failed to delete {} provider {normalized_provider_id}: {e}",
+            "failed to read database current {} provider: {e}",
             profile.app_id
         )
     })?;
 
-    let remaining = db
-        .get_all_providers(profile.app_id)
-        .map_err(|e| anyhow!("failed to reload {} providers after delete: {e}", profile.app_id))?;
+    db.delete_provider(profile.app_id, &normalized_provider_id)
+        .map_err(|e| {
+            anyhow!(
+                "failed to delete {} provider {normalized_provider_id}: {e}",
+                profile.app_id
+            )
+        })?;
+
+    let remaining = db.get_all_providers(profile.app_id).map_err(|e| {
+        anyhow!(
+            "failed to reload {} providers after delete: {e}",
+            profile.app_id
+        )
+    })?;
     let next_current = select_current_provider_after_delete(
         &remaining,
         &normalized_provider_id,
@@ -220,6 +300,58 @@ pub fn delete_provider(
         active_provider_id: response_active_provider_id,
         providers_remaining: remaining.len(),
     })
+}
+
+pub async fn get_runtime_status(db: &Database) -> anyhow::Result<OpenWrtRuntimeStatusView> {
+    let service_config = db
+        .get_global_proxy_config()
+        .await
+        .map_err(|e| anyhow!("failed to read proxy service config: {e}"))?;
+
+    let apps = vec![
+        build_app_runtime_status(db, &AppType::Claude).await?,
+        build_app_runtime_status(db, &AppType::Codex).await?,
+        build_app_runtime_status(db, &AppType::Gemini).await?,
+    ];
+
+    let (runtime, status_source, status_error, reachable) =
+        match fetch_live_proxy_status(&service_config).await {
+            Ok(status) => (
+                hydrate_runtime_status(status, &service_config, &apps),
+                "live-status".to_string(),
+                None,
+                true,
+            ),
+            Err(error) => (
+                build_fallback_proxy_status(&service_config, &apps),
+                "config-fallback".to_string(),
+                Some(error.to_string()),
+                false,
+            ),
+        };
+
+    Ok(OpenWrtRuntimeStatusView {
+        service: OpenWrtServiceStatusView {
+            running: runtime.running,
+            reachable,
+            listen_address: service_config.listen_address.clone(),
+            listen_port: service_config.listen_port,
+            proxy_enabled: service_config.proxy_enabled,
+            enable_logging: service_config.enable_logging,
+            status_source,
+            status_error,
+        },
+        runtime,
+        apps,
+    })
+}
+
+pub async fn get_app_runtime_status(
+    db: &Database,
+    app_type: &AppType,
+) -> anyhow::Result<OpenWrtAppRuntimeStatusView> {
+    openwrt_app_profile(app_type)?;
+    build_app_runtime_status(db, app_type).await
 }
 
 pub fn list_claude_providers(db: &Database) -> anyhow::Result<OpenWrtProviderListView> {
@@ -305,8 +437,19 @@ fn upsert_provider_with_payload(
         .unwrap_or_else(|| generate_provider_id(profile));
     let existing = db
         .get_provider_by_id(&target_provider_id, profile.app_id)
-        .map_err(|e| anyhow!("failed to load {} provider {target_provider_id}: {e}", profile.app_id))?;
-    let provider = build_provider(app_type, profile, existing, target_provider_id.clone(), payload)?;
+        .map_err(|e| {
+            anyhow!(
+                "failed to load {} provider {target_provider_id}: {e}",
+                profile.app_id
+            )
+        })?;
+    let provider = build_provider(
+        app_type,
+        profile,
+        existing,
+        target_provider_id.clone(),
+        payload,
+    )?;
 
     db.save_provider(profile.app_id, &provider)
         .map_err(|e| anyhow!("failed to save {} provider: {e}", profile.app_id))?;
@@ -340,18 +483,34 @@ fn upsert_active_provider_with_payload(
         }
     }
 
-    let target_provider_id = active_provider_id
-        .unwrap_or_else(|| profile.default_provider_id.to_string());
+    let target_provider_id =
+        active_provider_id.unwrap_or_else(|| profile.default_provider_id.to_string());
     let existing = db
         .get_provider_by_id(&target_provider_id, profile.app_id)
-        .map_err(|e| anyhow!("failed to load {} provider {target_provider_id}: {e}", profile.app_id))?;
-    let provider = build_provider(app_type, profile, existing, target_provider_id.clone(), payload)?;
+        .map_err(|e| {
+            anyhow!(
+                "failed to load {} provider {target_provider_id}: {e}",
+                profile.app_id
+            )
+        })?;
+    let provider = build_provider(
+        app_type,
+        profile,
+        existing,
+        target_provider_id.clone(),
+        payload,
+    )?;
 
     db.save_provider(profile.app_id, &provider)
         .map_err(|e| anyhow!("failed to save {} provider: {e}", profile.app_id))?;
     set_active_provider_id(db, app_type, profile, Some(&provider.id))?;
 
-    Ok(provider_to_view(app_type, profile, &provider, Some(&provider.id)))
+    Ok(provider_to_view(
+        app_type,
+        profile,
+        &provider,
+        Some(&provider.id),
+    ))
 }
 
 fn openwrt_app_profile(app_type: &AppType) -> anyhow::Result<OpenWrtAppProfile> {
@@ -413,16 +572,256 @@ fn load_provider(
 ) -> anyhow::Result<Provider> {
     let provider_id = normalize_provider_id(provider_id)?;
     db.get_provider_by_id(&provider_id, profile.app_id)
-        .map_err(|e| anyhow!("failed to load {} provider {provider_id}: {e}", profile.app_id))?
+        .map_err(|e| {
+            anyhow!(
+                "failed to load {} provider {provider_id}: {e}",
+                profile.app_id
+            )
+        })?
         .ok_or_else(|| anyhow!("{} provider {provider_id} does not exist", profile.app_id))
 }
 
-fn resolve_active_provider_id(
+async fn build_app_runtime_status(
     db: &Database,
     app_type: &AppType,
-) -> anyhow::Result<Option<String>> {
-    crate::settings::get_effective_current_provider(db, app_type)
-        .map_err(|e| anyhow!("failed to resolve active {} provider: {e}", app_type.as_str()))
+) -> anyhow::Result<OpenWrtAppRuntimeStatusView> {
+    let profile = openwrt_app_profile(app_type)?;
+    let active_provider_id = resolve_active_provider_id_for_read(db, app_type, profile)?;
+    let explicit_active_provider_id = resolve_active_provider_id(db, app_type)?;
+    let using_legacy_default = explicit_active_provider_id.is_none()
+        && active_provider_id.as_deref() == Some(profile.default_provider_id);
+
+    let providers = db.get_all_providers(profile.app_id).map_err(|e| {
+        anyhow!(
+            "failed to list {} providers for runtime status: {e}",
+            profile.app_id
+        )
+    })?;
+    let app_config = load_proxy_config_for_app(db, profile).await?;
+    let health_records = db
+        .list_provider_health_records(profile.app_id)
+        .await
+        .map_err(|e| {
+            anyhow!(
+                "failed to list {} provider health records: {e}",
+                profile.app_id
+            )
+        })?;
+    let health_by_provider: HashMap<String, ProviderHealth> = health_records
+        .into_iter()
+        .map(|record| (record.provider_id.clone(), record))
+        .collect();
+
+    let active_provider = active_provider_id
+        .as_deref()
+        .and_then(|provider_id| providers.get(provider_id))
+        .map(|provider| {
+            provider_to_view(app_type, profile, provider, active_provider_id.as_deref())
+        })
+        .unwrap_or_else(|| empty_provider_view(profile));
+    let active_provider_health = active_provider_id.as_deref().map(|provider_id| {
+        build_provider_health_view(provider_id, health_by_provider.get(provider_id))
+    });
+
+    let failover_queue = db
+        .get_failover_queue(profile.app_id)
+        .map_err(|e| anyhow!("failed to list {} failover queue: {e}", profile.app_id))?
+        .into_iter()
+        .map(|item| OpenWrtFailoverQueueStatusView {
+            active: active_provider_id.as_deref() == Some(item.provider_id.as_str()),
+            health: build_provider_health_view(
+                &item.provider_id,
+                health_by_provider.get(&item.provider_id),
+            ),
+            provider_id: item.provider_id,
+            provider_name: item.provider_name,
+            sort_index: item.sort_index,
+        })
+        .collect::<Vec<_>>();
+
+    let observed_provider_count = providers
+        .keys()
+        .filter(|provider_id| health_by_provider.contains_key(*provider_id))
+        .count();
+    let unhealthy_provider_count = providers
+        .keys()
+        .filter(|provider_id| {
+            matches!(
+                health_by_provider.get(*provider_id),
+                Some(record) if !record.is_healthy
+            )
+        })
+        .count();
+    let healthy_provider_count = observed_provider_count.saturating_sub(unhealthy_provider_count);
+
+    Ok(OpenWrtAppRuntimeStatusView {
+        app: profile.app_id.to_string(),
+        provider_count: providers.len(),
+        proxy_enabled: app_config.enabled,
+        auto_failover_enabled: app_config.auto_failover_enabled,
+        max_retries: app_config.max_retries,
+        active_provider_id: active_provider_id.clone(),
+        active_provider,
+        active_provider_health,
+        using_legacy_default,
+        failover_queue_depth: failover_queue.len(),
+        failover_queue,
+        observed_provider_count,
+        healthy_provider_count,
+        unhealthy_provider_count,
+    })
+}
+
+async fn load_proxy_config_for_app(
+    db: &Database,
+    profile: OpenWrtAppProfile,
+) -> anyhow::Result<AppProxyConfig> {
+    db.get_proxy_config_for_app(profile.app_id)
+        .await
+        .map_err(|e| anyhow!("failed to read {} proxy config: {e}", profile.app_id))
+}
+
+fn build_provider_health_view(
+    provider_id: &str,
+    health: Option<&ProviderHealth>,
+) -> OpenWrtProviderHealthView {
+    match health {
+        Some(health) => OpenWrtProviderHealthView {
+            provider_id: provider_id.to_string(),
+            observed: true,
+            healthy: health.is_healthy,
+            consecutive_failures: health.consecutive_failures,
+            last_success_at: health.last_success_at.clone(),
+            last_failure_at: health.last_failure_at.clone(),
+            last_error: health.last_error.clone(),
+            updated_at: Some(health.updated_at.clone()),
+        },
+        None => OpenWrtProviderHealthView {
+            provider_id: provider_id.to_string(),
+            observed: false,
+            healthy: true,
+            consecutive_failures: 0,
+            last_success_at: None,
+            last_failure_at: None,
+            last_error: None,
+            updated_at: None,
+        },
+    }
+}
+
+fn build_fallback_proxy_status(
+    service_config: &GlobalProxyConfig,
+    apps: &[OpenWrtAppRuntimeStatusView],
+) -> ProxyStatus {
+    let mut status = ProxyStatus {
+        running: false,
+        address: service_config.listen_address.clone(),
+        port: service_config.listen_port,
+        ..Default::default()
+    };
+
+    let current_targets = build_current_targets_map(apps);
+    populate_status_active_targets(&mut status, &current_targets);
+    status
+}
+
+fn hydrate_runtime_status(
+    mut status: ProxyStatus,
+    service_config: &GlobalProxyConfig,
+    apps: &[OpenWrtAppRuntimeStatusView],
+) -> ProxyStatus {
+    if status.address.trim().is_empty() {
+        status.address = service_config.listen_address.clone();
+    }
+    if status.port == 0 {
+        status.port = service_config.listen_port;
+    }
+    if status.active_targets.is_empty() {
+        let current_targets = build_current_targets_map(apps);
+        populate_status_active_targets(&mut status, &current_targets);
+    }
+
+    status
+}
+
+fn build_current_targets_map(
+    apps: &[OpenWrtAppRuntimeStatusView],
+) -> HashMap<String, (String, String)> {
+    apps.iter()
+        .filter_map(|app| {
+            app.active_provider_id.as_ref().map(|provider_id| {
+                (
+                    app.app.clone(),
+                    (provider_id.clone(), app.active_provider.name.clone()),
+                )
+            })
+        })
+        .collect()
+}
+
+async fn fetch_live_proxy_status(
+    service_config: &GlobalProxyConfig,
+) -> anyhow::Result<ProxyStatus> {
+    let status_url = format!(
+        "{}/status",
+        build_proxy_status_origin(&service_config.listen_address, service_config.listen_port)
+    );
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_millis(800))
+        .build()
+        .context("failed to build daemon status HTTP client")?;
+    let response = client
+        .get(&status_url)
+        .send()
+        .await
+        .map_err(|e| anyhow!("failed to query daemon status endpoint {status_url}: {e}"))?;
+
+    if !response.status().is_success() {
+        let response_status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        let body = body.trim();
+        let body_suffix = if body.is_empty() {
+            String::new()
+        } else {
+            format!(": {body}")
+        };
+
+        return Err(anyhow!(
+            "daemon status endpoint returned {}{}",
+            response_status,
+            body_suffix
+        ));
+    }
+
+    response
+        .json::<ProxyStatus>()
+        .await
+        .map_err(|e| anyhow!("failed to decode daemon status from {status_url}: {e}"))
+}
+
+fn build_proxy_status_origin(listen_address: &str, listen_port: u16) -> String {
+    let connect_host = match listen_address {
+        "0.0.0.0" => "127.0.0.1".to_string(),
+        "::" => "::1".to_string(),
+        _ => listen_address.to_string(),
+    };
+    let connect_host = if connect_host.contains(':') && !connect_host.starts_with('[') {
+        format!("[{connect_host}]")
+    } else {
+        connect_host
+    };
+
+    format!("http://{connect_host}:{listen_port}")
+}
+
+fn resolve_active_provider_id(db: &Database, app_type: &AppType) -> anyhow::Result<Option<String>> {
+    crate::settings::get_effective_current_provider(db, app_type).map_err(|e| {
+        anyhow!(
+            "failed to resolve active {} provider: {e}",
+            app_type.as_str()
+        )
+    })
 }
 
 fn resolve_active_provider_id_for_read(
@@ -457,9 +856,8 @@ fn set_active_provider_id(
     match provider_id {
         Some(provider_id) => {
             let provider_id = normalize_provider_id(provider_id)?;
-            db.set_current_provider(profile.app_id, &provider_id).map_err(|e| {
-                anyhow!("failed to set active {} provider: {e}", profile.app_id)
-            })?;
+            db.set_current_provider(profile.app_id, &provider_id)
+                .map_err(|e| anyhow!("failed to set active {} provider: {e}", profile.app_id))?;
             crate::settings::set_current_provider(app_type, Some(&provider_id)).map_err(|e| {
                 anyhow!(
                     "failed to persist local {} provider selection: {e}",
@@ -625,12 +1023,9 @@ fn build_codex_provider(
                 model.as_deref(),
             )
         });
-    let updated_base_url = crate::codex_config::update_codex_toml_field(
-        &config_seed,
-        "base_url",
-        base_url,
-    )
-    .map_err(|e| anyhow!("failed to update Codex config base_url: {e}"))?;
+    let updated_base_url =
+        crate::codex_config::update_codex_toml_field(&config_seed, "base_url", base_url)
+            .map_err(|e| anyhow!("failed to update Codex config base_url: {e}"))?;
     let updated_config = crate::codex_config::update_codex_toml_field(
         &updated_base_url,
         "model",
@@ -821,8 +1216,7 @@ fn resolve_model_value(
 
     match profile.app_id {
         "claude" => None,
-        _ => extract_model(profile, provider)
-            .or_else(|| profile.default_model.map(str::to_string)),
+        _ => extract_model(profile, provider).or_else(|| profile.default_model.map(str::to_string)),
     }
 }
 
@@ -847,8 +1241,8 @@ fn provider_to_view(
     provider: &Provider,
     active_provider_id: Option<&str>,
 ) -> OpenWrtProviderView {
-    let (token_field, token_value) = extract_token(profile, provider)
-        .unwrap_or((profile.default_token_field, ""));
+    let (token_field, token_value) =
+        extract_token(profile, provider).unwrap_or((profile.default_token_field, ""));
 
     OpenWrtProviderView {
         configured: true,
@@ -907,7 +1301,11 @@ fn extract_token_with_fallbacks<'a>(
     object_keys: &[&str],
 ) -> Option<(&'static str, &'a str)> {
     for object_key in object_keys {
-        if let Some(object) = provider.settings_config.get(*object_key).and_then(Value::as_object) {
+        if let Some(object) = provider
+            .settings_config
+            .get(*object_key)
+            .and_then(Value::as_object)
+        {
             if let Some(value) = object.get(token_field).and_then(Value::as_str) {
                 return Some((token_field, value.trim()));
             }
@@ -1030,7 +1428,12 @@ fn extract_codex_base_url_from_toml(config: &str) -> Option<String> {
 fn extract_codex_model_from_toml(config: &str) -> Option<String> {
     toml::from_str::<toml::Table>(config)
         .ok()
-        .and_then(|table| table.get("model").and_then(|value| value.as_str()).map(str::to_string))
+        .and_then(|table| {
+            table
+                .get("model")
+                .and_then(|value| value.as_str())
+                .map(str::to_string)
+        })
         .filter(|value| !value.trim().is_empty())
 }
 
@@ -1100,6 +1503,7 @@ fn mask_secret(secret: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::{routing::get, Json, Router};
     use serial_test::serial;
     use tempfile::TempDir;
 
@@ -1187,6 +1591,44 @@ mod tests {
             model: "claude-sonnet".to_string(),
             notes: "notes".to_string(),
         }
+    }
+
+    fn status_for_app<'a>(
+        status: &'a OpenWrtRuntimeStatusView,
+        app: &str,
+    ) -> &'a OpenWrtAppRuntimeStatusView {
+        status
+            .apps
+            .iter()
+            .find(|entry| entry.app == app)
+            .expect("status entry for app")
+    }
+
+    async fn spawn_status_server(mut status: ProxyStatus) -> (u16, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind status listener");
+        let port = listener.local_addr().expect("status listener addr").port();
+        status.port = port;
+
+        let app = Router::new().route(
+            "/status",
+            get({
+                let status = status.clone();
+                move || {
+                    let status = status.clone();
+                    async move { Json(status) }
+                }
+            }),
+        );
+
+        let handle = tokio::spawn(async move {
+            axum::serve(listener, app)
+                .await
+                .expect("serve runtime status");
+        });
+
+        (port, handle)
     }
 
     #[test]
@@ -1746,8 +2188,8 @@ mod tests {
         upsert_provider_with_payload(&db, &AppType::Gemini, Some("gemini-b"), payload_b)
             .expect("create gemini b");
 
-        let activated = activate_provider(&db, &AppType::Gemini, "gemini-b")
-            .expect("activate gemini provider");
+        let activated =
+            activate_provider(&db, &AppType::Gemini, "gemini-b").expect("activate gemini provider");
 
         assert!(activated.active);
         assert_eq!(activated.provider_id.as_deref(), Some("gemini-b"));
@@ -1760,6 +2202,182 @@ mod tests {
                 .expect("load gemini db current")
                 .as_deref(),
             Some("gemini-b")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    #[serial]
+    async fn runtime_status_falls_back_to_database_context_when_daemon_is_unreachable() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+
+        upsert_claude_provider_with_payload(
+            &db,
+            Some("provider-a"),
+            sample_payload("Claude A", "secret-a"),
+        )
+        .expect("create provider a");
+        upsert_claude_provider_with_payload(
+            &db,
+            Some("provider-b"),
+            sample_payload("Claude B", "secret-b"),
+        )
+        .expect("create provider b");
+        activate_claude_provider(&db, "provider-a").expect("activate provider a");
+        db.add_to_failover_queue(CLAUDE_APP_TYPE, "provider-b")
+            .expect("queue provider b");
+        db.update_provider_health("provider-a", CLAUDE_APP_TYPE, true, None)
+            .await
+            .expect("record healthy provider a");
+        db.update_provider_health_with_threshold(
+            "provider-b",
+            CLAUDE_APP_TYPE,
+            false,
+            Some("upstream timeout".to_string()),
+            1,
+        )
+        .await
+        .expect("record unhealthy provider b");
+
+        let mut app_config = db
+            .get_proxy_config_for_app(CLAUDE_APP_TYPE)
+            .await
+            .expect("claude app config");
+        app_config.enabled = true;
+        app_config.auto_failover_enabled = true;
+        app_config.max_retries = 4;
+        db.update_proxy_config_for_app(app_config)
+            .await
+            .expect("update claude app config");
+
+        let mut global_config = db.get_global_proxy_config().await.expect("global config");
+        global_config.listen_address = "127.0.0.1".to_string();
+        global_config.listen_port = 59999;
+        global_config.proxy_enabled = true;
+        db.update_global_proxy_config(global_config)
+            .await
+            .expect("update global config");
+
+        let status = get_runtime_status(&db).await.expect("runtime status");
+        let claude = status_for_app(&status, CLAUDE_APP_TYPE);
+
+        assert!(!status.service.running);
+        assert!(!status.service.reachable);
+        assert_eq!(status.service.status_source, "config-fallback");
+        assert_eq!(
+            status.runtime.current_provider_id.as_deref(),
+            Some("provider-a")
+        );
+        assert_eq!(status.runtime.active_targets.len(), 1);
+        assert_eq!(status.runtime.active_targets[0].app_type, CLAUDE_APP_TYPE);
+        assert_eq!(status.runtime.active_targets[0].provider_id, "provider-a");
+
+        assert_eq!(claude.provider_count, 2);
+        assert!(claude.proxy_enabled);
+        assert!(claude.auto_failover_enabled);
+        assert_eq!(claude.max_retries, 4);
+        assert_eq!(claude.active_provider_id.as_deref(), Some("provider-a"));
+        assert_eq!(claude.active_provider.name, "Claude A");
+        assert!(claude.active_provider.active);
+        assert_eq!(claude.failover_queue_depth, 1);
+        assert_eq!(claude.failover_queue[0].provider_id, "provider-b");
+        assert!(claude.failover_queue[0].health.observed);
+        assert!(!claude.failover_queue[0].health.healthy);
+        assert_eq!(
+            claude.failover_queue[0].health.last_error.as_deref(),
+            Some("upstream timeout")
+        );
+        assert_eq!(claude.observed_provider_count, 2);
+        assert_eq!(claude.healthy_provider_count, 1);
+        assert_eq!(claude.unhealthy_provider_count, 1);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    #[serial]
+    async fn app_runtime_status_marks_legacy_default_slot_as_active_context() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+
+        upsert_claude_provider_with_payload(
+            &db,
+            Some(DEFAULT_PROVIDER_ID),
+            sample_payload("Phase1", "secret"),
+        )
+        .expect("create default provider");
+
+        let status = get_app_runtime_status(&db, &AppType::Claude)
+            .await
+            .expect("app runtime status");
+
+        assert!(status.using_legacy_default);
+        assert_eq!(
+            status.active_provider_id.as_deref(),
+            Some(DEFAULT_PROVIDER_ID)
+        );
+        assert!(status.active_provider.active);
+        assert_eq!(status.active_provider.name, "Phase1");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    #[serial]
+    async fn runtime_status_prefers_live_daemon_status_endpoint_when_available() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+
+        let (port, handle) = spawn_status_server(ProxyStatus {
+            running: true,
+            address: "127.0.0.1".to_string(),
+            total_requests: 7,
+            success_requests: 6,
+            failed_requests: 1,
+            success_rate: 85.7,
+            uptime_seconds: 42,
+            current_provider: Some("Live Provider".to_string()),
+            current_provider_id: Some("provider-live".to_string()),
+            failover_count: 2,
+            active_targets: vec![crate::proxy::types::ActiveTarget {
+                app_type: CLAUDE_APP_TYPE.to_string(),
+                provider_name: "Live Provider".to_string(),
+                provider_id: "provider-live".to_string(),
+            }],
+            ..Default::default()
+        })
+        .await;
+
+        let mut global_config = db.get_global_proxy_config().await.expect("global config");
+        global_config.listen_address = "127.0.0.1".to_string();
+        global_config.listen_port = port;
+        global_config.proxy_enabled = true;
+        db.update_global_proxy_config(global_config)
+            .await
+            .expect("update global config");
+
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+
+        let status = get_runtime_status(&db).await.expect("runtime status");
+
+        handle.abort();
+        let _ = handle.await;
+
+        assert!(status.service.running);
+        assert!(status.service.reachable);
+        assert_eq!(status.service.status_source, "live-status");
+        assert_eq!(status.runtime.total_requests, 7);
+        assert_eq!(status.runtime.success_requests, 6);
+        assert_eq!(status.runtime.failed_requests, 1);
+        assert_eq!(status.runtime.failover_count, 2);
+        assert_eq!(
+            status.runtime.current_provider.as_deref(),
+            Some("Live Provider")
+        );
+        assert_eq!(
+            status.runtime.current_provider_id.as_deref(),
+            Some("provider-live")
+        );
+        assert_eq!(status.runtime.active_targets.len(), 1);
+        assert_eq!(
+            status.runtime.active_targets[0].provider_id,
+            "provider-live"
         );
     }
 }

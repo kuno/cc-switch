@@ -102,6 +102,18 @@ function runResultCommand(command) {
 	};
 }
 
+function runStatusCommand(command) {
+	let result = runReadCommand(command);
+
+	if (!result.ok)
+		return commandFailure(result);
+
+	return {
+		ok: true,
+		status_json: result.output
+	};
+}
+
 function requireProviderId(providerId) {
 	if (!providerId)
 		return { ok: false, error: 'provider_id is required' };
@@ -139,6 +151,21 @@ function getActiveProvider(app) {
 		return { ok: false, error: 'unsupported app' };
 
 	return runProviderCommand(daemonCommand(`openwrt ${shellquote(normalizedApp)} get-active-provider`));
+}
+
+function getRuntimeStatus() {
+	return runStatusCommand(daemonCommand('openwrt get-runtime-status'));
+}
+
+function getAppRuntimeStatus(app) {
+	let normalizedApp = normalizeApp(app);
+
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
+
+	return runStatusCommand(
+		daemonCommand(`openwrt ${shellquote(normalizedApp)} get-runtime-status`)
+	);
 }
 
 function upsertProvider(app, providerId, provider) {
@@ -245,6 +272,22 @@ return {
 
 			call: function(request) {
 				return getActiveProvider(request.args.app);
+			}
+		},
+
+		get_runtime_status: {
+			call: function() {
+				return getRuntimeStatus();
+			}
+		},
+
+		get_app_runtime_status: {
+			args: {
+				app: 'claude'
+			},
+
+			call: function(request) {
+				return getAppRuntimeStatus(request.args.app);
 			}
 		},
 
