@@ -78,11 +78,13 @@ mod services;
 #[path = "../../src-tauri/src/store.rs"]
 mod store;
 
+use std::io::Read;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-const OPENWRT_COMMAND_HELP: &str = "unsupported command. expected one of: `cc-switch openwrt get-runtime-status`, `cc-switch openwrt [claude|codex|gemini] get-runtime-status`, `cc-switch openwrt [claude|codex|gemini] get-usage-summary`, `cc-switch openwrt [claude|codex|gemini] get-provider-stats`, `cc-switch openwrt [claude|codex|gemini] get-recent-activity`, `cc-switch openwrt [claude|codex|gemini] get-active-provider`, `cc-switch openwrt [claude|codex|gemini] upsert-active-provider`, `cc-switch openwrt [claude|codex|gemini] list-providers`, `cc-switch openwrt [claude|codex|gemini] get-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] get-provider-failover <provider-id>`, `cc-switch openwrt [claude|codex|gemini] upsert-provider [provider-id]`, `cc-switch openwrt [claude|codex|gemini] delete-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] activate-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] get-available-failover-providers`, `cc-switch openwrt [claude|codex|gemini] add-to-failover-queue <provider-id>`, `cc-switch openwrt [claude|codex|gemini] remove-from-failover-queue <provider-id>`, `cc-switch openwrt [claude|codex|gemini] reorder-failover-queue`, `cc-switch openwrt [claude|codex|gemini] set-auto-failover-enabled <true|false>`, `cc-switch openwrt [claude|codex|gemini] set-max-retries <value>`";
+const OPENWRT_COMMAND_HELP: &str = "unsupported command. expected one of: `cc-switch openwrt get-runtime-status`, `cc-switch openwrt [claude|codex|gemini] get-runtime-status`, `cc-switch openwrt [claude|codex|gemini] get-usage-summary`, `cc-switch openwrt [claude|codex|gemini] get-provider-stats`, `cc-switch openwrt [claude|codex|gemini] get-recent-activity`, `cc-switch openwrt [claude|codex|gemini] get-active-provider`, `cc-switch openwrt [claude|codex|gemini] upsert-active-provider`, `cc-switch openwrt [claude|codex|gemini] list-providers`, `cc-switch openwrt [claude|codex|gemini] get-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] get-provider-failover <provider-id>`, `cc-switch openwrt [claude|codex|gemini] upsert-provider [provider-id]`, `cc-switch openwrt [claude|codex|gemini] delete-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] activate-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] get-available-failover-providers`, `cc-switch openwrt [claude|codex|gemini] add-to-failover-queue <provider-id>`, `cc-switch openwrt [claude|codex|gemini] remove-from-failover-queue <provider-id>`, `cc-switch openwrt [claude|codex|gemini] reorder-failover-queue`, `cc-switch openwrt [claude|codex|gemini] set-auto-failover-enabled <true|false>`, `cc-switch openwrt [claude|codex|gemini] set-max-retries <value>`, `cc-switch openwrt codex upload-codex-auth <provider-id>`, `cc-switch openwrt codex remove-codex-auth <provider-id>`";
+const CODEX_AUTH_UPLOAD_LIMIT_BYTES: usize = 64 * 1024;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -244,6 +246,24 @@ async fn run_cli(args: Vec<String>) -> anyhow::Result<()> {
             print_json(&openwrt_admin::set_max_retries(&db, &app_type, value).await?)?;
             Ok(())
         }
+        (Some("upload-codex-auth"), [provider_id]) => {
+            let raw_bytes = read_bytes_from_stdin()?;
+            print_json(&openwrt_admin::upload_codex_auth(
+                &db,
+                &app_type,
+                provider_id,
+                &raw_bytes,
+            )?)?;
+            Ok(())
+        }
+        (Some("remove-codex-auth"), [provider_id]) => {
+            print_json(&openwrt_admin::remove_codex_auth(
+                &db,
+                &app_type,
+                provider_id,
+            )?)?;
+            Ok(())
+        }
         _ => Err(anyhow::anyhow!(OPENWRT_COMMAND_HELP)),
     }
 }
@@ -271,6 +291,39 @@ fn read_string_array_from_stdin() -> anyhow::Result<Vec<String>> {
         .map_err(|e| anyhow::anyhow!("failed to parse provider id array from stdin: {e}"))?;
 
     Ok(parsed)
+}
+
+fn read_bytes_from_stdin() -> anyhow::Result<Vec<u8>> {
+    let mut stdin = std::io::stdin();
+    let input = read_bounded_bytes(&mut stdin, CODEX_AUTH_UPLOAD_LIMIT_BYTES)?;
+    if input.is_empty() {
+        return Err(anyhow::anyhow!("stdin payload is required"));
+    }
+
+    Ok(input)
+}
+
+fn read_bounded_bytes<R: Read>(reader: &mut R, limit: usize) -> anyhow::Result<Vec<u8>> {
+    let mut input = Vec::new();
+    let mut chunk = [0u8; 8192];
+
+    loop {
+        let read = reader.read(&mut chunk)?;
+        if read == 0 {
+            break;
+        }
+
+        if input.len() + read > limit {
+            return Err(anyhow::anyhow!(
+                "stdin payload exceeds {} KiB limit",
+                limit / 1024
+            ));
+        }
+
+        input.extend_from_slice(&chunk[..read]);
+    }
+
+    Ok(input)
 }
 
 fn sync_openwrt_host_proxy_into_runtime_state(db: &database::Database) -> anyhow::Result<()> {
@@ -393,11 +446,20 @@ async fn wait_for_shutdown_signal() -> anyhow::Result<()> {
 mod tests {
     use super::*;
     use serial_test::serial;
+    use std::io::Cursor;
     use std::sync::{Mutex, OnceLock};
 
     fn env_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    #[test]
+    fn read_bounded_bytes_rejects_payloads_over_limit() {
+        let mut cursor = Cursor::new(vec![b'x'; CODEX_AUTH_UPLOAD_LIMIT_BYTES + 1]);
+        let error = read_bounded_bytes(&mut cursor, CODEX_AUTH_UPLOAD_LIMIT_BYTES)
+            .expect_err("oversized payload");
+        assert!(error.to_string().contains("64 KiB limit"));
     }
 
     #[test]

@@ -3,22 +3,19 @@
 # <swiftbar.hideRunInTerminal>true</swiftbar.hideRunInTerminal>
 # <swiftbar.hideDisablePlugin>true</swiftbar.hideDisablePlugin>
 
+import base64
 import json
 import urllib.request
 from collections import OrderedDict
 from datetime import datetime, timezone
+from pathlib import Path
 
 DAEMON = "http://istoreos:15721"
 TIMEOUT = 5
 
 APP_ORDER = ["claude", "codex", "gemini"]
 
-STATUS_ICON = {
-    "allowed": "\u2705",
-    "allowed_warning": "\u26a0\ufe0f",
-    "exhausted": "\u274c",
-    "rejected": "\u274c",
-}
+STATUS_ICON = {}
 
 STATUS_COLOR = {
     "allowed": "#4ade80",
@@ -26,6 +23,20 @@ STATUS_COLOR = {
     "exhausted": "#f87171",
 }
 
+APP_ICON_FILES = {
+    "claude": [
+        Path("/Applications/Claude.app/Contents/Resources/TrayIconTemplate.png"),
+        Path.home() / "Applications/Claude.app/Contents/Resources/TrayIconTemplate.png",
+    ],
+    "codex": [
+        Path("/Applications/Codex/Contents/Resources/codexTemplate.png"),
+        Path("/Applications/Codex.app/Contents/Resources/codexTemplate.png"),
+        Path.home() / "Applications/Codex/Contents/Resources/codexTemplate.png",
+        Path.home() / "Applications/Codex.app/Contents/Resources/codexTemplate.png",
+    ],
+}
+
+APP_ICON_CACHE = {}
 
 def fetch_json(path):
     url = f"{DAEMON}{path}"
@@ -75,6 +86,14 @@ def format_tokens(n):
     return str(n)
 
 
+def quota_hex_color(pct):
+    if pct >= 80:
+        return "#f87171"
+    if pct >= 60:
+        return "#facc15"
+    return "#4ade80"
+
+
 def group_by_app(providers):
     groups = OrderedDict()
     for app in APP_ORDER:
@@ -111,6 +130,60 @@ def provider_headline(p):
     return "", None
 
 
+def normalize_window_name(name):
+    normalized = (name or "").replace("_", "").replace("-", "").lower()
+    if normalized in ("5h", "fivehour"):
+        return "5h"
+    if normalized in ("7d", "sevenday"):
+        return "7d"
+    return None
+
+
+def app_window_headline(providers):
+    best = OrderedDict([("5h", None), ("7d", None)])
+    for p in providers:
+        for w in p.get("windows", []):
+            label = normalize_window_name(w.get("name"))
+            util = w.get("utilization")
+            if not label or util is None:
+                continue
+            pct = int(util * 100)
+            if best[label] is None or pct > best[label]:
+                best[label] = pct
+    return best
+
+
+def sanitize_title_text(text):
+    for icon in STATUS_ICON.values():
+        text = text.replace(icon, "")
+    return " ".join(text.split())
+
+
+def load_app_icon_base64(app):
+    cached = APP_ICON_CACHE.get(app)
+    if cached is not None:
+        return cached
+    for path in APP_ICON_FILES.get(app, []):
+        try:
+            encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+            APP_ICON_CACHE[app] = encoded
+            return encoded
+        except FileNotFoundError:
+            continue
+        except OSError:
+            continue
+    APP_ICON_CACHE[app] = ""
+    return ""
+
+
+def render_app_header(app, summary):
+    encoded = load_app_icon_base64(app)
+    if encoded:
+        title = summary.strip() or " "
+        return f"{title} | templateImage={encoded} size=14 color=#e2e8f0"
+    return f"{app.upper()}{summary} | size=14 color=#e2e8f0"
+
+
 def menu_bar_title(quota_groups, stats_by_app):
     parts = []
     for app in APP_ORDER:
@@ -118,21 +191,23 @@ def menu_bar_title(quota_groups, stats_by_app):
         app_stats = stats_by_app.get(app)
         if not providers and not app_stats:
             continue
-        label = app.capitalize()[:6]
-        best_icon, best_pct = "", None
-        for p in providers:
-            icon, pct = provider_headline(p)
-            if pct is not None and (best_pct is None or pct > best_pct):
-                best_pct = pct
-                best_icon = icon
-        if best_pct is not None:
-            parts.append(f"{best_icon}{label} {best_pct}%")
+        window_pcts = app_window_headline(providers)
+        if any(pct is not None for pct in window_pcts.values()):
+            short_5h = window_pcts.get("5h")
+            short_7d = window_pcts.get("7d")
+            if short_5h is not None and short_7d is not None:
+                parts.append(f"[{short_5h}/{short_7d}]%")
+            else:
+                fallback_bits = []
+                for window_name, pct in window_pcts.items():
+                    if pct is not None:
+                        fallback_bits.append(f"{window_name} {pct}%")
+                parts.append(" / ".join(fallback_bits))
         elif app_stats:
             total_req = sum(s.get("requestCount", 0) for s in app_stats)
-            parts.append(f"{label} {total_req}r")
-        else:
-            parts.append(label)
-    return " ".join(parts) if parts else "--"
+            parts.append(f"{total_req}r")
+    # SwiftBar uses ASCII "|" to start item metadata, so use a Unicode vertical bar in title text.
+    return sanitize_title_text(" ｜ ".join(parts) if parts else "--")
 
 
 def render_quota_windows(p, prefix):
@@ -144,9 +219,9 @@ def render_quota_windows(p, prefix):
             wstatus = w.get("status", "")
             util = w.get("utilization")
             reset = w.get("reset")
-            color = STATUS_COLOR.get(wstatus, "#a1a1aa")
             if util is not None:
                 pct = int(util * 100)
+                color = STATUS_COLOR.get(wstatus) or quota_hex_color(pct)
                 graph = bar_graph(util)
                 reset_str = format_reset(reset)
                 reset_label = f"  resets {reset_str}" if reset_str else ""
@@ -154,6 +229,7 @@ def render_quota_windows(p, prefix):
                     f"{prefix}{graph} {pct}% ({wname}){reset_label} | font=Menlo size=12 color={color}"
                 )
             else:
+                color = STATUS_COLOR.get(wstatus, "#a1a1aa")
                 lines.append(f"{prefix}{wname}: {wstatus} | size=12 color={color}")
         rep = p.get("representative_claim")
         if rep:
@@ -262,11 +338,11 @@ def main():
             total_tok = sum(s.get("totalTokens", 0) for s in app_stats)
             summary_parts = []
             if best_pct is not None:
-                summary_parts.append(f"{best_icon}{best_pct}%")
+                summary_parts.append(f"{best_icon} {best_pct}%".strip())
             if total_req > 0:
                 summary_parts.append(f"{total_req}r/{format_tokens(total_tok)}tok")
             summary = f" {' '.join(summary_parts)}" if summary_parts else ""
-            print(f"{app.upper()}{summary} | size=14 color=#e2e8f0")
+            print(render_app_header(app, summary))
 
             stats_by_id = {s["providerId"]: s for s in app_stats}
             quota_by_id = {
@@ -288,7 +364,8 @@ def main():
                 )
                 status = q.get("status") if q else None
                 status_icon = STATUS_ICON.get(status, "") if status else ""
-                print(f"--{status_icon} {name} | size=13")
+                provider_label = f"--{status_icon} {name}" if status_icon else f"--{name}"
+                print(f"{provider_label} | size=13")
 
                 if s:
                     print(render_stats_line(s, "--"))

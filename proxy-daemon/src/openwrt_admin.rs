@@ -2,6 +2,10 @@ use crate::app_config::AppType;
 use crate::config::sanitize_provider_name;
 use crate::database::Database;
 use crate::provider::Provider;
+use crate::proxy::providers::codex_oauth_store::{
+    delete_codex_auth_for_provider, load_codex_auth_summary_for_provider,
+    save_codex_auth_for_provider, SavedAuthSummary,
+};
 use crate::proxy::server::populate_status_active_targets;
 use crate::proxy::types::{AppProxyConfig, GlobalProxyConfig, ProviderHealth, ProxyStatus};
 use crate::services::usage_stats::{LogFilters, ProviderStats, UsageSummary};
@@ -76,6 +80,8 @@ pub struct OpenWrtProviderView {
     pub notes: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auth_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub codex_auth: Option<SavedAuthSummary>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -117,6 +123,13 @@ pub struct OpenWrtProviderDeleteView {
     pub deleted_provider_id: String,
     pub active_provider_id: Option<String>,
     pub providers_remaining: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtCodexAuthDeleteView {
+    pub provider_id: String,
+    pub removed: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -249,6 +262,40 @@ pub fn get_provider(
         &provider,
         active_provider_id.as_deref(),
     ))
+}
+
+pub fn upload_codex_auth(
+    db: &Database,
+    app_type: &AppType,
+    provider_id: &str,
+    raw_bytes: &[u8],
+) -> anyhow::Result<SavedAuthSummary> {
+    let profile = openwrt_app_profile(app_type)?;
+    if profile.app_id != CODEX_APP_ID {
+        return Err(anyhow!("upload-codex-auth is only supported for codex"));
+    }
+
+    let provider = load_provider(db, profile, provider_id)?;
+    save_codex_auth_for_provider(&provider.id, raw_bytes)
+}
+
+pub fn remove_codex_auth(
+    db: &Database,
+    app_type: &AppType,
+    provider_id: &str,
+) -> anyhow::Result<OpenWrtCodexAuthDeleteView> {
+    let profile = openwrt_app_profile(app_type)?;
+    if profile.app_id != CODEX_APP_ID {
+        return Err(anyhow!("remove-codex-auth is only supported for codex"));
+    }
+
+    let provider = load_provider(db, profile, provider_id)?;
+    delete_codex_auth_for_provider(&provider.id)?;
+
+    Ok(OpenWrtCodexAuthDeleteView {
+        provider_id: provider.id,
+        removed: true,
+    })
 }
 
 pub async fn get_provider_failover(
@@ -402,6 +449,16 @@ pub fn delete_provider(
                 profile.app_id
             )
         })?;
+
+    if profile.app_id == CODEX_APP_ID {
+        if let Err(error) = delete_codex_auth_for_provider(&normalized_provider_id) {
+            log::warn!(
+                "failed to remove stored codex auth for deleted provider {}: {}",
+                normalized_provider_id,
+                error
+            );
+        }
+    }
 
     let remaining = db.get_all_providers(profile.app_id).map_err(|e| {
         anyhow!(
@@ -748,6 +805,11 @@ fn upsert_provider_with_payload(
                 profile.app_id
             )
         })?;
+    let previous_auth_mode = existing
+        .as_ref()
+        .and_then(|provider| provider.settings_config.get("auth_mode"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
     let provider = build_provider(
         app_type,
         profile,
@@ -758,6 +820,7 @@ fn upsert_provider_with_payload(
 
     db.save_provider(profile.app_id, &provider)
         .map_err(|e| anyhow!("failed to save {} provider: {e}", profile.app_id))?;
+    maybe_cleanup_stored_codex_auth_after_save(profile, &provider.id, previous_auth_mode.as_deref(), &provider);
 
     let active_provider_id = resolve_active_provider_id_for_read(db, app_type, profile)?;
     Ok(provider_to_view(
@@ -798,6 +861,11 @@ fn upsert_active_provider_with_payload(
                 profile.app_id
             )
         })?;
+    let previous_auth_mode = existing
+        .as_ref()
+        .and_then(|provider| provider.settings_config.get("auth_mode"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
     let provider = build_provider(
         app_type,
         profile,
@@ -808,6 +876,7 @@ fn upsert_active_provider_with_payload(
 
     db.save_provider(profile.app_id, &provider)
         .map_err(|e| anyhow!("failed to save {} provider: {e}", profile.app_id))?;
+    maybe_cleanup_stored_codex_auth_after_save(profile, &provider.id, previous_auth_mode.as_deref(), &provider);
     set_active_provider_id(db, app_type, profile, Some(&provider.id))?;
 
     Ok(provider_to_view(
@@ -816,6 +885,34 @@ fn upsert_active_provider_with_payload(
         &provider,
         Some(&provider.id),
     ))
+}
+
+fn maybe_cleanup_stored_codex_auth_after_save(
+    profile: OpenWrtAppProfile,
+    provider_id: &str,
+    previous_auth_mode: Option<&str>,
+    provider: &Provider,
+) {
+    if profile.app_id != CODEX_APP_ID {
+        return;
+    }
+
+    let next_auth_mode = provider
+        .settings_config
+        .get("auth_mode")
+        .and_then(Value::as_str);
+    let switched_from_oauth =
+        is_codex_oauth_auth_mode(previous_auth_mode) && next_auth_mode == Some("api_key");
+
+    if switched_from_oauth {
+        if let Err(error) = delete_codex_auth_for_provider(provider_id) {
+            log::warn!(
+                "failed to remove stored codex auth after switching provider {} to api_key: {}",
+                provider_id,
+                error
+            );
+        }
+    }
 }
 
 fn openwrt_app_profile(app_type: &AppType) -> anyhow::Result<OpenWrtAppProfile> {
@@ -1368,6 +1465,10 @@ fn build_claude_provider(
     Ok(provider)
 }
 
+fn is_codex_oauth_auth_mode(auth_mode: Option<&str>) -> bool {
+    matches!(auth_mode, Some("codex_oauth" | "client_passthrough"))
+}
+
 fn build_codex_provider(
     profile: OpenWrtAppProfile,
     existing: Option<Provider>,
@@ -1377,7 +1478,7 @@ fn build_codex_provider(
     let name = require_trimmed("provider name", &payload.name)?;
     let base_url = require_trimmed("base URL", &payload.base_url)?;
     let _token_field = normalize_token_field(profile, &payload.token_field)?;
-    let is_passthrough = payload.auth_mode.as_deref() == Some("client_passthrough");
+    let is_passthrough = is_codex_oauth_auth_mode(payload.auth_mode.as_deref());
     let token_value = if is_passthrough {
         resolve_optional_token_value(profile, existing.as_ref(), &payload.token)
     } else {
@@ -1391,7 +1492,9 @@ fn build_codex_provider(
     let root = ensure_settings_object(&mut provider, "Codex provider settings")?;
 
     if is_passthrough {
-        root.insert("auth_mode".to_string(), json!("client_passthrough"));
+        root.insert("auth_mode".to_string(), json!("codex_oauth"));
+    } else if payload.auth_mode.as_deref() == Some("api_key") {
+        root.insert("auth_mode".to_string(), json!("api_key"));
     } else {
         root.remove("auth_mode");
     }
@@ -1651,11 +1754,12 @@ fn empty_provider_view(profile: OpenWrtAppProfile) -> OpenWrtProviderView {
         model: String::new(),
         notes: String::new(),
         auth_mode: None,
+        codex_auth: None,
     }
 }
 
 fn provider_to_view(
-    _app_type: &AppType,
+    app_type: &AppType,
     profile: OpenWrtAppProfile,
     provider: &Provider,
     active_provider_id: Option<&str>,
@@ -1667,7 +1771,29 @@ fn provider_to_view(
         .settings_config
         .get("auth_mode")
         .and_then(Value::as_str)
-        .map(str::to_string);
+        .map(|auth_mode| {
+            if matches!(app_type, AppType::Codex) && is_codex_oauth_auth_mode(Some(auth_mode)) {
+                "codex_oauth".to_string()
+            } else {
+                auth_mode.to_string()
+            }
+        });
+
+    let codex_auth = if matches!(app_type, AppType::Codex) {
+        match load_codex_auth_summary_for_provider(&provider.id) {
+            Ok(summary) => summary,
+            Err(error) => {
+                log::warn!(
+                    "failed to load stored codex auth summary for {}: {}",
+                    provider.id,
+                    error
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
 
     OpenWrtProviderView {
         configured: true,
@@ -1681,6 +1807,7 @@ fn provider_to_view(
         model: extract_model(profile, provider).unwrap_or_default(),
         notes: provider.notes.clone().unwrap_or_default(),
         auth_mode,
+        codex_auth,
     }
 }
 
@@ -2020,6 +2147,39 @@ mod tests {
         }
     }
 
+    fn codex_payload(name: &str, token: &str, auth_mode: Option<&str>) -> OpenWrtProviderPayload {
+        OpenWrtProviderPayload {
+            provider_id: None,
+            name: name.to_string(),
+            base_url: "https://api.openai.com/v1".to_string(),
+            token_field: CODEX_TOKEN_FIELD.to_string(),
+            token: token.to_string(),
+            model: "gpt-5.4".to_string(),
+            notes: "codex".to_string(),
+            auth_mode: auth_mode.map(str::to_string),
+        }
+    }
+
+    fn codex_auth_path(env: &TestEnv, provider_id: &str) -> std::path::PathBuf {
+        env.tmp
+            .path()
+            .join("data")
+            .join("codex_auth")
+            .join(format!("{provider_id}.json"))
+    }
+
+    fn sample_codex_auth_json() -> Vec<u8> {
+        serde_json::json!({
+            "tokens": {
+                "access_token": "access-token",
+                "refresh_token": "refresh-token",
+                "account_id": "acc-123"
+            }
+        })
+        .to_string()
+        .into_bytes()
+    }
+
     fn status_for_app<'a>(
         status: &'a OpenWrtRuntimeStatusView,
         app: &str,
@@ -2193,6 +2353,55 @@ mod tests {
                 .as_deref(),
             Some("provider-b")
         );
+    }
+
+    #[test]
+    #[serial]
+    fn delete_codex_provider_removes_stored_auth_file() {
+        let env = TestEnv::new();
+        let db = Database::memory().expect("db");
+
+        upsert_provider_from_payload(
+            &db,
+            &AppType::Codex,
+            Some("provider-codex"),
+            codex_payload("Codex", "", Some("codex_oauth")),
+        )
+        .expect("create codex provider");
+        upload_codex_auth(&db, &AppType::Codex, "provider-codex", &sample_codex_auth_json())
+            .expect("upload auth");
+        assert!(codex_auth_path(&env, "provider-codex").exists());
+
+        delete_provider(&db, &AppType::Codex, "provider-codex").expect("delete codex provider");
+        assert!(!codex_auth_path(&env, "provider-codex").exists());
+    }
+
+    #[test]
+    #[serial]
+    fn switching_codex_provider_to_api_key_removes_stored_auth_file() {
+        let env = TestEnv::new();
+        let db = Database::memory().expect("db");
+
+        upsert_provider_from_payload(
+            &db,
+            &AppType::Codex,
+            Some("provider-codex"),
+            codex_payload("Codex", "", Some("codex_oauth")),
+        )
+        .expect("create codex provider");
+        upload_codex_auth(&db, &AppType::Codex, "provider-codex", &sample_codex_auth_json())
+            .expect("upload auth");
+        assert!(codex_auth_path(&env, "provider-codex").exists());
+
+        upsert_provider_from_payload(
+            &db,
+            &AppType::Codex,
+            Some("provider-codex"),
+            codex_payload("Codex", "api-key", Some("api_key")),
+        )
+        .expect("switch to api_key");
+
+        assert!(!codex_auth_path(&env, "provider-codex").exists());
     }
 
     #[test]
@@ -2603,16 +2812,87 @@ mod tests {
             auth_mode: Some("client_passthrough".to_string()),
         };
 
-        let created = upsert_provider_with_payload(&db, &AppType::Claude, Some("claude-pt"), payload)
-            .expect("create passthrough provider");
+        let created =
+            upsert_provider_with_payload(&db, &AppType::Claude, Some("claude-pt"), payload)
+                .expect("create passthrough provider");
 
         assert!(created.configured);
         assert!(!created.token_configured);
         assert_eq!(created.auth_mode.as_deref(), Some("client_passthrough"));
 
-        let view = get_provider(&db, &AppType::Claude, "claude-pt")
-            .expect("reload passthrough provider");
+        let view =
+            get_provider(&db, &AppType::Claude, "claude-pt").expect("reload passthrough provider");
         assert_eq!(view.auth_mode.as_deref(), Some("client_passthrough"));
+    }
+
+    #[test]
+    #[serial]
+    fn codex_codex_oauth_provider_allows_empty_token() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+        let payload = OpenWrtProviderPayload {
+            provider_id: None,
+            name: "OpenAI Official".to_string(),
+            base_url: "https://api.openai.com/v1".to_string(),
+            token_field: CODEX_TOKEN_FIELD.to_string(),
+            token: String::new(),
+            model: "gpt-5.4".to_string(),
+            notes: String::new(),
+            auth_mode: Some("codex_oauth".to_string()),
+        };
+
+        let created =
+            upsert_provider_with_payload(&db, &AppType::Codex, Some("codex-oauth"), payload)
+                .expect("create codex oauth provider");
+
+        assert!(created.configured);
+        assert!(!created.token_configured);
+        assert_eq!(created.auth_mode.as_deref(), Some("codex_oauth"));
+
+        let stored = db
+            .get_provider_by_id("codex-oauth", CODEX_APP_ID)
+            .expect("db lookup")
+            .expect("provider exists");
+        assert_eq!(
+            stored
+                .settings_config
+                .get("auth_mode")
+                .and_then(Value::as_str),
+            Some("codex_oauth")
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn codex_legacy_client_passthrough_view_is_normalized_to_codex_oauth() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+        let provider = Provider {
+            id: "legacy-codex".to_string(),
+            name: "Legacy Codex".to_string(),
+            settings_config: json!({
+                "auth_mode": "client_passthrough",
+                "base_url": "https://api.openai.com/v1",
+                "auth": {
+                    "OPENAI_API_KEY": ""
+                }
+            }),
+            website_url: None,
+            category: Some("codex".to_string()),
+            created_at: None,
+            sort_index: None,
+            notes: None,
+            meta: None,
+            icon: None,
+            icon_color: None,
+            in_failover_queue: false,
+        };
+        db.save_provider(CODEX_APP_ID, &provider)
+            .expect("insert provider");
+
+        let view = get_provider(&db, &AppType::Codex, "legacy-codex")
+            .expect("reload legacy codex provider");
+        assert_eq!(view.auth_mode.as_deref(), Some("codex_oauth"));
     }
 
     #[test]
@@ -2633,7 +2913,10 @@ mod tests {
 
         let result = upsert_provider_with_payload(&db, &AppType::Claude, None, payload);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("token is required"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("token is required"));
     }
 
     #[test]

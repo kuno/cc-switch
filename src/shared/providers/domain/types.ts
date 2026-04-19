@@ -46,6 +46,12 @@ export interface SharedProviderPresetGroup {
   presets: SharedProviderPreset[];
 }
 
+export interface SharedProviderCodexAuthSummary {
+  accountId?: string;
+  expiresAt?: number | null;
+  refreshTokenPresent: boolean;
+}
+
 export interface SharedProviderView {
   configured: boolean;
   providerId: string | null;
@@ -58,6 +64,7 @@ export interface SharedProviderView {
   notes: string;
   active: boolean;
   authMode?: string;
+  codexAuth?: SharedProviderCodexAuthSummary;
 }
 
 export interface SharedProviderHealth {
