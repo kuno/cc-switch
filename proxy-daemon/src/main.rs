@@ -78,8 +78,8 @@ mod services;
 #[path = "../../src-tauri/src/store.rs"]
 mod store;
 
-use std::sync::Arc;
 use std::str::FromStr;
+use std::sync::Arc;
 use tokio::sync::RwLock;
 
 #[tokio::main]
@@ -125,7 +125,7 @@ async fn run_cli(args: Vec<String>) -> anyhow::Result<()> {
         },
         None => {
             return Err(anyhow::anyhow!(
-                "unsupported command. expected one of: `cc-switch openwrt [claude|codex|gemini] get-active-provider`, `cc-switch openwrt [claude|codex|gemini] upsert-active-provider`, `cc-switch openwrt [claude|codex|gemini] list-providers`, `cc-switch openwrt [claude|codex|gemini] get-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] upsert-provider [provider-id]`, `cc-switch openwrt [claude|codex|gemini] delete-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] activate-provider <provider-id>`"
+                "unsupported command. expected one of: `cc-switch openwrt get-runtime-status`, `cc-switch openwrt [claude|codex|gemini] get-runtime-status`, `cc-switch openwrt [claude|codex|gemini] get-active-provider`, `cc-switch openwrt [claude|codex|gemini] upsert-active-provider`, `cc-switch openwrt [claude|codex|gemini] list-providers`, `cc-switch openwrt [claude|codex|gemini] get-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] upsert-provider [provider-id]`, `cc-switch openwrt [claude|codex|gemini] delete-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] activate-provider <provider-id>`"
             ));
         }
     };
@@ -134,6 +134,14 @@ async fn run_cli(args: Vec<String>) -> anyhow::Result<()> {
     let tail = &args[(command_offset + 1).min(args.len())..];
 
     match (command, tail) {
+        (Some("get-runtime-status"), []) => {
+            if command_offset == 1 {
+                print_json(&openwrt_admin::get_runtime_status(&db).await?)?;
+            } else {
+                print_json(&openwrt_admin::get_app_runtime_status(&db, &app_type).await?)?;
+            }
+            Ok(())
+        }
         (Some("get-active-provider"), []) => {
             print_json(&openwrt_admin::get_active_provider(&db, &app_type)?)?;
             Ok(())
@@ -167,7 +175,7 @@ async fn run_cli(args: Vec<String>) -> anyhow::Result<()> {
             Ok(())
         }
         _ => Err(anyhow::anyhow!(
-            "unsupported command. expected one of: `cc-switch openwrt [claude|codex|gemini] get-active-provider`, `cc-switch openwrt [claude|codex|gemini] upsert-active-provider`, `cc-switch openwrt [claude|codex|gemini] list-providers`, `cc-switch openwrt [claude|codex|gemini] get-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] upsert-provider [provider-id]`, `cc-switch openwrt [claude|codex|gemini] delete-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] activate-provider <provider-id>`"
+            "unsupported command. expected one of: `cc-switch openwrt get-runtime-status`, `cc-switch openwrt [claude|codex|gemini] get-runtime-status`, `cc-switch openwrt [claude|codex|gemini] get-active-provider`, `cc-switch openwrt [claude|codex|gemini] upsert-active-provider`, `cc-switch openwrt [claude|codex|gemini] list-providers`, `cc-switch openwrt [claude|codex|gemini] get-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] upsert-provider [provider-id]`, `cc-switch openwrt [claude|codex|gemini] delete-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] activate-provider <provider-id>`"
         )),
     }
 }
