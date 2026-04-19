@@ -161,7 +161,11 @@ function areDraftsEqual(
 }
 
 function allowsOptionalToken(authMode?: string): boolean {
-  return authMode === "client_passthrough" || authMode === "codex_oauth";
+  return (
+    authMode === "client_passthrough" ||
+    authMode === "codex_oauth" ||
+    authMode === "claude_oauth"
+  );
 }
 
 function deriveWebsite(baseUrl: string): string {
@@ -694,6 +698,69 @@ export const ProviderSidePanelHost = forwardRef<
     }
   }
 
+  async function handleUploadClaudeAuth() {
+    if (
+      authPending ||
+      !selectedProvider?.providerId ||
+      !selectedAuthFile ||
+      !providerAdapter.uploadClaudeAuth
+    ) {
+      return;
+    }
+
+    setAuthPending(true);
+    try {
+      await providerAdapter.uploadClaudeAuth(
+        appId,
+        selectedProvider.providerId,
+        await selectedAuthFile.text(),
+      );
+      await refreshSelectionAfterMutation(
+        appId,
+        "edit",
+        selectedProvider.providerId,
+        draft,
+      );
+      setSelectedAuthFile(null);
+    } catch (uploadError) {
+      shell.showMessage(
+        "error",
+        uploadError instanceof Error ? uploadError.message : String(uploadError),
+      );
+    } finally {
+      setAuthPending(false);
+    }
+  }
+
+  async function handleRemoveClaudeAuth() {
+    if (
+      authPending ||
+      !selectedProvider?.providerId ||
+      !providerAdapter.removeClaudeAuth
+    ) {
+      return;
+    }
+
+    setAuthPending(true);
+    try {
+      await providerAdapter.removeClaudeAuth(appId, selectedProvider.providerId);
+      await refreshSelectionAfterMutation(
+        appId,
+        "edit",
+        selectedProvider.providerId,
+        draft,
+      );
+      setSelectedAuthFile(null);
+    } catch (removeError) {
+      shell.showMessage(
+        "error",
+        removeError instanceof Error ? removeError.message : String(removeError),
+      );
+    } finally {
+      setAuthPending(false);
+    }
+  }
+
   const footerText =
     mode === "new"
       ? `Create a new ${getAppLabel(appId)} route from this draft.`
@@ -743,6 +810,12 @@ export const ProviderSidePanelHost = forwardRef<
       }}
       onRemoveCodexAuth={() => {
         void handleRemoveCodexAuth();
+      }}
+      onUploadClaudeAuth={() => {
+        void handleUploadClaudeAuth();
+      }}
+      onRemoveClaudeAuth={() => {
+        void handleRemoveClaudeAuth();
       }}
       onActivate={() => {
         void handleActivate();

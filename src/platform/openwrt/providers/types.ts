@@ -116,6 +116,15 @@ export interface OpenWrtProviderTransport {
     appId: SharedProviderAppId,
     providerId: string,
   ): Promise<OpenWrtRpcResult | null>;
+  uploadClaudeAuth?(
+    appId: SharedProviderAppId,
+    providerId: string,
+    authJsonText: string,
+  ): Promise<OpenWrtRpcResult | null>;
+  removeClaudeAuth?(
+    appId: SharedProviderAppId,
+    providerId: string,
+  ): Promise<OpenWrtRpcResult | null>;
   restartService(): Promise<OpenWrtRpcResult>;
 }
 

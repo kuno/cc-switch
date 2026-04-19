@@ -51,6 +51,15 @@ export interface ProviderPlatformAdapter {
     appId: SharedProviderAppId,
     providerId: string,
   ): Promise<void>;
+  uploadClaudeAuth?(
+    appId: SharedProviderAppId,
+    providerId: string,
+    authJsonText: string,
+  ): Promise<void>;
+  removeClaudeAuth?(
+    appId: SharedProviderAppId,
+    providerId: string,
+  ): Promise<void>;
   restartServiceIfNeeded(): Promise<void>;
   getCapabilities(
     appId: SharedProviderAppId,

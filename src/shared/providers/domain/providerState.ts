@@ -1,5 +1,6 @@
 import type {
   SharedProviderAppId,
+  SharedProviderClaudeAuthSummary,
   SharedProviderCodexAuthSummary,
   SharedProviderEditorPayload,
   SharedProviderState,
@@ -44,6 +45,19 @@ function getOptionalNumber(provider: ProviderLike, keys: string[]): number | nul
   return null;
 }
 
+function getStringArray(provider: ProviderLike, keys: string[]): string[] {
+  for (const key of keys) {
+    const value = provider[key];
+    if (Array.isArray(value)) {
+      return value
+        .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+        .filter((entry) => entry.length > 0);
+    }
+  }
+
+  return [];
+}
+
 function parseCodexAuthSummary(
   value: unknown,
 ): SharedProviderCodexAuthSummary | undefined {
@@ -69,6 +83,44 @@ function parseCodexAuthSummary(
   };
 }
 
+function parseClaudeAuthSummary(
+  value: unknown,
+): SharedProviderClaudeAuthSummary | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const typedValue = value as ProviderLike;
+  const expiresAtMs = getOptionalNumber(typedValue, [
+    "expiresAtMs",
+    "expires_at_ms",
+  ]);
+  const scopes = getStringArray(typedValue, ["scopes"]);
+  const refreshTokenPresent = getBoolean(typedValue, [
+    "refreshTokenPresent",
+    "refresh_token_present",
+  ]);
+  const subscriptionType =
+    getString(typedValue, ["subscriptionType", "subscription_type"]) ||
+    undefined;
+
+  if (
+    expiresAtMs == null &&
+    scopes.length === 0 &&
+    !refreshTokenPresent &&
+    subscriptionType == null
+  ) {
+    return undefined;
+  }
+
+  return {
+    expiresAtMs,
+    scopes,
+    refreshTokenPresent,
+    subscriptionType,
+  };
+}
+
 export function emptySharedProviderView(
   appId: SharedProviderAppId,
 ): SharedProviderView {
@@ -84,6 +136,7 @@ export function emptySharedProviderView(
     notes: "",
     active: false,
     codexAuth: undefined,
+    claudeAuth: undefined,
   };
 }
 
@@ -152,6 +205,9 @@ export function normalizeSharedProviderView(
     active: isActive,
     authMode: getString(provider, ["authMode", "auth_mode"]) || undefined,
     codexAuth: parseCodexAuthSummary(provider.codexAuth ?? provider.codex_auth),
+    claudeAuth: parseClaudeAuthSummary(
+      provider.claudeAuth ?? provider.claude_auth,
+    ),
   };
 }
 

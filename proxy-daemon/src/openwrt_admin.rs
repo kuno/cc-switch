@@ -2,9 +2,15 @@ use crate::app_config::AppType;
 use crate::config::sanitize_provider_name;
 use crate::database::Database;
 use crate::provider::Provider;
-use crate::proxy::providers::codex_oauth_store::{
-    delete_codex_auth_for_provider, load_codex_auth_summary_for_provider,
-    save_codex_auth_for_provider, SavedAuthSummary,
+use crate::proxy::providers::{
+    claude_oauth_store::{
+        delete_claude_auth_for_provider, load_claude_auth_summary_for_provider,
+        save_claude_auth_for_provider, ClaudeSavedAuthSummary,
+    },
+    codex_oauth_store::{
+        delete_codex_auth_for_provider, load_codex_auth_summary_for_provider,
+        save_codex_auth_for_provider, SavedAuthSummary,
+    },
 };
 use crate::proxy::server::populate_status_active_targets;
 use crate::proxy::types::{AppProxyConfig, GlobalProxyConfig, ProviderHealth, ProxyStatus};
@@ -103,6 +109,8 @@ pub struct OpenWrtProviderView {
     pub auth_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub codex_auth: Option<SavedAuthSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub claude_auth: Option<ClaudeSavedAuthSummary>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -155,6 +163,13 @@ pub struct OpenWrtCodexAuthDeleteView {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct OpenWrtClaudeAuthDeleteView {
+    pub provider_id: String,
+    pub removed: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OpenWrtRuntimeStatusView {
     pub service: OpenWrtServiceStatusView,
     pub runtime: ProxyStatus,
@@ -195,6 +210,7 @@ pub struct OpenWrtAppMetaView {
     pub icon: &'static str,
     pub icon_color: &'static str,
     pub supports_failover: bool,
+    pub supports_claude_auth_upload: bool,
     pub supports_codex_auth_upload: bool,
     pub supports_usage_summary: bool,
     pub supports_provider_stats: bool,
@@ -342,6 +358,21 @@ pub fn upload_codex_auth(
     save_codex_auth_for_provider(&provider.id, raw_bytes)
 }
 
+pub fn upload_claude_auth(
+    db: &Database,
+    app_type: &AppType,
+    provider_id: &str,
+    raw_bytes: &[u8],
+) -> anyhow::Result<ClaudeSavedAuthSummary> {
+    let profile = openwrt_app_profile(app_type)?;
+    if profile.app_id != CLAUDE_APP_ID {
+        return Err(anyhow!("upload-claude-auth is only supported for claude"));
+    }
+
+    let provider = load_provider(db, profile, provider_id)?;
+    save_claude_auth_for_provider(&provider.id, raw_bytes)
+}
+
 pub fn remove_codex_auth(
     db: &Database,
     app_type: &AppType,
@@ -356,6 +387,25 @@ pub fn remove_codex_auth(
     delete_codex_auth_for_provider(&provider.id)?;
 
     Ok(OpenWrtCodexAuthDeleteView {
+        provider_id: provider.id,
+        removed: true,
+    })
+}
+
+pub fn remove_claude_auth(
+    db: &Database,
+    app_type: &AppType,
+    provider_id: &str,
+) -> anyhow::Result<OpenWrtClaudeAuthDeleteView> {
+    let profile = openwrt_app_profile(app_type)?;
+    if profile.app_id != CLAUDE_APP_ID {
+        return Err(anyhow!("remove-claude-auth is only supported for claude"));
+    }
+
+    let provider = load_provider(db, profile, provider_id)?;
+    delete_claude_auth_for_provider(&provider.id)?;
+
+    Ok(OpenWrtClaudeAuthDeleteView {
         provider_id: provider.id,
         removed: true,
     })
@@ -452,6 +502,7 @@ pub fn get_admin_meta() -> anyhow::Result<OpenWrtAdminMetaView> {
                 icon: profile.icon,
                 icon_color: profile.icon_color,
                 supports_failover: true,
+                supports_claude_auth_upload: profile.app_id == CLAUDE_APP_ID,
                 supports_codex_auth_upload: profile.app_id == CODEX_APP_ID,
                 supports_usage_summary: true,
                 supports_provider_stats: true,
@@ -557,6 +608,16 @@ pub fn delete_provider(
             normalized_provider_id,
             error
         );
+    }
+
+    if profile.app_id == CLAUDE_APP_ID {
+        if let Err(error) = delete_claude_auth_for_provider(&normalized_provider_id) {
+            log::warn!(
+                "failed to remove stored Claude auth for deleted provider {}: {}",
+                normalized_provider_id,
+                error
+            );
+        }
     }
 
     if profile.app_id == CODEX_APP_ID {
@@ -1018,6 +1079,12 @@ fn upsert_provider_with_payload(
 
     db.save_provider(profile.app_id, &provider)
         .map_err(|e| anyhow!("failed to save {} provider: {e}", profile.app_id))?;
+    maybe_cleanup_stored_claude_auth_after_save(
+        profile,
+        &provider.id,
+        previous_auth_mode.as_deref(),
+        &provider,
+    );
     maybe_cleanup_stored_codex_auth_after_save(
         profile,
         &provider.id,
@@ -1079,6 +1146,12 @@ fn upsert_active_provider_with_payload(
 
     db.save_provider(profile.app_id, &provider)
         .map_err(|e| anyhow!("failed to save {} provider: {e}", profile.app_id))?;
+    maybe_cleanup_stored_claude_auth_after_save(
+        profile,
+        &provider.id,
+        previous_auth_mode.as_deref(),
+        &provider,
+    );
     maybe_cleanup_stored_codex_auth_after_save(
         profile,
         &provider.id,
@@ -1116,6 +1189,34 @@ fn maybe_cleanup_stored_codex_auth_after_save(
         if let Err(error) = delete_codex_auth_for_provider(provider_id) {
             log::warn!(
                 "failed to remove stored codex auth after switching provider {} to api_key: {}",
+                provider_id,
+                error
+            );
+        }
+    }
+}
+
+fn maybe_cleanup_stored_claude_auth_after_save(
+    profile: OpenWrtAppProfile,
+    provider_id: &str,
+    previous_auth_mode: Option<&str>,
+    provider: &Provider,
+) {
+    if profile.app_id != CLAUDE_APP_ID {
+        return;
+    }
+
+    let next_auth_mode = provider
+        .settings_config
+        .get("auth_mode")
+        .and_then(Value::as_str);
+    let switched_from_oauth =
+        is_claude_oauth_auth_mode(previous_auth_mode) && !is_claude_oauth_auth_mode(next_auth_mode);
+
+    if switched_from_oauth {
+        if let Err(error) = delete_claude_auth_for_provider(provider_id) {
+            log::warn!(
+                "failed to remove stored Claude auth after switching provider {} away from claude_oauth: {}",
                 provider_id,
                 error
             );
@@ -1667,7 +1768,7 @@ fn build_claude_provider(
     let name = require_trimmed("provider name", &payload.name)?;
     let base_url = require_trimmed("base URL", &payload.base_url)?;
     let token_field = normalize_token_field(profile, &payload.token_field)?;
-    let is_passthrough = payload.auth_mode.as_deref() == Some("client_passthrough");
+    let is_passthrough = is_claude_passthrough_auth_mode(payload.auth_mode.as_deref());
     let token_value = if is_passthrough {
         resolve_optional_token_value(profile, existing.as_ref(), &payload.token)
     } else {
@@ -1677,7 +1778,9 @@ fn build_claude_provider(
 
     let root = ensure_settings_object(&mut provider, "Claude provider settings")?;
 
-    if is_passthrough {
+    if is_claude_oauth_auth_mode(payload.auth_mode.as_deref()) {
+        root.insert("auth_mode".to_string(), json!("claude_oauth"));
+    } else if payload.auth_mode.as_deref() == Some("client_passthrough") {
         root.insert("auth_mode".to_string(), json!("client_passthrough"));
     } else {
         root.remove("auth_mode");
@@ -1707,6 +1810,14 @@ fn build_claude_provider(
     }
 
     Ok(provider)
+}
+
+fn is_claude_passthrough_auth_mode(auth_mode: Option<&str>) -> bool {
+    matches!(auth_mode, Some("client_passthrough" | "claude_oauth"))
+}
+
+fn is_claude_oauth_auth_mode(auth_mode: Option<&str>) -> bool {
+    matches!(auth_mode, Some("claude_oauth"))
 }
 
 fn is_codex_oauth_auth_mode(auth_mode: Option<&str>) -> bool {
@@ -1999,6 +2110,7 @@ fn empty_provider_view(profile: OpenWrtAppProfile) -> OpenWrtProviderView {
         notes: String::new(),
         auth_mode: None,
         codex_auth: None,
+        claude_auth: None,
     }
 }
 
@@ -2038,6 +2150,21 @@ fn provider_to_view(
     } else {
         None
     };
+    let claude_auth = if matches!(app_type, AppType::Claude) {
+        match load_claude_auth_summary_for_provider(&provider.id) {
+            Ok(summary) => summary,
+            Err(error) => {
+                log::warn!(
+                    "failed to load stored Claude auth summary for {}: {}",
+                    provider.id,
+                    error
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
 
     OpenWrtProviderView {
         configured: true,
@@ -2052,6 +2179,7 @@ fn provider_to_view(
         notes: provider.notes.clone().unwrap_or_default(),
         auth_mode,
         codex_auth,
+        claude_auth,
     }
 }
 
@@ -2412,6 +2540,28 @@ mod tests {
             .join(format!("{provider_id}.json"))
     }
 
+    fn claude_auth_path(env: &TestEnv, provider_id: &str) -> std::path::PathBuf {
+        env.tmp
+            .path()
+            .join("data")
+            .join("claude_auth")
+            .join(format!("{provider_id}.json"))
+    }
+
+    fn sample_claude_auth_json() -> Vec<u8> {
+        serde_json::json!({
+            "claudeAiOauth": {
+                "accessToken": "sk-ant-oat01-access-token",
+                "refreshToken": "refresh-token",
+                "expiresAt": 1_738_000_000_123i64,
+                "scopes": ["user:profile", "user:inference"],
+                "subscriptionType": "pro"
+            }
+        })
+        .to_string()
+        .into_bytes()
+    }
+
     fn sample_codex_auth_json() -> Vec<u8> {
         serde_json::json!({
             "tokens": {
@@ -2674,8 +2824,10 @@ mod tests {
             .expect("gemini meta");
 
         assert_eq!(claude.display_name, "Claude");
+        assert!(claude.supports_claude_auth_upload);
         assert!(!claude.supports_codex_auth_upload);
         assert_eq!(codex.default_token_field, CODEX_TOKEN_FIELD);
+        assert!(!codex.supports_claude_auth_upload);
         assert!(codex.supports_codex_auth_upload);
         assert_eq!(gemini.display_name, "Gemini");
         assert!(gemini.supports_failover);
@@ -2774,6 +2926,41 @@ mod tests {
 
     #[test]
     #[serial]
+    fn delete_claude_provider_removes_stored_auth_file() {
+        let env = TestEnv::new();
+        let db = Database::memory().expect("db");
+
+        upsert_provider_with_payload(
+            &db,
+            &AppType::Claude,
+            Some("provider-claude"),
+            OpenWrtProviderPayload {
+                provider_id: None,
+                name: "Claude Official".to_string(),
+                base_url: "https://api.anthropic.com".to_string(),
+                token_field: DEFAULT_TOKEN_FIELD.to_string(),
+                token: String::new(),
+                model: String::new(),
+                notes: String::new(),
+                auth_mode: Some("claude_oauth".to_string()),
+            },
+        )
+        .expect("create claude oauth provider");
+        upload_claude_auth(
+            &db,
+            &AppType::Claude,
+            "provider-claude",
+            &sample_claude_auth_json(),
+        )
+        .expect("upload auth");
+        assert!(claude_auth_path(&env, "provider-claude").exists());
+
+        delete_provider(&db, &AppType::Claude, "provider-claude").expect("delete claude provider");
+        assert!(!claude_auth_path(&env, "provider-claude").exists());
+    }
+
+    #[test]
+    #[serial]
     fn switching_codex_provider_to_api_key_removes_stored_auth_file() {
         let env = TestEnv::new();
         let db = Database::memory().expect("db");
@@ -2803,6 +2990,48 @@ mod tests {
         .expect("switch to api_key");
 
         assert!(!codex_auth_path(&env, "provider-codex").exists());
+    }
+
+    #[test]
+    #[serial]
+    fn switching_claude_provider_away_from_claude_oauth_removes_stored_auth_file() {
+        let env = TestEnv::new();
+        let db = Database::memory().expect("db");
+
+        upsert_provider_with_payload(
+            &db,
+            &AppType::Claude,
+            Some("provider-claude"),
+            OpenWrtProviderPayload {
+                provider_id: None,
+                name: "Claude Official".to_string(),
+                base_url: "https://api.anthropic.com".to_string(),
+                token_field: DEFAULT_TOKEN_FIELD.to_string(),
+                token: String::new(),
+                model: String::new(),
+                notes: String::new(),
+                auth_mode: Some("claude_oauth".to_string()),
+            },
+        )
+        .expect("create claude oauth provider");
+        upload_claude_auth(
+            &db,
+            &AppType::Claude,
+            "provider-claude",
+            &sample_claude_auth_json(),
+        )
+        .expect("upload auth");
+        assert!(claude_auth_path(&env, "provider-claude").exists());
+
+        upsert_provider_with_payload(
+            &db,
+            &AppType::Claude,
+            Some("provider-claude"),
+            sample_payload("Claude Official", "sk-ant-api-key"),
+        )
+        .expect("switch away from claude_oauth");
+
+        assert!(!claude_auth_path(&env, "provider-claude").exists());
     }
 
     #[test]
@@ -3224,6 +3453,69 @@ mod tests {
         let view =
             get_provider(&db, &AppType::Claude, "claude-pt").expect("reload passthrough provider");
         assert_eq!(view.auth_mode.as_deref(), Some("client_passthrough"));
+    }
+
+    #[test]
+    #[serial]
+    fn claude_claude_oauth_provider_allows_empty_token() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+        let payload = OpenWrtProviderPayload {
+            provider_id: None,
+            name: "Claude Official".to_string(),
+            base_url: "https://api.anthropic.com".to_string(),
+            token_field: DEFAULT_TOKEN_FIELD.to_string(),
+            token: String::new(),
+            model: String::new(),
+            notes: String::new(),
+            auth_mode: Some("claude_oauth".to_string()),
+        };
+
+        let created =
+            upsert_provider_with_payload(&db, &AppType::Claude, Some("claude-oauth"), payload)
+                .expect("create claude oauth provider");
+
+        assert!(created.configured);
+        assert!(!created.token_configured);
+        assert_eq!(created.auth_mode.as_deref(), Some("claude_oauth"));
+
+        let stored = db
+            .get_provider_by_id("claude-oauth", CLAUDE_APP_ID)
+            .expect("db lookup")
+            .expect("provider exists");
+        assert_eq!(
+            stored
+                .settings_config
+                .get("auth_mode")
+                .and_then(Value::as_str),
+            Some("claude_oauth")
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn upload_claude_auth_rejects_non_claude_app() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+
+        upsert_provider_from_payload(
+            &db,
+            &AppType::Codex,
+            Some("provider-codex"),
+            codex_payload("Codex", "api-key", Some("api_key")),
+        )
+        .expect("create codex provider");
+
+        let error = upload_claude_auth(
+            &db,
+            &AppType::Codex,
+            "provider-codex",
+            &sample_claude_auth_json(),
+        )
+        .expect_err("non-claude upload should fail");
+        assert!(error
+            .to_string()
+            .contains("upload-claude-auth is only supported for claude"));
     }
 
     #[test]

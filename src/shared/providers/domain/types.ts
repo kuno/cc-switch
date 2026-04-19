@@ -9,6 +9,13 @@ export type SharedProviderTokenField =
   | "OPENAI_API_KEY"
   | "GEMINI_API_KEY";
 
+export type SharedProviderAuthMode =
+  | "api_key"
+  | "client_passthrough"
+  | "codex_oauth"
+  | "claude_oauth"
+  | (string & {});
+
 export type SharedProviderPresetCategoryId = Extract<
   ProviderCategory,
   "official" | "cn_official" | "cloud_provider" | "aggregator" | "third_party"
@@ -34,7 +41,7 @@ export interface SharedProviderPreset {
   icon?: string;
   iconColor?: string;
   accentColor?: string;
-  authMode?: string;
+  authMode?: SharedProviderAuthMode;
   supportedOn: {
     desktop: boolean;
     openwrt: boolean;
@@ -52,6 +59,13 @@ export interface SharedProviderCodexAuthSummary {
   refreshTokenPresent: boolean;
 }
 
+export interface SharedProviderClaudeAuthSummary {
+  expiresAtMs?: number | null;
+  scopes: string[];
+  refreshTokenPresent: boolean;
+  subscriptionType?: string;
+}
+
 export interface SharedProviderView {
   configured: boolean;
   providerId: string | null;
@@ -63,8 +77,9 @@ export interface SharedProviderView {
   model: string;
   notes: string;
   active: boolean;
-  authMode?: string;
+  authMode?: SharedProviderAuthMode;
   codexAuth?: SharedProviderCodexAuthSummary;
+  claudeAuth?: SharedProviderClaudeAuthSummary;
 }
 
 export interface SharedProviderHealth {
@@ -114,7 +129,7 @@ export interface SharedProviderEditorPayload {
   token: string;
   model: string;
   notes: string;
-  authMode?: string;
+  authMode?: SharedProviderAuthMode;
 }
 
 export interface SharedProviderCapabilities {

@@ -332,9 +332,23 @@ var callUploadCodexAuth = rpc.declare({
 	expect: { '': {} }
 });
 
+var callUploadClaudeAuth = rpc.declare({
+	object: 'ccswitch',
+	method: 'upload_claude_auth',
+	params: ['app', 'provider_id', 'auth_json_text'],
+	expect: { '': {} }
+});
+
 var callRemoveCodexAuth = rpc.declare({
 	object: 'ccswitch',
 	method: 'remove_codex_auth',
+	params: ['app', 'provider_id'],
+	expect: { '': {} }
+});
+
+var callRemoveClaudeAuth = rpc.declare({
+	object: 'ccswitch',
+	method: 'remove_claude_auth',
 	params: ['app', 'provider_id'],
 	expect: { '': {} }
 });
@@ -666,6 +680,19 @@ function callOpenWrtUploadCodexAuth(appId, providerId, authJsonText) {
 	});
 }
 
+function callOpenWrtUploadClaudeAuth(appId, providerId, authJsonText) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/providers/' + encodeURIComponent(providerId) + '/claude-auth', {
+			method: 'POST',
+			body: {
+				authJsonText: authJsonText
+			}
+		});
+	}, function () {
+		return L.resolveDefault(callUploadClaudeAuth(appId, providerId, authJsonText), { ok: false });
+	});
+}
+
 function callOpenWrtRemoveCodexAuth(appId, providerId) {
 	return daemonAdminOrFallback(function () {
 		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/providers/' + encodeURIComponent(providerId) + '/codex-auth', {
@@ -673,6 +700,16 @@ function callOpenWrtRemoveCodexAuth(appId, providerId) {
 		});
 	}, function () {
 		return L.resolveDefault(callRemoveCodexAuth(appId, providerId), { ok: false });
+	});
+}
+
+function callOpenWrtRemoveClaudeAuth(appId, providerId) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/providers/' + encodeURIComponent(providerId) + '/claude-auth', {
+			method: 'DELETE'
+		});
+	}, function () {
+		return L.resolveDefault(callRemoveClaudeAuth(appId, providerId), { ok: false });
 	});
 }
 
@@ -2579,6 +2616,12 @@ return view.extend({
 			},
 			removeCodexAuth: function (appId, providerId) {
 				return callOpenWrtRemoveCodexAuth(appId, providerId);
+			},
+			uploadClaudeAuth: function (appId, providerId, authJsonText) {
+				return callOpenWrtUploadClaudeAuth(appId, providerId, authJsonText);
+			},
+			removeClaudeAuth: function (appId, providerId) {
+				return callOpenWrtRemoveClaudeAuth(appId, providerId);
 			},
 			addToFailoverQueue: function (appId, providerId) {
 				return callOpenWrtAddToFailoverQueue(appId, providerId);

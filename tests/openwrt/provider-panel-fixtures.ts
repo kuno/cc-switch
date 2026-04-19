@@ -3,6 +3,7 @@ import {
   emptySharedProviderView,
   getSharedProviderPresets,
   type SharedProviderAppId,
+  type SharedProviderClaudeAuthSummary,
   type SharedProviderCodexAuthSummary,
   type SharedProviderEditorPayload,
   type SharedProviderState,
@@ -46,6 +47,8 @@ type ProviderSidePanelCallbacks = {
   onFileSelect: (file: File | null) => void;
   onUploadCodexAuth: () => void;
   onRemoveCodexAuth: () => void;
+  onUploadClaudeAuth: () => void;
+  onRemoveClaudeAuth: () => void;
   onActivate: () => void;
   onDelete: () => void;
   onCancel: () => void;
@@ -183,6 +186,18 @@ export function createCodexAuthSummary(
   };
 }
 
+export function createClaudeAuthSummary(
+  overrides: Partial<SharedProviderClaudeAuthSummary> = {},
+): SharedProviderClaudeAuthSummary {
+  return {
+    expiresAtMs: 1_790_000_000_000,
+    scopes: ["user:profile", "user:inference"],
+    refreshTokenPresent: true,
+    subscriptionType: "pro",
+    ...overrides,
+  };
+}
+
 export function createPresetGroups(
   appId: SharedProviderAppId,
 ): ProviderSidePanelPresetGroup[] {
@@ -239,6 +254,8 @@ export function createProviderSidePanelProps(
     onFileSelect: () => {},
     onUploadCodexAuth: () => {},
     onRemoveCodexAuth: () => {},
+    onUploadClaudeAuth: () => {},
+    onRemoveClaudeAuth: () => {},
     onActivate: () => {},
     onDelete: () => {},
     onCancel: () => {},

@@ -53,7 +53,7 @@ fn codex_auth_dir() -> PathBuf {
         .join(CODEX_AUTH_DIR)
 }
 
-fn validate_provider_id(provider_id: &str) -> anyhow::Result<()> {
+pub(crate) fn validate_provider_id(provider_id: &str) -> anyhow::Result<()> {
     let trimmed = provider_id.trim();
     if trimmed.is_empty() {
         return Err(anyhow!("provider id is required"));

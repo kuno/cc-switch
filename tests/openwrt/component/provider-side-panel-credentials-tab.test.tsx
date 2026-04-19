@@ -10,6 +10,7 @@ import { SHARED_PROVIDER_TOKEN_FIELD_OPTIONS } from "@/shared/providers/ui/prese
 import { createBridgeFixture } from "./fixtures/bridge";
 import { createDeferred, createProviderTransportFixture } from "./fixtures/providerTransport";
 import {
+  createClaudeAuthSummary,
   createCodexAuthSummary,
   createProviderDraft,
   createProviderState,
@@ -59,6 +60,8 @@ describe("ProviderSidePanelCredentialsTab", () => {
         onFileSelect={() => {}}
         onRemoveCodexAuth={() => {}}
         onUploadCodexAuth={() => {}}
+        onRemoveClaudeAuth={() => {}}
+        onUploadClaudeAuth={() => {}}
         provider={createProviderView("claude", {
           active: true,
           providerId: "claude-primary",
@@ -120,6 +123,8 @@ describe("ProviderSidePanelCredentialsTab", () => {
         onFileSelect={onFileSelect}
         onRemoveCodexAuth={() => {}}
         onUploadCodexAuth={() => {}}
+        onRemoveClaudeAuth={() => {}}
+        onUploadClaudeAuth={() => {}}
         provider={createProviderView("codex", {
           active: true,
           authMode: "codex_oauth",
@@ -155,6 +160,58 @@ describe("ProviderSidePanelCredentialsTab", () => {
       'input[type="file"]',
     ) as HTMLInputElement;
     const file = new File(['{"refresh_token":"token"}'], "auth.json", {
+      type: "application/json",
+    });
+
+    await user.upload(fileInput, file);
+
+    expect(onFileSelect).toHaveBeenCalledWith(file);
+  });
+
+  it("renders the claude auth.json controls and stored auth summary", async () => {
+    const user = userEvent.setup();
+    const onFileSelect = vi.fn();
+    const draft = createProviderDraft("claude", {
+      authMode: "claude_oauth",
+      baseUrl: "https://api.anthropic.com",
+    });
+    const { container } = render(
+      <ProviderSidePanelCredentialsTab
+        appId="claude"
+        authPending={false}
+        draft={draft}
+        onDraftChange={() => {}}
+        onFileSelect={onFileSelect}
+        onRemoveCodexAuth={() => {}}
+        onUploadCodexAuth={() => {}}
+        onRemoveClaudeAuth={() => {}}
+        onUploadClaudeAuth={() => {}}
+        provider={createProviderView("claude", {
+          active: true,
+          authMode: "claude_oauth",
+          claudeAuth: createClaudeAuthSummary({
+            subscriptionType: "max",
+          }),
+          providerId: "claude-primary",
+        })}
+        selectedFileName="auth.json"
+        tokenFieldOptions={[...SHARED_PROVIDER_TOKEN_FIELD_OPTIONS.claude]}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", {
+        name: "auth.json",
+      }),
+    ).toHaveAttribute("data-active", "true");
+    expect(screen.getByText("Stored auth.json")).toBeInTheDocument();
+    expect(screen.getByText(/Subscription type: max/)).toBeInTheDocument();
+    expect(screen.getByText(/Scopes:/)).toBeInTheDocument();
+
+    const fileInput = container.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    const file = new File(['{"accessToken":"token"}'], "auth.json", {
       type: "application/json",
     });
 
@@ -315,5 +372,100 @@ describe("ProviderSidePanelCredentialsTab", () => {
         }),
       ).toBeDisabled(),
     );
+  });
+
+  it("uploads Claude auth.json through the provider transport", async () => {
+    const user = userEvent.setup();
+    const shell = createBridgeFixture({
+      selectedApp: "claude",
+    });
+    const claudeProvider = createProviderView("claude", {
+      active: true,
+      authMode: "claude_oauth",
+      name: "Claude Official",
+      providerId: "claude-primary",
+    });
+    const { transport } = createProviderTransportFixture({
+      claude: createProviderState("claude", [claudeProvider]),
+    });
+    const uploadDeferred = createDeferred<{ ok: true }>();
+
+    transport.uploadClaudeAuth = vi.fn(() => uploadDeferred.promise);
+
+    function ClaudeHostHarness({
+      shell: currentShell,
+      transport: currentTransport,
+    }: {
+      shell: OpenWrtSharedPageShellApi;
+      transport: OpenWrtProviderTransport;
+    }) {
+      const panelRef = useRef<ProviderSidePanelHandle | null>(null);
+
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() => panelRef.current?.openForApp("claude")}
+          >
+            Open claude provider panel
+          </button>
+          <ProviderSidePanelHost
+            ref={panelRef}
+            selectedApp="claude"
+            shell={currentShell}
+            transport={currentTransport}
+          />
+        </>
+      );
+    }
+
+    render(<ClaudeHostHarness shell={shell} transport={transport} />);
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Open claude provider panel",
+      }),
+    );
+    await screen.findByRole("dialog", {
+      name: "Claude providers",
+    });
+    await user.click(
+      screen.getByRole("button", {
+        name: "Credentials",
+      }),
+    );
+
+    const fileInput = document.querySelector(
+      '.owt-provider-panel input[type="file"]',
+    ) as HTMLInputElement;
+    const file = new File(['{"accessToken":"token"}'], "auth.json", {
+      type: "application/json",
+    });
+    Object.defineProperty(file, "text", {
+      value: vi.fn(async () => '{"accessToken":"token"}'),
+    });
+
+    fireEvent.change(fileInput, {
+      target: {
+        files: [file],
+      },
+    });
+    await user.click(
+      screen.getByRole("button", {
+        name: "Upload auth.json",
+      }),
+    );
+
+    await waitFor(() =>
+      expect(transport.uploadClaudeAuth).toHaveBeenCalledWith(
+        "claude",
+        "claude-primary",
+        '{"accessToken":"token"}',
+      ),
+    );
+
+    uploadDeferred.resolve({
+      ok: true,
+    });
   });
 });
