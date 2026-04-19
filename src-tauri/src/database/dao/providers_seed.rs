@@ -33,8 +33,8 @@ pub(crate) const OFFICIAL_SEEDS: &[OfficialProviderSeed] = &[
         website_url: "https://www.anthropic.com/claude-code",
         icon: "anthropic",
         icon_color: "#D4915D",
-        // 空 env 让用户走 Claude CLI 默认认证流程
-        settings_config_json: r#"{"env":{}}"#,
+        // 显式启用客户端 Authorization 透传模式，配合官方 Anthropic 端点。
+        settings_config_json: r#"{"auth_mode":"client_passthrough","env":{}}"#,
     },
     OfficialProviderSeed {
         id: "codex-official",
