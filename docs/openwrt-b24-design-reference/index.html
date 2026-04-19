@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CC Switch B2.4 Design Reference</title>
+    <style>
+      /*
+        CC Switch OpenWrt B2.4 designer reference
+        ------------------------------------------------
+        Edit tokens in :root first.
+        Each section below is intentionally labeled so designers can
+        hand-tune components without digging through the product mock.
+      */
+
+      :root {
+        --bg: #eef3f8;
+        --bg-wash: rgba(77, 124, 255, 0.08);
+        --panel: rgba(255, 255, 255, 0.86);
+        --panel-strong: #ffffff;
+        --panel-soft: #f8fbff;
+        --line: #d8e2ef;
+        --line-strong: #ccd7e6;
+        --text: #172133;
+        --muted: #708198;
+        --soft-text: #90a0b4;
+        --accent: #4d7cff;
+        --accent-soft: #ebf2ff;
+        --accent-text: #2752c9;
+        --success: #2d8a5a;
+        --success-soft: #edf8f1;
+        --success-line: #bfe4cd;
+        --warning: #c77918;
+        --warning-soft: #fff4e4;
+        --warning-line: #f0cf9c;
+        --row-active: #edf4ff;
+        --row: #ffffff;
+        --button: #f5f8fd;
+        --shadow: 0 24px 60px -34px rgba(50, 72, 103, 0.28);
+        --shadow-soft: 0 16px 34px -28px rgba(50, 72, 103, 0.18);
+        --radius-panel: 28px;
+        --radius-card: 20px;
+        --radius-control: 16px;
+        --radius-icon: 12px;
+        --divider-inset: 20px;
+        --shell-width: 1580px;
+      }
+
+      body[data-theme="dark"] {
+        --bg: #0f141b;
+        --bg-wash: rgba(127, 148, 255, 0.09);
+        --panel: rgba(20, 28, 38, 0.92);
+        --panel-strong: #151d27;
+        --panel-soft: #121923;
+        --line: #263241;
+        --line-strong: #314258;
+        --text: #eef4fb;
+        --muted: #93a2b8;
+        --soft-text: #6e7d92;
+        --accent: #7f94ff;
+        --accent-soft: #212d48;
+        --accent-text: #dfe5ff;
+        --success: #49b06d;
+        --success-soft: #183122;
+        --success-line: #275139;
+        --warning: #efb25d;
+        --warning-soft: #332616;
+        --warning-line: #5d4930;
+        --row-active: #1b2a42;
+        --row: #161f2b;
+        --button: #192332;
+        --shadow: none;
+        --shadow-soft: none;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        font-family: "SF Pro Display", Inter, ui-sans-serif, system-ui, sans-serif;
+        background:
+          radial-gradient(circle at top left, var(--bg-wash), transparent 30%),
+          linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 26%),
+          var(--bg);
+        color: var(--text);
+        transition: background 180ms ease, color 180ms ease;
+      }
+
+      button,
+      input,
+      textarea,
+      select {
+        font: inherit;
+      }
+
+      .shell {
+        max-width: var(--shell-width);
+        margin: 0 auto;
+        padding: 28px 28px 56px;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
+        gap: 24px;
+        align-items: start;
+        margin-bottom: 24px;
+      }
+
+      .eyebrow {
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 650;
+      }
+
+      .title {
+        margin: 6px 0 10px;
+        font-size: clamp(52px, 7vw, 88px);
+        line-height: 0.92;
+        font-weight: 780;
+        letter-spacing: -0.05em;
+      }
+
+      .summary {
+        max-width: 700px;
+        color: var(--muted);
+        font-size: 18px;
+        line-height: 1.55;
+        font-weight: 520;
+      }
+
+      .hero-note,
+      .section,
+      .reference-panel,
+      .component-card,
+      .mini-panel {
+        background: var(--panel);
+        backdrop-filter: blur(16px);
+        border: 1px solid var(--line);
+        box-shadow: var(--shadow);
+      }
+
+      .hero-note {
+        border-radius: var(--radius-panel);
+        padding: 22px;
+        display: grid;
+        gap: 16px;
+        animation: rise-in 200ms ease-out both;
+      }
+
+      .hero-note h2,
+      .section-head h2 {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .hero-note p,
+      .section-head p,
+      .meta-copy {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.55;
+      }
+
+      .token-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .token {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+
+      .token-label {
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .swatch {
+        width: 84px;
+        height: 28px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+      }
+
+      .section {
+        border-radius: var(--radius-panel);
+        overflow: hidden;
+        margin-bottom: 20px;
+        animation: rise-in 220ms ease-out both;
+      }
+
+      .section-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: start;
+        gap: 20px;
+        padding: 22px 24px 18px;
+      }
+
+      .divider {
+        height: 1px;
+        background: var(--line);
+        margin: 0 var(--divider-inset);
+      }
+
+      .section-body {
+        padding: 22px 24px 24px;
+      }
+
+      .grid-2,
+      .grid-3,
+      .grid-4 {
+        display: grid;
+        gap: 16px;
+      }
+
+      .grid-2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .grid-3 {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .grid-4 {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      .component-card,
+      .mini-panel {
+        border-radius: var(--radius-card);
+        padding: 18px;
+      }
+
+      .component-card h3,
+      .mini-panel h3,
+      .stack h3 {
+        margin: 0 0 12px;
+        font-size: 22px;
+        line-height: 1.05;
+        font-weight: 740;
+        letter-spacing: -0.03em;
+      }
+
+      .component-card h4 {
+        margin: 0 0 8px;
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.11em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .stack {
+        display: grid;
+        gap: 14px;
+      }
+
+      .cluster {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .pill,
+      .chip,
+      .segmented button,
+      .button,
+      .provider-state {
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        height: 34px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 16px;
+        font-size: 13px;
+        font-weight: 730;
+        background: var(--button);
+        color: var(--text);
+      }
+
+      .button.primary {
+        background: var(--accent);
+        border-color: transparent;
+        color: white;
+        box-shadow: var(--shadow-soft);
+      }
+
+      .chip.success,
+      .provider-state.success {
+        background: var(--success-soft);
+        border-color: var(--success-line);
+        color: var(--success);
+      }
+
+      .chip.warning {
+        background: var(--warning-soft);
+        border-color: var(--warning-line);
+        color: var(--warning);
+      }
+
+      .segmented {
+        display: inline-flex;
+        gap: 6px;
+        padding: 4px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: color-mix(in srgb, var(--panel-strong) 60%, transparent);
+      }
+
+      .segmented button.active {
+        background: var(--accent-soft);
+        border-color: transparent;
+        color: var(--accent-text);
+      }
+
+      .field {
+        display: grid;
+        gap: 8px;
+      }
+
+      .field label {
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.11em;
+        text-transform: uppercase;
+      }
+
+      .input,
+      .textarea,
+      .select {
+        width: 100%;
+        border-radius: var(--radius-control);
+        border: 1px solid var(--line);
+        background: var(--panel-strong);
+        color: var(--text);
+        padding: 0 16px;
+        min-height: 48px;
+        outline: none;
+        transition:
+          border-color 160ms ease,
+          box-shadow 160ms ease,
+          background 160ms ease,
+          transform 160ms ease;
+      }
+
+      .textarea {
+        min-height: 108px;
+        resize: vertical;
+        padding-top: 14px;
+        padding-bottom: 14px;
+      }
+
+      .input:focus,
+      .textarea:focus,
+      .select:focus {
+        border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
+        box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-soft) 70%, transparent);
+      }
+
+      .readonly {
+        background: var(--panel-soft);
+        color: var(--muted);
+      }
+
+      .provider-list {
+        display: grid;
+        gap: 12px;
+      }
+
+      .provider-row {
+        display: grid;
+        grid-template-columns: 44px minmax(0, 1fr) auto;
+        gap: 14px;
+        align-items: center;
+        border-radius: var(--radius-card);
+        border: 1px solid var(--line);
+        background: var(--row);
+        padding: 14px;
+        transition:
+          transform 160ms ease,
+          border-color 160ms ease,
+          background 160ms ease;
+      }
+
+      .provider-row.active {
+        background: var(--row-active);
+      }
+
+      .provider-row:hover {
+        transform: translateY(-1px);
+        border-color: var(--line-strong);
+      }
+
+      .provider-icon {
+        width: 44px;
+        height: 44px;
+        border-radius: var(--radius-icon);
+        border: 1px solid var(--line);
+        display: grid;
+        place-items: center;
+        background: var(--panel-strong);
+        font-size: 18px;
+      }
+
+      .provider-name {
+        font-size: 20px;
+        font-weight: 740;
+        letter-spacing: -0.03em;
+      }
+
+      .provider-url {
+        margin-top: 2px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .workspace-sample {
+        display: grid;
+        grid-template-columns: 320px minmax(0, 1fr);
+        gap: 0;
+        border-radius: var(--radius-panel);
+        border: 1px solid var(--line);
+        background: var(--panel);
+        overflow: hidden;
+      }
+
+      .workspace-rail,
+      .workspace-editor {
+        padding: 20px;
+      }
+
+      .workspace-rail {
+        border-right: 1px solid var(--line);
+      }
+
+      .editor-head {
+        display: flex;
+        align-items: start;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 18px;
+      }
+
+      .editor-head .title-sm {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 760;
+        letter-spacing: -0.03em;
+      }
+
+      .info-block {
+        border-radius: var(--radius-control);
+        border: 1px solid var(--line);
+        background: var(--panel-strong);
+        padding: 14px 16px;
+      }
+
+      .placeholder-note {
+        border-radius: var(--radius-card);
+        border: 1px dashed color-mix(in srgb, var(--accent) 34%, var(--line));
+        background: color-mix(in srgb, var(--accent-soft) 54%, transparent);
+        padding: 16px;
+      }
+
+      .placeholder-note strong {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 12px;
+        font-weight: 820;
+        letter-spacing: 0.11em;
+        text-transform: uppercase;
+      }
+
+      .motion-bar {
+        position: relative;
+        overflow: hidden;
+        border-radius: 999px;
+        height: 10px;
+        background: var(--button);
+        border: 1px solid var(--line);
+      }
+
+      .motion-bar::after {
+        content: "";
+        position: absolute;
+        inset: 1px auto 1px 1px;
+        width: 34%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 55%, white));
+        animation: glide 2.2s ease-in-out infinite;
+      }
+
+      .footer-note {
+        margin-top: 12px;
+        color: var(--soft-text);
+        font-size: 12px;
+        font-weight: 650;
+      }
+
+      @keyframes rise-in {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @keyframes glide {
+        0%,
+        100% {
+          transform: translateX(0);
+          opacity: 0.72;
+        }
+        50% {
+          transform: translateX(180%);
+          opacity: 1;
+        }
+      }
+
+      @media (max-width: 1080px) {
+        .hero,
+        .grid-4,
+        .grid-3,
+        .grid-2,
+        .workspace-sample {
+          grid-template-columns: 1fr;
+        }
+
+        .workspace-rail {
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+      }
+
+      @media (max-width: 720px) {
+        .shell {
+          padding: 20px 16px 40px;
+        }
+
+        .section-head {
+          display: grid;
+        }
+
+        .provider-row {
+          grid-template-columns: 44px minmax(0, 1fr);
+        }
+
+        .provider-state {
+          grid-column: 1 / -1;
+          justify-self: start;
+        }
+      }
+    </style>
+  </head>
+  <body data-theme="light">
+    <div class="shell">
+      <section class="hero">
+        <div>
+          <div class="eyebrow">OpenWrt / Services</div>
+          <h1 class="title">CC Switch</h1>
+          <p class="summary">
+            B2.4 uses a quieter desktop-like control language: soft shell, clear service hierarchy,
+            restrained blue accents, editable fields that look editable, and fewer decorative cards.
+          </p>
+        </div>
+
+        <aside class="hero-note">
+          <h2>Reference Scope</h2>
+          <p>
+            This page is a designer reference, not the product screen. Use it to tune tokens, shared
+            UI primitives, divider behavior, component states, and placeholder-only patterns.
+          </p>
+
+          <div class="token-list">
+            <div class="token">
+              <span class="token-label">Primary Accent</span>
+              <span class="swatch" style="background:#4d7cff"></span>
+            </div>
+            <div class="token">
+              <span class="token-label">Panel Surface</span>
+              <span class="swatch" style="background:rgba(255,255,255,0.86)"></span>
+            </div>
+            <div class="token">
+              <span class="token-label">Success State</span>
+              <span class="swatch" style="background:#edf8f1"></span>
+            </div>
+          </div>
+
+          <div class="cluster">
+            <button class="button" id="themeToggle" type="button">Switch To Dark</button>
+            <span class="chip">Panel 28px</span>
+            <span class="chip">Card 20px</span>
+            <span class="chip">Control 16px</span>
+          </div>
+        </aside>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <div>
+            <h2>Actions and Status</h2>
+            <p>Primary actions stay compact. Blue is reserved for the current primary path.</p>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div class="section-body grid-3">
+          <div class="component-card stack">
+            <h4>Status Chips</h4>
+            <div class="cluster">
+              <span class="chip success">Healthy</span>
+              <span class="chip warning">Draft</span>
+              <span class="chip">Saved</span>
+            </div>
+            <p class="meta-copy">Green is for positive state only. Neutral pills should stay quiet.</p>
+          </div>
+
+          <div class="component-card stack">
+            <h4>Buttons</h4>
+            <div class="cluster">
+              <button class="button primary" type="button">Save</button>
+              <button class="button" type="button">Cancel</button>
+              <button class="button" type="button">Restart</button>
+            </div>
+            <p class="meta-copy">Do not introduce new accent fills unless a new primary action exists.</p>
+          </div>
+
+          <div class="component-card stack">
+            <h4>Segmented Controls</h4>
+            <div class="segmented">
+              <button class="active" type="button">General</button>
+              <button type="button">Failover</button>
+              <button type="button">Credentials</button>
+            </div>
+            <p class="meta-copy">Use only when sibling choices are equal in weight and scope.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <div>
+            <h2>Editable Fields</h2>
+            <p>Real edit affordances should be actual controls, not static boxes styled like controls.</p>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div class="section-body grid-2">
+          <div class="component-card stack">
+            <h3>Field Grid</h3>
+            <div class="grid-2">
+              <div class="field">
+                <label for="provider-name">Provider Name</label>
+                <input class="input" id="provider-name" value="MiniMax en" />
+              </div>
+              <div class="field">
+                <label for="provider-notes">Notes</label>
+                <input class="input" id="provider-notes" value="Dedicated Claude route" />
+              </div>
+            </div>
+            <div class="field">
+              <label for="provider-url">Website URL</label>
+              <input class="input" id="provider-url" value="https://platform.minimaxi.com" />
+            </div>
+            <div class="field">
+              <label for="provider-base">Base URL</label>
+              <input class="input" id="provider-base" value="https://api.minimaxi.chat/v1" />
+            </div>
+          </div>
+
+          <div class="component-card stack">
+            <h3>Read-Only and Placeholder States</h3>
+            <div class="field">
+              <label for="configured-endpoint">Configured Endpoint</label>
+              <input class="input readonly" id="configured-endpoint" value="Not set" readonly />
+            </div>
+            <div class="field">
+              <label for="placeholder-model">Placeholder-Only Control</label>
+              <select class="select" id="placeholder-model">
+                <option>Fallback model (placeholder-only)</option>
+              </select>
+            </div>
+            <div class="placeholder-note">
+              <strong>Placeholder-Only</strong>
+              Controls that imply unsupported runtime semantics should be labeled in design notes and
+              handoff. Do not let mock polish suggest confirmed backend support.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <div>
+            <h2>Provider Scanning</h2>
+            <p>The list should stay easy to scan even when support copy is shortened.</p>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div class="section-body grid-2">
+          <div class="component-card stack">
+            <div class="field">
+              <label for="search">Search Provider Or Endpoint</label>
+              <input class="input" id="search" placeholder="Search provider or endpoint" />
+            </div>
+
+            <div class="provider-list">
+              <article class="provider-row active">
+                <div class="provider-icon">〰</div>
+                <div>
+                  <div class="provider-name">MiniMax en</div>
+                  <div class="provider-url">https://platform.minimaxi.com</div>
+                </div>
+                <span class="provider-state success">Active</span>
+              </article>
+
+              <article class="provider-row">
+                <div class="provider-icon">✳</div>
+                <div>
+                  <div class="provider-name">Claude Official</div>
+                  <div class="provider-url">https://api.anthropic.com</div>
+                </div>
+                <span class="provider-state">Preset</span>
+              </article>
+
+              <article class="provider-row">
+                <div class="provider-icon">◌</div>
+                <div>
+                  <div class="provider-name">DeepSeek</div>
+                  <div class="provider-url">https://platform.deepseek.com</div>
+                </div>
+                <span class="provider-state">Saved</span>
+              </article>
+            </div>
+          </div>
+
+          <div class="component-card stack">
+            <h3>App Picker Pattern</h3>
+            <div class="cluster">
+              <div class="segmented">
+                <button class="active" type="button">Claude</button>
+                <button type="button">Codex</button>
+                <button type="button">Gemini</button>
+              </div>
+              <button class="button primary" type="button">Add</button>
+            </div>
+            <p class="meta-copy">
+              Keep menu overflow visible. The app picker should never clip its dropdown against the
+              surrounding workspace container.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <div>
+            <h2>Workspace Composition</h2>
+            <p>The left rail is navigation. The right side is editing. Avoid extra nested card layers.</p>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div class="section-body">
+          <div class="workspace-sample">
+            <div class="workspace-rail">
+              <div class="stack">
+                <h3>Providers</h3>
+                <div class="field">
+                  <label for="rail-search">Search</label>
+                  <input class="input" id="rail-search" placeholder="Search provider or endpoint" />
+                </div>
+                <div class="provider-list">
+                  <article class="provider-row active">
+                    <div class="provider-icon">〰</div>
+                    <div>
+                      <div class="provider-name">MiniMax en</div>
+                      <div class="provider-url">Used 157.47 Remaining 52.53 USD</div>
+                    </div>
+                    <span class="provider-state success">Active</span>
+                  </article>
+                  <article class="provider-row">
+                    <div class="provider-icon">✳</div>
+                    <div>
+                      <div class="provider-name">Claude Official</div>
+                      <div class="provider-url">Preset-backed endpoint</div>
+                    </div>
+                    <span class="provider-state">Preset</span>
+                  </article>
+                </div>
+              </div>
+            </div>
+
+            <div class="workspace-editor">
+              <div class="editor-head">
+                <div>
+                  <p class="title-sm">MiniMax en</p>
+                </div>
+                <div class="cluster">
+                  <button class="button" type="button">Duplicate</button>
+                  <button class="button primary" type="button">Save</button>
+                </div>
+              </div>
+
+              <div class="stack">
+                <div class="segmented">
+                  <button class="active" type="button">General</button>
+                  <button type="button">Endpoint</button>
+                  <button type="button">Model</button>
+                  <button type="button">Notes</button>
+                </div>
+
+                <div class="info-block">
+                  <div class="eyebrow">Configured Endpoint</div>
+                  <div style="margin-top:6px;font-size:18px;font-weight:760;letter-spacing:-0.03em;">Not set</div>
+                </div>
+
+                <div class="grid-2">
+                  <div class="field">
+                    <label for="workspace-provider">Provider Name</label>
+                    <input class="input" id="workspace-provider" value="MiniMax en" />
+                  </div>
+                  <div class="field">
+                    <label for="workspace-notes">Notes</label>
+                    <textarea class="textarea" id="workspace-notes">Dedicated Claude route</textarea>
+                  </div>
+                </div>
+
+                <div class="field">
+                  <label for="workspace-url">Website URL</label>
+                  <input class="input" id="workspace-url" value="https://platform.minimaxi.com" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <div>
+            <h2>Motion and Theme Behavior</h2>
+            <p>Motion should feel present but calm. Theme changes should preserve hierarchy.</p>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div class="section-body grid-3">
+          <div class="mini-panel stack">
+            <h3>Entrance</h3>
+            <p class="meta-copy">Panels rise in by about 8px with a short opacity fade.</p>
+            <div class="motion-bar"></div>
+            <div class="footer-note">Recommended duration: 180ms</div>
+          </div>
+          <div class="mini-panel stack">
+            <h3>Dropdown Reveal</h3>
+            <p class="meta-copy">Menus should use a quick vertical reveal without bounce.</p>
+            <div class="motion-bar"></div>
+            <div class="footer-note">Recommended duration: 160ms</div>
+          </div>
+          <div class="mini-panel stack">
+            <h3>Theme Transition</h3>
+            <p class="meta-copy">Color interpolation is enough. Avoid dramatic inversion effects.</p>
+            <div class="motion-bar"></div>
+            <div class="footer-note">Recommended duration: 180ms</div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <script>
+      const toggle = document.getElementById("themeToggle");
+      const body = document.body;
+
+      toggle.addEventListener("click", () => {
+        const next = body.dataset.theme === "dark" ? "light" : "dark";
+        body.dataset.theme = next;
+        toggle.textContent = next === "dark" ? "Switch To Light" : "Switch To Dark";
+      });
+    </script>
+  </body>
+</html>

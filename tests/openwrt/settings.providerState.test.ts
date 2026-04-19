@@ -109,6 +109,55 @@ type RpcSpec = {
   params?: string[];
 };
 
+type StaticPrototypeSettings = SettingsView & {
+  buildStaticPrototypeQuery(bindings: {
+    app: AppId;
+    health: string;
+    httpProxy: string;
+    httpsProxy: string;
+    listenAddr: string;
+    listenPort: string;
+    logLevel: string;
+    proxyEnabled: string;
+    serviceLabel: string;
+    status: string;
+  }): string;
+  buildStaticPrototypeWorkspaceData(data: unknown[]): {
+    apps: Record<
+      AppId,
+      {
+        activeProviderId: string | null;
+        providers: Array<Record<string, unknown>>;
+      }
+    >;
+  };
+  getHostConfigSnapshot(): {
+    enabled: boolean;
+    httpProxy: string;
+    httpsProxy: string;
+    listenAddr: string;
+    listenPort: string;
+    logLevel: string;
+  };
+  getStaticPrototypeBindings(data: unknown[]): {
+    app: AppId;
+    health: string;
+    httpProxy: string;
+    httpsProxy: string;
+    listenAddr: string;
+    listenPort: string;
+    logLevel: string;
+    proxyEnabled: string;
+    serviceLabel: string;
+    status: string;
+  };
+  parseServiceState(serviceStatus: unknown): boolean;
+  parseStaticPrototypeFailoverState(
+    response: unknown,
+    fallbackProviderId: string,
+  ): Record<string, unknown>;
+};
+
 const SHARED_PROVIDER_UI_GLOBAL_KEY = "__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__";
 const SHARED_PROVIDER_UI_SCRIPT_ID =
   "ccswitch-openwrt-shared-provider-ui-bundle";
@@ -488,6 +537,237 @@ describe("OpenWrt settings shared-provider shell", () => {
         object: "ccswitch",
         params: ["app", "enabled"],
       },
+    });
+  });
+
+  it("builds contract-checked host bindings and nested provider.failover payload for the static prototype bridge", () => {
+    const { settings } = loadSettingsView("codex");
+    const staticPrototypeSettings =
+      settings as unknown as StaticPrototypeSettings;
+
+    staticPrototypeSettings.getSelectedApp = () => "codex";
+    staticPrototypeSettings.getHostConfigSnapshot = () => ({
+      enabled: true,
+      httpProxy: "http://router-http.internal:7890",
+      httpsProxy: "http://router-https.internal:7890",
+      listenAddr: "0.0.0.0",
+      listenPort: "15721",
+      logLevel: "debug",
+    });
+    staticPrototypeSettings.parseServiceState = () => true;
+
+    const bindings = staticPrototypeSettings.getStaticPrototypeBindings([
+      null,
+      { ccswitch: { instances: { main: {} } } },
+      {
+        ok: true,
+        status_json: JSON.stringify({
+          service: {
+            running: true,
+            reachable: false,
+            listenAddress: "10.0.0.5",
+            listenPort: 18443,
+            proxyEnabled: false,
+            enableLogging: true,
+            statusSource: "runtime",
+          },
+        }),
+      },
+    ]);
+
+    expect(bindings).toStrictEqual({
+      app: "codex",
+      health: "degraded",
+      httpProxy: "http://router-http.internal:7890",
+      httpsProxy: "http://router-https.internal:7890",
+      listenAddr: "10.0.0.5",
+      listenPort: "18443",
+      logLevel: "debug",
+      proxyEnabled: "0",
+      serviceLabel: "Router daemon",
+      status: "running",
+    });
+    expect(
+      Object.fromEntries(
+        new URLSearchParams(
+          staticPrototypeSettings.buildStaticPrototypeQuery(bindings),
+        ),
+      ),
+    ).toStrictEqual({
+      app: "codex",
+      health: "degraded",
+      http_proxy: "http://router-http.internal:7890",
+      https_proxy: "http://router-https.internal:7890",
+      listen_addr: "10.0.0.5",
+      listen_port: "18443",
+      log_level: "debug",
+      proxy_enabled: "0",
+      service_label: "Router daemon",
+      status: "running",
+    });
+
+    const failover = staticPrototypeSettings.parseStaticPrototypeFailoverState(
+      {
+        ok: true,
+        status_json: JSON.stringify({
+          providerId: "codex-primary",
+          proxyEnabled: false,
+          autoFailoverEnabled: true,
+          maxRetries: 4,
+          activeProviderId: "codex-primary",
+          inFailoverQueue: true,
+          queuePosition: 0,
+          sortIndex: 0,
+          providerHealth: {
+            providerId: "codex-primary",
+            observed: true,
+            healthy: false,
+            consecutiveFailures: 2,
+            lastSuccessAt: "2026-04-13T07:59:00Z",
+            lastFailureAt: "2026-04-13T08:00:00Z",
+            lastError: "upstream timeout",
+            updatedAt: "2026-04-13T08:01:00Z",
+          },
+          failoverQueueDepth: 2,
+          failoverQueue: [
+            {
+              providerId: "codex-backup",
+              providerName: "Codex Backup",
+              sortIndex: 1,
+              active: false,
+              health: {
+                providerId: "codex-backup",
+                observed: false,
+                healthy: true,
+              },
+            },
+          ],
+        }),
+      },
+      "ignored-provider-id",
+    );
+
+    expect(failover).toStrictEqual({
+      providerId: "codex-primary",
+      proxyEnabled: false,
+      autoFailoverEnabled: true,
+      maxRetries: 4,
+      activeProviderId: "codex-primary",
+      inFailoverQueue: true,
+      queuePosition: 0,
+      sortIndex: 0,
+      providerHealth: {
+        providerId: "codex-primary",
+        observed: true,
+        healthy: false,
+        consecutiveFailures: 2,
+        lastSuccessAt: "2026-04-13T07:59:00Z",
+        lastFailureAt: "2026-04-13T08:00:00Z",
+        lastError: "upstream timeout",
+        updatedAt: "2026-04-13T08:01:00Z",
+      },
+      failoverQueueDepth: 2,
+      failoverQueue: [
+        {
+          providerId: "codex-backup",
+          providerName: "Codex Backup",
+          sortIndex: 1,
+          active: false,
+          health: {
+            providerId: "codex-backup",
+            observed: false,
+            healthy: true,
+            consecutiveFailures: 0,
+            lastSuccessAt: null,
+            lastFailureAt: null,
+            lastError: null,
+            updatedAt: null,
+          },
+        },
+      ],
+    });
+
+    const payload = staticPrototypeSettings.buildStaticPrototypeWorkspaceData([
+      null,
+      null,
+      null,
+      {
+        claude: { activeProviderId: null, providers: [] },
+        codex: {
+          activeProviderId: "codex-primary",
+          providers: [
+            {
+              active: true,
+              baseUrl: "https://api.openai.com/v1",
+              failover,
+              model: "gpt-5.4",
+              name: "OpenAI Official",
+              notes: "Pinned live route",
+              providerId: "codex-primary",
+              tokenConfigured: true,
+              tokenField: "OPENAI_API_KEY",
+              tokenMasked: "sk-live-...789",
+            },
+          ],
+        },
+        gemini: { activeProviderId: null, providers: [] },
+      },
+    ]);
+
+    expect(payload.apps.codex).toStrictEqual({
+      activeProviderId: "codex-primary",
+      providers: [
+        {
+          providerId: "codex-primary",
+          name: "OpenAI Official",
+          baseUrl: "https://api.openai.com/v1",
+          tokenField: "OPENAI_API_KEY",
+          tokenConfigured: true,
+          tokenMasked: "sk-live-...789",
+          model: "gpt-5.4",
+          notes: "Pinned live route",
+          active: true,
+          failover: {
+            providerId: "codex-primary",
+            proxyEnabled: false,
+            autoFailoverEnabled: true,
+            maxRetries: 4,
+            activeProviderId: "codex-primary",
+            inFailoverQueue: true,
+            queuePosition: 0,
+            sortIndex: 0,
+            providerHealth: {
+              providerId: "codex-primary",
+              observed: true,
+              healthy: false,
+              consecutiveFailures: 2,
+              lastSuccessAt: "2026-04-13T07:59:00Z",
+              lastFailureAt: "2026-04-13T08:00:00Z",
+              lastError: "upstream timeout",
+              updatedAt: "2026-04-13T08:01:00Z",
+            },
+            failoverQueueDepth: 2,
+            failoverQueue: [
+              {
+                providerId: "codex-backup",
+                providerName: "Codex Backup",
+                sortIndex: 1,
+                active: false,
+                health: {
+                  providerId: "codex-backup",
+                  observed: false,
+                  healthy: true,
+                  consecutiveFailures: 0,
+                  lastSuccessAt: null,
+                  lastFailureAt: null,
+                  lastError: null,
+                  updatedAt: null,
+                },
+              },
+            ],
+          },
+        },
+      ],
     });
   });
 
