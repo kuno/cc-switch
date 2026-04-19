@@ -35,7 +35,7 @@ export function SharedRuntimeFailoverQueuePreview({
     return (
       <div
         className={cn(
-          "rounded-2xl border border-dashed border-border-default bg-muted/15 px-4 py-3 text-sm text-muted-foreground",
+          "ccswitch-openwrt-state-shell rounded-2xl border border-dashed border-border-default bg-muted/15 px-4 py-3 text-sm text-muted-foreground",
           className,
         )}
       >
@@ -49,7 +49,7 @@ export function SharedRuntimeFailoverQueuePreview({
       {visibleQueue.map((entry, index) => (
         <div
           key={`${entry.providerId}-${entry.sortIndex ?? index}`}
-          className="rounded-2xl border border-border-default bg-background/80 p-4"
+          className="ccswitch-openwrt-group ccswitch-openwrt-group--raised rounded-2xl border border-border-default bg-background/80 p-4"
         >
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0 space-y-1">

@@ -11,7 +11,10 @@ import {
 } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
-import type { SharedRuntimeAppStatus, SharedRuntimeFailoverQueueEntry } from "../domain";
+import type {
+  SharedRuntimeAppStatus,
+  SharedRuntimeFailoverQueueEntry,
+} from "../domain";
 import type { RuntimeSurfaceFailoverControlAdapter } from "../types";
 import {
   SHARED_RUNTIME_APP_PRESENTATION,
@@ -35,15 +38,9 @@ function getErrorMessage(error: unknown): string {
   return "Runtime failover control request failed.";
 }
 
-function AppStat({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
+function AppStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-border-default bg-background/70 px-3 py-3">
+    <div className="ccswitch-openwrt-stat-card rounded-2xl border border-border-default bg-background/70 px-3 py-3">
       <p className="text-xs uppercase tracking-wide text-muted-foreground">
         {label}
       </p>
@@ -84,7 +81,8 @@ export function SharedRuntimeAppCard({
     () =>
       (availableProvidersQuery.data ?? []).filter(
         (provider) =>
-          provider.providerId.trim() && !queueProviderIds.has(provider.providerId),
+          provider.providerId.trim() &&
+          !queueProviderIds.has(provider.providerId),
       ),
     [availableProvidersQuery.data, queueProviderIds],
   );
@@ -103,7 +101,9 @@ export function SharedRuntimeAppCard({
     }
 
     if (
-      availableProviders.some((provider) => provider.providerId === selectedProviderId)
+      availableProviders.some(
+        (provider) => provider.providerId === selectedProviderId,
+      )
     ) {
       return;
     }
@@ -202,7 +202,7 @@ export function SharedRuntimeAppCard({
       role="region"
       aria-label={`${appPresentation.label} runtime card`}
       className={cn(
-        "rounded-3xl border shadow-sm",
+        "ccswitch-openwrt-surface-card ccswitch-openwrt-surface-card--runtime rounded-3xl border shadow-sm",
         appPresentation.panelClassName,
       )}
     >
@@ -231,7 +231,9 @@ export function SharedRuntimeAppCard({
                 tone={status.autoFailoverEnabled ? "enabled" : "disabled"}
               />
               <SharedRuntimeStatusChip
-                label={controlsEnabled ? "Failover controls enabled" : "Read only"}
+                label={
+                  controlsEnabled ? "Failover controls enabled" : "Read only"
+                }
                 tone="neutral"
               />
               {status.usingLegacyDefault ? (
@@ -254,7 +256,7 @@ export function SharedRuntimeAppCard({
 
           <div
             className={cn(
-              "rounded-2xl border px-4 py-3 text-sm",
+              "ccswitch-openwrt-group rounded-2xl border px-4 py-3 text-sm",
               appPresentation.mutedPanelClassName,
             )}
           >
@@ -304,7 +306,7 @@ export function SharedRuntimeAppCard({
           />
         </div>
 
-        <div className="rounded-2xl border border-border-default bg-background/70 p-4">
+        <div className="ccswitch-openwrt-group ccswitch-openwrt-group--raised rounded-2xl border border-border-default bg-background/70 p-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div className="space-y-1">
               <p className="text-sm font-medium">Failover queue preview</p>
@@ -322,12 +324,14 @@ export function SharedRuntimeAppCard({
           <SharedRuntimeFailoverQueuePreview
             queue={status.failoverQueue}
             className="mt-4"
-            renderEntryActions={controlsEnabled ? renderQueueEntryActions : undefined}
+            renderEntryActions={
+              controlsEnabled ? renderQueueEntryActions : undefined
+            }
           />
         </div>
 
         {controlsEnabled ? (
-          <div className="rounded-2xl border border-border-default bg-muted/10 p-4">
+          <div className="ccswitch-openwrt-group ccswitch-openwrt-group--muted rounded-2xl border border-border-default bg-muted/10 p-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div className="space-y-1">
                 <p className="text-sm font-medium">Failover controls</p>
@@ -342,7 +346,7 @@ export function SharedRuntimeAppCard({
             </div>
 
             <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
-              <div className="rounded-2xl border border-border-default bg-background/80 p-4">
+              <div className="ccswitch-openwrt-group ccswitch-openwrt-group--raised rounded-2xl border border-border-default bg-background/80 p-4">
                 <div className="flex items-center justify-between gap-4">
                   <div className="space-y-1">
                     <p className="text-sm font-medium">Auto-failover</p>
@@ -357,14 +361,17 @@ export function SharedRuntimeAppCard({
                     aria-label={`${appPresentation.label} auto-failover`}
                     onCheckedChange={(enabled) => {
                       void runMutation("toggle-auto-failover", () =>
-                        failoverControls!.setAutoFailoverEnabled(status.app, enabled),
+                        failoverControls!.setAutoFailoverEnabled(
+                          status.app,
+                          enabled,
+                        ),
                       );
                     }}
                   />
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-border-default bg-background/80 p-4">
+              <div className="ccswitch-openwrt-group ccswitch-openwrt-group--raised rounded-2xl border border-border-default bg-background/80 p-4">
                 <div className="space-y-1">
                   <p className="text-sm font-medium">Add saved provider</p>
                   <p className="text-sm text-muted-foreground">
@@ -374,12 +381,15 @@ export function SharedRuntimeAppCard({
                 </div>
 
                 <div className="mt-3 flex flex-col gap-3 sm:flex-row">
-                  <label className="sr-only" htmlFor={`${status.app}-failover-provider`}>
+                  <label
+                    className="sr-only"
+                    htmlFor={`${status.app}-failover-provider`}
+                  >
                     Add saved provider to {appPresentation.label} failover queue
                   </label>
                   <select
                     id={`${status.app}-failover-provider`}
-                    className="h-9 w-full rounded-md border border-border-default bg-background px-3 text-sm shadow-sm focus:border-border-active focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                    className="ccswitch-openwrt-field h-10 w-full rounded-md border border-border-default bg-background px-3 text-sm shadow-sm focus:border-border-active focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                     value={selectedProviderId}
                     disabled={addDisabled}
                     onChange={(event) => {
@@ -394,7 +404,10 @@ export function SharedRuntimeAppCard({
                           : "No saved providers available"}
                     </option>
                     {availableProviders.map((provider) => (
-                      <option key={provider.providerId} value={provider.providerId}>
+                      <option
+                        key={provider.providerId}
+                        value={provider.providerId}
+                      >
                         {provider.providerName}
                         {provider.model.trim() ? ` (${provider.model})` : ""}
                       </option>
