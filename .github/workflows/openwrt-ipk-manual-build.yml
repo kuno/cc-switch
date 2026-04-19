@@ -1,0 +1,184 @@
+name: OpenWrt Manual IPK Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      architecture:
+        description: Architecture to build
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - aarch64
+          - x86_64
+          - arm_cortex-a7
+          - mipsel_24kc
+      skip_ui_rebuild:
+        description: Use the staged OpenWrt provider UI bundle instead of rebuilding inside build-ipk.sh
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openwrt-ipk-manual-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  select-architectures:
+    name: Select Architectures
+    runs-on: ubuntu-22.04
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+    steps:
+      - name: Select matrix targets
+        id: select
+        run: |
+          set -euo pipefail
+
+          case "${{ inputs.architecture }}" in
+            all)
+              matrix='[
+                {"name":"aarch64","rust_target":"aarch64-unknown-linux-musl","opkg_arch":"aarch64_generic"},
+                {"name":"x86_64","rust_target":"x86_64-unknown-linux-musl","opkg_arch":"x86_64"},
+                {"name":"arm_cortex-a7","rust_target":"armv7-unknown-linux-musleabihf","opkg_arch":"arm_cortex-a7_neon-vfpv4"},
+                {"name":"mipsel_24kc","rust_target":"mipsel-unknown-linux-musl","opkg_arch":"mipsel_24kc"}
+              ]'
+              ;;
+            aarch64)
+              matrix='[{"name":"aarch64","rust_target":"aarch64-unknown-linux-musl","opkg_arch":"aarch64_generic"}]'
+              ;;
+            x86_64)
+              matrix='[{"name":"x86_64","rust_target":"x86_64-unknown-linux-musl","opkg_arch":"x86_64"}]'
+              ;;
+            arm_cortex-a7)
+              matrix='[{"name":"arm_cortex-a7","rust_target":"armv7-unknown-linux-musleabihf","opkg_arch":"arm_cortex-a7_neon-vfpv4"}]'
+              ;;
+            mipsel_24kc)
+              matrix='[{"name":"mipsel_24kc","rust_target":"mipsel-unknown-linux-musl","opkg_arch":"mipsel_24kc"}]'
+              ;;
+            *)
+              echo "Unsupported architecture input: ${{ inputs.architecture }}" >&2
+              exit 1
+              ;;
+          esac
+
+          echo "matrix=${matrix}" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.target.name }}
+    needs: select-architectures
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJson(needs.select-architectures.outputs.matrix) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target.rust_target }}
+
+      - name: Install cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Cache Cargo registry and build
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            proxy-daemon/target
+          key: ${{ runner.os }}-cargo-${{ matrix.target.rust_target }}-${{ hashFiles('proxy-daemon/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ matrix.target.rust_target }}-
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build OpenWrt provider UI bundle
+        run: pnpm build:openwrt-provider-ui
+
+      - name: Build cc-switch binary
+        working-directory: proxy-daemon
+        run: cross build --release --target ${{ matrix.target.rust_target }}
+
+      - name: Build OpenWrt IPKs
+        run: |
+          set -euo pipefail
+
+          if [ "${{ inputs.skip_ui_rebuild }}" = "true" ]; then
+            CCSWITCH_IPK_SKIP_UI_REBUILD=1 openwrt/build-ipk.sh \
+              --rust-target "${{ matrix.target.rust_target }}" \
+              --opkg-arch "${{ matrix.target.opkg_arch }}" \
+              --binary "proxy-daemon/target/${{ matrix.target.rust_target }}/release/cc-switch"
+          else
+            openwrt/build-ipk.sh \
+              --rust-target "${{ matrix.target.rust_target }}" \
+              --opkg-arch "${{ matrix.target.opkg_arch }}" \
+              --binary "proxy-daemon/target/${{ matrix.target.rust_target }}/release/cc-switch"
+          fi
+
+      - name: Upload IPK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ipk-${{ matrix.target.name }}
+          path: |
+            openwrt/dist/cc-switch_*_${{ matrix.target.opkg_arch }}.ipk
+            openwrt/dist/luci-app-cc-switch_*.ipk
+          if-no-files-found: error
+
+  summary:
+    name: Build Summary
+    runs-on: ubuntu-22.04
+    needs: build
+    if: ${{ always() }}
+    steps:
+      - name: Download IPK artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ipk-*
+          path: artifacts
+
+      - name: Write build summary
+        run: |
+          set -euo pipefail
+
+          mapfile -d '' files < <(find artifacts -type f -name '*.ipk' -print0 | sort -z)
+
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No IPK artifacts were downloaded." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          {
+            echo "## OpenWrt Manual IPK Build"
+            echo
+            echo "| Artifact | File | SHA256 |"
+            echo "| --- | --- | --- |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for file in "${files[@]}"; do
+            artifact_name="$(basename "$(dirname "$file")")"
+            sha256="$(sha256sum "$file" | awk '{print $1}')"
+            echo "| ${artifact_name} | $(basename "$file") | \`${sha256}\` |" >> "$GITHUB_STEP_SUMMARY"
+          done
