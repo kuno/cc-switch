@@ -30,9 +30,15 @@ use super::{
     ProxyError,
 };
 use crate::app_config::AppType;
+#[cfg(not(feature = "tauri-desktop"))]
+use crate::openwrt_admin::{self, OpenWrtProviderPayload};
+#[cfg(not(feature = "tauri-desktop"))]
+use axum::extract::Path;
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use bytes::Bytes;
 use http_body_util::BodyExt;
+#[cfg(not(feature = "tauri-desktop"))]
+use serde::Deserialize;
 use serde_json::{json, Value};
 
 // ============================================================================
@@ -62,6 +68,335 @@ pub async fn get_status(State(state): State<ProxyState>) -> Result<Json<ProxySta
     populate_status_active_targets(&mut status, &current_providers);
 
     Ok(Json(status))
+}
+
+// ============================================================================
+// OpenWrt admin API (proxy-daemon only)
+// ============================================================================
+
+#[cfg(not(feature = "tauri-desktop"))]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtReorderQueuePayload {
+    provider_ids: Vec<String>,
+}
+
+#[cfg(not(feature = "tauri-desktop"))]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtEnabledPayload {
+    enabled: bool,
+}
+
+#[cfg(not(feature = "tauri-desktop"))]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtMaxRetriesPayload {
+    value: u32,
+}
+
+#[cfg(not(feature = "tauri-desktop"))]
+fn openwrt_admin_ok<T: serde::Serialize>(value: T) -> (StatusCode, Json<Value>) {
+    match serde_json::to_value(value) {
+        Ok(Value::Object(mut map)) => {
+            map.insert("ok".to_string(), Value::Bool(true));
+            (StatusCode::OK, Json(Value::Object(map)))
+        }
+        Ok(value) => (StatusCode::OK, Json(json!({ "ok": true, "value": value }))),
+        Err(error) => (
+            StatusCode::OK,
+            Json(json!({
+                "ok": false,
+                "error": format!("failed to serialize OpenWrt admin response: {error}")
+            })),
+        ),
+    }
+}
+
+#[cfg(not(feature = "tauri-desktop"))]
+fn openwrt_admin_error(error: anyhow::Error) -> (StatusCode, Json<Value>) {
+    (
+        StatusCode::OK,
+        Json(json!({ "ok": false, "error": error.to_string() })),
+    )
+}
+
+#[cfg(not(feature = "tauri-desktop"))]
+fn parse_openwrt_app(app: &str) -> Result<AppType, anyhow::Error> {
+    openwrt_admin::parse_supported_app(app)
+}
+
+#[cfg(not(feature = "tauri-desktop"))]
+pub async fn openwrt_get_runtime_status(
+    State(state): State<ProxyState>,
+) -> (StatusCode, Json<Value>) {
+    match openwrt_admin::get_runtime_status(state.db.as_ref()).await {
+        Ok(status) => openwrt_admin_ok(status),
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+#[cfg(not(feature = "tauri-desktop"))]
+pub async fn openwrt_get_app_runtime_status(
+    Path(app): Path<String>,
+    State(state): State<ProxyState>,
+) -> (StatusCode, Json<Value>) {
+    match parse_openwrt_app(&app) {
+        Ok(app_type) => {
+            match openwrt_admin::get_app_runtime_status(state.db.as_ref(), &app_type).await {
+                Ok(status) => openwrt_admin_ok(status),
+                Err(error) => openwrt_admin_error(error),
+            }
+        }
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+#[cfg(not(feature = "tauri-desktop"))]
+pub async fn openwrt_list_providers(
+    Path(app): Path<String>,
+    State(state): State<ProxyState>,
+) -> (StatusCode, Json<Value>) {
+    match parse_openwrt_app(&app)
+        .and_then(|app_type| openwrt_admin::list_providers(state.db.as_ref(), &app_type))
+    {
+        Ok(view) => openwrt_admin_ok(view),
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+#[cfg(not(feature = "tauri-desktop"))]
+pub async fn openwrt_get_active_provider(
+    Path(app): Path<String>,
+    State(state): State<ProxyState>,
+) -> (StatusCode, Json<Value>) {
+    match parse_openwrt_app(&app)
+        .and_then(|app_type| openwrt_admin::get_active_provider(state.db.as_ref(), &app_type))
+    {
+        Ok(view) => openwrt_admin_ok(view),
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+#[cfg(not(feature = "tauri-desktop"))]
+pub async fn openwrt_get_provider(
+    Path((app, provider_id)): Path<(String, String)>,
+    State(state): State<ProxyState>,
+) -> (StatusCode, Json<Value>) {
+    match parse_openwrt_app(&app).and_then(|app_type| {
+        openwrt_admin::get_provider(state.db.as_ref(), &app_type, &provider_id)
+    }) {
+        Ok(view) => openwrt_admin_ok(view),
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+#[cfg(not(feature = "tauri-desktop"))]
+pub async fn openwrt_get_provider_failover(
+    Path((app, provider_id)): Path<(String, String)>,
+    State(state): State<ProxyState>,
+) -> (StatusCode, Json<Value>) {
+    match parse_openwrt_app(&app) {
+        Ok(app_type) => {
+            match openwrt_admin::get_provider_failover(state.db.as_ref(), &app_type, &provider_id)
+                .await
+            {
+                Ok(view) => openwrt_admin_ok(view),
+                Err(error) => openwrt_admin_error(error),
+            }
+        }
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+#[cfg(not(feature = "tauri-desktop"))]
+pub async fn openwrt_get_available_failover_providers(
+    Path(app): Path<String>,
+    State(state): State<ProxyState>,
+) -> (StatusCode, Json<Value>) {
+    match parse_openwrt_app(&app).and_then(|app_type| {
+        openwrt_admin::get_available_failover_providers(state.db.as_ref(), &app_type)
+    }) {
+        Ok(providers) => (
+            StatusCode::OK,
+            Json(json!({
+                "ok": true,
+                "providers": providers
+            })),
+        ),
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+#[cfg(not(feature = "tauri-desktop"))]
+pub async fn openwrt_upsert_provider(
+    Path(app): Path<String>,
+    State(state): State<ProxyState>,
+    Json(payload): Json<OpenWrtProviderPayload>,
+) -> (StatusCode, Json<Value>) {
+    match parse_openwrt_app(&app).and_then(|app_type| {
+        openwrt_admin::upsert_provider_from_payload(state.db.as_ref(), &app_type, None, payload)
+    }) {
+        Ok(view) => openwrt_admin_ok(view),
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+#[cfg(not(feature = "tauri-desktop"))]
+pub async fn openwrt_upsert_provider_by_id(
+    Path((app, provider_id)): Path<(String, String)>,
+    State(state): State<ProxyState>,
+    Json(payload): Json<OpenWrtProviderPayload>,
+) -> (StatusCode, Json<Value>) {
+    match parse_openwrt_app(&app).and_then(|app_type| {
+        openwrt_admin::upsert_provider_from_payload(
+            state.db.as_ref(),
+            &app_type,
+            Some(provider_id.as_str()),
+            payload,
+        )
+    }) {
+        Ok(view) => openwrt_admin_ok(view),
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+#[cfg(not(feature = "tauri-desktop"))]
+pub async fn openwrt_upsert_active_provider(
+    Path(app): Path<String>,
+    State(state): State<ProxyState>,
+    Json(payload): Json<OpenWrtProviderPayload>,
+) -> (StatusCode, Json<Value>) {
+    match parse_openwrt_app(&app).and_then(|app_type| {
+        openwrt_admin::upsert_active_provider_from_payload(state.db.as_ref(), &app_type, payload)
+    }) {
+        Ok(view) => openwrt_admin_ok(view),
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+#[cfg(not(feature = "tauri-desktop"))]
+pub async fn openwrt_delete_provider(
+    Path((app, provider_id)): Path<(String, String)>,
+    State(state): State<ProxyState>,
+) -> (StatusCode, Json<Value>) {
+    match parse_openwrt_app(&app).and_then(|app_type| {
+        openwrt_admin::delete_provider(state.db.as_ref(), &app_type, &provider_id)
+    }) {
+        Ok(view) => openwrt_admin_ok(view),
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+#[cfg(not(feature = "tauri-desktop"))]
+pub async fn openwrt_activate_provider(
+    Path((app, provider_id)): Path<(String, String)>,
+    State(state): State<ProxyState>,
+) -> (StatusCode, Json<Value>) {
+    match parse_openwrt_app(&app).and_then(|app_type| {
+        openwrt_admin::activate_provider(state.db.as_ref(), &app_type, &provider_id)
+    }) {
+        Ok(view) => openwrt_admin_ok(view),
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+#[cfg(not(feature = "tauri-desktop"))]
+pub async fn openwrt_add_to_failover_queue(
+    Path((app, provider_id)): Path<(String, String)>,
+    State(state): State<ProxyState>,
+) -> (StatusCode, Json<Value>) {
+    match parse_openwrt_app(&app) {
+        Ok(app_type) => {
+            match openwrt_admin::add_to_failover_queue(state.db.as_ref(), &app_type, &provider_id)
+                .await
+            {
+                Ok(view) => openwrt_admin_ok(view),
+                Err(error) => openwrt_admin_error(error),
+            }
+        }
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+#[cfg(not(feature = "tauri-desktop"))]
+pub async fn openwrt_remove_from_failover_queue(
+    Path((app, provider_id)): Path<(String, String)>,
+    State(state): State<ProxyState>,
+) -> (StatusCode, Json<Value>) {
+    match parse_openwrt_app(&app) {
+        Ok(app_type) => match openwrt_admin::remove_from_failover_queue(
+            state.db.as_ref(),
+            &app_type,
+            &provider_id,
+        )
+        .await
+        {
+            Ok(view) => openwrt_admin_ok(view),
+            Err(error) => openwrt_admin_error(error),
+        },
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+#[cfg(not(feature = "tauri-desktop"))]
+pub async fn openwrt_reorder_failover_queue(
+    Path(app): Path<String>,
+    State(state): State<ProxyState>,
+    Json(payload): Json<OpenWrtReorderQueuePayload>,
+) -> (StatusCode, Json<Value>) {
+    match parse_openwrt_app(&app) {
+        Ok(app_type) => match openwrt_admin::reorder_failover_queue(
+            state.db.as_ref(),
+            &app_type,
+            &payload.provider_ids,
+        )
+        .await
+        {
+            Ok(view) => openwrt_admin_ok(view),
+            Err(error) => openwrt_admin_error(error),
+        },
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+#[cfg(not(feature = "tauri-desktop"))]
+pub async fn openwrt_set_auto_failover_enabled(
+    Path(app): Path<String>,
+    State(state): State<ProxyState>,
+    Json(payload): Json<OpenWrtEnabledPayload>,
+) -> (StatusCode, Json<Value>) {
+    match parse_openwrt_app(&app) {
+        Ok(app_type) => match openwrt_admin::set_auto_failover_enabled(
+            state.db.as_ref(),
+            &app_type,
+            payload.enabled,
+        )
+        .await
+        {
+            Ok(view) => openwrt_admin_ok(view),
+            Err(error) => openwrt_admin_error(error),
+        },
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+#[cfg(not(feature = "tauri-desktop"))]
+pub async fn openwrt_set_max_retries(
+    Path(app): Path<String>,
+    State(state): State<ProxyState>,
+    Json(payload): Json<OpenWrtMaxRetriesPayload>,
+) -> (StatusCode, Json<Value>) {
+    match parse_openwrt_app(&app) {
+        Ok(app_type) => {
+            match openwrt_admin::set_max_retries(state.db.as_ref(), &app_type, payload.value).await
+            {
+                Ok(view) => openwrt_admin_ok(view),
+                Err(error) => openwrt_admin_error(error),
+            }
+        }
+        Err(error) => openwrt_admin_error(error),
+    }
 }
 
 // ============================================================================
