@@ -8,7 +8,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { act, fireEvent, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY,
   __private__,
@@ -333,7 +333,25 @@ function getElementClassName(element: Element): string {
     : "";
 }
 
+function hasClassToken(root: ParentNode, token: string): boolean {
+  return Array.from(root.querySelectorAll("*")).some((element) =>
+    getElementClassName(element)
+      .split(/\s+/)
+      .includes(token),
+  );
+}
+
 describe("OpenWrt provider UI bundle", () => {
+  beforeEach(() => {
+    document.body.classList.remove("ccswitch-openwrt-provider-ui-theme");
+    document.body.innerHTML = "";
+  });
+
+  afterEach(() => {
+    document.body.classList.remove("ccswitch-openwrt-provider-ui-theme");
+    document.body.innerHTML = "";
+  });
+
   it("registers the runtime-surface capability and mounts a read-only runtime panel", async () => {
     const globalScope = globalThis as typeof globalThis & {
       [OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY]?: OpenWrtSharedProviderBundleApi;
@@ -810,10 +828,31 @@ describe("OpenWrt provider UI bundle", () => {
     expect(runtimeRoot.firstElementChild?.tagName).toBe("SECTION");
     expect(runtimeRoot.querySelectorAll('[role="region"]').length).toBe(3);
     expect(
+      runtimeRoot.querySelector("section.ccswitch-openwrt-page-section"),
+    ).not.toBeNull();
+    expect(runtimeRoot.querySelector(".ccswitch-openwrt-page-header")).not.toBeNull();
+    expect(runtimeRoot.querySelector(".ccswitch-openwrt-surface-card")).not.toBeNull();
+    expect(hasClassToken(runtimeRoot, "sm:grid-cols-2")).toBe(true);
+    expect(hasClassToken(runtimeRoot, "xl:grid-cols-3")).toBe(true);
+    expect(
       Array.from(runtimeRoot.querySelectorAll("*")).some((element) =>
         getElementClassName(element).includes("rounded-3xl"),
       ),
     ).toBe(true);
+    expect(providerRoot.querySelector(".ccswitch-openwrt-page-section")).not.toBeNull();
+    expect(
+      providerRoot.querySelector(".ccswitch-openwrt-page-header"),
+    ).not.toBeNull();
+    expect(providerRoot.querySelector(".ccswitch-openwrt-app-switch")).not.toBeNull();
+    expect(
+      providerRoot.querySelector(".ccswitch-openwrt-provider-card"),
+    ).not.toBeNull();
+    expect(hasClassToken(providerRoot, "sm:grid-cols-2")).toBe(true);
+    expect(
+      providerRoot.querySelector(
+        '[data-ccswitch-region="provider-summary-grid"][data-ccswitch-layout="stack-to-split"]',
+      ),
+    ).not.toBeNull();
     expect(
       Array.from(providerRoot.querySelectorAll("*")).some((element) =>
         getElementClassName(element).includes("rounded-[28px]"),
@@ -1073,6 +1112,52 @@ describe("OpenWrt provider UI bundle", () => {
     expect(luciMakefile).toContain("prepare-provider-ui-bundle.sh");
     expect(buildIpkScript).toContain("prepare-provider-ui-bundle.sh");
     expect(viteConfig).toContain("openwrt/provider-ui-dist");
+  });
+
+  it("ships shared layout hook selectors and responsive utilities in staged artifacts", () => {
+    const repoRoot = process.cwd();
+    const stagedBundleSource = readFileSync(
+      path.resolve(repoRoot, "openwrt/provider-ui-dist/ccswitch-provider-ui.js"),
+      "utf8",
+    );
+    const stagedStylesheetSource = readFileSync(
+      path.resolve(repoRoot, "openwrt/provider-ui-dist/ccswitch-provider-ui.css"),
+      "utf8",
+    );
+
+    for (const hook of [
+      "ccswitch-openwrt-page-section",
+      "ccswitch-openwrt-page-header",
+      "ccswitch-openwrt-app-switch",
+      "ccswitch-openwrt-surface-card",
+      "ccswitch-openwrt-provider-card",
+      "ccswitch-openwrt-state-shell",
+    ]) {
+      expect(stagedBundleSource).toContain(hook);
+      expect(stagedStylesheetSource).toContain(hook);
+    }
+
+    expect(stagedStylesheetSource).toMatch(
+      /@media\(max-width:960px\)\{[^}]*body\.ccswitch-openwrt-provider-ui-theme \.cbi-value\{[^}]*grid-template-columns:1fr[^}]*\}/,
+    );
+    expect(stagedStylesheetSource).toContain(
+      ".sm\\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}",
+    );
+    expect(stagedStylesheetSource).toContain(
+      ".md\\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}",
+    );
+    expect(stagedStylesheetSource).toContain(
+      ".lg\\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}",
+    );
+    expect(stagedStylesheetSource).toContain(
+      ".xl\\:grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}",
+    );
+    expect(stagedStylesheetSource).toContain(
+      '#ccswitch-shared-provider-ui-root [data-ccswitch-layout=stack-to-split]{display:grid;gap:.875rem;grid-template-columns:minmax(0,1fr);align-items:start}',
+    );
+    expect(stagedStylesheetSource).toContain(
+      '@media(min-width:1080px){#ccswitch-shared-provider-ui-root [data-ccswitch-layout=stack-to-split]{grid-template-columns:minmax(0,1.05fr) minmax(18rem,.7fr)}}',
+    );
   });
 
   it("keeps the staged OpenWrt bundle free of split-shell selectors and desktop-shell structure", () => {
