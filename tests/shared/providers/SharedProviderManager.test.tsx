@@ -454,6 +454,160 @@ describe("SharedProviderManager", () => {
     expect(screen.getByText("Router preset")).toBeInTheDocument();
   });
 
+  it("shows grouped presets and form sections, and keeps custom drafts editable after preset selection", async () => {
+    const adapter = createMutableAdapter({
+      codex: buildState("codex", [], null),
+    });
+    const { user } = renderManager(
+      <SharedProviderManager adapter={adapter} defaultApp="codex" />,
+    );
+
+    await screen.findByText("No providers saved for Codex yet.");
+    await user.click(screen.getByRole("button", { name: "Add provider" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Add provider" });
+    const dialogScope = within(dialog);
+
+    expect(dialogScope.getByText("Preset browser")).toBeInTheDocument();
+    expect(dialogScope.getByText("Official")).toBeInTheDocument();
+    expect(dialogScope.getByText("Platform templates")).toBeInTheDocument();
+    expect(dialogScope.getByText("Compatible gateways")).toBeInTheDocument();
+    expect(
+      dialogScope.getByRole("heading", { name: "Identity" }),
+    ).toBeInTheDocument();
+    expect(
+      dialogScope.getByRole("heading", { name: "Endpoint & auth" }),
+    ).toBeInTheDocument();
+    expect(
+      dialogScope.getByRole("heading", { name: "Optional notes" }),
+    ).toBeInTheDocument();
+    expect(dialogScope.getByLabelText("Provider name")).toHaveValue(
+      "OpenAI Official",
+    );
+    expect(dialogScope.getByLabelText("Base URL")).toHaveValue(
+      "https://api.openai.com/v1",
+    );
+
+    await user.click(dialogScope.getByRole("button", { name: /OpenRouter/ }));
+
+    expect(dialogScope.getByLabelText("Provider name")).toHaveValue(
+      "OpenRouter",
+    );
+    expect(dialogScope.getByLabelText("Base URL")).toHaveValue(
+      "https://openrouter.ai/api/v1",
+    );
+    expect(dialogScope.getByLabelText("Model")).toHaveValue("gpt-5.4");
+    expect(
+      dialogScope.getAllByText(
+        "OpenRouter Responses-compatible endpoint for Codex.",
+      ).length,
+    ).toBeGreaterThan(0);
+
+    await user.clear(dialogScope.getByLabelText("Provider name"));
+    await user.type(
+      dialogScope.getByLabelText("Provider name"),
+      "Router edge",
+    );
+    await user.click(
+      dialogScope.getByRole("button", { name: /Custom draft/ }),
+    );
+
+    expect(dialogScope.getByLabelText("Provider name")).toHaveValue(
+      "Router edge",
+    );
+    expect(dialogScope.getByLabelText("Base URL")).toHaveValue(
+      "https://openrouter.ai/api/v1",
+    );
+    expect(dialogScope.getByLabelText("Model")).toHaveValue("gpt-5.4");
+    expect(
+      dialogScope.getByText(
+        "Keep the current fields editable without applying a preset.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("shows blank-secret preserve guidance only when editing a provider with a stored secret", async () => {
+    const adapter = createAdapter({
+      listProviderState: vi.fn().mockResolvedValue(
+        buildState(
+          "claude",
+          [
+            createProvider({
+              providerId: "with-secret",
+              name: "Claude Secret",
+              baseUrl: "https://api.anthropic.com",
+              tokenConfigured: true,
+            }),
+            createProvider({
+              providerId: "without-secret",
+              name: "Claude Empty",
+              baseUrl: "https://gateway.example.com",
+              tokenConfigured: false,
+              tokenMasked: "",
+            }),
+          ],
+          "with-secret",
+        ),
+      ),
+    });
+    const { user } = renderManager(
+      <SharedProviderManager adapter={adapter} defaultApp="claude" />,
+    );
+
+    await screen.findByText("Claude Secret");
+
+    await user.click(
+      screen.getByRole("button", { name: "Edit Claude Secret" }),
+    );
+
+    const storedSecretDialog = await screen.findByRole("dialog", {
+      name: "Edit provider",
+    });
+    const storedSecretScope = within(storedSecretDialog);
+
+    expect(
+      storedSecretScope.getByPlaceholderText(
+        "Leave blank to keep the stored secret",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      storedSecretScope.getByText("Stored secret detected"),
+    ).toBeInTheDocument();
+    expect(
+      storedSecretScope.getByText(
+        "Leave the token blank to preserve the stored secret.",
+      ),
+    ).toBeInTheDocument();
+
+    await user.click(storedSecretScope.getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Edit provider" }),
+      ).not.toBeInTheDocument(),
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Edit Claude Empty" }),
+    );
+
+    const emptySecretDialog = await screen.findByRole("dialog", {
+      name: "Edit provider",
+    });
+    const emptySecretScope = within(emptySecretDialog);
+
+    expect(
+      emptySecretScope.getByPlaceholderText(
+        "Enter the secret for this provider",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      emptySecretScope.queryByText(
+        "Leave the token blank to preserve the stored secret.",
+      ),
+    ).not.toBeInTheDocument();
+  });
+
   it("filters providers locally by provider fields and matched preset labels", async () => {
     const adapter = createAdapter({
       listProviderState: vi.fn().mockResolvedValue(
