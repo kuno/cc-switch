@@ -1,0 +1,16 @@
+Option B2.3
+
+Implementation baseline:
+- B2.2
+
+Merged into B2.3:
+- kept B2.2's compact app picker so the header can scale beyond a fixed 3-tab strip
+- kept B2.1's simpler, calmer surface hierarchy as the target tone
+- removed future-placeholder app rows from the visible UI so the baseline matches current OpenWrt support
+- removed mock-only explanation copy, debug readouts, and redundant labels
+- renamed detail terminology toward desktop vocabulary: General, Failover, Credentials
+
+What B2.3 is meant to be:
+- the closest production-like handoff so far
+- current OpenWrt scope first, future-proof app selection second
+- minimal daemon area on top, provider workspace below, cleaner labels throughout
