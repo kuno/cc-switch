@@ -66,6 +66,9 @@ describe("SharedProviderCard", () => {
     expect(screen.getByText("Stored secret")).toBeInTheDocument();
     expect(screen.getByText("Preset: OpenRouter")).toBeInTheDocument();
     expect(
+      screen.getByRole("button", { name: "Duplicate Alpha" }),
+    ).toBeInTheDocument();
+    expect(
       screen.getByRole("button", { name: "Edit Alpha" }),
     ).toBeInTheDocument();
     expect(
@@ -89,6 +92,7 @@ describe("SharedProviderCard", () => {
         actionVisibility={getSharedProviderCardActionVisibility(
           {
             ...fullCapabilities,
+            canAdd: false,
             canEdit: false,
             canDelete: false,
             canActivate: false,
@@ -98,6 +102,9 @@ describe("SharedProviderCard", () => {
       />,
     );
 
+    expect(
+      screen.queryByRole("button", { name: "Duplicate Beta" }),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Edit Beta" }),
     ).not.toBeInTheDocument();
@@ -142,7 +149,36 @@ describe("SharedProviderCard", () => {
       "aria-busy",
       "true",
     );
+    expect(screen.getByRole("button", { name: "Duplicate Gamma" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Edit Gamma" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Delete Gamma" })).toBeDisabled();
+  });
+
+  it("hides duplicate on the selected card so the detail pane owns that action", () => {
+    const provider = createProvider({
+      providerId: "delta",
+      name: "Delta",
+      baseUrl: "https://delta.example.com/v1",
+    });
+
+    render(
+      <SharedProviderCard
+        appId="codex"
+        provider={provider}
+        selected
+        actionVisibility={getSharedProviderCardActionVisibility(
+          fullCapabilities,
+          provider,
+          { selected: true },
+        )}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "Duplicate Delta" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit Delta" })).toBeInTheDocument();
   });
 });

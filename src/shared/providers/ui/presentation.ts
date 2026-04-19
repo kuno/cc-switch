@@ -111,9 +111,14 @@ export const SHARED_PROVIDER_TOKEN_FIELD_OPTIONS: Record<
 };
 
 export interface SharedProviderCardActionVisibility {
+  duplicate: boolean;
   edit: boolean;
   activate: boolean;
   delete: boolean;
+}
+
+export interface SharedProviderActionVisibilityOptions {
+  selected?: boolean;
 }
 
 export interface SharedProviderPresetBrowseGroup {
@@ -196,8 +201,12 @@ export function getSharedProviderPresetBrowseGroups(
 export function getSharedProviderCardActionVisibility(
   capabilities: SharedProviderCapabilities,
   provider: SharedProviderView,
+  options: SharedProviderActionVisibilityOptions = {},
 ): SharedProviderCardActionVisibility {
+  const selected = options.selected ?? false;
+
   return {
+    duplicate: capabilities.canAdd && !selected,
     edit: capabilities.canEdit,
     activate:
       capabilities.canActivate &&

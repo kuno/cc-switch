@@ -16,6 +16,7 @@ import type {
 import type { OpenWrtRuntimeTransport } from "@/platform/openwrt/runtime";
 import type {
   SharedProviderAppId,
+  SharedProviderEditorPayload,
   SharedProviderState,
 } from "@/shared/providers/domain";
 
@@ -102,6 +103,52 @@ function createTransport(
         ) => Promise<ReturnType<typeof createActiveProviderResponse>>
       >()
       .mockImplementation(async (appId) => createActiveProviderResponse(appId)),
+    upsertProvider: vi
+      .fn<
+        (
+          appId: SharedProviderAppId,
+          provider: SharedProviderEditorPayload,
+        ) => Promise<{ ok: true }>
+      >()
+      .mockImplementation(async (appId, provider) => {
+      const state = getProviderState(appId);
+      const nextProviderId =
+        provider.name.toLowerCase().replace(/\s+/g, "-") || `${appId}-provider`;
+
+      providerStates[appId] = createProviderState(
+        appId,
+        [
+          ...state.providers.map((existingProvider) => ({
+            active: existingProvider.active,
+            baseUrl: existingProvider.baseUrl,
+            configured: existingProvider.configured,
+            model: existingProvider.model,
+            name: existingProvider.name,
+            notes: existingProvider.notes,
+            providerId:
+              existingProvider.providerId ??
+              existingProvider.name.toLowerCase().replace(/\s+/g, "-"),
+            tokenConfigured: existingProvider.tokenConfigured,
+            tokenField: existingProvider.tokenField,
+            tokenMasked: existingProvider.tokenMasked,
+          })),
+          {
+            active: false,
+            baseUrl: provider.baseUrl,
+            model: provider.model,
+            name: provider.name,
+            notes: provider.notes,
+            providerId: nextProviderId,
+            tokenConfigured: Boolean(provider.token),
+            tokenField: provider.tokenField,
+            tokenMasked: provider.token ? "********" : "",
+          },
+        ],
+        state.activeProviderId,
+      );
+
+      return { ok: true };
+    }),
     restartService: vi.fn().mockResolvedValue({ ok: true }),
   };
 }
@@ -677,8 +724,20 @@ describe("OpenWrt provider UI bundle", () => {
       }),
     ).not.toBeInTheDocument();
     expect(
-      within(target).queryByRole("button", { name: /duplicate/i }),
+      within(claudePrimaryCard as HTMLElement).queryByRole("button", {
+        name: "Duplicate Claude Primary",
+      }),
     ).not.toBeInTheDocument();
+    expect(
+      within(claudeBackupCard as HTMLElement).getByRole("button", {
+        name: "Duplicate Claude Backup",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(claudeDetailPanel as HTMLElement).getByRole("button", {
+        name: "Duplicate selected Claude Primary",
+      }),
+    ).toBeInTheDocument();
     expect(
       within(target).queryByRole("button", { name: /terminal/i }),
     ).not.toBeInTheDocument();
@@ -1219,6 +1278,153 @@ describe("OpenWrt provider UI bundle", () => {
     expect(
       document.body.classList.contains("ccswitch-openwrt-provider-ui-theme"),
     ).toBe(false);
+  });
+
+  it("duplicates a provider through the mounted bundle by seeding add mode and saving on the create path", async () => {
+    const globalScope = globalThis as typeof globalThis & {
+      [OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY]?: OpenWrtSharedProviderBundleApi;
+    };
+    const api = globalScope[OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY];
+    const shellRoot = document.createElement("div");
+    const providerRoot = document.createElement("div");
+    const transport = createTransport({
+      codex: createProviderState(
+        "codex",
+        [
+          {
+            active: true,
+            baseUrl: "https://codex-primary.example.com/v1",
+            model: "gpt-5.4",
+            name: "Codex Primary",
+            notes: "Pinned for router traffic",
+            providerId: "codex-primary",
+            tokenConfigured: true,
+            tokenField: "OPENAI_API_KEY",
+            tokenMasked: "********",
+          },
+        ],
+        "codex-primary",
+      ),
+    });
+
+    providerRoot.id = "ccswitch-shared-provider-ui-root";
+    shellRoot.appendChild(providerRoot);
+    document.body.appendChild(shellRoot);
+
+    const shell = {
+      clearMessage: vi.fn(),
+      getSelectedApp: vi
+        .fn()
+        .mockReturnValue("codex" satisfies SharedProviderAppId),
+      getServiceStatus: vi.fn().mockReturnValue({ isRunning: true }),
+      refreshServiceStatus: vi.fn().mockResolvedValue({ isRunning: true }),
+      restartService: vi.fn().mockResolvedValue({ isRunning: true }),
+      setSelectedApp: vi
+        .fn()
+        .mockImplementation((appId: SharedProviderAppId) => appId),
+      subscribe: vi.fn().mockReturnValue(vi.fn()),
+      showMessage: vi.fn(),
+    };
+
+    let providerHandle:
+      | void
+      | (() => void)
+      | {
+          unmount(): void;
+        };
+
+    await act(async () => {
+      providerHandle = await api?.mount({
+        appId: "codex",
+        serviceStatus: { isRunning: true },
+        shell,
+        target: providerRoot,
+        transport,
+      });
+    });
+
+    await waitFor(() =>
+      expect(
+        within(providerRoot).getByRole("button", {
+          name: "Duplicate selected Codex Primary",
+        }),
+      ).toBeInTheDocument(),
+    );
+
+    const codexPrimaryCard = providerRoot.querySelector("article");
+    expect(codexPrimaryCard).not.toBeNull();
+    expect(
+      within(codexPrimaryCard as HTMLElement).queryByRole("button", {
+        name: "Duplicate Codex Primary",
+      }),
+    ).not.toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(
+        within(providerRoot).getByRole("button", {
+          name: "Duplicate selected Codex Primary",
+        }),
+      );
+    });
+
+    const duplicateDialog = await within(document.body).findByRole("dialog", {
+      name: "Save Codex provider",
+    });
+    const duplicateDialogScope = within(duplicateDialog);
+
+    expect(duplicateDialogScope.getByLabelText("Provider name")).toHaveValue(
+      "Codex Primary copy",
+    );
+    expect(duplicateDialogScope.getByLabelText("Base URL")).toHaveValue(
+      "https://codex-primary.example.com/v1",
+    );
+    expect(duplicateDialogScope.getByLabelText("API token")).toHaveValue("");
+
+    await act(async () => {
+      fireEvent.change(duplicateDialogScope.getByLabelText("API token"), {
+        target: { value: "copy-secret" },
+      });
+      fireEvent.click(
+        duplicateDialogScope.getByRole("button", { name: "Save provider" }),
+      );
+    });
+
+    await waitFor(() =>
+      expect(transport.upsertProvider).toHaveBeenCalledWith(
+        "codex",
+        expect.objectContaining({
+          name: "Codex Primary copy",
+          baseUrl: "https://codex-primary.example.com/v1",
+          tokenField: "OPENAI_API_KEY",
+          token: "copy-secret",
+          model: "gpt-5.4",
+          notes: "Pinned for router traffic",
+        }),
+      ),
+    );
+    expect("upsertProviderByProviderId" in transport).toBe(false);
+    expect("upsertProviderById" in transport).toBe(false);
+
+    await waitFor(() =>
+      expect(
+        within(providerRoot).getByRole("button", {
+          name: "Edit Codex Primary copy",
+        }),
+      ).toBeInTheDocument(),
+    );
+
+    await act(async () => {
+      if (typeof providerHandle === "function") {
+        providerHandle();
+      } else if (
+        providerHandle &&
+        typeof providerHandle.unmount === "function"
+      ) {
+        providerHandle.unmount();
+      }
+    });
+
+    shellRoot.remove();
   });
 
   it("ships the committed staged real bundle and copies it unchanged for package assembly", () => {

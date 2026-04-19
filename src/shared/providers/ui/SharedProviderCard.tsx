@@ -1,4 +1,4 @@
-import { Pencil, Zap, Trash2, Loader2 } from "lucide-react";
+import { Copy, Pencil, Zap, Trash2, Loader2 } from "lucide-react";
 import type { KeyboardEvent, MouseEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -17,6 +17,7 @@ interface SharedProviderCardProps {
   isBusy?: boolean;
   isActivatePending?: boolean;
   selected?: boolean;
+  onDuplicate?: () => void;
   onEdit?: () => void;
   onActivate?: () => void;
   onDelete?: () => void;
@@ -31,6 +32,7 @@ export function SharedProviderCard({
   isBusy = false,
   isActivatePending = false,
   selected = false,
+  onDuplicate,
   onEdit,
   onActivate,
   onDelete,
@@ -166,6 +168,21 @@ export function SharedProviderCard({
         ) : null}
 
         <div className="flex flex-wrap gap-2 border-t border-border-default/70 pt-4">
+          {actionVisibility.duplicate ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={(event) => {
+                stopSelection(event);
+                onDuplicate?.();
+              }}
+              disabled={isBusy}
+              aria-label={`Duplicate ${providerName}`}
+            >
+              <Copy className="h-4 w-4" />
+              Duplicate
+            </Button>
+          ) : null}
           {actionVisibility.edit ? (
             <Button
               type="button"
