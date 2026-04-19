@@ -14,6 +14,7 @@
 mod adapter;
 mod auth;
 mod claude;
+pub mod claude_oauth_store;
 mod codex;
 pub mod codex_oauth_auth;
 pub mod codex_oauth_store;
