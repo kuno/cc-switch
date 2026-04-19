@@ -34,7 +34,7 @@ import {
 } from "./presentation";
 
 const FIELD_CLASS_NAME =
-  "flex h-9 w-full rounded-md border border-border-default bg-background px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:opacity-50";
+  "ccswitch-openwrt-field flex h-10 w-full rounded-md border border-border-default bg-background px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:opacity-50";
 
 interface SharedProviderEditorPanelProps {
   open: boolean;
@@ -80,7 +80,7 @@ function PresetChip({
     <button
       type="button"
       className={cn(
-        "rounded-2xl border px-3 py-3 text-left transition-all",
+        "ccswitch-openwrt-preset-chip rounded-2xl border px-3 py-3 text-left transition-all",
         active
           ? "border-border-active bg-accent text-foreground shadow-sm"
           : "border-border-default bg-background hover:border-border-active hover:bg-muted/40",
@@ -120,7 +120,7 @@ function EditorSection({
   children: ReactNode;
 }) {
   return (
-    <section className="rounded-[24px] border border-border-default/80 bg-muted/15 p-4 sm:p-5">
+    <section className="ccswitch-openwrt-group rounded-[24px] border border-border-default/80 bg-muted/15 p-4 sm:p-5">
       <div className="flex items-start gap-3">
         <div className="rounded-2xl border border-border-default/70 bg-background p-2 text-muted-foreground">
           <Icon className="h-4 w-4" />
@@ -165,7 +165,10 @@ export function SharedProviderEditorPanel({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl overflow-hidden p-0" zIndex="alert">
+      <DialogContent
+        className="ccswitch-openwrt-provider-ui-dialog ccswitch-openwrt-dialog-shell max-w-6xl overflow-hidden p-0"
+        zIndex="alert"
+      >
         <DialogHeader className="border-b border-border-default bg-gradient-to-br from-background via-background to-muted/40">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div className="space-y-3">
@@ -281,7 +284,7 @@ export function SharedProviderEditorPanel({
               <div className="space-y-4 px-5 py-5 sm:px-6">
                 <section
                   className={cn(
-                    "rounded-[24px] border p-4 shadow-sm",
+                    "ccswitch-openwrt-group rounded-[24px] border p-4 shadow-sm",
                     selectedPreset
                       ? appPresentation.panelClassName
                       : "border-border-default/80 bg-muted/15",
@@ -307,13 +310,13 @@ export function SharedProviderEditorPanel({
                       : "Custom mode keeps the current fields editable without applying a preset."}
                   </p>
                   <div className="mt-4 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-                    <div className="rounded-2xl border border-border-default/70 bg-background/70 px-3 py-2">
+                    <div className="ccswitch-openwrt-stat-card rounded-2xl border border-border-default/70 bg-background/70 px-3 py-2">
                       <span className="font-semibold text-foreground">
                         Base URL:
                       </span>{" "}
                       {draft.baseUrl || "Set in the form"}
                     </div>
-                    <div className="rounded-2xl border border-border-default/70 bg-background/70 px-3 py-2">
+                    <div className="ccswitch-openwrt-stat-card rounded-2xl border border-border-default/70 bg-background/70 px-3 py-2">
                       <span className="font-semibold text-foreground">
                         Token field:
                       </span>{" "}
@@ -443,7 +446,7 @@ export function SharedProviderEditorPanel({
                   {mode === "edit" &&
                   supportsBlankSecretPreserve &&
                   hasStoredSecret ? (
-                    <div className="rounded-2xl border border-border-default/70 bg-background px-4 py-3 text-sm text-muted-foreground">
+                    <div className="ccswitch-openwrt-inline-note rounded-2xl border border-border-default/70 bg-background px-4 py-3 text-sm text-muted-foreground">
                       <div className="flex items-start gap-3">
                         <div className="rounded-2xl border border-border-default/70 bg-muted/20 p-2 text-muted-foreground">
                           <KeyRound className="h-4 w-4" />

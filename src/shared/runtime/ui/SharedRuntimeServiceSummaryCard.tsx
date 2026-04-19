@@ -6,7 +6,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { SharedRuntimeProxyStatus, SharedRuntimeServiceStatus } from "../domain";
+import type {
+  SharedRuntimeProxyStatus,
+  SharedRuntimeServiceStatus,
+} from "../domain";
 import {
   formatSharedRuntimeCount,
   formatSharedRuntimeListenEndpoint,
@@ -28,7 +31,7 @@ function RuntimeMetric({
   icon: React.ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-border-default bg-background/80 p-4">
+    <div className="ccswitch-openwrt-stat-card rounded-2xl border border-border-default bg-background/80 p-4">
       <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
         {icon}
         <span>{label}</span>
@@ -48,7 +51,7 @@ export function SharedRuntimeServiceSummaryCard({
   const hasLiveTelemetry = hasSharedRuntimeLiveTelemetry(service, runtime);
 
   return (
-    <Card className="rounded-3xl border-border-default bg-card/95 shadow-sm">
+    <Card className="ccswitch-openwrt-surface-card rounded-3xl border-border-default bg-card/95 shadow-sm">
       <CardHeader className="space-y-4 p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="space-y-1">
@@ -74,7 +77,7 @@ export function SharedRuntimeServiceSummaryCard({
         </div>
 
         {service.statusError?.trim() ? (
-          <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
+          <div className="ccswitch-openwrt-inline-note ccswitch-openwrt-inline-note--warning rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
             Runtime detail: {service.statusError}
           </div>
         ) : null}
@@ -115,7 +118,7 @@ export function SharedRuntimeServiceSummaryCard({
             />
           </>
         ) : (
-          <div className="rounded-2xl border border-dashed border-border-default bg-muted/15 p-4 text-sm text-muted-foreground sm:col-span-1 xl:col-span-2">
+          <div className="ccswitch-openwrt-state-shell rounded-2xl border border-dashed border-border-default bg-muted/15 p-4 text-sm text-muted-foreground sm:col-span-1 xl:col-span-2">
             Live telemetry is unavailable while this view is showing config or
             unreachable fallback state.
           </div>

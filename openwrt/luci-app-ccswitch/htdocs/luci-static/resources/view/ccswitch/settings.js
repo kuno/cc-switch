@@ -16,6 +16,7 @@ var SHARED_PROVIDER_UI_DISABLE_GLOBAL_KEY = '__CCSWITCH_OPENWRT_DISABLE_REAL_PRO
 var SHARED_PROVIDER_UI_GLOBAL_KEY = '__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__';
 var SHARED_PROVIDER_UI_SCRIPT_ID = 'ccswitch-openwrt-shared-provider-ui-bundle';
 var SHARED_PROVIDER_UI_STYLE_ID = 'ccswitch-openwrt-shared-provider-ui-styles';
+var HOST_PAGE_STYLE_ID = 'ccswitch-openwrt-host-page-shell-styles';
 var SHARED_PROVIDER_UI_BUNDLE_PATH = '/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js';
 var SHARED_PROVIDER_UI_STYLE_PATH = '/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.css';
 var SHARED_PROVIDER_UI_FALLBACK_REASON_GATE_DISABLED = 'gate-disabled';
@@ -23,6 +24,7 @@ var SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_FAILURE = 'bundle-failure';
 var SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_REGRESSION = 'bundle-regression';
 var BANNER_COLORS = {
 	success: '#256f3a',
+	warning: '#d97706',
 	error: '#b91c1c',
 	info: '#1d4ed8'
 };
@@ -898,19 +900,226 @@ return view.extend({
 		});
 	},
 
-	renderMessageBanner: function (message) {
-		if (!message || !message.text)
-			return E('div', { 'style': 'display:none' });
+	ensureHostPageStyles: function () {
+		var style;
+
+		if (typeof document === 'undefined' || document.getElementById(HOST_PAGE_STYLE_ID))
+			return;
+
+		style = document.createElement('style');
+		style.id = HOST_PAGE_STYLE_ID;
+		style.textContent = [
+			'#ccswitch-host-page-shell{display:flex;flex-direction:column;gap:1.25rem;margin-top:0.25rem;color:#111827}',
+			'#ccswitch-host-page-shell .ccswitch-host-surface{position:relative;margin:0;border:1px solid #e4e4e7;border-radius:22px;background:linear-gradient(180deg,#ffffff 0%,#fcfcfd 100%);box-shadow:0 20px 45px -34px rgba(15,23,42,.42);padding:1.25rem 1.35rem}',
+			'#ccswitch-host-page-shell .ccswitch-host-surface-muted{background:linear-gradient(180deg,#fcfcfd 0%,#f8fafc 100%)}',
+			'#ccswitch-host-page-shell .ccswitch-host-shell-stack{display:flex;flex-direction:column;gap:1rem}',
+			'#ccswitch-host-page-shell .ccswitch-host-shell-grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}',
+			'#ccswitch-host-page-shell .ccswitch-host-eyebrow{margin:0 0 .45rem;font-size:.72rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#2563eb}',
+			'#ccswitch-host-page-shell .ccswitch-host-section-title{margin:0;font-size:1.35rem;line-height:1.25;font-weight:700;color:#0f172a}',
+			'#ccswitch-host-page-shell .ccswitch-host-section-description{margin:.55rem 0 0;color:#475569;max-width:58rem;line-height:1.6}',
+			'#ccswitch-host-page-shell .ccswitch-host-chip-row{display:flex;flex-wrap:wrap;gap:.65rem;margin-top:1rem}',
+			'#ccswitch-host-page-shell .ccswitch-host-chip{display:inline-flex;align-items:center;gap:.4rem;padding:.45rem .8rem;border:1px solid #dbe4f0;border-radius:999px;background:#f8fafc;color:#334155;font-size:.82rem;font-weight:600}',
+			'#ccswitch-host-page-shell .ccswitch-host-status-grid{display:grid;gap:.8rem;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-top:1rem}',
+			'#ccswitch-host-page-shell .ccswitch-host-stat{padding:.95rem 1rem;border:1px solid #e5e7eb;border-radius:18px;background:#f8fafc}',
+			'#ccswitch-host-page-shell .ccswitch-host-stat-label{display:block;font-size:.75rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#64748b}',
+			'#ccswitch-host-page-shell .ccswitch-host-stat-value{display:block;margin-top:.3rem;font-size:1rem;font-weight:700;line-height:1.35;color:#0f172a}',
+			'#ccswitch-host-page-shell .ccswitch-host-summary{margin:1rem 0 0;padding:1rem 1.05rem;border:1px solid #dbe4f0;border-radius:18px;background:linear-gradient(135deg,rgba(239,246,255,.96) 0%,rgba(248,250,252,.98) 100%)}',
+			'#ccswitch-host-page-shell .ccswitch-host-summary-label{display:block;font-size:.78rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#1d4ed8}',
+			'#ccswitch-host-page-shell .ccswitch-host-summary-text{display:block;margin-top:.45rem;color:#334155;line-height:1.7}',
+			'#ccswitch-host-page-shell .ccswitch-host-inline-banner{display:block;padding:.9rem 1rem;border:1px solid #dbe4f0;border-radius:18px;background:#f8fafc;color:#334155}',
+			'#ccswitch-host-page-shell .ccswitch-host-inline-banner[data-kind="success"]{border-color:#bbf7d0;background:#f0fdf4;color:#166534}',
+			'#ccswitch-host-page-shell .ccswitch-host-inline-banner[data-kind="warning"]{border-color:#fed7aa;background:#fff7ed;color:#9a3412}',
+			'#ccswitch-host-page-shell .ccswitch-host-inline-banner[data-kind="error"]{border-color:#fecaca;background:#fff7f7;color:#991b1b}',
+			'#ccswitch-host-page-shell .ccswitch-host-inline-banner[data-kind="info"]{border-color:#bfdbfe;background:#eff6ff;color:#1d4ed8}',
+			'#ccswitch-host-page-shell .ccswitch-host-inline-banner[hidden]{display:none!important}',
+			'#ccswitch-host-page-shell .ccswitch-host-inline-banner strong{display:block;font-size:.92rem}',
+			'#ccswitch-host-page-shell .ccswitch-host-inline-banner div+div{margin-top:.45rem}',
+			'#ccswitch-host-page-shell .ccswitch-host-actions{display:flex;flex-wrap:wrap;gap:.75rem;margin-top:1rem}',
+			'#ccswitch-host-page-shell .ccswitch-host-actions .cbi-button,#ccswitch-host-page-shell .ccswitch-host-map .cbi-page-actions .cbi-button{min-height:2.75rem;padding:.7rem 1.1rem;border-radius:14px;box-shadow:none}',
+			'#ccswitch-host-page-shell .ccswitch-host-map{margin:0;padding:0;background:transparent;border:0;box-shadow:none}',
+			'#ccswitch-host-page-shell .ccswitch-host-map > h2,#ccswitch-host-page-shell .ccswitch-host-map > .cbi-map-descr{display:none!important}',
+			'#ccswitch-host-page-shell .ccswitch-host-settings-grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}',
+			'#ccswitch-host-page-shell .ccswitch-host-map .cbi-section{margin:0}',
+			'#ccswitch-host-page-shell .ccswitch-host-form-section h3{margin:0 0 .35rem;font-size:1.02rem;font-weight:700;color:#0f172a}',
+			'#ccswitch-host-page-shell .ccswitch-host-form-section > .cbi-section-descr,#ccswitch-host-page-shell .ccswitch-host-form-section > p{margin:.45rem 0 0;color:#475569;line-height:1.6}',
+			'#ccswitch-host-page-shell .ccswitch-host-map .cbi-value{display:grid;grid-template-columns:minmax(0,175px) minmax(0,1fr);gap:1rem;align-items:flex-start;margin:0;padding:.9rem 0;border-top:1px solid #eef2f7}',
+			'#ccswitch-host-page-shell .ccswitch-host-map .cbi-value:first-of-type{border-top:0;padding-top:.35rem}',
+			'#ccswitch-host-page-shell .ccswitch-host-map .cbi-value:last-of-type{padding-bottom:0}',
+			'#ccswitch-host-page-shell .ccswitch-host-map .cbi-value-title{margin:0;font-size:.83rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#64748b}',
+			'#ccswitch-host-page-shell .ccswitch-host-map .cbi-value-field{min-width:0}',
+			'#ccswitch-host-page-shell .ccswitch-host-map .cbi-value-description{margin-top:.45rem;color:#64748b;line-height:1.55}',
+			'#ccswitch-host-page-shell .ccswitch-host-map input[type="text"],#ccswitch-host-page-shell .ccswitch-host-map input[type="password"],#ccswitch-host-page-shell .ccswitch-host-map input[type="number"],#ccswitch-host-page-shell .ccswitch-host-map select,#ccswitch-host-page-shell .ccswitch-host-map textarea{width:100%;min-height:2.65rem;padding:.6rem .8rem;border:1px solid #d7dee8;border-radius:14px;background:#fff;box-shadow:inset 0 1px 2px rgba(15,23,42,.04)}',
+			'#ccswitch-host-page-shell .ccswitch-host-map .cbi-page-actions{display:flex;flex-wrap:wrap;gap:.75rem;margin:1rem 0 0;padding:0}',
+			'#ccswitch-host-page-shell .ccswitch-host-shell-note{margin:0;color:#475569;line-height:1.65}',
+			'#ccswitch-host-page-shell .ccswitch-host-fallback-list{display:flex;flex-direction:column;gap:.9rem;margin-bottom:1.25rem}',
+			'#ccswitch-host-page-shell .ccswitch-host-fallback-list-title{margin:0;color:#0f172a;font-size:1rem;font-weight:700}',
+			'#ccswitch-host-page-shell .ccswitch-host-fallback-empty{margin:0;padding:1rem 1.05rem;border:1px dashed #cbd5e1;border-radius:18px;background:#f8fafc;color:#475569;line-height:1.6}',
+			'#ccswitch-host-page-shell .ccswitch-host-fallback-card{padding:1rem 1.05rem;border:1px solid #dbe4f0;border-radius:18px;background:linear-gradient(180deg,#ffffff 0%,#f8fafc 100%);box-shadow:0 14px 32px -28px rgba(15,23,42,.45)}',
+			'#ccswitch-host-page-shell .ccswitch-host-fallback-card[data-active="true"]{border-color:#86efac;background:linear-gradient(180deg,#f0fdf4 0%,#ffffff 100%)}',
+			'#ccswitch-host-page-shell .ccswitch-host-fallback-card-header{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap}',
+			'#ccswitch-host-page-shell .ccswitch-host-fallback-card-title{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;font-weight:700;color:#0f172a}',
+			'#ccswitch-host-page-shell .ccswitch-host-fallback-card-actions{display:flex;flex-wrap:wrap;gap:.5rem}',
+			'#ccswitch-host-page-shell .ccswitch-host-fallback-card-url{margin-top:.55rem;color:#475569;word-break:break-all;line-height:1.55}',
+			'#ccswitch-host-page-shell .ccswitch-host-fallback-card-meta{display:flex;flex-direction:column;gap:.45rem;margin-top:.7rem}',
+			'#ccswitch-host-page-shell .ccswitch-host-fallback-card-meta-row{color:#475569;line-height:1.55}',
+			'#ccswitch-host-page-shell .ccswitch-host-fallback-badge{display:inline-flex;align-items:center;padding:.18rem .55rem;border-radius:999px;font-size:.75rem;font-weight:700;border:1px solid transparent}',
+			'#ccswitch-host-page-shell .ccswitch-host-fallback-badge[data-kind="active"]{background:#dcfce7;border-color:#86efac;color:#166534}',
+			'#ccswitch-host-page-shell .ccswitch-host-fallback-badge[data-kind="warning"]{background:#fee2e2;border-color:#fecaca;color:#991b1b}',
+			'#ccswitch-host-page-shell .ccswitch-host-fallback-editor{margin-top:1rem;padding:1rem 1.05rem;border:1px solid #dbe4f0;border-radius:18px;background:linear-gradient(180deg,#fcfcfd 0%,#f8fafc 100%)}',
+			'#ccswitch-host-page-shell .ccswitch-host-fallback-editor h4{margin:0;color:#0f172a;font-size:1rem;font-weight:700}',
+			'#ccswitch-host-page-shell .ccswitch-host-fallback-editor .ccswitch-host-shell-note{margin-top:.45rem}',
+			'#ccswitch-host-page-shell #ccswitch-shared-provider-ui-root,#ccswitch-host-page-shell #ccswitch-shared-runtime-surface-root{margin-top:1rem;min-height:1px}',
+			'#ccswitch-host-page-shell .ccswitch-host-stat-value[data-tone="success"]{color:#166534}',
+			'#ccswitch-host-page-shell .ccswitch-host-stat-value[data-tone="warning"]{color:#b45309}',
+			'#ccswitch-host-page-shell .ccswitch-host-stat-value[data-tone="error"]{color:#b91c1c}',
+			'#ccswitch-host-page-shell .ccswitch-host-stat-value[data-tone="info"]{color:#1d4ed8}',
+			'@media (max-width:900px){#ccswitch-host-page-shell .ccswitch-host-map .cbi-value{grid-template-columns:minmax(0,1fr);gap:.45rem}#ccswitch-host-page-shell .ccswitch-host-surface{padding:1rem}#ccswitch-host-page-shell .ccswitch-host-section-title{font-size:1.18rem}}'
+		].join('');
+		document.head.appendChild(style);
+	},
+
+	appendClass: function (node, className) {
+		var existingClasses;
+
+		if (!node || !className)
+			return;
+
+		if (node.classList) {
+			node.classList.add(className);
+			return;
+		}
+
+		existingClasses = node.getAttribute('class') || '';
+		if (existingClasses.indexOf(className) === -1)
+			node.setAttribute('class', (existingClasses + ' ' + className).trim());
+	},
+
+	setTone: function (node, tone) {
+		if (!node)
+			return;
+
+		if (tone)
+			node.setAttribute('data-tone', tone);
+		else
+			node.removeAttribute('data-tone');
+	},
+
+	createSectionIntro: function (eyebrow, title, description) {
+		var children = [];
+
+		if (eyebrow)
+			children.push(E('p', { 'class': 'ccswitch-host-eyebrow' }, [eyebrow]));
+
+		children.push(E('h3', { 'class': 'ccswitch-host-section-title' }, [title]));
+
+		if (description)
+			children.push(E('p', { 'class': 'ccswitch-host-section-description' }, [description]));
+
+		return E('div', {}, children);
+	},
+
+	createStatusMetric: function (label, valueNode) {
+		valueNode.className = 'ccswitch-host-stat-value';
+
+		return E('div', { 'class': 'ccswitch-host-stat' }, [
+			E('span', { 'class': 'ccswitch-host-stat-label' }, [label]),
+			valueNode
+		]);
+	},
+
+	createInlineStateNotice: function (kind, title, message, detail) {
+		var tone = kind || 'info';
+		var children = [];
+
+		if (title)
+			children.push(E('strong', {}, [title]));
+
+		if (message)
+			children.push(E('div', {}, [message]));
+
+		if (detail)
+			children.push(E('div', {}, [detail]));
 
 		return E('div', {
-			'style': [
-				'margin-bottom:1rem',
-				'padding:0.75rem 1rem',
-				'border-left:4px solid ' + (BANNER_COLORS[message.kind] || BANNER_COLORS.info),
-				'background:#f8fafc',
-				'color:' + (BANNER_COLORS[message.kind] || BANNER_COLORS.info)
-			].join(';')
-		}, [message.text]);
+			'class': 'ccswitch-host-inline-banner',
+			'data-kind': tone
+		}, children);
+	},
+
+	createHostPageHero: function () {
+		this.ensureHostPageStyles();
+
+		return E('section', { 'class': 'ccswitch-host-surface' }, [
+			this.createSectionIntro(
+				_('OpenWrt Host Shell'),
+				_('Open CC Switch'),
+				_('Keep router-owned service settings, outbound proxy controls, status, and restart actions in LuCI while the shared runtime and provider surfaces mount below as one product page.')
+			),
+			E('div', { 'class': 'ccswitch-host-chip-row' }, [
+				E('span', { 'class': 'ccswitch-host-chip' }, [_('Service and proxy settings stay in LuCI')]),
+				E('span', { 'class': 'ccswitch-host-chip' }, [_('Restart authority stays in LuCI')]),
+				E('span', { 'class': 'ccswitch-host-chip' }, [_('Shared runtime and provider surfaces mount below')])
+			])
+		]);
+	},
+
+	decorateMapElement: function (mapEl) {
+		var self = this;
+		var children;
+		var actionsNode = null;
+		var grid;
+		var lead;
+
+		if (!mapEl)
+			return mapEl;
+
+		this.ensureHostPageStyles();
+		this.appendClass(mapEl, 'ccswitch-host-map');
+		children = Array.prototype.slice.call(mapEl.children || []);
+		grid = E('div', { 'class': 'ccswitch-host-settings-grid' });
+		lead = E('section', { 'class': 'ccswitch-host-surface ccswitch-host-surface-muted' }, [
+			this.createSectionIntro(
+				_('LuCI Router Controls'),
+				_('Service Settings'),
+				_('These router-backed controls keep LuCI ownership for service enablement, listen address, listen port, outbound proxy routing, and log level while following the same page rhythm as the shared runtime and provider areas.')
+			)
+		]);
+
+		children.forEach(function (child) {
+			if (!child)
+				return;
+
+			if (child.tagName === 'H2' || (child.classList && child.classList.contains('cbi-map-descr'))) {
+				child.style.display = 'none';
+				return;
+			}
+
+			if (child.classList && child.classList.contains('cbi-page-actions')) {
+				actionsNode = child;
+				return;
+			}
+
+			if (child.classList && child.classList.contains('cbi-section')) {
+				self.appendClass(child, 'ccswitch-host-surface');
+				self.appendClass(child, 'ccswitch-host-form-section');
+				grid.appendChild(child);
+			}
+		});
+
+		mapEl.insertBefore(lead, mapEl.firstChild);
+		if (grid.childNodes.length)
+			mapEl.insertBefore(grid, actionsNode || null);
+		if (actionsNode)
+			self.appendClass(actionsNode, 'ccswitch-host-actions');
+
+		return mapEl;
+	},
+
+	renderMessageBanner: function (message) {
+		if (!message || !message.text)
+			return E('div', { 'class': 'ccswitch-host-inline-banner', 'hidden': 'hidden' });
+
+		return this.createInlineStateNotice(message.kind, null, message.text);
 	},
 
 	renderValue: function (title, control, description) {
@@ -932,35 +1141,32 @@ return view.extend({
 		var serviceValue = E('strong');
 		var appValue = E('strong');
 		var bundleValue = E('strong');
-		var providerTitle = E('label', { 'class': 'cbi-value-title' }, [appMeta.activeProviderLabel]);
-		var providerValue = E('strong');
+		var providerTitle = E('span', { 'class': 'ccswitch-host-stat-label' }, [appMeta.activeProviderLabel]);
+		var providerValue = E('strong', { 'class': 'ccswitch-host-stat-value' });
 		var savedCountValue = E('strong');
-		var summaryValue = E('span', { 'style': 'color:#4b5563' });
-		var root = E('div', { 'class': 'cbi-section' }, [
-			E('h3', {}, [_('Status')]),
-			E('div', { 'class': 'cbi-value' }, [
-				E('label', { 'class': 'cbi-value-title' }, [_('Service')]),
-				E('div', { 'class': 'cbi-value-field' }, [serviceValue])
+		var summaryValue = E('span', { 'class': 'ccswitch-host-summary-text' });
+		var root;
+
+		this.ensureHostPageStyles();
+		root = E('section', { 'class': 'ccswitch-host-surface' }, [
+			this.createSectionIntro(
+				_('Router Overview'),
+				_('Service and Routing'),
+				_('Track the LuCI-owned service state, the selected CLI app, and whether the shared browser bundle is active before you make provider changes.')
+			),
+			E('div', { 'class': 'ccswitch-host-status-grid' }, [
+				this.createStatusMetric(_('Service'), serviceValue),
+				this.createStatusMetric(_('Selected Application'), appValue),
+				this.createStatusMetric(_('Shared Provider UI'), bundleValue),
+				E('div', { 'class': 'ccswitch-host-stat' }, [
+					providerTitle,
+					providerValue
+				]),
+				this.createStatusMetric(_('Saved Providers'), savedCountValue)
 			]),
-			E('div', { 'class': 'cbi-value' }, [
-				E('label', { 'class': 'cbi-value-title' }, [_('Selected Application')]),
-				E('div', { 'class': 'cbi-value-field' }, [appValue])
-			]),
-			E('div', { 'class': 'cbi-value' }, [
-				E('label', { 'class': 'cbi-value-title' }, [_('Shared Provider UI')]),
-				E('div', { 'class': 'cbi-value-field' }, [bundleValue])
-			]),
-			E('div', { 'class': 'cbi-value' }, [
-				providerTitle,
-				E('div', { 'class': 'cbi-value-field' }, [providerValue])
-			]),
-			E('div', { 'class': 'cbi-value' }, [
-				E('label', { 'class': 'cbi-value-title' }, [_('Saved Providers')]),
-				E('div', { 'class': 'cbi-value-field' }, [savedCountValue])
-			]),
-			E('div', { 'class': 'cbi-value' }, [
-				E('label', { 'class': 'cbi-value-title' }, [_('Routing Summary')]),
-				E('div', { 'class': 'cbi-value-field' }, [summaryValue])
+			E('div', { 'class': 'ccswitch-host-summary' }, [
+				E('span', { 'class': 'ccswitch-host-summary-label' }, [_('Routing Summary')]),
+				summaryValue
 			])
 		]);
 		var nodes = {
@@ -987,33 +1193,36 @@ return view.extend({
 		var summaryText;
 
 		nodes.serviceValue.textContent = uiState.isRunning ? _('Running') : _('Stopped');
-		nodes.serviceValue.style.color = uiState.isRunning ? '#256f3a' : '#b91c1c';
+		this.setTone(nodes.serviceValue, uiState.isRunning ? 'success' : 'error');
 		nodes.appValue.textContent = appMeta.label;
+		this.setTone(nodes.appValue, 'info');
 		nodes.providerTitle.textContent = appMeta.activeProviderLabel;
 
 		if (uiState.bundleStatus === 'ready') {
 			bundleText = _('Ready');
-			nodes.bundleValue.style.color = '#256f3a';
+			this.setTone(nodes.bundleValue, 'success');
 		} else if (uiState.bundleStatus === 'fallback') {
 			bundleText = _('Fallback');
-			nodes.bundleValue.style.color = '#d97706';
+			this.setTone(nodes.bundleValue, 'warning');
 		} else if (uiState.bundleStatus === 'loading') {
 			bundleText = _('Loading');
-			nodes.bundleValue.style.color = '#1d4ed8';
+			this.setTone(nodes.bundleValue, 'info');
 		} else if (uiState.bundleStatus === 'error') {
 			bundleText = _('Unavailable');
-			nodes.bundleValue.style.color = '#b91c1c';
+			this.setTone(nodes.bundleValue, 'error');
 		} else {
 			bundleText = _('Pending');
-			nodes.bundleValue.style.color = '#6b7280';
+			this.setTone(nodes.bundleValue, null);
 		}
 
 		nodes.bundleValue.textContent = bundleText;
 		if (uiState.bundleStatus === 'ready') {
 			nodes.providerValue.textContent = _('Managed by shared UI');
+			this.setTone(nodes.providerValue, 'info');
 			nodes.savedCountValue.textContent = '\u2014';
 		} else {
 			nodes.providerValue.textContent = activeProvider.configured ? activeProvider.name : _('Not configured');
+			this.setTone(nodes.providerValue, activeProvider.configured ? 'success' : null);
 			nodes.savedCountValue.textContent = String(providerState.providers.length);
 		}
 
@@ -1051,7 +1260,7 @@ return view.extend({
 
 	createProviderShell: function (uiState, statusNodes) {
 		var self = this;
-		var messageRoot = E('div', { 'style': 'display:none;margin-bottom:1rem' });
+		var messageRoot = E('div', { 'class': 'ccswitch-host-inline-banner', 'hidden': 'hidden', 'style': 'display:none' });
 		var messageText = E('div');
 		var restartButton = E('button', {
 			'class': 'btn cbi-button cbi-button-action',
@@ -1061,14 +1270,12 @@ return view.extend({
 				await self.restartServiceFromShellBridge(uiState, statusNodes, shellNodes);
 			})
 		}, [_('Restart Service')]);
-		var sharedChromeRoot = E('div');
+		var sharedChromeRoot = E('section', { 'class': 'ccswitch-host-surface ccswitch-host-surface-muted' });
 		var runtimeMountRoot = E('div', {
-			'id': 'ccswitch-shared-runtime-surface-root',
-			'style': 'margin-top:1rem'
+			'id': 'ccswitch-shared-runtime-surface-root'
 		});
 		var mountRoot = E('div', {
-			'id': 'ccswitch-shared-provider-ui-root',
-			'style': 'margin-top:1rem'
+			'id': 'ccswitch-shared-provider-ui-root'
 		});
 		var shellNodes = {
 			sharedChromeRoot: sharedChromeRoot,
@@ -1079,32 +1286,39 @@ return view.extend({
 			mountRoot: mountRoot,
 			root: null
 		};
-		var root = E('div', { 'class': 'cbi-section' }, [
+		var root = E('div', { 'class': 'ccswitch-host-shell-stack' }, [
 			sharedChromeRoot,
-			E('div', { 'class': 'cbi-section' }, [
-				E('h3', {}, [_('Runtime Status')]),
-				E('p', { 'style': 'margin-bottom:1rem;color:#4b5563' }, [
-					_('The shared OpenWrt browser bundle mounts a read-only runtime and failover surface here. Service settings, outbound proxy controls, and restart actions remain in the LuCI shell.')
+			E('div', { 'class': 'ccswitch-host-shell-grid' }, [
+				E('section', { 'class': 'ccswitch-host-surface' }, [
+					this.createSectionIntro(
+						_('Shared Runtime'),
+						_('Runtime Status'),
+						_('The shared OpenWrt browser bundle mounts a read-only runtime and failover surface here. Service settings, outbound proxy controls, and restart actions remain in the LuCI shell.')
+					),
+					runtimeMountRoot
 				]),
-				runtimeMountRoot
-			]),
-			E('div', { 'class': 'cbi-section' }, [
-				E('h3', {}, [_('Provider Manager')]),
-				E('p', { 'style': 'margin-bottom:1rem;color:#4b5563' }, [
-					_('The shared OpenWrt browser bundle is the primary provider-manager path below. The LuCI fallback provider manager remains available only when the Phase 5 cutover gate disables the real bundle or the bundle fails router verification.')
-				]),
-				E('div', { 'class': 'cbi-value-description' }, [
-					_('Service settings and outbound proxy controls remain above in the LuCI shell. Provider management mounts below after this page renders.')
-				]),
-				mountRoot
+				E('section', { 'class': 'ccswitch-host-surface' }, [
+					this.createSectionIntro(
+						_('Shared Provider Surface'),
+						_('Provider Manager'),
+						_('The shared OpenWrt browser bundle is the primary provider-manager path below. The LuCI fallback provider manager remains available only when the Phase 5 cutover gate disables the real bundle or the bundle fails router verification.')
+					),
+					E('p', { 'class': 'ccswitch-host-shell-note' }, [
+						_('Service settings, outbound proxy controls, status, and restart actions stay above in the LuCI host shell.')
+					]),
+					mountRoot
+				])
 			])
 		]);
 
 		shellNodes.root = root;
 		sharedChromeRoot.appendChild(messageRoot);
-		sharedChromeRoot.appendChild(E('div', { 'class': 'cbi-page-actions', 'style': 'margin-bottom:1rem' }, [
-			restartButton
-		]));
+		sharedChromeRoot.appendChild(this.createSectionIntro(
+			_('LuCI Ownership'),
+			_('Router Integration'),
+			_('LuCI remains the owner for service restart, router-facing status, and the OpenWrt-specific controls above. The shared runtime and provider surfaces align visually below without taking over those host responsibilities.')
+		));
+		sharedChromeRoot.appendChild(E('div', { 'class': 'ccswitch-host-actions' }, [restartButton]));
 		messageRoot.appendChild(messageText);
 		this.setProviderShellMode(shellNodes, 'shared');
 		this.updateProviderShell(shellNodes, uiState);
@@ -1119,18 +1333,15 @@ return view.extend({
 	updateMessageBanner: function (messageRoot, messageText, message) {
 		if (!message || !message.text) {
 			messageRoot.style.display = 'none';
-			messageRoot.style.borderLeft = '';
-			messageRoot.style.background = '';
-			messageRoot.style.color = '';
+			messageRoot.setAttribute('hidden', 'hidden');
+			messageRoot.removeAttribute('data-kind');
 			messageText.textContent = '';
 			return;
 		}
 
 		messageRoot.style.display = '';
-		messageRoot.style.padding = '0.75rem 1rem';
-		messageRoot.style.borderLeft = '4px solid ' + (BANNER_COLORS[message.kind] || BANNER_COLORS.info);
-		messageRoot.style.background = '#f8fafc';
-		messageRoot.style.color = BANNER_COLORS[message.kind] || BANNER_COLORS.info;
+		messageRoot.removeAttribute('hidden');
+		messageRoot.setAttribute('data-kind', message.kind || 'info');
 		messageText.textContent = message.text;
 	},
 
@@ -1164,29 +1375,22 @@ return view.extend({
 	},
 
 	renderCompatibilityNotice: function () {
-		return E('div', {
-			'style': 'margin-bottom:1rem;padding:0.75rem 1rem;border-left:4px solid #d97706;background:#fff7ed;color:#9a3412'
-		}, [
+		return this.createInlineStateNotice(
+			'warning',
+			null,
 			_('Phase 2 LuCI UI is ready, but this build only exposes the Phase 1 active-provider RPCs. Add/edit still works for the active provider; saved-provider add/delete/activate depends on the backend and ubus bridge slices landing first.')
-		]);
+		);
 	},
 
 	renderProviderBadge: function (text, style) {
 		return E('span', {
-			'style': [
-				'display:inline-block',
-				'margin-left:0.5rem',
-				'padding:0.15rem 0.45rem',
-				'border-radius:999px',
-				'font-size:0.85em',
-				'font-weight:600',
-				style || ''
-			].join(';')
+			'class': 'ccswitch-host-fallback-badge',
+			'data-kind': style || 'active'
 		}, [text]);
 	},
 
 	renderProviderMetaRow: function (label, value) {
-		return E('div', { 'style': 'margin-top:0.3rem;color:#4b5563' }, [
+		return E('div', { 'class': 'ccswitch-host-fallback-card-meta-row' }, [
 			E('strong', {}, [label + ': ']),
 			E('span', { 'style': 'word-break:break-all' }, [value])
 		]);
@@ -1202,10 +1406,10 @@ return view.extend({
 			: _('Not stored');
 
 		if (provider.active)
-			headerChildren.push(this.renderProviderBadge(_('Active'), 'background:#dcfce7;color:#166534'));
+			headerChildren.push(this.renderProviderBadge(_('Active'), 'active'));
 
 		if (!provider.tokenConfigured)
-			headerChildren.push(this.renderProviderBadge(_('No token'), 'background:#fee2e2;color:#991b1b'));
+			headerChildren.push(this.renderProviderBadge(_('No token'), 'warning'));
 
 		if (uiState.providerState.phase2Available) {
 			actionChildren.push(E('button', {
@@ -1224,7 +1428,6 @@ return view.extend({
 				actionChildren.push(E('button', {
 					'class': 'btn cbi-button cbi-button-action',
 					'type': 'button',
-					'style': 'margin-left:0.5rem',
 					'disabled': uiState.busy ? 'disabled' : null,
 					'click': ui.createHandlerFn(this, async function (ev) {
 						ev.preventDefault();
@@ -1236,7 +1439,6 @@ return view.extend({
 			actionChildren.push(E('button', {
 				'class': 'btn cbi-button',
 				'type': 'button',
-				'style': 'margin-left:0.5rem',
 				'disabled': uiState.busy ? 'disabled' : null,
 				'click': ui.createHandlerFn(this, async function (ev) {
 					ev.preventDefault();
@@ -1251,24 +1453,19 @@ return view.extend({
 			detailsChildren.push(this.renderProviderMetaRow(_('Notes'), provider.notes));
 
 		return E('div', {
-			'style': [
-				'margin-bottom:0.75rem',
-				'padding:0.85rem 1rem',
-				'border:1px solid ' + (provider.active ? '#86efac' : '#dbe1ea'),
-				'border-radius:6px',
-				'background:' + (provider.active ? '#f0fdf4' : '#ffffff')
-			].join(';')
+			'class': 'ccswitch-host-fallback-card',
+			'data-active': provider.active ? 'true' : 'false'
 		}, [
 			E('div', {
-				'style': 'display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap'
+				'class': 'ccswitch-host-fallback-card-header'
 			}, [
-				E('div', {}, headerChildren),
-				E('div', { 'style': 'white-space:nowrap' }, actionChildren)
+				E('div', { 'class': 'ccswitch-host-fallback-card-title' }, headerChildren),
+				E('div', { 'class': 'ccswitch-host-fallback-card-actions' }, actionChildren)
 			]),
-			E('div', { 'style': 'margin-top:0.4rem;color:#4b5563;word-break:break-all' }, [
+			E('div', { 'class': 'ccswitch-host-fallback-card-url' }, [
 				provider.baseUrl || _('No Base URL set')
 			]),
-			E('div', { 'style': 'margin-top:0.45rem' }, detailsChildren)
+			E('div', { 'class': 'ccswitch-host-fallback-card-meta' }, detailsChildren)
 		]);
 	},
 
@@ -1277,22 +1474,22 @@ return view.extend({
 		var self = this;
 		var children = [];
 
-		children.push(E('h4', { 'style': 'margin:0 0 0.75rem 0' }, [appMeta.providerLabel]));
+		children.push(E('h4', { 'class': 'ccswitch-host-fallback-list-title' }, [appMeta.providerLabel]));
 
 		if (!uiState.providerState.providers.length) {
-			children.push(E('p', { 'style': 'margin:0;color:#4b5563' }, [
+			children.push(E('p', { 'class': 'ccswitch-host-fallback-empty' }, [
 				uiState.providerState.phase2Available
 					? _('No saved providers yet. Add one below, then activate it when ready.')
 					: _('No provider is configured yet.')
 			]));
-			return E('div', { 'style': 'margin-bottom:1.25rem' }, children);
+			return E('div', { 'class': 'ccswitch-host-fallback-list' }, children);
 		}
 
 		uiState.providerState.providers.forEach(function (provider) {
 			children.push(self.renderProviderCard(provider, uiState, root, statusNodes));
 		});
 
-		return E('div', { 'style': 'margin-bottom:1.25rem' }, children);
+		return E('div', { 'class': 'ccswitch-host-fallback-list' }, children);
 	},
 
 	renderEditorSection: function (uiState, root, statusNodes) {
@@ -1425,7 +1622,6 @@ return view.extend({
 			actionChildren.push(E('button', {
 				'class': 'btn cbi-button',
 				'type': 'button',
-				'style': 'margin-left:0.75rem',
 				'disabled': uiState.busy ? 'disabled' : null,
 				'click': ui.createHandlerFn(this, function (ev) {
 					ev.preventDefault();
@@ -1436,9 +1632,9 @@ return view.extend({
 			}, [_('Cancel')]));
 		}
 
-		return E('div', { 'class': 'cbi-section' }, [
-			E('h4', { 'style': 'margin-top:0' }, [title]),
-			E('p', { 'style': 'margin-bottom:1rem;color:#4b5563' }, [description]),
+		return E('section', { 'class': 'cbi-section ccswitch-host-fallback-editor' }, [
+			E('h4', {}, [title]),
+			E('p', { 'class': 'ccswitch-host-shell-note' }, [description]),
 			this.renderValue(_('Preset'), presetSelect, presetDescriptionNode),
 			this.renderValue(_('Name'), nameInput, appMeta.editorNameDescription),
 			this.renderValue(_('Base URL'), baseUrlInput, appMeta.baseUrlDescription),
@@ -1471,7 +1667,6 @@ return view.extend({
 		actions.push(E('button', {
 			'class': 'btn cbi-button cbi-button-action',
 			'type': 'button',
-			'style': uiState.providerState.phase2Available ? 'margin-left:0.75rem' : '',
 			'disabled': uiState.busy ? 'disabled' : null,
 			'click': ui.createHandlerFn(this, async function (ev) {
 				ev.preventDefault();
@@ -1485,16 +1680,16 @@ return view.extend({
 	renderProviderManagerContent: function (root, uiState, statusNodes) {
 		var appMeta = this.getAppMeta(uiState.selectedApp);
 
-		return E('div', {}, [
-			E('div', { 'class': 'cbi-section' }, [
-				E('h3', {}, [appMeta.providerLabel]),
-				E('p', { 'style': 'margin-bottom:1rem;color:#4b5563' }, [
-					appMeta.manageDescription
-				]),
+		return E('div', { 'class': 'ccswitch-host-provider-manager-fallback' }, [
+			E('section', { 'class': 'cbi-section ccswitch-host-surface' }, [
+				this.createSectionIntro(_('LuCI Fallback Path'), appMeta.providerLabel, appMeta.manageDescription),
 				this.renderAppSelector(uiState, root, statusNodes),
 				this.renderMessageBanner(uiState.message),
-				!uiState.providerState.phase2Available ? this.renderCompatibilityNotice() : E('div', { 'style': 'display:none' }),
+				!uiState.providerState.phase2Available ? this.renderCompatibilityNotice() : E('div', { 'class': 'ccswitch-host-inline-banner', 'hidden': 'hidden' }),
 				this.renderManagerActions(uiState, root, statusNodes),
+				E('p', { 'class': 'ccswitch-host-shell-note' }, [
+					_('This guarded LuCI fallback stays available for router verification whenever the shared bundle is gated off or fails contract checks.')
+				]),
 				this.renderProviderList(uiState, root, statusNodes),
 				this.renderEditorSection(uiState, root, statusNodes)
 			])
@@ -2087,52 +2282,46 @@ return view.extend({
 		while (mountRoot.firstChild)
 			mountRoot.removeChild(mountRoot.firstChild);
 
-		mountRoot.appendChild(E('div', {
-			'style': 'padding:1rem;border:1px solid #fecaca;background:#fff7f7;color:#991b1b;border-radius:4px'
-		}, [
-			E('strong', {}, [_('Shared Provider UI unavailable')]),
-			E('div', { 'style': 'margin-top:0.5rem' }, [
-				message || _('The shared provider manager bundle is missing or failed to initialize.')
-			]),
-			E('div', { 'style': 'margin-top:0.5rem;color:#7f1d1d' }, [
-				_('The OpenWrt-native service settings, proxy controls, and restart actions above still remain functional.')
-			])
-		]));
+		mountRoot.appendChild(this.createInlineStateNotice(
+			'error',
+			_('Shared Provider UI unavailable'),
+			message || _('The shared provider manager bundle is missing or failed to initialize.'),
+			_('The OpenWrt-native service settings, proxy controls, and restart actions above still remain functional.')
+		));
 	},
 
 	showBundleLoading: function (mountRoot) {
 		while (mountRoot.firstChild)
 			mountRoot.removeChild(mountRoot.firstChild);
 
-		mountRoot.appendChild(E('div', {
-			'style': 'padding:1rem;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;border-radius:4px'
-		}, [_('Loading the shared provider manager...')]));
+		mountRoot.appendChild(this.createInlineStateNotice(
+			'info',
+			null,
+			_('Loading the shared provider manager...')
+		));
 	},
 
 	showRuntimeSurfaceFallback: function (mountRoot, message) {
 		while (mountRoot.firstChild)
 			mountRoot.removeChild(mountRoot.firstChild);
 
-		mountRoot.appendChild(E('div', {
-			'style': 'padding:1rem;border:1px solid #fecaca;background:#fff7f7;color:#991b1b;border-radius:4px'
-		}, [
-			E('strong', {}, [_('Runtime surface unavailable')]),
-			E('div', { 'style': 'margin-top:0.5rem' }, [
-				message || _('The shared runtime surface could not be loaded from the OpenWrt browser bundle.')
-			]),
-			E('div', { 'style': 'margin-top:0.5rem;color:#7f1d1d' }, [
-				_('The LuCI-owned service settings, outbound proxy controls, restart actions, and provider manager below still remain available.')
-			])
-		]));
+		mountRoot.appendChild(this.createInlineStateNotice(
+			'error',
+			_('Runtime surface unavailable'),
+			message || _('The shared runtime surface could not be loaded from the OpenWrt browser bundle.'),
+			_('The LuCI-owned service settings, outbound proxy controls, restart actions, and provider manager below still remain available.')
+		));
 	},
 
 	showRuntimeSurfaceLoading: function (mountRoot) {
 		while (mountRoot.firstChild)
 			mountRoot.removeChild(mountRoot.firstChild);
 
-		mountRoot.appendChild(E('div', {
-			'style': 'padding:1rem;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;border-radius:4px'
-		}, [_('Loading the shared runtime surface...')]));
+		mountRoot.appendChild(this.createInlineStateNotice(
+			'info',
+			null,
+			_('Loading the shared runtime surface...')
+		));
 	},
 
 	loadSharedProviderBundle: function () {
@@ -2363,6 +2552,7 @@ return view.extend({
 			var isRunning = this.parseServiceState(data[1]);
 			var providerState = data[2];
 			var uiState = this.createUiState(isRunning, providerState, selectedApp);
+			var pageHero;
 			var m = new form.Map('ccswitch', _('Open CC Switch'),
 				_('Configure the OpenWrt service, outbound proxy settings, and provider routing for the router proxy.')
 			);
@@ -2416,15 +2606,22 @@ return view.extend({
 		return m.render().then(function (mapEl) {
 			var statusNodes = self.createStatusPanel(uiState);
 			var shellNodes = self.createProviderShell(uiState, statusNodes);
+			var pageShell;
 
-			void self.mountSharedRuntimeSurface(uiState, shellNodes);
-			void self.mountSharedProviderUi(uiState, statusNodes, shellNodes);
-
-			return E('div', {}, [
+			self.ensureHostPageStyles();
+			pageHero = self.createHostPageHero();
+			mapEl = self.decorateMapElement(mapEl);
+			pageShell = E('div', { 'id': 'ccswitch-host-page-shell' }, [
+				pageHero,
 				statusNodes.root,
 				mapEl,
 				shellNodes.root
 			]);
+
+			void self.mountSharedRuntimeSurface(uiState, shellNodes);
+			void self.mountSharedProviderUi(uiState, statusNodes, shellNodes);
+
+			return pageShell;
 		});
 	}
 });
