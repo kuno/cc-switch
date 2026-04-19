@@ -42,6 +42,7 @@ export default defineConfig(({ command }) => {
             formats: ["iife"],
             name: "CCSwitchOpenWrtProviderUi",
             fileName: () => "ccswitch-provider-ui.js",
+            cssFileName: "ccswitch-provider-ui",
           },
           rollupOptions: {
             output: {
