@@ -68,6 +68,8 @@ interface ProviderSidePanelProps {
   onFileSelect: (file: File | null) => void;
   onUploadCodexAuth: () => void;
   onRemoveCodexAuth: () => void;
+  onUploadClaudeAuth: () => void;
+  onRemoveClaudeAuth: () => void;
   onActivate: () => void;
   onDelete: () => void;
   onCancel: () => void;
@@ -164,6 +166,8 @@ export function ProviderSidePanel({
   onFileSelect,
   onUploadCodexAuth,
   onRemoveCodexAuth,
+  onUploadClaudeAuth,
+  onRemoveClaudeAuth,
   onActivate,
   onDelete,
   onCancel,
@@ -455,6 +459,8 @@ export function ProviderSidePanel({
                   onFileSelect={onFileSelect}
                   onUploadCodexAuth={onUploadCodexAuth}
                   onRemoveCodexAuth={onRemoveCodexAuth}
+                  onUploadClaudeAuth={onUploadClaudeAuth}
+                  onRemoveClaudeAuth={onRemoveClaudeAuth}
                 />
               )}
             </div>

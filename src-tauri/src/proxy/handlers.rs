@@ -30,18 +30,23 @@ use super::{
     ProxyError,
 };
 use crate::app_config::AppType;
-use crate::proxy::providers::codex_oauth_store::load_codex_auth_for_provider;
-use crate::services::subscription::query_codex_quota;
+use crate::proxy::providers::{
+    claude_oauth_store::load_claude_auth_for_provider,
+    codex_oauth_store::load_codex_auth_for_provider,
+};
+use crate::services::subscription::{query_claude_quota, query_codex_quota, SubscriptionQuota};
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use bytes::Bytes;
 use futures::future::join_all;
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use std::collections::HashSet;
+use std::future::Future;
 
 const CODEX_OFFICIAL_PROVIDER_ID: &str = "codex-official";
 const CODEX_OAUTH_AUTH_MODE: &str = "codex_oauth";
 const CODEX_LEGACY_CLIENT_PASSTHROUGH_AUTH_MODE: &str = "client_passthrough";
+const CLAUDE_OAUTH_AUTH_MODE: &str = "claude_oauth";
 
 // ============================================================================
 // 健康检查和状态查询（简单端点）
@@ -70,6 +75,14 @@ fn is_codex_oauth_provider(provider: &crate::provider::Provider) -> bool {
                     CODEX_OAUTH_AUTH_MODE | CODEX_LEGACY_CLIENT_PASSTHROUGH_AUTH_MODE
                 )
             })
+}
+
+fn is_claude_oauth_provider(provider: &crate::provider::Provider) -> bool {
+    provider
+        .settings_config
+        .get("auth_mode")
+        .and_then(Value::as_str)
+        == Some(CLAUDE_OAUTH_AUTH_MODE)
 }
 
 async fn refresh_codex_quota_snapshots(state: &ProxyState) {
@@ -146,20 +159,19 @@ async fn refresh_codex_quota_snapshots(state: &ProxyState) {
     }
 }
 
-/// Remove rate-limit snapshots for Claude providers that no longer exist in the DB.
+/// Reconcile stored Claude rate-limit snapshots before serving `/api/quota`.
 ///
-/// Why: Claude rate-limit snapshots are written via `capture_rate_limits` off
-/// upstream response headers, then persisted on shutdown and reloaded on startup.
-/// When a Claude provider is deleted we also scrub the snapshot at delete time,
-/// but older installs may still carry a persisted stale snapshot from before
-/// that wiring existed. Filtering here at read time guarantees `/api/quota`
-/// can never surface a ghost Claude provider regardless of how the snapshot
-/// got there.
-///
-/// Unlike the codex refresh we do not filter on `source` — Claude snapshots
-/// are captured from response headers, so scoping by source would miss the
-/// actual bug case.
-async fn refresh_claude_quota_snapshots(state: &ProxyState) {
+/// Retain rules:
+/// - keep non-Claude snapshots untouched;
+/// - evict Claude snapshots whose provider no longer exists in the DB;
+/// - keep header-captured Claude snapshots (`source != "subscription_quota"`);
+/// - evict `subscription_quota` snapshots for providers that will not be
+///   refreshed in this cycle.
+async fn refresh_claude_quota_snapshots_with_query<F, Fut>(state: &ProxyState, query_quota: F)
+where
+    F: Fn(String) -> Fut + Clone,
+    Fut: Future<Output = SubscriptionQuota>,
+{
     let providers = match state.db.get_all_providers("claude") {
         Ok(providers) => providers,
         Err(error) => {
@@ -170,12 +182,95 @@ async fn refresh_claude_quota_snapshots(state: &ProxyState) {
         }
     };
 
-    let live_claude_provider_ids: HashSet<String> = providers.into_keys().collect();
+    let live_claude_provider_ids: HashSet<String> = providers.keys().cloned().collect();
+    let mut live_refresh_provider_ids = HashSet::new();
+    let mut live_fetches = Vec::new();
+    let now_ms = chrono::Utc::now().timestamp_millis();
+
+    for provider in providers.into_values().filter(is_claude_oauth_provider) {
+        let Some(auth) = load_claude_auth_for_provider(&provider.id) else {
+            continue;
+        };
+
+        if auth
+            .expires_at_ms
+            .is_some_and(|expires_at_ms| expires_at_ms < now_ms)
+        {
+            log::warn!(
+                "[Quota] stored Claude auth for {} is expired at {}; skipping live quota refresh",
+                provider.id,
+                auth.expires_at_ms.unwrap_or_default()
+            );
+            continue;
+        }
+
+        let query_quota = query_quota.clone();
+        live_refresh_provider_ids.insert(provider.id.clone());
+        live_fetches.push(async move {
+            let quota = query_quota(auth.access_token.clone()).await;
+
+            if !quota.success {
+                log::warn!(
+                    "[Quota] live Claude quota refresh failed for {}: {}",
+                    provider.id,
+                    quota
+                        .error
+                        .clone()
+                        .unwrap_or_else(|| "unknown upstream error".to_string())
+                );
+                return None;
+            }
+
+            let previous = {
+                let store = state.rate_limits.read().await;
+                store.get(&provider.id).cloned()
+            };
+
+            super::rate_limit::snapshot_from_subscription_quota(
+                "claude",
+                &provider.id,
+                &provider.name,
+                &quota,
+                previous.as_ref(),
+            )
+        });
+    }
 
     let mut store = state.rate_limits.write().await;
     store.retain(|_, snapshot| {
-        snapshot.app_type != "claude" || live_claude_provider_ids.contains(&snapshot.provider_id)
+        if snapshot.app_type != "claude" {
+            return true;
+        }
+
+        if !live_claude_provider_ids.contains(&snapshot.provider_id) {
+            return false;
+        }
+
+        if snapshot.source.as_deref() != Some("subscription_quota") {
+            return true;
+        }
+
+        live_refresh_provider_ids.contains(&snapshot.provider_id)
     });
+
+    drop(store);
+
+    if live_fetches.is_empty() {
+        return;
+    }
+
+    let refreshed = join_all(live_fetches).await;
+    let mut store = state.rate_limits.write().await;
+    for snapshot in refreshed.into_iter().flatten() {
+        store.insert(snapshot.provider_id.clone(), snapshot);
+    }
+}
+
+async fn refresh_claude_quota_snapshots(state: &ProxyState) {
+    refresh_claude_quota_snapshots_with_query(state, |access_token: String| async move {
+        query_claude_quota(&access_token).await
+    })
+    .await;
 }
 
 pub async fn get_quota(State(state): State<ProxyState>) -> (StatusCode, Json<Value>) {
@@ -794,9 +889,29 @@ async fn log_usage(
 
 #[cfg(test)]
 mod tests {
-    use super::is_codex_oauth_provider;
+    use super::{
+        is_claude_oauth_provider, is_codex_oauth_provider,
+        refresh_claude_quota_snapshots_with_query,
+    };
+    use crate::database::Database;
     use crate::provider::Provider;
+    use crate::proxy::{
+        failover_switch::FailoverSwitchManager,
+        provider_router::ProviderRouter,
+        providers::{
+            claude_oauth_store::save_claude_auth_for_provider, gemini_shadow::GeminiShadowStore,
+        },
+        rate_limit::{new_rate_limit_store, RateLimitSnapshot, RateLimitWindow},
+        server::ProxyState,
+        types::{ProxyConfig, ProxyStatus},
+    };
+    use crate::services::subscription::{CredentialStatus, QuotaTier, SubscriptionQuota};
     use serde_json::json;
+    use serial_test::serial;
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex, OnceLock};
+    use tempfile::TempDir;
+    use tokio::sync::RwLock;
 
     #[test]
     fn official_codex_seed_counts_as_codex_oauth_provider() {
@@ -808,5 +923,337 @@ mod tests {
         );
 
         assert!(is_codex_oauth_provider(&provider));
+    }
+
+    #[test]
+    fn claude_oauth_mode_counts_as_claude_oauth_provider() {
+        let provider = Provider::with_id(
+            "claude-oauth".to_string(),
+            "Claude Official".to_string(),
+            json!({ "auth_mode": "claude_oauth", "env": {} }),
+            None,
+        );
+
+        assert!(is_claude_oauth_provider(&provider));
+    }
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    struct TestEnv {
+        _guard: std::sync::MutexGuard<'static, ()>,
+        _tmp: TempDir,
+        original_home: Option<String>,
+        original_userprofile: Option<String>,
+        original_test_home: Option<String>,
+        original_data_dir: Option<String>,
+    }
+
+    impl TestEnv {
+        fn new() -> Self {
+            let guard = env_lock()
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner());
+            let tmp = TempDir::new().expect("create temp dir");
+            let home = tmp.path().join("home");
+            let data = tmp.path().join("data");
+
+            std::fs::create_dir_all(&home).expect("create home");
+            std::fs::create_dir_all(&data).expect("create data");
+
+            let original_home = std::env::var("HOME").ok();
+            let original_userprofile = std::env::var("USERPROFILE").ok();
+            let original_test_home = std::env::var("CC_SWITCH_TEST_HOME").ok();
+            let original_data_dir = std::env::var("CC_SWITCH_DATA_DIR").ok();
+
+            std::env::set_var("HOME", &home);
+            std::env::set_var("USERPROFILE", &home);
+            std::env::set_var("CC_SWITCH_TEST_HOME", &home);
+            std::env::set_var("CC_SWITCH_DATA_DIR", &data);
+
+            Self {
+                _guard: guard,
+                _tmp: tmp,
+                original_home,
+                original_userprofile,
+                original_test_home,
+                original_data_dir,
+            }
+        }
+    }
+
+    impl Drop for TestEnv {
+        fn drop(&mut self) {
+            match &self.original_home {
+                Some(value) => std::env::set_var("HOME", value),
+                None => std::env::remove_var("HOME"),
+            }
+            match &self.original_userprofile {
+                Some(value) => std::env::set_var("USERPROFILE", value),
+                None => std::env::remove_var("USERPROFILE"),
+            }
+            match &self.original_test_home {
+                Some(value) => std::env::set_var("CC_SWITCH_TEST_HOME", value),
+                None => std::env::remove_var("CC_SWITCH_TEST_HOME"),
+            }
+            match &self.original_data_dir {
+                Some(value) => std::env::set_var("CC_SWITCH_DATA_DIR", value),
+                None => std::env::remove_var("CC_SWITCH_DATA_DIR"),
+            }
+        }
+    }
+
+    fn test_proxy_state(db: Arc<Database>) -> ProxyState {
+        let current_providers = Arc::new(RwLock::new(HashMap::new()));
+
+        ProxyState {
+            db: db.clone(),
+            config: Arc::new(RwLock::new(ProxyConfig::default())),
+            status: Arc::new(RwLock::new(ProxyStatus::default())),
+            start_time: Arc::new(RwLock::new(None)),
+            current_providers: current_providers.clone(),
+            provider_router: Arc::new(ProviderRouter::new(db.clone())),
+            gemini_shadow: Arc::new(GeminiShadowStore::default()),
+            copilot_auth: None,
+            codex_oauth_auth: None,
+            failover_manager: Arc::new(FailoverSwitchManager::new(db, current_providers)),
+            rate_limits: new_rate_limit_store(),
+            #[cfg(feature = "tauri-desktop")]
+            app_handle: None,
+        }
+    }
+
+    fn claude_provider(provider_id: &str, auth_mode: &str, name: &str) -> Provider {
+        Provider::with_id(
+            provider_id.to_string(),
+            name.to_string(),
+            json!({
+                "auth_mode": auth_mode,
+                "env": {
+                    "ANTHROPIC_BASE_URL": "https://api.anthropic.com"
+                }
+            }),
+            None,
+        )
+    }
+
+    fn sample_claude_auth_json(expires_at_ms: i64) -> Vec<u8> {
+        serde_json::json!({
+            "claudeAiOauth": {
+                "accessToken": "sk-ant-oat01-uploaded",
+                "refreshToken": "refresh-token",
+                "expiresAt": expires_at_ms,
+                "scopes": ["user:profile"],
+                "subscriptionType": "pro"
+            }
+        })
+        .to_string()
+        .into_bytes()
+    }
+
+    fn sample_quota(tier_name: &str, utilization: f64) -> SubscriptionQuota {
+        SubscriptionQuota {
+            tool: "claude".to_string(),
+            credential_status: CredentialStatus::Valid,
+            credential_message: None,
+            success: true,
+            tiers: vec![QuotaTier {
+                name: tier_name.to_string(),
+                utilization,
+                resets_at: Some("2026-04-30T12:00:00Z".to_string()),
+            }],
+            extra_usage: None,
+            error: None,
+            queried_at: Some(chrono::Utc::now().timestamp_millis()),
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn refresh_claude_quota_snapshots_uses_uploaded_auth_and_preserves_header_snapshots() {
+        let _env = TestEnv::new();
+        let db = Arc::new(Database::memory().expect("db"));
+        db.save_provider(
+            "claude",
+            &claude_provider("claude-oauth", "claude_oauth", "Claude OAuth"),
+        )
+        .expect("save oauth provider");
+        db.save_provider(
+            "claude",
+            &claude_provider("claude-pass", "client_passthrough", "Claude Passthrough"),
+        )
+        .expect("save passthrough provider");
+        save_claude_auth_for_provider(
+            "claude-oauth",
+            &sample_claude_auth_json(chrono::Utc::now().timestamp_millis() + 60_000),
+        )
+        .expect("save uploaded auth");
+
+        let state = test_proxy_state(db);
+        {
+            let mut store = state.rate_limits.write().await;
+            store.insert(
+                "claude-oauth".to_string(),
+                RateLimitSnapshot {
+                    app_type: "claude".to_string(),
+                    provider_id: "claude-oauth".to_string(),
+                    provider_name: "Claude OAuth".to_string(),
+                    source: Some("subscription_quota".to_string()),
+                    status: None,
+                    windows: vec![RateLimitWindow {
+                        name: "seven_day".to_string(),
+                        status: None,
+                        utilization: Some(0.9),
+                        reset: Some(1_700_000_000),
+                    }],
+                    representative_claim: None,
+                    overage_status: None,
+                    fallback_percentage: None,
+                    requests_limit: Some(50),
+                    requests_remaining: Some(10),
+                    tokens_limit: Some(1_000),
+                    tokens_remaining: Some(500),
+                    captured_at: 1_700_000_000_000,
+                },
+            );
+            store.insert(
+                "claude-pass".to_string(),
+                RateLimitSnapshot {
+                    app_type: "claude".to_string(),
+                    provider_id: "claude-pass".to_string(),
+                    provider_name: "Claude Passthrough".to_string(),
+                    source: Some("response_headers".to_string()),
+                    status: None,
+                    windows: vec![RateLimitWindow {
+                        name: "7d".to_string(),
+                        status: None,
+                        utilization: Some(0.4),
+                        reset: Some(1_700_000_500),
+                    }],
+                    representative_claim: None,
+                    overage_status: None,
+                    fallback_percentage: None,
+                    requests_limit: None,
+                    requests_remaining: None,
+                    tokens_limit: None,
+                    tokens_remaining: None,
+                    captured_at: 1_700_000_000_100,
+                },
+            );
+            store.insert(
+                "ghost-claude".to_string(),
+                RateLimitSnapshot {
+                    app_type: "claude".to_string(),
+                    provider_id: "ghost-claude".to_string(),
+                    provider_name: "Ghost Claude".to_string(),
+                    source: Some("response_headers".to_string()),
+                    status: None,
+                    windows: vec![],
+                    representative_claim: None,
+                    overage_status: None,
+                    fallback_percentage: None,
+                    requests_limit: None,
+                    requests_remaining: None,
+                    tokens_limit: None,
+                    tokens_remaining: None,
+                    captured_at: 1_700_000_000_200,
+                },
+            );
+        }
+
+        let seen_tokens = Arc::new(Mutex::new(Vec::new()));
+        refresh_claude_quota_snapshots_with_query(&state, {
+            let seen_tokens = seen_tokens.clone();
+            move |access_token: String| {
+                let seen_tokens = seen_tokens.clone();
+                async move {
+                    seen_tokens
+                        .lock()
+                        .expect("lock seen tokens")
+                        .push(access_token);
+                    sample_quota("seven_day_claude_design", 42.0)
+                }
+            }
+        })
+        .await;
+
+        assert_eq!(
+            seen_tokens.lock().expect("lock seen tokens").as_slice(),
+            ["sk-ant-oat01-uploaded"]
+        );
+
+        let store = state.rate_limits.read().await;
+        let oauth_snapshot = store.get("claude-oauth").expect("oauth snapshot");
+        assert_eq!(oauth_snapshot.source.as_deref(), Some("subscription_quota"));
+        assert_eq!(oauth_snapshot.windows.len(), 1);
+        assert_eq!(oauth_snapshot.windows[0].name, "seven_day_claude_design");
+        assert_eq!(oauth_snapshot.requests_limit, Some(50));
+        assert_eq!(oauth_snapshot.tokens_limit, Some(1_000));
+        assert_eq!(
+            store
+                .get("claude-pass")
+                .and_then(|snapshot| snapshot.source.as_deref()),
+            Some("response_headers")
+        );
+        assert!(!store.contains_key("ghost-claude"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn refresh_claude_quota_snapshots_skips_expired_uploaded_auth() {
+        let _env = TestEnv::new();
+        let db = Arc::new(Database::memory().expect("db"));
+        db.save_provider(
+            "claude",
+            &claude_provider("claude-oauth", "claude_oauth", "Claude OAuth"),
+        )
+        .expect("save oauth provider");
+        save_claude_auth_for_provider(
+            "claude-oauth",
+            &sample_claude_auth_json(chrono::Utc::now().timestamp_millis() - 60_000),
+        )
+        .expect("save expired auth");
+
+        let state = test_proxy_state(db);
+        {
+            let mut store = state.rate_limits.write().await;
+            store.insert(
+                "claude-oauth".to_string(),
+                RateLimitSnapshot {
+                    app_type: "claude".to_string(),
+                    provider_id: "claude-oauth".to_string(),
+                    provider_name: "Claude OAuth".to_string(),
+                    source: Some("subscription_quota".to_string()),
+                    status: None,
+                    windows: vec![],
+                    representative_claim: None,
+                    overage_status: None,
+                    fallback_percentage: None,
+                    requests_limit: None,
+                    requests_remaining: None,
+                    tokens_limit: None,
+                    tokens_remaining: None,
+                    captured_at: 1_700_000_000_000,
+                },
+            );
+        }
+
+        let calls = Arc::new(Mutex::new(0usize));
+        refresh_claude_quota_snapshots_with_query(&state, {
+            let calls = calls.clone();
+            move |_access_token: String| {
+                let calls = calls.clone();
+                async move {
+                    *calls.lock().expect("lock calls") += 1;
+                    sample_quota("seven_day_claude_design", 42.0)
+                }
+            }
+        })
+        .await;
+
+        assert_eq!(*calls.lock().expect("lock calls"), 0);
+        assert!(state.rate_limits.read().await.get("claude-oauth").is_none());
     }
 }
