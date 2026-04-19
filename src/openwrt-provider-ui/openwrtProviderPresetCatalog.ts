@@ -16,6 +16,7 @@ type OpenWrtPresetDefinition = {
   tokenField?: SharedProviderTokenField;
   model?: string;
   description?: string;
+  authMode?: string;
 };
 
 type SourcePresetLike = {
@@ -52,7 +53,8 @@ const RAW_OPENWRT_PROVIDER_PRESETS: Record<
       id: "claude-official",
       label: "Claude Official",
       baseUrl: "https://api.anthropic.com",
-      description: "Official Anthropic Claude endpoint.",
+      description: "Official Anthropic Claude endpoint. API key is optional — client credentials are forwarded automatically.",
+      authMode: "client_passthrough",
     },
     {
       id: "claude-deepseek",
@@ -240,7 +242,8 @@ const RAW_OPENWRT_PROVIDER_PRESETS: Record<
       label: "OpenAI Official",
       baseUrl: "https://api.openai.com/v1",
       model: "gpt-5.4",
-      description: "Official OpenAI Responses endpoint for Codex.",
+      description: "Official OpenAI endpoint. API key is optional — client credentials are forwarded automatically.",
+      authMode: "client_passthrough",
     },
     {
       id: "codex-azure-openai",
@@ -459,6 +462,7 @@ function buildOpenWrtPreset(
     icon: sourcePreset?.icon,
     iconColor: sourcePreset?.iconColor,
     accentColor: sourcePreset?.theme?.backgroundColor,
+    authMode: definition.authMode,
     supportedOn: {
       desktop: true,
       openwrt: true,
