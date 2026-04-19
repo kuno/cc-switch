@@ -147,6 +147,8 @@ pub struct RequestForwarder {
     /// `max_attempts = max_retries + 1`，所以 max_retries=0 表示仅尝试一家、
     /// max_retries=3（默认）表示最多 4 家。loop 同时受 providers.len() 自然限制。
     max_attempts: usize,
+    /// Per-provider rate limit snapshots
+    rate_limits: super::rate_limit::RateLimitStore,
     /// AppHandle for failover UI updates (desktop only)
     #[cfg(feature = "tauri-desktop")]
     app_handle: Option<tauri::AppHandle>,
@@ -244,6 +246,7 @@ impl RequestForwarder {
         optimizer_config: OptimizerConfig,
         copilot_optimizer_config: CopilotOptimizerConfig,
         max_retries: u32,
+        rate_limits: super::rate_limit::RateLimitStore,
         #[cfg(feature = "tauri-desktop")] app_handle: Option<tauri::AppHandle>,
     ) -> Self {
         // max_retries 是「失败后重试次数」语义，attempt 上限 = retries + 1。
@@ -269,6 +272,7 @@ impl RequestForwarder {
                 streaming_first_byte_timeout,
             ),
             max_attempts,
+            rate_limits,
             #[cfg(feature = "tauri-desktop")]
             app_handle,
         }
@@ -517,6 +521,7 @@ impl RequestForwarder {
                     app_type,
                     &method,
                     provider,
+                    app_type_str,
                     endpoint,
                     &provider_body,
                     &headers,
@@ -771,6 +776,7 @@ impl RequestForwarder {
                                         app_type,
                                         &method,
                                         provider,
+                                        app_type_str,
                                         endpoint,
                                         &provider_body,
                                         &headers,
@@ -944,6 +950,7 @@ impl RequestForwarder {
                                     app_type,
                                     &method,
                                     provider,
+                                    app_type_str,
                                     endpoint,
                                     &provider_body,
                                     &headers,
@@ -1175,6 +1182,7 @@ impl RequestForwarder {
         app_type: &AppType,
         method: &http::Method,
         provider: &Provider,
+        app_type_str: &str,
         endpoint: &str,
         body: &Value,
         headers: &axum::http::HeaderMap,
@@ -2374,6 +2382,18 @@ impl RequestForwarder {
             }
             Ok((response, resolved_claude_api_format, outbound_model))
         } else {
+            // Capture rate limit headers from error responses (e.g. 429)
+            {
+                let rl_store = self.rate_limits.clone();
+                let resp_headers = response.headers().clone();
+                let app = app_type_str.to_string();
+                let pid = provider.id.clone();
+                let pname = provider.name.clone();
+                tokio::spawn(async move {
+                    super::rate_limit::capture_rate_limits(&rl_store, &resp_headers, &app, &pid, &pname).await;
+                });
+            }
+
             let status_code = status.as_u16();
             // 错误响应同样可能被上游压缩（content-encoding）。reqwest 未启用任何
             // 自动解压 feature，这里拿到的是原始字节；不解压的话，压缩过的错误体会
@@ -3705,6 +3725,7 @@ mod tests {
             non_streaming_timeout,
             streaming_first_byte_timeout,
             max_attempts: 1,
+            rate_limits: super::rate_limit::new_rate_limit_store(),
         }
     }
 
