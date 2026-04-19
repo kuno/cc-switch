@@ -56,6 +56,9 @@ const DialogContent = React.forwardRef<
     },
     ref,
   ) => {
+    const isOpenWrtHostedDialog =
+      typeof className === "string" &&
+      className.includes("ccswitch-openwrt-provider-ui-dialog");
     const zIndexMap = {
       base: "z-40",
       nested: "z-50",
@@ -72,7 +75,13 @@ const DialogContent = React.forwardRef<
 
     return (
       <DialogPortal>
-        <DialogOverlay zIndex={zIndex} className={overlayClassName} />
+        <DialogOverlay
+          zIndex={zIndex}
+          className={cn(
+            isOpenWrtHostedDialog && "ccswitch-openwrt-provider-ui-overlay",
+            overlayClassName,
+          )}
+        />
         <DialogPrimitive.Content
           ref={ref}
           className={cn(variantClass, zIndexMap[zIndex], className)}
