@@ -1,4 +1,5 @@
 import type {
+  SharedProviderClaudeAuthSummary,
   SharedProviderCodexAuthSummary,
   SharedProviderEditorPayload,
   SharedProviderTokenField,
@@ -6,6 +7,7 @@ import type {
 } from "@/shared/providers/domain";
 
 type CodexAuthMode = "api_key" | "codex_oauth";
+type ClaudeAuthMode = "client_passthrough" | "claude_oauth";
 
 interface ProviderSidePanelCredentialsTabProps {
   appId: "claude" | "codex" | "gemini";
@@ -21,6 +23,8 @@ interface ProviderSidePanelCredentialsTabProps {
   onFileSelect: (file: File | null) => void;
   onUploadCodexAuth: () => void;
   onRemoveCodexAuth: () => void;
+  onUploadClaudeAuth: () => void;
+  onRemoveClaudeAuth: () => void;
 }
 
 function normalizeExpiresAt(value: number | null | undefined): string | null {
@@ -48,6 +52,10 @@ function getSecretPolicyText(
     return "auth.json manages the secret. API key entry is not required.";
   }
 
+  if (authMode === "claude_oauth") {
+    return "auth.json manages the router quota token. API key entry is not required.";
+  }
+
   if (provider?.tokenConfigured) {
     return "Blank preserves the stored secret.";
   }
@@ -59,7 +67,11 @@ function getCodexAuthMode(authMode?: string): CodexAuthMode {
   return authMode === "codex_oauth" ? "codex_oauth" : "api_key";
 }
 
-function StoredAuthSummary({
+function getClaudeAuthMode(authMode?: string): ClaudeAuthMode {
+  return authMode === "claude_oauth" ? "claude_oauth" : "client_passthrough";
+}
+
+function StoredCodexAuthSummary({
   summary,
 }: {
   summary: SharedProviderCodexAuthSummary;
@@ -78,6 +90,28 @@ function StoredAuthSummary({
   );
 }
 
+function StoredClaudeAuthSummary({
+  summary,
+}: {
+  summary: SharedProviderClaudeAuthSummary;
+}) {
+  const expiresAtLabel = normalizeExpiresAt(summary.expiresAtMs);
+
+  return (
+    <div className="owt-provider-panel__note">
+      <div className="owt-provider-panel__note-title">Stored auth.json</div>
+      <div>
+        Refresh token present: {summary.refreshTokenPresent ? "yes" : "no"}
+      </div>
+      <div>Scopes: {summary.scopes.length ? summary.scopes.join(", ") : "Unavailable"}</div>
+      {summary.subscriptionType ? (
+        <div>Subscription type: {summary.subscriptionType}</div>
+      ) : null}
+      {expiresAtLabel ? <div>Expires at: {expiresAtLabel}</div> : null}
+    </div>
+  );
+}
+
 export function ProviderSidePanelCredentialsTab({
   appId,
   draft,
@@ -89,10 +123,20 @@ export function ProviderSidePanelCredentialsTab({
   onFileSelect,
   onUploadCodexAuth,
   onRemoveCodexAuth,
+  onUploadClaudeAuth,
+  onRemoveClaudeAuth,
 }: ProviderSidePanelCredentialsTabProps) {
+  const isClaude = appId === "claude";
   const isCodex = appId === "codex";
   const codexAuthMode = getCodexAuthMode(draft.authMode);
-  const showAuthJsonFields = isCodex && codexAuthMode === "codex_oauth";
+  const claudeAuthMode = getClaudeAuthMode(draft.authMode);
+  const showClaudeAuthModeSelector =
+    isClaude &&
+    (draft.authMode === "client_passthrough" ||
+      draft.authMode === "claude_oauth");
+  const showAuthJsonFields =
+    (isCodex && codexAuthMode === "codex_oauth") ||
+    (showClaudeAuthModeSelector && claudeAuthMode === "claude_oauth");
   const canManageSavedAuth = Boolean(provider?.providerId);
   const secretPolicyText = getSecretPolicyText(provider, draft.authMode);
 
@@ -140,6 +184,40 @@ export function ProviderSidePanelCredentialsTab({
                 onDraftChange({
                   ...draft,
                   authMode: "codex_oauth",
+                })
+              }
+            >
+              auth.json
+            </button>
+          </div>
+        </div>
+      ) : showClaudeAuthModeSelector ? (
+        <div className="owt-provider-panel__field owt-provider-panel__field--wide">
+          <span className="owt-provider-panel__label">
+            Authentication mode
+          </span>
+          <div className="owt-provider-panel__segment">
+            <button
+              type="button"
+              className="owt-provider-panel__segment-button"
+              data-active={claudeAuthMode === "client_passthrough"}
+              onClick={() =>
+                onDraftChange({
+                  ...draft,
+                  authMode: "client_passthrough",
+                })
+              }
+            >
+              Client passthrough
+            </button>
+            <button
+              type="button"
+              className="owt-provider-panel__segment-button"
+              data-active={claudeAuthMode === "claude_oauth"}
+              onClick={() =>
+                onDraftChange({
+                  ...draft,
+                  authMode: "claude_oauth",
                 })
               }
             >
@@ -241,24 +319,34 @@ export function ProviderSidePanelCredentialsTab({
                 type="button"
                 className="owt-provider-panel__button owt-provider-panel__button--ghost"
                 disabled={!canManageSavedAuth || authPending || !selectedFileName}
-                onClick={onUploadCodexAuth}
+                onClick={isCodex ? onUploadCodexAuth : onUploadClaudeAuth}
               >
                 Upload auth.json
               </button>
               <button
                 type="button"
                 className="owt-provider-panel__button owt-provider-panel__button--ghost"
-                disabled={!canManageSavedAuth || authPending || !provider?.codexAuth}
-                onClick={onRemoveCodexAuth}
+                disabled={
+                  !canManageSavedAuth ||
+                  authPending ||
+                  !(isCodex ? provider?.codexAuth : provider?.claudeAuth)
+                }
+                onClick={isCodex ? onRemoveCodexAuth : onRemoveClaudeAuth}
               >
                 Remove
               </button>
             </div>
           </div>
 
-          {provider?.codexAuth ? (
+          {isCodex && provider?.codexAuth ? (
             <div className="owt-provider-panel__field owt-provider-panel__field--wide">
-              <StoredAuthSummary summary={provider.codexAuth} />
+              <StoredCodexAuthSummary summary={provider.codexAuth} />
+            </div>
+          ) : null}
+
+          {isClaude && provider?.claudeAuth ? (
+            <div className="owt-provider-panel__field owt-provider-panel__field--wide">
+              <StoredClaudeAuthSummary summary={provider.claudeAuth} />
             </div>
           ) : null}
         </>
