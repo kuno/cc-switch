@@ -1,0 +1,156 @@
+.owt-visual-harness {
+  min-height: 100vh;
+  padding: 32px;
+}
+
+.owt-visual-harness--fullscreen {
+  padding: 0;
+}
+
+.owt-visual-harness__meta {
+  max-width: 960px;
+  margin: 0 auto 24px;
+}
+
+.owt-visual-harness__eyebrow {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent-text);
+}
+
+.owt-visual-harness__title {
+  margin: 0;
+  font-size: clamp(2rem, 4vw, 3.25rem);
+  line-height: 0.95;
+  letter-spacing: -0.045em;
+}
+
+.owt-visual-harness__detail {
+  margin: 12px 0 0;
+  color: var(--muted);
+}
+
+.owt-visual-harness__canvas {
+  width: min(960px, 100%);
+  margin: 0 auto;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  background: var(--panel);
+  box-shadow: 0 30px 70px -52px rgba(23, 33, 51, 0.32);
+  backdrop-filter: blur(22px);
+}
+
+.owt-visual-harness__canvas--wide {
+  width: min(1040px, 100%);
+}
+
+.owt-visual-harness__canvas--narrow {
+  width: min(720px, 100%);
+}
+
+.owt-visual-harness__canvas--drawer {
+  min-height: 720px;
+  overflow: hidden;
+}
+
+.owt-visual-harness__canvas--panel {
+  width: min(1180px, 100%);
+  padding: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at top left, rgba(63, 111, 255, 0.08), transparent 26%),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--panel) 96%, transparent),
+      color-mix(in srgb, var(--panel-soft) 94%, transparent)
+    );
+}
+
+.owt-visual-harness__canvas--shell {
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.owt-visual-harness__drawer-scene {
+  position: relative;
+  min-height: 672px;
+}
+
+.owt-visual-harness__drawer-preview {
+  display: grid;
+  gap: 24px;
+  min-height: 100%;
+  padding: 24px;
+  border-radius: calc(var(--radius-panel) - 4px);
+  background:
+    radial-gradient(circle at top left, var(--accent-soft), transparent 48%),
+    linear-gradient(180deg, var(--panel-strong), var(--panel));
+}
+
+.owt-visual-harness__drawer-preview-copy strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 1.15rem;
+  letter-spacing: -0.03em;
+  color: var(--text);
+}
+
+.owt-visual-harness__drawer-preview-copy p {
+  max-width: 32rem;
+  margin: 8px 0 0;
+  color: var(--muted);
+}
+
+.owt-visual-harness__drawer-preview-label {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-text);
+}
+
+.owt-visual-harness__drawer-preview-tiles {
+  display: grid;
+  gap: 14px;
+}
+
+.owt-visual-harness__drawer-preview-tile {
+  height: 110px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background:
+    linear-gradient(
+      120deg,
+      transparent,
+      color-mix(in srgb, var(--panel-soft) 82%, transparent)
+    ),
+    color-mix(in srgb, var(--panel-strong) 88%, transparent);
+}
+
+.owt-provider-panel-harness-root {
+  position: relative;
+  min-height: 780px;
+  overflow: hidden;
+}
+
+.owt-provider-panel-harness-root .owt-provider-panel-shell {
+  position: absolute;
+  inset: 0;
+}
+
+.owt-provider-panel-harness-root .owt-provider-panel__scrim,
+.owt-provider-panel-harness-root .owt-provider-panel {
+  animation: none !important;
+  transition: none !important;
+}

@@ -1078,30 +1078,23 @@ describe("OpenWrt provider UI bundle", () => {
     });
 
     await waitFor(() =>
-      expect(target).toHaveTextContent("Configure routes and provider details"),
+      expect(
+        within(target).getByRole("button", { name: "Open Claude providers" }),
+      ).toBeInTheDocument(),
     );
 
     expect(target).toHaveTextContent("Router daemon");
     expect(target).toHaveTextContent("Running");
     expect(target).toHaveTextContent("Healthy");
     expect(target).toHaveTextContent("Version v3.13.0-213-gbe1a81ae");
-    expect(target).toHaveTextContent("Usage summary");
-    expect(target).toHaveTextContent("$1.23");
-    expect(target).toHaveTextContent("1,790");
-    expect(target).toHaveTextContent("83.3%");
-    expect(target).toHaveTextContent("OpenAI Official");
-    expect(target).toHaveTextContent("MiniMax Backup");
-    expect(target).toHaveTextContent("$0.82");
-    expect(target).toHaveTextContent("87.5%");
+    expect(target).toHaveTextContent("Claude");
+    expect(target).toHaveTextContent("Codex");
+    expect(target).toHaveTextContent("Gemini");
+    expect(target).toHaveTextContent("Open providers");
     expect(target).toHaveTextContent("Recent activity");
-    expect(target).toHaveTextContent("claude-sonnet-4-5");
-    expect(target).toHaveTextContent("640 tokens");
-    expect(target).toHaveTextContent("Success");
-    expect(target).toHaveTextContent("HTTP 429");
-    expect(target).toHaveTextContent("Request logs");
-    expect(target).toHaveTextContent("1-2 of 12");
-    expect(target).toHaveTextContent("req-1");
-    expect(target).toHaveTextContent("Request ID");
+    expect(target).toHaveTextContent("$1.23");
+    expect(target).toHaveTextContent("87.5%");
+    expect(target).toHaveTextContent("429");
     expect(target).toHaveClass("ccswitch-openwrt-native-page-host");
     expect(section).toHaveClass("ccswitch-openwrt-native-page-section");
     expect(map).toHaveClass("ccswitch-openwrt-native-page-map");
@@ -1110,9 +1103,6 @@ describe("OpenWrt provider UI bundle", () => {
     ).toBeDisabled();
     expect(
       within(target).getByRole("button", { name: "Restart" }),
-    ).toBeInTheDocument();
-    expect(
-      within(target).getByRole("button", { name: "Edit Claude Primary" }),
     ).toBeInTheDocument();
     expect(document.documentElement.classList.contains("dark")).toBe(false);
     expect(document.body.classList.contains("dark")).toBe(false);
@@ -1139,11 +1129,38 @@ describe("OpenWrt provider UI bundle", () => {
       listenPort: "18443",
       logLevel: "debug",
     });
-    expect(shell.getUsageSummary).toHaveBeenCalledWith("claude");
-    expect(shell.getProviderStats).toHaveBeenCalledWith("claude");
-    expect(shell.getRecentActivity).toHaveBeenCalledWith("claude");
+
+    for (const appId of ["claude", "codex", "gemini"] as const) {
+      expect(shell.getUsageSummary).toHaveBeenCalledWith(appId);
+      expect(shell.getProviderStats).toHaveBeenCalledWith(appId);
+      expect(shell.getRecentActivity).toHaveBeenCalledWith(appId);
+    }
+
+    await act(async () => {
+      fireEvent.click(
+        within(target).getByRole("button", { name: "Open Claude providers" }),
+      );
+    });
+
+    await waitFor(() =>
+      expect(
+        within(target).getByRole("dialog", { name: "Claude providers" }),
+      ).toBeInTheDocument(),
+    );
+
+    const claudeCard = within(target)
+      .getByRole("button", { name: "Open Claude providers" })
+      .closest("article");
+
+    expect(claudeCard).not.toBeNull();
+
+    await act(async () => {
+      fireEvent.click(
+        within(claudeCard as HTMLElement).getByRole("button", { name: "Open" }),
+      );
+    });
+
     expect(shell.getRequestLogs).toHaveBeenCalledWith("claude", 0, 6);
-    expect(shell.getRequestDetail).toHaveBeenCalledWith("claude", "req-1");
 
     await act(async () => {
       fireEvent.click(
@@ -1459,7 +1476,9 @@ describe("OpenWrt provider UI bundle", () => {
     });
 
     await waitFor(() =>
-      expect(target).toHaveTextContent("Configure routes and provider details"),
+      expect(
+        within(target).getByRole("button", { name: "Open Claude providers" }),
+      ).toBeInTheDocument(),
     );
 
     expect(document.documentElement.classList.contains("dark")).toBe(false);

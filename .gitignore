@@ -1,3 +1,4 @@
+.orchestrator/
 node_modules/
 dist/
 target/
@@ -31,3 +32,6 @@ copilot-api
 .history
 CODEBUDDY.md
 .github
+playwright-report/
+test-results/
+tests/openwrt/visual/harness-dist/
