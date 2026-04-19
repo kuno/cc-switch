@@ -861,9 +861,9 @@ export function SharedProviderManager({
         <CardHeader
           data-ccswitch-region="provider-header"
           data-ccswitch-layout="embedded-stack"
-          className="ccswitch-openwrt-page-header gap-4 border-b border-border-default bg-gradient-to-br from-background via-background to-muted/30 p-4 sm:p-5"
+          className="ccswitch-openwrt-page-header gap-5 border-b border-border-default bg-gradient-to-br from-background via-background to-muted/30 p-4 sm:p-5"
         >
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div className="space-y-2">
               <CardTitle className="text-xl">Provider settings</CardTitle>
               <CardDescription className="max-w-2xl">
@@ -911,7 +911,7 @@ export function SharedProviderManager({
           <div
             data-ccswitch-region="provider-summary-grid"
             data-ccswitch-layout="stack-to-split"
-            className="grid gap-3"
+            className="grid gap-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]"
           >
             <section
               data-ccswitch-region="provider-summary"
@@ -931,15 +931,10 @@ export function SharedProviderManager({
                     {state.providers.length} saved
                   </span>
                 ) : null}
-                <span className="rounded-full border border-border-default bg-background px-3 py-1 text-xs font-medium text-muted-foreground">
-                  {capabilities.requiresServiceRestart
-                    ? "Restart required after changes"
-                    : "Changes apply immediately"}
-                </span>
               </div>
               <div className="mt-3 space-y-1">
                 <p className="text-lg font-semibold text-foreground">
-                  Provider settings
+                  {currentPresentation.label} provider routing
                 </p>
                 <p className="text-sm text-muted-foreground">
                   {getProviderRegionDescription(
@@ -964,10 +959,10 @@ export function SharedProviderManager({
                 Active route
               </p>
               <p className="mt-3 text-base font-semibold text-foreground">
-                  {currentActiveProvider
-                    ? `Current provider: ${getSharedProviderDisplayName(
-                        currentActiveProvider,
-                      )}`
+                {currentActiveProvider
+                  ? `Current provider: ${getSharedProviderDisplayName(
+                      currentActiveProvider,
+                    )}`
                   : "No active provider selected"}
               </p>
               <p className="mt-2 text-sm text-muted-foreground">
@@ -975,6 +970,11 @@ export function SharedProviderManager({
                   ? currentActiveProvider.baseUrl || "Base URL unavailable"
                   : "Activate a saved provider to route requests for this app."}
               </p>
+              {currentActiveProvider?.providerId ? (
+                <p className="mt-3 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                  Provider ID: {currentActiveProvider.providerId}
+                </p>
+              ) : null}
             </section>
           </div>
 
@@ -1117,7 +1117,9 @@ export function SharedProviderManager({
         onOpenChange={(open) => {
           if (!open && !saveMutation.isPending) {
             resetEditorForApp(currentApp);
-            restoreFocus(editorRestoreFocusRef, () => getCurrentAppSwitchButton());
+            restoreFocus(editorRestoreFocusRef, () =>
+              getCurrentAppSwitchButton(),
+            );
           }
         }}
         onPresetChange={handlePresetChange}
@@ -1130,12 +1132,14 @@ export function SharedProviderManager({
         onOpenChange={(open) => {
           if (!open && !deleteMutation.isPending) {
             setPendingDelete(null);
-            restoreFocus(deleteRestoreFocusRef, () => getCurrentAppSwitchButton());
+            restoreFocus(deleteRestoreFocusRef, () =>
+              getCurrentAppSwitchButton(),
+            );
           }
         }}
       >
         <DialogContent
-          className="ccswitch-openwrt-provider-ui-dialog ccswitch-openwrt-dialog-shell max-w-sm"
+          className="ccswitch-openwrt-provider-ui-dialog ccswitch-openwrt-provider-ui-dialog--compact ccswitch-openwrt-dialog-shell max-w-sm overflow-hidden p-0"
           overlayClassName="ccswitch-openwrt-provider-ui-overlay"
           zIndex="alert"
           onOpenAutoFocus={(event) => {
@@ -1146,18 +1150,23 @@ export function SharedProviderManager({
             event.preventDefault();
           }}
         >
-          <DialogHeader className="space-y-3 border-b-0 bg-transparent pb-0">
+          <DialogHeader className="space-y-3 border-b border-border-default bg-gradient-to-br from-background via-background to-muted/30">
             <DialogTitle className="flex items-center gap-2 text-lg font-semibold">
               <AlertCircle className="h-5 w-5 text-destructive" />
               Delete provider
             </DialogTitle>
+          </DialogHeader>
+          <div
+            className="min-h-0 overflow-y-auto px-6 py-4"
+            data-ccswitch-dialog-scroll-region
+          >
             <DialogDescription className="text-sm leading-relaxed">
               {pendingDelete
                 ? `Delete ${getSharedProviderDisplayName(pendingDelete)} from the saved ${currentPresentation.label} providers on this router.`
                 : ""}
             </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="flex gap-2 border-t-0 bg-transparent pt-2 sm:justify-end">
+          </div>
+          <DialogFooter className="flex gap-2 border-t border-border-default bg-muted/20 sm:justify-end">
             <Button
               ref={deleteCancelButtonRef}
               type="button"
