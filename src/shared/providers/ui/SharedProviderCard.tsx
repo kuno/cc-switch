@@ -70,12 +70,12 @@ export function SharedProviderCard({
                       appPresentation.chipClassName,
                     )}
                   >
-                    Active
+                    Active provider
                   </span>
                 ) : null}
                 {provider.tokenConfigured ? (
                   <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
-                    Secret stored
+                    Stored secret
                   </span>
                 ) : null}
                 {presetLabel ? (
@@ -85,7 +85,7 @@ export function SharedProviderCard({
                 ) : null}
               </div>
               <p className="text-sm text-muted-foreground">
-                Saved provider details and actions for this route.
+                Saved provider settings and actions for this route.
               </p>
             </div>
             <span

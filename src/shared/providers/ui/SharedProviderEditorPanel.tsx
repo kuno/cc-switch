@@ -160,11 +160,13 @@ export function SharedProviderEditorPanel({
   const appPresentation = SHARED_PROVIDER_APP_PRESENTATION[appId];
   const appLabel = appPresentation.label;
   const title =
-    mode === "edit" ? `Edit ${appLabel} provider` : `Add ${appLabel} provider`;
+    mode === "edit"
+      ? `Update ${appLabel} provider`
+      : `Save ${appLabel} provider`;
   const description =
     mode === "edit"
-      ? `Update the saved ${appLabel} provider draft and close the panel when you are done.`
-      : `Create a saved ${appLabel} provider from a grouped preset or a custom endpoint draft.`;
+      ? `Update the saved ${appLabel} provider for this router.`
+      : `Save a new ${appLabel} provider from a preset or a custom draft.`;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -193,8 +195,8 @@ export function SharedProviderEditorPanel({
                 </span>
                 <span className="rounded-full border border-border-default bg-background/80 px-3 py-1 text-xs font-medium text-muted-foreground">
                   {mode === "edit"
-                    ? "Edit saved provider"
-                    : "Create saved provider"}
+                    ? "Update saved provider"
+                    : "Save new provider"}
                 </span>
               </div>
               <div className="space-y-1">
@@ -210,8 +212,8 @@ export function SharedProviderEditorPanel({
                 Save behavior
               </p>
               <p className="mt-2 text-sm text-muted-foreground">
-                Choosing a preset only fills this draft. OpenWrt keeps the
-                current provider unchanged until you press{" "}
+                Choosing a preset only fills this draft. The current provider
+                stays unchanged until you press{" "}
                 {mode === "edit" ? "Update provider" : "Save provider"}.
               </p>
             </div>
@@ -235,11 +237,11 @@ export function SharedProviderEditorPanel({
                         Preset browser
                       </p>
                       <h3 className="text-base font-semibold text-foreground">
-                        Start from an official route, a platform template, or a
-                        compatible gateway.
+                        Start from an official endpoint, a platform template, or
+                        a compatible gateway.
                       </h3>
                       <p className="text-sm text-muted-foreground">
-                        Presets keep setup fast but never save automatically.
+                        Presets speed up setup but never save automatically.
                       </p>
                     </div>
 

@@ -13,7 +13,7 @@ interface SharedProviderEmptyStateProps {
 }
 
 export function SharedProviderLoadingState({
-  appId,
+  appId: _appId,
 }: {
   appId: SharedProviderAppId;
 }) {
@@ -22,11 +22,10 @@ export function SharedProviderLoadingState({
       <div className="space-y-2">
         <div className="flex items-center gap-3">
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-          <p className="font-medium">Loading providers...</p>
+          <p className="font-medium">Loading provider settings...</p>
         </div>
         <p className="text-sm text-muted-foreground">
-          Fetching the latest {SHARED_PROVIDER_APP_PRESENTATION[appId].label}{" "}
-          provider surface for this router.
+          Fetching saved providers and provider state for this router.
         </p>
       </div>
       <div className="grid gap-3 lg:grid-cols-2">
@@ -57,9 +56,9 @@ export function SharedProviderErrorState({ onRetry }: { onRetry: () => void }) {
         <ServerCrash className="h-6 w-6 text-destructive" />
       </div>
       <div className="space-y-1">
-        <p className="font-medium">Unable to load providers.</p>
+        <p className="font-medium">Could not load provider settings.</p>
         <p className="max-w-md text-sm text-muted-foreground">
-          Retry after the adapter or OpenWrt RPC bridge is available again.
+          Retry after the OpenWrt service or RPC bridge is available again.
         </p>
       </div>
       <Button type="button" variant="outline" onClick={onRetry}>
@@ -96,15 +95,15 @@ export function SharedProviderEmptyState({
       <div className="space-y-1">
         <p className="font-medium">
           {isSearchEmpty
-            ? `No ${appLabel} providers matched "${searchQuery?.trim()}".`
-            : `No providers saved for ${appLabel} yet.`}
+            ? `No saved providers match "${searchQuery?.trim()}".`
+            : `No ${appLabel} providers saved.`}
         </p>
         <p className="max-w-lg text-sm text-muted-foreground">
           {isSearchEmpty
-            ? "Try a different keyword or clear the filter to see every saved provider again."
+            ? "Clear the search to review every saved provider again."
             : canAdd
-              ? "Choose a preset category or enter a custom endpoint to save your first provider."
-              : "This adapter does not allow adding new providers for this app."}
+              ? "Save a provider to start routing this app through the router."
+              : "This router can show saved providers here, but adding a provider is unavailable."}
         </p>
       </div>
       <div className="flex flex-wrap justify-center gap-2">
@@ -115,7 +114,7 @@ export function SharedProviderEmptyState({
         ) : null}
         {!isSearchEmpty && canAdd && onAddProvider ? (
           <Button type="button" onClick={onAddProvider}>
-            Add your first provider
+            Add provider
           </Button>
         ) : null}
       </div>

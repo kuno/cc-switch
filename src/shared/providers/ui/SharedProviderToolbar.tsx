@@ -62,8 +62,7 @@ export function SharedProviderToolbar({
           </div>
           <div className="space-y-1">
             <p className="text-sm font-medium text-foreground">
-              Search saved providers, refresh the current list, or start a new
-              draft.
+              Search saved providers, refresh this list, or start a new draft.
             </p>
             <p className="text-sm text-muted-foreground">
               Presets only shape the editor draft until you save the provider.
@@ -121,7 +120,7 @@ export function SharedProviderToolbar({
         </div>
         <p className="text-sm text-muted-foreground">
           {searchSummary ??
-            "Saved providers stay in this list until you edit, activate, or remove them."}
+            "Saved providers stay in this list until you update, activate, or delete them."}
         </p>
       </div>
     </div>

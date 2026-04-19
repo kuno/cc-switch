@@ -304,7 +304,7 @@ describe("SharedRuntimeSurface", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByRole("heading", { name: "Runtime Surface" }),
+        screen.getByRole("heading", { name: "Runtime status" }),
       ).toBeInTheDocument(),
     );
 
@@ -314,7 +314,7 @@ describe("SharedRuntimeSurface", () => {
     expect(
       screen.getByText("Runtime detail: connection refused on 127.0.0.1:15721"),
     ).toBeInTheDocument();
-    expect(screen.getAllByText("Read only")).toHaveLength(3);
+    expect(screen.getAllByText("Read-only")).toHaveLength(3);
     expect(screen.queryByText("Failover controls")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Refresh status" }));
@@ -322,6 +322,54 @@ describe("SharedRuntimeSurface", () => {
     await waitFor(() =>
       expect(adapter.getRuntimeSurface).toHaveBeenCalledTimes(2),
     );
+  });
+
+  it("shows normalized empty and hard-error states with retry-oriented recovery copy", async () => {
+    const emptyAdapter = {
+      getRuntimeSurface: vi.fn().mockResolvedValue(null),
+    } satisfies RuntimeSurfacePlatformAdapter;
+
+    const { unmount } = renderSurface(emptyAdapter);
+
+    expect(
+      await screen.findByText("No runtime status available."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Refresh to load the latest service status and provider health for this router.",
+      ),
+    ).toBeInTheDocument();
+
+    unmount();
+
+    const errorAdapter = {
+      getRuntimeSurface: vi
+        .fn()
+        .mockRejectedValue(new Error("rpc bridge offline")),
+    } satisfies RuntimeSurfacePlatformAdapter;
+
+    renderSurface(errorAdapter);
+
+    expect(
+      await screen.findByText("Could not load runtime status."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Retry after the OpenWrt service or RPC bridge is available again.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("rpc bridge offline")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(
+      screen
+        .getByText("Could not load runtime status.")
+        .closest(".ccswitch-openwrt-state-shell--warning"),
+    ).not.toBeNull();
+    expect(
+      screen.getByText("rpc bridge offline").closest(
+        ".ccswitch-openwrt-inline-note--warning",
+      ),
+    ).not.toBeNull();
   });
 
   it("exposes stable layout hooks for the embedded runtime surface", async () => {
@@ -333,7 +381,7 @@ describe("SharedRuntimeSurface", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByRole("heading", { name: "Runtime Surface" }),
+        screen.getByRole("heading", { name: "Runtime status" }),
       ).toBeInTheDocument(),
     );
 
@@ -432,6 +480,35 @@ describe("SharedRuntimeSurface", () => {
     await waitFor(() =>
       expect(codexCard.getByRole("button", { name: "Add to queue" })).toBeEnabled(),
     );
+  });
+
+  it("keeps stale runtime data visible when a refresh fails", async () => {
+    const adapter = {
+      getRuntimeSurface: vi
+        .fn()
+        .mockResolvedValueOnce(createRuntimeSurfaceState())
+        .mockRejectedValueOnce(new Error("rpc timeout")),
+    } satisfies RuntimeSurfacePlatformAdapter;
+
+    renderSurface(adapter);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Runtime status" }),
+      ).toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh status" }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("Refresh failed. Showing the last available status."),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.getByText("rpc timeout")).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "Claude runtime card" }),
+    ).toBeInTheDocument();
   });
 
   it("refetches the runtime surface after a successful control mutation", async () => {
@@ -585,11 +662,49 @@ describe("SharedRuntimeSurface", () => {
 
     await waitFor(() =>
       expect(
-        claudeCard.getByText("Last control action failed"),
+        claudeCard.getByText("Control update failed."),
       ).toBeInTheDocument(),
     );
-    expect(claudeCard.getByText("router write rejected")).toBeInTheDocument();
+    expect(
+      claudeCard.getByText(
+        "router write rejected Refresh the runtime status and try again.",
+      ),
+    ).toBeInTheDocument();
     expect(claudeCard.getByText("Claude Backup")).toBeInTheDocument();
     expect(adapter.getRuntimeSurface).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps stale runtime data visible and uses warning note styling when a refresh fails", async () => {
+    const adapter = {
+      getRuntimeSurface: vi
+        .fn()
+        .mockResolvedValueOnce(createRuntimeSurfaceState())
+        .mockRejectedValueOnce(new Error("refresh bridge offline")),
+    } satisfies RuntimeSurfacePlatformAdapter;
+
+    renderSurface(adapter);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Runtime status" }),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole("region", { name: "Claude runtime card" }),
+    ).toHaveTextContent("Claude Router Primary");
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh status" }));
+
+    const refreshNoteTitle = await screen.findByText(
+      "Refresh failed. Showing the last available status.",
+    );
+    expect(refreshNoteTitle).toBeInTheDocument();
+    expect(screen.getByText("refresh bridge offline")).toBeInTheDocument();
+    expect(
+      refreshNoteTitle.closest(".ccswitch-openwrt-inline-note--warning"),
+    ).not.toBeNull();
+    expect(screen.getByRole("region", { name: "Claude runtime card" })).toHaveTextContent(
+      "Claude Router Primary",
+    );
   });
 });

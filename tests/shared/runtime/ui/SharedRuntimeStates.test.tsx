@@ -10,10 +10,10 @@ describe("SharedRuntimeStates", () => {
   it("renders the loading skeleton copy", () => {
     render(<SharedRuntimeLoadingState />);
 
-    expect(screen.getByText("Loading runtime surface...")).toBeInTheDocument();
+    expect(screen.getByText("Loading runtime status...")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Fetching service status, app health, and failover queue previews.",
+        "Fetching service status, provider health, and failover state.",
       ),
     ).toBeInTheDocument();
   });
@@ -29,7 +29,7 @@ describe("SharedRuntimeStates", () => {
     );
 
     expect(
-      screen.getByText("Unable to load runtime status."),
+      screen.getByText("Could not load runtime status."),
     ).toBeInTheDocument();
     expect(
       screen.getByText(
@@ -42,15 +42,15 @@ describe("SharedRuntimeStates", () => {
   it("renders the empty state copy when no runtime snapshot is available", () => {
     render(
       <SharedRuntimeEmptyState
-        title="No app runtime data yet."
-        description="Once the backend reports a runtime snapshot, the read-only cards will appear here."
+        title="No runtime status available."
+        description="Refresh to load the latest service status and provider health for this router."
       />,
     );
 
-    expect(screen.getByText("No app runtime data yet.")).toBeInTheDocument();
+    expect(screen.getByText("No runtime status available.")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Once the backend reports a runtime snapshot, the read-only cards will appear here.",
+        "Refresh to load the latest service status and provider health for this router.",
       ),
     ).toBeInTheDocument();
   });
