@@ -332,16 +332,25 @@ pub const TIER_GEMINI_FLASH_LITE: &str = "gemini_flash_lite";
 const KNOWN_TIERS: &[&str] = &[
     TIER_FIVE_HOUR,
     TIER_SEVEN_DAY,
+    "seven_day_omelette",
     TIER_SEVEN_DAY_OPUS,
     TIER_SEVEN_DAY_SONNET,
 ];
+
+fn remap_tier_name(raw: &str) -> &str {
+    if raw == "seven_day_omelette" {
+        "seven_day_claude_design"
+    } else {
+        raw
+    }
+}
 
 /// 查询 Claude 官方订阅额度
 ///
 /// 瞬时传输失败（网络/超时/读体中断）返回 `Err`（前端 reject → retry + 保留上次
 /// 成功值）；确定性失败（鉴权/非 2xx/响应体非法 JSON）返回 `Ok(success:false)`。
 /// codex/gemini 两个查询函数遵守同一约定。
-async fn query_claude_quota(access_token: &str) -> Result<SubscriptionQuota, String> {
+pub(crate) async fn query_claude_quota(access_token: &str) -> Result<SubscriptionQuota, String> {
     let client = crate::proxy::http_client::get();
 
     let resp = client
@@ -401,7 +410,7 @@ async fn query_claude_quota(access_token: &str) -> Result<SubscriptionQuota, Str
             if let Ok(w) = serde_json::from_value::<ApiUsageWindow>(window.clone()) {
                 if let Some(util) = w.utilization {
                     tiers.push(QuotaTier {
-                        name: tier_name.to_string(),
+                        name: remap_tier_name(tier_name).to_string(),
                         utilization: util,
                         resets_at: w.resets_at,
                         used_value_usd: None,
@@ -421,7 +430,7 @@ async fn query_claude_quota(access_token: &str) -> Result<SubscriptionQuota, Str
             if let Ok(w) = serde_json::from_value::<ApiUsageWindow>(value.clone()) {
                 if let Some(util) = w.utilization {
                     tiers.push(QuotaTier {
-                        name: key.clone(),
+                        name: remap_tier_name(key).to_string(),
                         utilization: util,
                         resets_at: w.resets_at,
                         used_value_usd: None,
@@ -1375,5 +1384,19 @@ mod tests {
         // 其他窗口按小时/天回退命名
         assert_eq!(window_seconds_to_tier_name(3600), "1_hour");
         assert_eq!(window_seconds_to_tier_name(86400), "1_day");
+    }
+
+    #[test]
+    fn known_tiers_include_claude_design_upstream_name() {
+        assert!(KNOWN_TIERS.contains(&"seven_day_omelette"));
+    }
+
+    #[test]
+    fn remap_tier_name_maps_claude_design_alias() {
+        assert_eq!(
+            remap_tier_name("seven_day_omelette"),
+            "seven_day_claude_design"
+        );
+        assert_eq!(remap_tier_name("seven_day"), "seven_day");
     }
 }
