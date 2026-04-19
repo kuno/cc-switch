@@ -38,7 +38,7 @@ export function SharedProviderToolbar({
     : null;
 
   return (
-    <div className="space-y-4 rounded-2xl border border-border-default/80 bg-gradient-to-br from-background via-background to-muted/30 p-4 shadow-sm">
+    <div className="ccswitch-openwrt-group ccswitch-openwrt-toolbar space-y-4 rounded-2xl border border-border-default/80 bg-gradient-to-br from-background via-background to-muted/30 p-4 shadow-sm">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -89,7 +89,7 @@ export function SharedProviderToolbar({
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             aria-label="Search providers"
-            className="h-11 rounded-xl border-border-default/80 bg-background/90 pl-9 pr-10"
+            className="ccswitch-openwrt-field h-11 rounded-xl border-border-default/80 bg-background/90 pl-9 pr-10"
             value={searchQuery}
             onChange={(event) => onSearchQueryChange(event.target.value)}
             placeholder={`Search ${appLabel} providers`}

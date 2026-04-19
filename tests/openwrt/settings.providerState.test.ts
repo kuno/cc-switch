@@ -12,6 +12,7 @@ type UiState = {
   bundleStatus: "idle" | "loading" | "ready" | "fallback" | "error";
   bundleError: string | null;
   fallbackReason: string | null;
+  restartPending: boolean;
   mountHandle: (() => void) | null;
   mountRequestId: number;
   runtimeMountHandle: (() => void) | null;
@@ -125,6 +126,18 @@ const SHARED_PROVIDER_UI_FALLBACK_REASON_GATE_DISABLED = "gate-disabled";
 const SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_FAILURE = "bundle-failure";
 const SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_REGRESSION =
   "bundle-regression";
+const FORBIDDEN_DESKTOP_SHELL_PHRASES = [
+  "title bar",
+  "window chrome",
+  "system tray",
+  "tray icon",
+  "desktop shell",
+  "menu bar",
+  "taskbar",
+  "dock",
+  "window controls",
+  "sidebar navigation",
+] as const;
 
 function createElement(
   tag: string,
@@ -481,6 +494,53 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(statusNodes.appValue.textContent).toBe("Gemini");
     expect(shellNodes.messageText.textContent).toBe("Restart required.");
     expect(shellNodes.messageRoot.style.display).toBe("");
+  });
+
+  it("builds one LuCI host shell with shared runtime and provider mount sections plus a single restart owner", () => {
+    const { settings } = loadSettingsView("claude");
+    const uiState = settings.createUiState(true, "claude");
+
+    uiState.bundleStatus = "ready";
+    uiState.restartPending = true;
+
+    const statusNodes = settings.createStatusPanel(uiState);
+    const shellNodes = settings.createProviderShell(uiState, statusNodes);
+    const shellText = shellNodes.root.textContent ?? "";
+    const combinedText = `${statusNodes.root.textContent ?? ""} ${shellText}`.toLowerCase();
+    const shellChildren = Array.from(shellNodes.root.children);
+    const restartButtons = Array.from(
+      shellNodes.root.querySelectorAll("button"),
+    ).map((button) => button.textContent?.trim());
+
+    expect(statusNodes.summaryValue.textContent).toBe(
+      "Provider changes are saved in the shared editor. Use the LuCI restart control to apply them on the running service.",
+    );
+    expect(shellNodes.root.className).toBe("ccswitch-host-shell-stack");
+    expect(shellChildren).toHaveLength(2);
+    expect(shellChildren[0]).toBe(shellNodes.sharedChromeRoot);
+    expect(shellChildren[1].className).toBe("ccswitch-host-shell-grid");
+    expect(shellText).toContain("Runtime Status");
+    expect(shellText).toContain("Provider Manager");
+    expect(shellText).toContain(
+      "Service settings, outbound proxy controls, and restart actions remain in the LuCI shell.",
+    );
+    expect(shellText).toContain(
+      "Service settings, outbound proxy controls, status, and restart actions stay above in the LuCI host shell.",
+    );
+    expect(shellNodes.sharedChromeRoot?.querySelectorAll(".ccswitch-host-actions")).toHaveLength(
+      1,
+    );
+    expect(shellNodes.sharedChromeRoot?.contains(shellNodes.restartButton)).toBe(true);
+    expect(restartButtons).toEqual(["Restart Service"]);
+    expect(shellNodes.runtimeMountRoot.id).toBe("ccswitch-shared-runtime-surface-root");
+    expect(shellNodes.mountRoot.id).toBe("ccswitch-shared-provider-ui-root");
+    expect(shellChildren[1].contains(shellNodes.runtimeMountRoot)).toBe(true);
+    expect(shellChildren[1].contains(shellNodes.mountRoot)).toBe(true);
+    expect(shellNodes.root.querySelector("main, nav, aside, [role='navigation']")).toBeNull();
+
+    for (const phrase of FORBIDDEN_DESKTOP_SHELL_PHRASES) {
+      expect(combinedText).not.toContain(phrase);
+    }
   });
 
   it("mounts the runtime surface above the provider manager through a separate bundle contract", async () => {
