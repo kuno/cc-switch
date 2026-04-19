@@ -7,8 +7,11 @@ import { emptySharedProviderView } from "@/shared/providers/domain";
 import type {
   SharedRuntimeAppId,
   SharedRuntimeAppStatus,
-  SharedRuntimeStatusView,
 } from "./domain";
+import {
+  supportsRuntimeFailoverControls,
+  type RuntimeSurfacePlatformAdapter,
+} from "./types";
 import {
   SharedRuntimeAppCard,
   SharedRuntimeEmptyState,
@@ -21,10 +24,6 @@ import {
 const RUNTIME_QUERY_KEY = ["shared-runtime-surface"] as const;
 const RUNTIME_APP_ORDER = ["claude", "codex", "gemini"] as const satisfies
   readonly SharedRuntimeAppId[];
-
-export interface RuntimeSurfacePlatformAdapter {
-  getRuntimeSurface(): Promise<SharedRuntimeStatusView>;
-}
 
 export interface SharedRuntimeSurfaceProps {
   adapter: RuntimeSurfacePlatformAdapter;
@@ -109,10 +108,20 @@ export function SharedRuntimeSurface({
   }
 
   const orderedApps = normalizeAppStatuses(runtimeSurface.apps);
+  const failoverControls = supportsRuntimeFailoverControls(adapter)
+    ? adapter
+    : undefined;
   const refreshError =
     runtimeQuery.isError && runtimeQuery.data
       ? getErrorMessage(runtimeQuery.error)
       : null;
+
+  async function refreshRuntimeSurface() {
+    const result = await runtimeQuery.refetch();
+    if (result.error) {
+      throw result.error;
+    }
+  }
 
   return (
     <section className={cn("space-y-6", className)}>
@@ -122,8 +131,9 @@ export function SharedRuntimeSurface({
             Runtime Surface
           </h2>
           <p className="max-w-2xl text-sm text-muted-foreground">
-            Shared read-only runtime composition for service status, app health,
-            and failover queue previews.
+            {failoverControls
+              ? "Shared runtime composition for service status, app health, and bounded failover controls."
+              : "Shared read-only runtime composition for service status, app health, and failover queue previews."}
           </p>
         </div>
 
@@ -161,7 +171,12 @@ export function SharedRuntimeSurface({
 
         <div className="grid gap-4 xl:grid-cols-3">
           {orderedApps.map((status) => (
-            <SharedRuntimeAppCard key={status.app} status={status} />
+            <SharedRuntimeAppCard
+              key={status.app}
+              status={status}
+              failoverControls={failoverControls}
+              onRefresh={failoverControls ? refreshRuntimeSurface : undefined}
+            />
           ))}
         </div>
       </div>

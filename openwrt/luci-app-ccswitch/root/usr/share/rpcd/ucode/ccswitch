@@ -86,7 +86,8 @@ function runProvidersCommand(command) {
 
 	return {
 		ok: true,
-		providers_json: result.output
+		providers_json: result.output,
+		result_json: result.output
 	};
 }
 
@@ -110,13 +111,24 @@ function runStatusCommand(command) {
 
 	return {
 		ok: true,
-		status_json: result.output
+		status_json: result.output,
+		result_json: result.output
 	};
 }
 
 function requireProviderId(providerId) {
 	if (!providerId)
 		return { ok: false, error: 'provider_id is required' };
+
+	return null;
+}
+
+function normalizeEnabled(enabled) {
+	if (enabled === true || enabled === 1 || enabled === '1' || enabled === 'true')
+		return true;
+
+	if (enabled === false || enabled === 0 || enabled === '0' || enabled === 'false')
+		return false;
 
 	return null;
 }
@@ -165,6 +177,17 @@ function getAppRuntimeStatus(app) {
 
 	return runStatusCommand(
 		daemonCommand(`openwrt ${shellquote(normalizedApp)} get-runtime-status`)
+	);
+}
+
+function getAvailableFailoverProviders(app) {
+	let normalizedApp = normalizeApp(app);
+
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
+
+	return runProvidersCommand(
+		daemonCommand(`openwrt ${shellquote(normalizedApp)} get-available-failover-providers`)
 	);
 }
 
@@ -231,6 +254,49 @@ function activateProvider(app, providerId) {
 	);
 }
 
+function addToFailoverQueue(app, providerId) {
+	let normalizedApp = normalizeApp(app);
+	let missing = requireProviderId(providerId);
+	if (missing)
+		return missing;
+
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
+
+	return runStatusCommand(
+		daemonCommand(`openwrt ${shellquote(normalizedApp)} add-to-failover-queue ${shellquote(providerId)}`)
+	);
+}
+
+function removeFromFailoverQueue(app, providerId) {
+	let normalizedApp = normalizeApp(app);
+	let missing = requireProviderId(providerId);
+	if (missing)
+		return missing;
+
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
+
+	return runStatusCommand(
+		daemonCommand(`openwrt ${shellquote(normalizedApp)} remove-from-failover-queue ${shellquote(providerId)}`)
+	);
+}
+
+function setAutoFailoverEnabled(app, enabled) {
+	let normalizedApp = normalizeApp(app);
+	let normalizedEnabled = normalizeEnabled(enabled);
+
+	if (normalizedEnabled == null)
+		return { ok: false, error: 'enabled must be a boolean' };
+
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
+
+	return runStatusCommand(
+		daemonCommand(`openwrt ${shellquote(normalizedApp)} set-auto-failover-enabled ${shellquote(normalizedEnabled ? 'true' : 'false')}`)
+	);
+}
+
 function restartService() {
 	let result = runReadCommand(`${shellquote(INIT_SCRIPT)} restart`);
 
@@ -291,6 +357,26 @@ return {
 			}
 		},
 
+		get_available_failover_providers: {
+			args: {
+				app: 'claude'
+			},
+
+			call: function(request) {
+				return getAvailableFailoverProviders(request.args.app);
+			}
+		},
+
+		get_available_providers_for_failover: {
+			args: {
+				app: 'claude'
+			},
+
+			call: function(request) {
+				return getAvailableFailoverProviders(request.args.app);
+			}
+		},
+
 		upsert_provider: {
 			args: {
 				app: 'claude',
@@ -333,6 +419,39 @@ return {
 
 			call: function(request) {
 				return activateProvider(request.args.app, request.args.provider_id);
+			}
+		},
+
+		add_to_failover_queue: {
+			args: {
+				app: 'claude',
+				provider_id: 'provider-id'
+			},
+
+			call: function(request) {
+				return addToFailoverQueue(request.args.app, request.args.provider_id);
+			}
+		},
+
+		remove_from_failover_queue: {
+			args: {
+				app: 'claude',
+				provider_id: 'provider-id'
+			},
+
+			call: function(request) {
+				return removeFromFailoverQueue(request.args.app, request.args.provider_id);
+			}
+		},
+
+		set_auto_failover_enabled: {
+			args: {
+				app: 'claude',
+				enabled: true
+			},
+
+			call: function(request) {
+				return setAutoFailoverEnabled(request.args.app, request.args.enabled);
 			}
 		},
 
