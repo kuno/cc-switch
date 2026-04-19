@@ -41,6 +41,7 @@ export function SharedProviderCard({
 
   return (
     <article
+      aria-busy={isBusy || isActivatePending}
       className={cn(
         "ccswitch-openwrt-provider-card group relative overflow-hidden rounded-[22px] border bg-card p-4 shadow-sm transition-all sm:p-5",
         provider.active
@@ -148,6 +149,7 @@ export function SharedProviderCard({
               onClick={onEdit}
               disabled={isBusy}
               aria-label={`Edit ${providerName}`}
+              aria-busy={isBusy}
             >
               <Pencil className="h-4 w-4" />
               Edit
@@ -160,6 +162,7 @@ export function SharedProviderCard({
               onClick={onActivate}
               disabled={isBusy}
               aria-label={`Activate ${providerName}`}
+              aria-busy={isActivatePending}
             >
               {isActivatePending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -177,6 +180,7 @@ export function SharedProviderCard({
               onClick={onDelete}
               disabled={isBusy}
               aria-label={`Delete ${providerName}`}
+              aria-busy={isBusy}
             >
               <Trash2 className="h-4 w-4" />
               Delete
