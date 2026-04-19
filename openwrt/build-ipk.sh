@@ -14,6 +14,7 @@ LUCI_MAKEFILE="$SCRIPT_DIR/luci-app-ccswitch/Makefile"
 DAEMON_SRC="$SCRIPT_DIR/proxy-daemon/files"
 LUCI_SRC="$SCRIPT_DIR/luci-app-ccswitch"
 OPENWRT_PROVIDER_UI_ASSET="$LUCI_SRC/htdocs/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js"
+OPENWRT_PROVIDER_UI_STYLESHEET="$LUCI_SRC/htdocs/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.css"
 PREPARE_PROVIDER_UI_BUNDLE="$SCRIPT_DIR/prepare-provider-ui-bundle.sh"
 
 read_make_var() {
@@ -34,6 +35,7 @@ ARCH_ALIAS=""
 RUST_TARGET=""
 OPKG_ARCH=""
 BINARY=""
+BINARY_EXPLICIT=0
 
 usage() {
 	cat <<EOF
@@ -102,6 +104,7 @@ parse_args() {
 				shift
 				[ "$#" -gt 0 ] || die "--binary requires a value"
 				BINARY="$1"
+				BINARY_EXPLICIT=1
 				;;
 			--dist-dir)
 				shift
@@ -198,6 +201,21 @@ Build it first with:
 	[ -f "$LUCI_SRC/root/usr/share/luci/menu.d/luci-app-ccswitch.json" ] || die "missing LuCI menu file"
 	[ -f "$LUCI_SRC/htdocs/luci-static/resources/view/ccswitch/settings.js" ] || die "missing LuCI settings view"
 	[ -f "$OPENWRT_PROVIDER_UI_ASSET" ] || die "missing OpenWrt provider UI bundle"
+	[ -f "$OPENWRT_PROVIDER_UI_STYLESHEET" ] || die "missing OpenWrt provider UI stylesheet"
+}
+
+build_daemon_binary() {
+	if [ "$BINARY_EXPLICIT" -eq 1 ]; then
+		return
+	fi
+
+	require_command cargo
+
+	echo "Building fresh cc-switch daemon binary for $RUST_TARGET"
+	(
+		cd "$PROJECT_DIR/proxy-daemon"
+		cargo build --release --target "$RUST_TARGET"
+	)
 }
 
 assert_static_binary() {
@@ -474,6 +492,9 @@ build_luci_package() {
 	install -m 0644 \
 		"$OPENWRT_PROVIDER_UI_ASSET" \
 		"$data_dir/www/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js"
+	install -m 0644 \
+		"$OPENWRT_PROVIDER_UI_STYLESHEET" \
+		"$data_dir/www/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.css"
 
 	rm -f "$output"
 	build_ipk "$control_dir" "$data_dir" "$output"
@@ -491,6 +512,7 @@ parse_args "$@"
 resolve_target
 validate_package_metadata
 ensure_openwrt_provider_ui_asset
+build_daemon_binary
 assert_inputs
 assert_static_binary
 setup_tar_flags
