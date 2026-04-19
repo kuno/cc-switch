@@ -852,10 +852,13 @@ return view.extend({
 			bundleStatus: 'idle',
 			bundleError: null,
 			fallbackReason: null,
+			restartPending: false,
+			restartInFlight: false,
 			mountHandle: null,
 			mountRequestId: 0,
 			runtimeMountHandle: null,
-			runtimeMountRequestId: 0
+			runtimeMountRequestId: 0,
+			shellListeners: []
 		};
 	},
 
@@ -881,6 +884,18 @@ return view.extend({
 		uiState.bundleStatus = status;
 		uiState.bundleError = error || null;
 		uiState.fallbackReason = fallbackReason || null;
+	},
+
+	notifyShellListeners: function (uiState) {
+		var listeners = uiState.shellListeners || [];
+
+		listeners.slice().forEach(function (listener) {
+			try {
+				listener();
+			} catch (e) {
+				/* no-op */
+			}
+		});
 	},
 
 	renderMessageBanner: function (message) {
@@ -1012,6 +1027,10 @@ return view.extend({
 			summaryText = _('The shared provider bundle loaded without provider-manager support, so the guarded LuCI fallback provider manager is active below.');
 		else if (uiState.bundleStatus === 'fallback')
 			summaryText = _('The guarded LuCI fallback provider manager is active below.');
+		else if (uiState.bundleStatus === 'ready' && uiState.restartInFlight)
+			summaryText = _('The LuCI shell is restarting the service now to apply provider changes.');
+		else if (uiState.bundleStatus === 'ready' && uiState.restartPending)
+			summaryText = _('Provider changes are saved in the shared editor. Use the LuCI restart control to apply them on the running service.');
 		else if (uiState.bundleStatus === 'ready')
 			summaryText = uiState.isRunning
 				? _('Provider changes may require a service restart while the router proxy is running.')
@@ -1942,6 +1961,7 @@ return view.extend({
 				uiState.selectedApp = appId;
 				self.saveSelectedApp(appId);
 				self.updateShellChrome(uiState, statusNodes, shellNodes);
+				self.notifyShellListeners(uiState);
 
 				return uiState.selectedApp;
 			},
@@ -1950,9 +1970,43 @@ return view.extend({
 					isRunning: uiState.isRunning
 				};
 			},
+			getRestartState: function () {
+				return {
+					pending: !!uiState.restartPending,
+					inFlight: !!uiState.restartInFlight
+				};
+			},
+			setRestartState: function (restartState) {
+				if (!restartState)
+					return;
+
+				if (typeof restartState.pending === 'boolean')
+					uiState.restartPending = restartState.pending;
+				if (typeof restartState.inFlight === 'boolean')
+					uiState.restartInFlight = restartState.inFlight;
+
+				self.updateShellChrome(uiState, statusNodes, shellNodes);
+				self.notifyShellListeners(uiState);
+			},
+			subscribe: function (listener) {
+				if (typeof listener !== 'function')
+					return function () {};
+
+				uiState.shellListeners.push(listener);
+				return function () {
+					var nextListeners = [];
+
+					uiState.shellListeners.forEach(function (candidate) {
+						if (candidate !== listener)
+							nextListeners.push(candidate);
+					});
+					uiState.shellListeners = nextListeners;
+				};
+			},
 			refreshServiceStatus: async function () {
 				uiState.isRunning = await self.refreshServiceState();
 				self.updateShellChrome(uiState, statusNodes, shellNodes);
+				self.notifyShellListeners(uiState);
 
 				return {
 					isRunning: uiState.isRunning
@@ -1961,16 +2015,18 @@ return view.extend({
 			showMessage: function (kind, text) {
 				self.setMessage(uiState, kind, text);
 				self.updateShellChrome(uiState, statusNodes, shellNodes);
+				self.notifyShellListeners(uiState);
 			},
-				clearMessage: function () {
-					self.clearMessage(uiState);
-					self.updateShellChrome(uiState, statusNodes, shellNodes);
-				},
-				restartService: async function () {
-					return self.restartServiceFromShellBridge(uiState, statusNodes, shellNodes);
-				}
-			};
-		},
+			clearMessage: function () {
+				self.clearMessage(uiState);
+				self.updateShellChrome(uiState, statusNodes, shellNodes);
+				self.notifyShellListeners(uiState);
+			},
+			restartService: async function () {
+				return self.restartServiceFromShellBridge(uiState, statusNodes, shellNodes);
+			}
+		};
+	},
 
 	createSharedRuntimeMountOptions: function (shellNodes) {
 		return {
@@ -2141,12 +2197,14 @@ return view.extend({
 			return this._sharedProviderBundlePromise;
 		},
 
-		restartServiceFromShellBridge: async function (uiState, statusNodes, shellNodes) {
+	restartServiceFromShellBridge: async function (uiState, statusNodes, shellNodes) {
 			var result;
 
 			uiState.busy = true;
+			uiState.restartInFlight = true;
 			this.setMessage(uiState, 'info', _('Restarting service...'));
 			this.updateShellChrome(uiState, statusNodes, shellNodes);
+			this.notifyShellListeners(uiState);
 
 		try {
 			result = await L.resolveDefault(callRestartService(), { ok: false });
@@ -2154,18 +2212,21 @@ return view.extend({
 				throw new Error(this.rpcFailureMessage(result) || _('Failed to restart service.'));
 
 			uiState.isRunning = await this.refreshServiceState();
+			uiState.restartPending = false;
 			this.setMessage(uiState, 'success', _('Service restarted.'));
 		} catch (err) {
 			this.setMessage(uiState, 'error', this.rpcFailureMessage(err) || _('Failed to restart service.'));
 		} finally {
 			uiState.busy = false;
+			uiState.restartInFlight = false;
 			this.updateShellChrome(uiState, statusNodes, shellNodes);
+			this.notifyShellListeners(uiState);
 		}
 
 			return {
 				isRunning: uiState.isRunning
 			};
-		},
+	},
 
 	bundleProvidesProviderManager: function (api) {
 		return !(api && api.capabilities && api.capabilities.providerManager === false);
