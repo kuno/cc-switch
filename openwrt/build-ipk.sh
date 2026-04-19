@@ -13,6 +13,9 @@ DAEMON_MAKEFILE="$SCRIPT_DIR/proxy-daemon/Makefile"
 LUCI_MAKEFILE="$SCRIPT_DIR/luci-app-ccswitch/Makefile"
 DAEMON_SRC="$SCRIPT_DIR/proxy-daemon/files"
 LUCI_SRC="$SCRIPT_DIR/luci-app-ccswitch"
+STAGED_OPENWRT_PROVIDER_UI_DIR="$SCRIPT_DIR/provider-ui-dist"
+STAGED_OPENWRT_PROVIDER_UI_BUNDLE="$STAGED_OPENWRT_PROVIDER_UI_DIR/ccswitch-provider-ui.js"
+STAGED_OPENWRT_PROVIDER_UI_STYLESHEET="$STAGED_OPENWRT_PROVIDER_UI_DIR/ccswitch-provider-ui.css"
 OPENWRT_PROVIDER_UI_ASSET="$LUCI_SRC/htdocs/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js"
 OPENWRT_PROVIDER_UI_STYLESHEET="$LUCI_SRC/htdocs/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.css"
 PREPARE_PROVIDER_UI_BUNDLE="$SCRIPT_DIR/prepare-provider-ui-bundle.sh"
@@ -58,6 +61,10 @@ Options:
 For targets not listed above, pass both --rust-target and --opkg-arch.
 The standalone builder expects a statically linked musl binary so runtime
 dependencies remain predictable outside the OpenWrt SDK.
+
+Environment:
+  CCSWITCH_IPK_SKIP_UI_REBUILD=1      Skip the automatic OpenWrt provider UI rebuild
+  CCSWITCH_OPENWRT_PROVIDER_UI_BUNDLE Use an explicit prebuilt provider UI bundle
 EOF
 }
 
@@ -81,10 +88,39 @@ git_describe_version() {
 	git -C "$PROJECT_DIR" describe --tags --always --dirty 2>/dev/null || true
 }
 
+rebuild_openwrt_provider_ui_bundle() {
+	if ! command -v pnpm >/dev/null 2>&1; then
+		die "pnpm is required to rebuild the OpenWrt provider UI bundle. Run \`pnpm install --frozen-lockfile\` first, then rerun $0."
+	fi
+
+	echo "Rebuilding OpenWrt provider UI bundle"
+	if ! (
+		cd "$PROJECT_DIR"
+		pnpm build:openwrt-provider-ui
+	); then
+		die "failed to rebuild the OpenWrt provider UI bundle. Run \`pnpm install --frozen-lockfile\` first, then rerun $0."
+	fi
+
+	[ -f "$STAGED_OPENWRT_PROVIDER_UI_BUNDLE" ] || die "pnpm reported success but did not produce: $STAGED_OPENWRT_PROVIDER_UI_BUNDLE"
+	[ -f "$STAGED_OPENWRT_PROVIDER_UI_STYLESHEET" ] || die "pnpm reported success but did not produce: $STAGED_OPENWRT_PROVIDER_UI_STYLESHEET"
+}
+
 ensure_openwrt_provider_ui_asset() {
 	[ -x "$PREPARE_PROVIDER_UI_BUNDLE" ] || die "missing provider UI bundle helper: $PREPARE_PROVIDER_UI_BUNDLE"
+
+	if [ -n "${CCSWITCH_OPENWRT_PROVIDER_UI_BUNDLE:-}" ]; then
+		echo "Using explicit OpenWrt provider UI bundle from CCSWITCH_OPENWRT_PROVIDER_UI_BUNDLE"
+	elif [ "${CCSWITCH_IPK_SKIP_UI_REBUILD:-}" = "1" ]; then
+		echo "Skipping OpenWrt provider UI rebuild because CCSWITCH_IPK_SKIP_UI_REBUILD=1"
+		[ -f "$STAGED_OPENWRT_PROVIDER_UI_BUNDLE" ] || die "CCSWITCH_IPK_SKIP_UI_REBUILD=1 was set but the staged provider UI bundle is missing: $STAGED_OPENWRT_PROVIDER_UI_BUNDLE"
+		[ -f "$STAGED_OPENWRT_PROVIDER_UI_STYLESHEET" ] || die "CCSWITCH_IPK_SKIP_UI_REBUILD=1 was set but the staged provider UI stylesheet is missing: $STAGED_OPENWRT_PROVIDER_UI_STYLESHEET"
+	else
+		rebuild_openwrt_provider_ui_bundle
+	fi
+
 	"$PREPARE_PROVIDER_UI_BUNDLE" --output-dir "$(dirname "$OPENWRT_PROVIDER_UI_ASSET")"
 	[ -f "$OPENWRT_PROVIDER_UI_ASSET" ] || die "expected OpenWrt provider UI bundle was not produced: $OPENWRT_PROVIDER_UI_ASSET"
+	[ -f "$OPENWRT_PROVIDER_UI_STYLESHEET" ] || die "expected OpenWrt provider UI stylesheet was not produced: $OPENWRT_PROVIDER_UI_STYLESHEET"
 }
 
 parse_args() {
@@ -277,7 +313,8 @@ build_ipk() {
 	local control_dir="$1"
 	local data_dir="$2"
 	local output="$3"
-	local pkg_dir="$WORK_DIR/$(basename "$output" .ipk)"
+	local pkg_dir
+	pkg_dir="$WORK_DIR/$(basename "$output" .ipk)"
 
 	rm -rf "$pkg_dir"
 	mkdir -p "$pkg_dir"
