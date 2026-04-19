@@ -26,6 +26,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::{oneshot, RwLock};
 use tokio::task::JoinHandle;
+use tower_http::cors::{Any, CorsLayer};
 
 fn active_target_priority(app_type: &str) -> u8 {
     if app_type.eq_ignore_ascii_case("claude") {
