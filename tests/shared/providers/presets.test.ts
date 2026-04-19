@@ -9,7 +9,7 @@ import {
 import type { SharedProviderAppId } from "@/shared/providers/domain";
 
 describe("shared provider preset catalog", () => {
-  it("exports desktop-backed OpenWrt preset catalogs for all supported apps", () => {
+  it("exports OpenWrt preset catalogs for all supported apps", () => {
     for (const appId of OPENWRT_SUPPORTED_PROVIDER_APPS) {
       const presets = getSharedProviderPresets(appId);
 
@@ -105,6 +105,22 @@ describe("shared provider preset catalog", () => {
     ).toBe("");
     expect(getGenericPresetDescription()).toBe(
       "Preset selected. You can still adjust the fields below before saving.",
+    );
+  });
+
+  it("excludes desktop-only presets from the shared OpenWrt catalog", () => {
+    expect(
+      getSharedProviderPresets("claude").map(
+        (preset) => preset.sourcePresetName,
+      ),
+    ).not.toEqual(
+      expect.arrayContaining([
+        "StepFun",
+        "KAT-Coder",
+        "GitHub Copilot",
+        "Codex (ChatGPT Plus/Pro)",
+        "AWS Bedrock (AKSK)",
+      ]),
     );
   });
 });

@@ -1,5 +1,18 @@
-import type { OpenWrtProviderTransport } from "@/platform/openwrt/providers";
-import type { SharedProviderAppId } from "@/shared/providers/domain";
+import {
+  createOpenWrtProviderAdapter,
+  type OpenWrtProviderMutationEvent,
+  type OpenWrtProviderTransport,
+} from "@/platform/openwrt/providers";
+import {
+  mountSharedProviderManager,
+  type MountedSharedProviderManager,
+  type SharedProviderManagerProps,
+  type SharedProviderShellState,
+} from "@/shared/providers";
+import type {
+  SharedProviderAppId,
+  SharedProviderView,
+} from "@/shared/providers/domain";
 
 export const OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY =
   "__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__";
@@ -51,95 +64,209 @@ type OpenWrtSharedProviderGlobal = typeof globalThis & {
   [OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY]?: OpenWrtSharedProviderBundleApi;
 };
 
+type OpenWrtProviderManagerMountState = {
+  mounted: MountedSharedProviderManager | null;
+  selectedApp: SharedProviderAppId;
+  serviceRunning: boolean;
+  restartPending: boolean;
+  disposed: boolean;
+};
+
+type OpenWrtShellMutationState = Pick<
+  OpenWrtProviderManagerMountState,
+  "disposed" | "restartPending" | "selectedApp" | "serviceRunning"
+>;
+
+const APP_LABELS: Record<SharedProviderAppId, string> = {
+  claude: "Claude",
+  codex: "Codex",
+  gemini: "Gemini",
+};
+
 function clearTarget(target: HTMLElement) {
   while (target.firstChild) {
     target.removeChild(target.firstChild);
   }
 }
 
-function appendTextBlock(
-  target: HTMLElement,
-  text: string,
-  styles?: Partial<CSSStyleDeclaration>,
-) {
-  const node = document.createElement("div");
-  node.textContent = text;
-
-  if (styles) {
-    Object.assign(node.style, styles);
-  }
-
-  target.appendChild(node);
+function getServiceStatusLabel(isRunning: boolean): string {
+  return isRunning ? "running" : "stopped";
 }
 
-function renderPlaceholder(
+function getMutationVerb(
+  mutation: OpenWrtProviderMutationEvent["mutation"],
+): string {
+  if (mutation === "save") {
+    return "saved";
+  }
+
+  if (mutation === "activate") {
+    return "activated";
+  }
+
+  return "deleted";
+}
+
+function getProviderViewFromMutation(
+  event: OpenWrtProviderMutationEvent,
+): SharedProviderView | null {
+  const { activeProvider, providers } = event.providerState;
+  const { providerId } = event;
+
+  if (providerId) {
+    const matchedProvider =
+      providers.find((provider) => provider.providerId === providerId) ??
+      (activeProvider.providerId === providerId ? activeProvider : null);
+
+    if (matchedProvider) {
+      return matchedProvider;
+    }
+  }
+
+  if (activeProvider.configured) {
+    return activeProvider;
+  }
+
+  return null;
+}
+
+function getProviderNameFromMutation(
+  event: OpenWrtProviderMutationEvent,
+): string {
+  return (
+    getProviderViewFromMutation(event)?.name.trim() ||
+    event.providerId ||
+    `${APP_LABELS[event.appId]} provider`
+  );
+}
+
+function buildMutationShellMessage(
+  event: OpenWrtProviderMutationEvent,
+): string {
+  const providerName = getProviderNameFromMutation(event);
+  const verb = getMutationVerb(event.mutation);
+
+  if (event.restartRequired) {
+    return `${providerName} was ${verb}. Restart the service to apply provider changes.`;
+  }
+
+  if (!event.serviceRunning) {
+    return `${providerName} was ${verb}. The service is stopped, so no restart is needed right now.`;
+  }
+
+  return `${providerName} was ${verb}. Changes are available immediately.`;
+}
+
+function buildSharedProviderShellState(
+  state: OpenWrtProviderManagerMountState,
+): SharedProviderShellState {
+  return {
+    serviceName: "cc-switch service",
+    serviceStatusLabel: getServiceStatusLabel(state.serviceRunning),
+    restartPending: state.restartPending,
+  };
+}
+
+function handleProviderMutationEvent(
+  state: OpenWrtShellMutationState,
+  shell: OpenWrtSharedProviderShellApi,
+  rerender: () => void,
+  event: OpenWrtProviderMutationEvent,
+) {
+  if (state.disposed) {
+    return;
+  }
+
+  state.selectedApp = shell.getSelectedApp();
+  state.serviceRunning = event.serviceRunning;
+  state.restartPending = event.restartRequired;
+  shell.showMessage("success", buildMutationShellMessage(event));
+  rerender();
+}
+
+function mountOpenWrtSharedProviderManager(
   options: OpenWrtSharedProviderMountOptions,
-): () => void {
-  const { target, appId, serviceStatus } = options;
-  const shell = options.shell;
-  const container = document.createElement("section");
+) {
+  const state: OpenWrtProviderManagerMountState = {
+    mounted: null,
+    selectedApp: options.shell.getSelectedApp(),
+    serviceRunning: options.shell.getServiceStatus().isRunning,
+    restartPending: false,
+    disposed: false,
+  };
 
-  clearTarget(target);
-  Object.assign(container.style, {
-    border: "1px solid #dbe1ea",
-    borderRadius: "4px",
-    padding: "1rem",
-    background: "#ffffff",
+  const adapter = createOpenWrtProviderAdapter(options.transport, {
+    getServiceRunning() {
+      state.serviceRunning = options.shell.getServiceStatus().isRunning;
+      return state.serviceRunning;
+    },
+    async onProviderMutation(event) {
+      handleProviderMutationEvent(state, options.shell, rerender, event);
+    },
   });
 
-  appendTextBlock(container, "Shared provider bundle loaded.", {
-    color: "#111827",
-    fontWeight: "600",
-  });
-  appendTextBlock(
-    container,
-    "This worktree only owns the LuCI shell and browser-bundle contract.",
-    {
-      marginTop: "0.5rem",
-      color: "#4b5563",
-    },
-  );
-  appendTextBlock(
-    container,
-    `Selected application: ${appId}. Service running: ${
-      serviceStatus.isRunning ? "yes" : "no"
-    }.`,
-    {
-      marginTop: "0.5rem",
-      color: "#4b5563",
-    },
-  );
-  appendTextBlock(
-    container,
-    "The shared React provider manager can replace this placeholder by overriding the registered mount implementation.",
-    {
-      marginTop: "0.5rem",
-      color: "#4b5563",
-    },
+  function createManagerProps(): SharedProviderManagerProps {
+    return {
+      adapter,
+      selectedApp: state.selectedApp,
+      onSelectedAppChange(appId) {
+        if (state.disposed) {
+          return;
+        }
+
+        const nextSelectedApp = options.shell.setSelectedApp(appId);
+        if (nextSelectedApp === state.selectedApp) {
+          return;
+        }
+
+        state.selectedApp = nextSelectedApp;
+        rerender();
+      },
+      shellState: buildSharedProviderShellState(state),
+    };
+  }
+
+  function rerender() {
+    if (state.disposed || !state.mounted) {
+      return;
+    }
+
+    state.mounted.update(createManagerProps());
+  }
+
+  clearTarget(options.target);
+  state.mounted = mountSharedProviderManager(
+    options.target,
+    createManagerProps(),
   );
 
-  target.appendChild(container);
-  shell.showMessage(
-    "info",
-    "Shared provider bundle loaded. Waiting for the shared provider manager implementation.",
-  );
-
-  return () => {
-    shell.clearMessage();
-    clearTarget(target);
+  return {
+    unmount() {
+      state.disposed = true;
+      state.mounted?.unmount();
+      clearTarget(options.target);
+      options.shell.clearMessage();
+    },
   };
 }
 
 const api: OpenWrtSharedProviderBundleApi = {
   capabilities: {
-    providerManager: false,
+    providerManager: true,
   },
   mount(options) {
-    return renderPlaceholder(options);
+    return mountOpenWrtSharedProviderManager(options);
   },
 };
 
 export const openWrtSharedProviderBundleApi = api;
+
+export const __private__ = {
+  buildMutationShellMessage,
+  buildSharedProviderShellState,
+  getProviderNameFromMutation,
+  handleProviderMutationEvent,
+};
 
 (globalThis as OpenWrtSharedProviderGlobal)[
   OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY

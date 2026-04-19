@@ -10,9 +10,15 @@ var ALT_TOKEN_FIELD = 'ANTHROPIC_API_KEY';
 var CODEX_TOKEN_FIELD = 'OPENAI_API_KEY';
 var GEMINI_TOKEN_FIELD = 'GEMINI_API_KEY';
 var APP_STORAGE_KEY = 'ccswitch-openwrt-selected-app';
+var SHARED_PROVIDER_UI_CUTOVER_MODE_STORAGE_KEY = 'ccswitch-openwrt-provider-ui-cutover-mode';
+var SHARED_PROVIDER_UI_CUTOVER_MODE_FALLBACK = 'fallback';
+var SHARED_PROVIDER_UI_DISABLE_GLOBAL_KEY = '__CCSWITCH_OPENWRT_DISABLE_REAL_PROVIDER_UI__';
 var SHARED_PROVIDER_UI_GLOBAL_KEY = '__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__';
 var SHARED_PROVIDER_UI_SCRIPT_ID = 'ccswitch-openwrt-shared-provider-ui-bundle';
 var SHARED_PROVIDER_UI_BUNDLE_PATH = '/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js';
+var SHARED_PROVIDER_UI_FALLBACK_REASON_GATE_DISABLED = 'gate-disabled';
+var SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_FAILURE = 'bundle-failure';
+var SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_REGRESSION = 'bundle-regression';
 var BANNER_COLORS = {
 	success: '#256f3a',
 	error: '#b91c1c',
@@ -338,6 +344,22 @@ return view.extend({
 	saveSelectedApp: function (appId) {
 		if (this.isSupportedApp(appId))
 			localStorage.setItem(APP_STORAGE_KEY, appId);
+	},
+
+	getSharedProviderUiCutoverMode: function () {
+		var storedMode = localStorage.getItem(SHARED_PROVIDER_UI_CUTOVER_MODE_STORAGE_KEY);
+
+		if (storedMode === SHARED_PROVIDER_UI_CUTOVER_MODE_FALLBACK)
+			return SHARED_PROVIDER_UI_CUTOVER_MODE_FALLBACK;
+
+		if (typeof window !== 'undefined' && window[SHARED_PROVIDER_UI_DISABLE_GLOBAL_KEY] === true)
+			return SHARED_PROVIDER_UI_CUTOVER_MODE_FALLBACK;
+
+		return 'real';
+	},
+
+	isSharedProviderUiDisabledByCutoverGate: function () {
+		return this.getSharedProviderUiCutoverMode() === SHARED_PROVIDER_UI_CUTOVER_MODE_FALLBACK;
 	},
 
 	isSupportedApp: function (appId) {
@@ -782,6 +804,7 @@ return view.extend({
 			message: null,
 			bundleStatus: 'idle',
 			bundleError: null,
+			fallbackReason: null,
 			mountHandle: null,
 			mountRequestId: 0
 		};
@@ -805,9 +828,10 @@ return view.extend({
 		uiState.editProviderId = providerId || uiState.providerState.activeProviderId;
 	},
 
-	setBundleStatus: function (uiState, status, error) {
+	setBundleStatus: function (uiState, status, error, fallbackReason) {
 		uiState.bundleStatus = status;
 		uiState.bundleError = error || null;
+		uiState.fallbackReason = fallbackReason || null;
 	},
 
 	renderMessageBanner: function (message) {
@@ -930,9 +954,15 @@ return view.extend({
 		}
 
 		if (uiState.bundleStatus === 'error')
-			summaryText = _('The shared provider manager could not be loaded, so the LuCI fallback provider manager is active below.');
+			summaryText = _('The shared provider manager failed to load or mount, so the guarded LuCI fallback provider manager is active below.');
+		else if (uiState.bundleStatus === 'fallback' &&
+			uiState.fallbackReason === SHARED_PROVIDER_UI_FALLBACK_REASON_GATE_DISABLED)
+			summaryText = _('The shared provider manager is explicitly disabled by the Phase 5 cutover gate, so the guarded LuCI fallback provider manager is active below.');
+		else if (uiState.bundleStatus === 'fallback' &&
+			uiState.fallbackReason === SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_REGRESSION)
+			summaryText = _('The shared provider bundle loaded without provider-manager support, so the guarded LuCI fallback provider manager is active below.');
 		else if (uiState.bundleStatus === 'fallback')
-			summaryText = _('The shared bundle is present but does not yet expose the provider manager, so the LuCI fallback provider manager is active below.');
+			summaryText = _('The guarded LuCI fallback provider manager is active below.');
 		else if (uiState.bundleStatus === 'ready')
 			summaryText = uiState.isRunning
 				? _('Provider changes may require a service restart while the router proxy is running.')
@@ -979,7 +1009,7 @@ return view.extend({
 		var root = E('div', { 'class': 'cbi-section' }, [
 			E('h3', {}, [_('Provider Manager')]),
 			E('p', { 'style': 'margin-bottom:1rem;color:#4b5563' }, [
-				_('The provider manager below mounts the shared OpenWrt browser bundle when available. Until the shared slice is ready, this LuCI shell keeps a compatible built-in fallback provider manager.')
+				_('The shared OpenWrt browser bundle is the primary provider-manager path below. The LuCI fallback provider manager remains available only when the Phase 5 cutover gate disables the real bundle or the bundle fails router verification.')
 			]),
 			sharedChromeRoot,
 			E('div', { 'class': 'cbi-value-description' }, [
@@ -1998,10 +2028,10 @@ return view.extend({
 			return !(api && api.capabilities && api.capabilities.providerManager === false);
 		},
 
-		renderFallbackProviderManager: function (uiState, statusNodes, shellNodes, kind, text, bundleStatus) {
+		renderFallbackProviderManager: function (uiState, statusNodes, shellNodes, kind, text, bundleStatus, fallbackReason) {
 			this.teardownSharedProviderUi(uiState);
 			this.setProviderShellMode(shellNodes, 'fallback');
-			this.setBundleStatus(uiState, bundleStatus || 'fallback', text || null);
+			this.setBundleStatus(uiState, bundleStatus || 'fallback', text || null, fallbackReason || null);
 
 			if (kind && text)
 				this.setMessage(uiState, kind, text);
@@ -2016,13 +2046,28 @@ return view.extend({
 			var requestId;
 			var mountOptions;
 			var api;
-		var handle;
+			var handle;
 
 			uiState.mountRequestId += 1;
 			requestId = uiState.mountRequestId;
 			this.teardownSharedProviderUi(uiState);
+
+			if (this.isSharedProviderUiDisabledByCutoverGate()) {
+				this.renderFallbackProviderManager(
+					uiState,
+					statusNodes,
+					shellNodes,
+					'info',
+					_('The shared provider manager is explicitly disabled by the Phase 5 cutover gate, so the guarded LuCI fallback provider manager remains active for router verification.'),
+					'fallback',
+					SHARED_PROVIDER_UI_FALLBACK_REASON_GATE_DISABLED
+				);
+				return;
+			}
+
 			this.setProviderShellMode(shellNodes, 'shared');
-			this.setBundleStatus(uiState, 'loading', null);
+			this.clearMessage(uiState);
+			this.setBundleStatus(uiState, 'loading', null, null);
 			this.updateShellChrome(uiState, statusNodes, shellNodes);
 			this.showBundleLoading(shellNodes.mountRoot);
 
@@ -2036,9 +2081,10 @@ return view.extend({
 						uiState,
 						statusNodes,
 						shellNodes,
-						'info',
-						_('The shared provider bundle loaded, but this lane still uses the LuCI fallback provider manager until the shared slice is published.'),
-						'fallback'
+						'error',
+						_('The shared provider bundle loaded without provider-manager support, so the guarded LuCI fallback provider manager remains active until the blocking regression is fixed.'),
+						'fallback',
+						SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_REGRESSION
 					);
 					return;
 				}
@@ -2046,8 +2092,8 @@ return view.extend({
 				mountOptions = this.createSharedProviderMountOptions(uiState, statusNodes, shellNodes);
 				handle = await Promise.resolve(api.mount(mountOptions));
 				uiState.mountHandle = this.normalizeMountHandle(handle);
-				this.setBundleStatus(uiState, 'ready', null);
-			this.updateShellChrome(uiState, statusNodes, shellNodes);
+				this.setBundleStatus(uiState, 'ready', null, null);
+				this.updateShellChrome(uiState, statusNodes, shellNodes);
 			} catch (err) {
 				if (requestId !== uiState.mountRequestId)
 					return;
@@ -2057,8 +2103,9 @@ return view.extend({
 					statusNodes,
 					shellNodes,
 					'error',
-					this.rpcFailureMessage(err) || _('The shared provider manager is unavailable.'),
-					'error'
+					this.rpcFailureMessage(err) || _('The shared provider manager failed to load or mount.'),
+					'error',
+					SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_FAILURE
 				);
 			}
 		},
