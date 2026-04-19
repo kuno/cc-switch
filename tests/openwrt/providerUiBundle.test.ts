@@ -5,6 +5,11 @@ import path from "node:path";
 import { act, fireEvent, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  OPENWRT_IPK_SPA_CSS_SENTINELS,
+  OPENWRT_IPK_SPA_JS_SENTINELS,
+} from "./fixtures/ipk-spa-sentinels";
+import { buildOpenWrtProviderUiBundle } from "./fixtures/openwrtProviderUiBuild";
+import {
   OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY,
   __private__,
   type OpenWrtHostState,
@@ -1941,27 +1946,11 @@ describe("OpenWrt provider UI bundle", () => {
     shellRoot.remove();
   });
 
-  it("ships the committed staged real bundle and copies it unchanged for package assembly", () => {
+  it("builds the current real bundle from source with the expected packaging sentinels", () => {
     const repoRoot = process.cwd();
-    const outputDir = mkdtempSync(
-      path.join(os.tmpdir(), "ccswitch-openwrt-ui-"),
-    );
-    const helperPath = path.resolve(
-      repoRoot,
-      "openwrt/prepare-provider-ui-bundle.sh",
-    );
-    const stagedBundlePath = path.resolve(
-      repoRoot,
-      "openwrt/provider-ui-dist/ccswitch-provider-ui.js",
-    );
-    const stagedStylesheetPath = path.resolve(
-      repoRoot,
-      "openwrt/provider-ui-dist/ccswitch-provider-ui.css",
-    );
-    const stagedOutputPath = path.join(outputDir, "ccswitch-provider-ui.js");
-    const stagedStylesheetOutputPath = path.join(
-      outputDir,
-      "ccswitch-provider-ui.css",
+    const helperScript = readFileSync(
+      path.resolve(repoRoot, "openwrt/prepare-provider-ui-bundle.sh"),
+      "utf8",
     );
     const luciMakefile = readFileSync(
       path.resolve(repoRoot, "openwrt/luci-app-ccswitch/Makefile"),
@@ -1975,83 +1964,70 @@ describe("OpenWrt provider UI bundle", () => {
       path.resolve(repoRoot, "vite.config.ts"),
       "utf8",
     );
-    execFileSync("sh", [helperPath, "--output-dir", outputDir], {
-      cwd: repoRoot,
+    const {
+      bundlePath,
+      stylesheetPath,
+      bundleSource,
+      stylesheetSource,
+    } = buildOpenWrtProviderUiBundle({
+      repoRoot,
     });
 
-    expect(existsSync(stagedBundlePath)).toBe(true);
-    expect(existsSync(stagedStylesheetPath)).toBe(true);
-    expect(existsSync(stagedOutputPath)).toBe(true);
-    expect(existsSync(stagedStylesheetOutputPath)).toBe(true);
-    const stagedBundleSource = readFileSync(stagedBundlePath, "utf8");
-    const stagedStylesheetSource = readFileSync(stagedStylesheetPath, "utf8");
-    const bundleSource = readFileSync(stagedOutputPath, "utf8");
-    const stylesheetSource = readFileSync(stagedStylesheetOutputPath, "utf8");
-    expect(bundleSource).toBe(stagedBundleSource);
-    expect(stylesheetSource).toBe(stagedStylesheetSource);
-    expect(stagedBundleSource).toContain(
-      "__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__",
-    );
-    expect(stagedBundleSource).toContain("pageShell");
-    expect(stagedBundleSource).toContain("providerManager");
-    expect(stagedBundleSource).toContain("runtimeSurface");
-    expect(stagedBundleSource).toContain("mountPage");
-    expect(stagedBundleSource).toContain("mountRuntimeSurface");
-    expect(stagedStylesheetSource).toContain(
-      "body.ccswitch-openwrt-provider-ui-theme",
-    );
-    expect(stagedStylesheetSource).toMatch(
+    expect(existsSync(bundlePath)).toBe(true);
+    expect(existsSync(stylesheetPath)).toBe(true);
+    for (const sentinel of OPENWRT_IPK_SPA_JS_SENTINELS) {
+      expect(bundleSource).toContain(sentinel);
+    }
+    expect(bundleSource).toContain("pageShell");
+    expect(bundleSource).toContain("providerManager");
+    expect(bundleSource).toContain("runtimeSurface");
+    for (const sentinel of OPENWRT_IPK_SPA_CSS_SENTINELS) {
+      expect(stylesheetSource).toContain(sentinel);
+    }
+    expect(stylesheetSource).toMatch(
       /#ccswitch-shared-provider-ui-root,\s*#ccswitch-shared-runtime-surface-root,\s*body\.ccswitch-openwrt-provider-ui-theme\s+\.ccswitch-openwrt-provider-ui-dialog,\s*body\.ccswitch-openwrt-provider-ui-theme\s+\.ccswitch-openwrt-provider-ui-overlay/,
     );
-    expect(stagedStylesheetSource).toMatch(
+    expect(stylesheetSource).toMatch(
       /#ccswitch-shared-provider-ui-root,\s*#ccswitch-shared-provider-ui-root \*,\s*#ccswitch-shared-provider-ui-root \*:before,\s*#ccswitch-shared-provider-ui-root \*:after,\s*#ccswitch-shared-runtime-surface-root,\s*#ccswitch-shared-runtime-surface-root \*/,
     );
-    expect(stagedStylesheetSource).toMatch(
+    expect(stylesheetSource).toMatch(
       /#ccswitch-shared-provider-ui-root\s+:focus-visible,\s*#ccswitch-shared-runtime-surface-root\s+:focus-visible,\s*body\.ccswitch-openwrt-provider-ui-theme\s+\.ccswitch-openwrt-provider-ui-dialog\s+:focus-visible/,
     );
-    expect(stagedStylesheetSource).toMatch(
+    expect(stylesheetSource).toMatch(
       /body\.ccswitch-openwrt-provider-ui-theme\s+\.ccswitch-openwrt-provider-ui-dialog\{[^}]*max-height:[^;}]+[^}]*overflow:hidden/,
     );
-    expect(stagedStylesheetSource).toMatch(
+    expect(stylesheetSource).toMatch(
       /body\.ccswitch-openwrt-provider-ui-theme\s+\.ccswitch-openwrt-provider-ui-dialog\{[^}]*display:flex[^}]*width:min\(72rem,100%\)[^}]*max-width:100%[^}]*min-height:0[^}]*max-height:min\(60rem,calc\(100dvh - 1\.5rem\)\)[^}]*margin:auto[^}]*overflow:hidden/,
     );
-    expect(stagedStylesheetSource).toMatch(
+    expect(stylesheetSource).toMatch(
       /body\.ccswitch-openwrt-provider-ui-theme\s+\.ccswitch-openwrt-provider-ui-dialog>form\{[^}]*display:flex[^}]*min-height:0[^}]*flex:1 1 auto[^}]*flex-direction:column[^}]*max-height:inherit/,
     );
-    expect(stagedStylesheetSource).toMatch(
+    expect(stylesheetSource).toMatch(
       /body\.ccswitch-openwrt-provider-ui-theme\[data-ccswitch-theme="?dark"?\],body\.ccswitch-openwrt-provider-ui-theme\.ccswitch-openwrt-provider-ui-theme-dark/,
     );
-    expect(stagedStylesheetSource).toMatch(
+    expect(stylesheetSource).toMatch(
       /body\.ccswitch-openwrt-provider-ui-theme\s+\.ccswitch-openwrt-provider-ui-overlay\{/,
     );
-    expect(stagedStylesheetSource).not.toContain("color-scheme:light");
-    expect(stagedStylesheetSource).not.toContain("scrollbar-width:none");
-    expect(stagedBundleSource).not.toContain("process.env.NODE_ENV");
-    expect(stagedBundleSource).not.toContain("Shared provider bundle loaded.");
-    expect(stagedBundleSource).not.toContain(
+    expect(stylesheetSource).not.toContain("color-scheme:light");
+    expect(stylesheetSource).not.toContain("scrollbar-width:none");
+    expect(bundleSource).not.toContain("process.env.NODE_ENV");
+    expect(bundleSource).not.toContain("Shared provider bundle loaded.");
+    expect(bundleSource).not.toContain(
       "Waiting for the shared provider manager implementation.",
     );
     expect(luciMakefile).toContain("prepare-provider-ui-bundle.sh");
     expect(buildIpkScript).toContain("prepare-provider-ui-bundle.sh");
+    expect(buildIpkScript).toContain("CCSWITCH_IPK_SKIP_UI_REBUILD");
+    expect(buildIpkScript).toContain("pnpm build:openwrt-provider-ui");
+    expect(helperScript).not.toContain("existing emitted bundle");
     expect(viteConfig).toContain("openwrt/provider-ui-dist");
   });
 
-  it("ships required embed-safe host-fit selectors in staged artifacts", () => {
+  it("ships required embed-safe host-fit selectors in built artifacts", () => {
     const repoRoot = process.cwd();
-    const stagedBundleSource = readFileSync(
-      path.resolve(
-        repoRoot,
-        "openwrt/provider-ui-dist/ccswitch-provider-ui.js",
-      ),
-      "utf8",
-    );
-    const stagedStylesheetSource = readFileSync(
-      path.resolve(
-        repoRoot,
-        "openwrt/provider-ui-dist/ccswitch-provider-ui.css",
-      ),
-      "utf8",
-    );
+    const { bundleSource, stylesheetSource } = buildOpenWrtProviderUiBundle({
+      repoRoot,
+    });
 
     for (const hook of [
       "ccswitch-openwrt-page-section",
@@ -2062,75 +2038,66 @@ describe("OpenWrt provider UI bundle", () => {
       "ccswitch-openwrt-state-shell",
       "ccswitch-openwrt-provider-ui-positioner",
     ]) {
-      expect(stagedBundleSource).toContain(hook);
-      expect(stagedStylesheetSource).toContain(hook);
+      expect(bundleSource).toContain(hook);
+      expect(stylesheetSource).toContain(hook);
     }
 
-    expect(stagedStylesheetSource).toMatch(
+    expect(stylesheetSource).toMatch(
       /body\.ccswitch-openwrt-provider-ui-theme \.ccswitch-openwrt-provider-ui-dialog/,
     );
-    expect(stagedStylesheetSource).toMatch(
+    expect(stylesheetSource).toMatch(
       /body\.ccswitch-openwrt-provider-ui-theme \.ccswitch-openwrt-provider-ui-overlay/,
     );
-    expect(stagedStylesheetSource).toMatch(
+    expect(stylesheetSource).toMatch(
       /body\.ccswitch-openwrt-provider-ui-theme \.ccswitch-openwrt-provider-ui-dialog--compact\{[^}]*width:min\(28rem,100%\)/,
     );
-    expect(stagedStylesheetSource).toMatch(
+    expect(stylesheetSource).toMatch(
       /body\.ccswitch-openwrt-provider-ui-theme \.ccswitch-openwrt-provider-ui-positioner\{[^}]*align-items:flex-start/,
     );
-    expect(stagedStylesheetSource).toContain(
+    expect(stylesheetSource).toContain(
       ".cbi-section.ccswitch-openwrt-native-page-section",
     );
-    expect(stagedStylesheetSource).toContain(
+    expect(stylesheetSource).toContain(
       "#ccswitch-openwrt-native-page-root.ccswitch-openwrt-native-page-host",
     );
-    expect(stagedStylesheetSource).toMatch(
+    expect(stylesheetSource).toMatch(
       /#ccswitch-shared-provider-ui-root \[data-ccswitch-layout=stack-to-split\]/,
     );
-    expect(stagedStylesheetSource).toMatch(
+    expect(stylesheetSource).toMatch(
       /#ccswitch-shared-runtime-surface-root \[data-ccswitch-layout=stack-to-row\]/,
     );
-    expect(stagedStylesheetSource).toMatch(
+    expect(stylesheetSource).toMatch(
       /#ccswitch-shared-provider-ui-root \[data-ccswitch-layout=responsive-grid\]/,
     );
-    expect(stagedStylesheetSource).toMatch(
+    expect(stylesheetSource).toMatch(
       /#ccswitch-shared-runtime-surface-root \[data-ccswitch-layout=responsive-grid\]/,
     );
-    expect(stagedStylesheetSource).toMatch(
+    expect(stylesheetSource).toMatch(
       /@media\(max-width:\d+px\)\{[^}]*body\.ccswitch-openwrt-provider-ui-theme \.cbi-value\{[^}]*grid-template-columns:1fr[^}]*\}/,
     );
-    expect(stagedStylesheetSource).toMatch(
+    expect(stylesheetSource).toMatch(
       /@media\(max-width:\d+px\)\{[^}]*body\.ccswitch-openwrt-provider-ui-theme \.ccswitch-openwrt-provider-ui-positioner\{[^}]*\}[^}]*body\.ccswitch-openwrt-provider-ui-theme \.ccswitch-openwrt-provider-ui-dialog\{/,
     );
-    expect(stagedStylesheetSource).toMatch(
+    expect(stylesheetSource).toMatch(
       /@media\(min-height:\d+px\)\{[^}]*body\.ccswitch-openwrt-provider-ui-theme \.ccswitch-openwrt-provider-ui-positioner\{[^}]*align-items:center/,
     );
   });
 
-  it("keeps the staged OpenWrt bundle free of split-shell selectors and desktop-shell structure", () => {
+  it("keeps the built OpenWrt bundle free of split-shell selectors and desktop-shell structure", () => {
     const repoRoot = process.cwd();
-    const stagedBundleSource = readFileSync(
-      path.resolve(
-        repoRoot,
-        "openwrt/provider-ui-dist/ccswitch-provider-ui.js",
-      ),
-      "utf8",
-    ).toLowerCase();
-    const stagedStylesheetSource = readFileSync(
-      path.resolve(
-        repoRoot,
-        "openwrt/provider-ui-dist/ccswitch-provider-ui.css",
-      ),
-      "utf8",
-    ).toLowerCase();
+    const { bundleSource, stylesheetSource } = buildOpenWrtProviderUiBundle({
+      repoRoot,
+    });
+    const builtBundleSource = bundleSource.toLowerCase();
+    const builtStylesheetSource = stylesheetSource.toLowerCase();
 
     for (const phrase of FORBIDDEN_DESKTOP_SHELL_PHRASES) {
-      expect(stagedBundleSource).not.toContain(phrase);
-      expect(stagedStylesheetSource).not.toContain(phrase);
+      expect(builtBundleSource).not.toContain(phrase);
+      expect(builtStylesheetSource).not.toContain(phrase);
     }
 
     for (const selector of FORBIDDEN_DESKTOP_SHELL_SELECTORS) {
-      expect(stagedStylesheetSource).not.toContain(selector);
+      expect(builtStylesheetSource).not.toContain(selector);
     }
   });
 
