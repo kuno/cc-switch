@@ -112,8 +112,40 @@ async fn run_cli(args: Vec<String>) -> anyhow::Result<()> {
             print_json(&openwrt_admin::upsert_active_claude_provider(&db)?)?;
             Ok(())
         }
+        [namespace, command] if namespace == "openwrt" && command == "list-providers" => {
+            print_json(&openwrt_admin::list_claude_providers(&db)?)?;
+            Ok(())
+        }
+        [namespace, command, provider_id]
+            if namespace == "openwrt" && command == "get-provider" =>
+        {
+            print_json(&openwrt_admin::get_claude_provider(&db, provider_id)?)?;
+            Ok(())
+        }
+        [namespace, command] if namespace == "openwrt" && command == "upsert-provider" => {
+            print_json(&openwrt_admin::upsert_claude_provider(&db, None)?)?;
+            Ok(())
+        }
+        [namespace, command, provider_id]
+            if namespace == "openwrt" && command == "upsert-provider" =>
+        {
+            print_json(&openwrt_admin::upsert_claude_provider(&db, Some(provider_id))?)?;
+            Ok(())
+        }
+        [namespace, command, provider_id]
+            if namespace == "openwrt" && command == "delete-provider" =>
+        {
+            print_json(&openwrt_admin::delete_claude_provider(&db, provider_id)?)?;
+            Ok(())
+        }
+        [namespace, command, provider_id]
+            if namespace == "openwrt" && command == "activate-provider" =>
+        {
+            print_json(&openwrt_admin::activate_claude_provider(&db, provider_id)?)?;
+            Ok(())
+        }
         _ => Err(anyhow::anyhow!(
-            "unsupported command. expected one of: `cc-switch openwrt get-active-provider`, `cc-switch openwrt upsert-active-provider`"
+            "unsupported command. expected one of: `cc-switch openwrt get-active-provider`, `cc-switch openwrt upsert-active-provider`, `cc-switch openwrt list-providers`, `cc-switch openwrt get-provider <provider-id>`, `cc-switch openwrt upsert-provider [provider-id]`, `cc-switch openwrt delete-provider <provider-id>`, `cc-switch openwrt activate-provider <provider-id>`"
         )),
     }
 }

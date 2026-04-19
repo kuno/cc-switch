@@ -59,8 +59,10 @@ function upsertActiveProvider(provider) {
 	if (!provider)
 		return { ok: false, error: 'provider payload is required' };
 
+	let providerJson = sprintf('%J', provider);
+
 	let result = runReadCommand(
-		`printf '%s\n' ${shellquote(provider)} | ${daemonCommand('openwrt upsert-active-provider')}`
+		`printf '%s\n' ${shellquote(providerJson)} | ${daemonCommand('openwrt upsert-active-provider')}`
 	);
 
 	if (!result.ok)
