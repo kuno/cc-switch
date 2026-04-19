@@ -3,12 +3,14 @@ import type {
   SharedProviderAppId,
   SharedProviderCapabilities,
   SharedProviderEditorPayload,
+  SharedProviderFailoverState,
   SharedProviderState,
   SharedProviderView,
 } from "@/shared/providers/domain";
 import {
   emptySharedProviderView,
   normalizeSharedProviderView,
+  parseSharedProviderFailoverState,
   parseSharedProviderState,
 } from "@/shared/providers/domain";
 import type {
@@ -174,6 +176,20 @@ function parseActiveProviderResponse(
   }
 
   return normalizeSharedProviderView(parsed, null, null, appId);
+}
+
+function parseStatusPayload(
+  response: OpenWrtRpcResult | null | undefined,
+): Record<string, unknown> | null {
+  if (!response || typeof response.status_json !== "string") {
+    return null;
+  }
+
+  try {
+    return JSON.parse(response.status_json) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
 }
 
 function buildLegacyProviderState(
@@ -431,6 +447,35 @@ async function invokePhase2Activate(
   );
 }
 
+async function loadProviderFailoverState(
+  transport: OpenWrtProviderTransport &
+    Required<Pick<OpenWrtProviderTransport, "getProviderFailoverState">>,
+  appId: SharedProviderAppId,
+  providerId: string,
+): Promise<SharedProviderFailoverState> {
+  const response = await transport.getProviderFailoverState(appId, providerId);
+
+  if (!isRpcSuccess(response)) {
+    throw new Error(
+      rpcFailureMessage(response) ??
+        `Failed to load ${appId} provider failover state.`,
+    );
+  }
+
+  return parseSharedProviderFailoverState(parseStatusPayload(response), providerId);
+}
+
+async function runFailoverMutation(
+  action: () => Promise<OpenWrtRpcResult | null | undefined>,
+  failureMessage: string,
+): Promise<void> {
+  const response = await action();
+
+  if (!isRpcSuccess(response)) {
+    throw new Error(rpcFailureMessage(response) ?? failureMessage);
+  }
+}
+
 async function resolveServiceRunning(
   runtimeHooks?: OpenWrtProviderRuntimeHooks,
 ): Promise<boolean> {
@@ -534,9 +579,27 @@ export function createOpenWrtProviderAdapter(
   transport: OpenWrtProviderTransport,
   runtimeHooks?: OpenWrtProviderRuntimeHooks,
 ): ProviderPlatformAdapter {
-  return {
+  const adapter: ProviderPlatformAdapter = {
     async listProviderState(appId) {
       return loadProviderState(transport, appId);
+    },
+    async getProviderFailoverState(appId, providerId) {
+      const getProviderFailoverState = transport.getProviderFailoverState;
+
+      if (typeof getProviderFailoverState !== "function") {
+        throw new Error(
+          "The OpenWrt provider failover detail RPC is not available in this build.",
+        );
+      }
+
+      return loadProviderFailoverState(
+        {
+          ...transport,
+          getProviderFailoverState,
+        },
+        appId,
+        providerId,
+      );
     },
     async saveProvider(appId, draft, providerId) {
       const previousState = runtimeHooks
@@ -605,6 +668,42 @@ export function createOpenWrtProviderAdapter(
       return buildCapabilities(state);
     },
   };
+
+  if (
+    typeof transport.addToFailoverQueue === "function" &&
+    typeof transport.removeFromFailoverQueue === "function" &&
+    typeof transport.setAutoFailoverEnabled === "function" &&
+    typeof transport.reorderFailoverQueue === "function" &&
+    typeof transport.setMaxRetries === "function"
+  ) {
+    adapter.addToFailoverQueue = async (appId, providerId) =>
+      runFailoverMutation(
+        () => transport.addToFailoverQueue!(appId, providerId),
+        `Failed to add ${providerId} to the ${appId} failover queue.`,
+      );
+    adapter.removeFromFailoverQueue = async (appId, providerId) =>
+      runFailoverMutation(
+        () => transport.removeFromFailoverQueue!(appId, providerId),
+        `Failed to remove ${providerId} from the ${appId} failover queue.`,
+      );
+    adapter.setAutoFailoverEnabled = async (appId, enabled) =>
+      runFailoverMutation(
+        () => transport.setAutoFailoverEnabled!(appId, enabled),
+        `Failed to update ${appId} auto-failover.`,
+      );
+    adapter.reorderFailoverQueue = async (appId, providerIds) =>
+      runFailoverMutation(
+        () => transport.reorderFailoverQueue!(appId, providerIds),
+        `Failed to reorder the ${appId} failover queue.`,
+      );
+    adapter.setMaxRetries = async (appId, value) =>
+      runFailoverMutation(
+        () => transport.setMaxRetries!(appId, value),
+        `Failed to update ${appId} max retries.`,
+      );
+  }
+
+  return adapter;
 }
 
 export const __private__ = {
@@ -612,8 +711,11 @@ export const __private__ = {
   invokeRpcCandidates,
   isCompatibilityRpcFailure,
   isRpcSuccess,
+  loadProviderFailoverState,
   loadProviderState,
   parseActiveProviderResponse,
+  parseStatusPayload,
   rpcFailureMessage,
+  runFailoverMutation,
   shouldRequireRestart,
 };

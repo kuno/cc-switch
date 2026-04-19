@@ -14,6 +14,7 @@ export interface OpenWrtRpcResult {
   providers_json?: string;
   state_json?: string;
   list_json?: string;
+  status_json?: string;
   activeProviderId?: string | null;
   active_provider_id?: string | null;
   providers?: unknown;
@@ -29,6 +30,10 @@ export interface OpenWrtProviderTransport {
     appId: SharedProviderAppId,
   ): Promise<OpenWrtRpcResult | null>;
   getActiveProvider(appId: SharedProviderAppId): Promise<OpenWrtRpcResult>;
+  getProviderFailoverState?(
+    appId: SharedProviderAppId,
+    providerId: string,
+  ): Promise<OpenWrtRpcResult | null>;
   upsertProvider?(
     appId: SharedProviderAppId,
     provider: SharedProviderEditorPayload,
@@ -75,6 +80,26 @@ export interface OpenWrtProviderTransport {
     appId: SharedProviderAppId,
     providerId: string,
   ): Promise<OpenWrtRpcResult>;
+  addToFailoverQueue?(
+    appId: SharedProviderAppId,
+    providerId: string,
+  ): Promise<OpenWrtRpcResult | null>;
+  removeFromFailoverQueue?(
+    appId: SharedProviderAppId,
+    providerId: string,
+  ): Promise<OpenWrtRpcResult | null>;
+  setAutoFailoverEnabled?(
+    appId: SharedProviderAppId,
+    enabled: boolean,
+  ): Promise<OpenWrtRpcResult | null>;
+  reorderFailoverQueue?(
+    appId: SharedProviderAppId,
+    providerIds: string[],
+  ): Promise<OpenWrtRpcResult | null>;
+  setMaxRetries?(
+    appId: SharedProviderAppId,
+    value: number,
+  ): Promise<OpenWrtRpcResult | null>;
   restartService(): Promise<OpenWrtRpcResult>;
 }
 
