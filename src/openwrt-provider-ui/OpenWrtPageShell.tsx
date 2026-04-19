@@ -25,6 +25,8 @@ import type {
 } from "./pageTypes";
 
 const OPENWRT_PAGE_THEME_STORAGE_KEY = "ccswitch-openwrt-native-page-theme";
+const OPENWRT_PAGE_THEME_DARK_CLASS =
+  "ccswitch-openwrt-provider-ui-theme-dark";
 
 type HostDraft = OpenWrtHostConfigPayload;
 
@@ -105,11 +107,16 @@ function getInitialTheme(): OpenWrtPageTheme {
     return storedTheme;
   }
 
-  const rootHasDark =
-    document.documentElement.classList.contains("dark") ||
-    document.body.classList.contains("dark");
+  return "light";
+}
 
-  return rootHasDark ? "dark" : "light";
+function clearLegacyGlobalDarkThemeLeak() {
+  if (typeof document === "undefined") {
+    return;
+  }
+
+  document.documentElement.classList.remove("dark");
+  document.body.classList.remove("dark");
 }
 
 function applyTheme(theme: OpenWrtPageTheme) {
@@ -117,9 +124,22 @@ function applyTheme(theme: OpenWrtPageTheme) {
     return;
   }
 
-  document.documentElement.classList.toggle("dark", theme === "dark");
-  document.body.classList.toggle("dark", theme === "dark");
+  clearLegacyGlobalDarkThemeLeak();
+  document.body.classList.toggle(
+    OPENWRT_PAGE_THEME_DARK_CLASS,
+    theme === "dark",
+  );
   document.body.dataset.ccswitchTheme = theme;
+}
+
+function clearTheme() {
+  if (typeof document === "undefined") {
+    return;
+  }
+
+  clearLegacyGlobalDarkThemeLeak();
+  document.body.classList.remove(OPENWRT_PAGE_THEME_DARK_CLASS);
+  delete document.body.dataset.ccswitchTheme;
 }
 
 function getHealthTone(health: OpenWrtHostState["health"]): string {
@@ -402,6 +422,10 @@ export function OpenWrtPageShell({
     if (typeof window !== "undefined") {
       window.localStorage.setItem(OPENWRT_PAGE_THEME_STORAGE_KEY, theme);
     }
+
+    return () => {
+      clearTheme();
+    };
   }, [theme]);
 
   useEffect(() => {
@@ -563,7 +587,13 @@ export function OpenWrtPageShell({
   }
 
   return (
-    <div className="ccswitch-openwrt-page-shell">
+    <div
+      className={
+        theme === "dark"
+          ? "ccswitch-openwrt-page-shell dark"
+          : "ccswitch-openwrt-page-shell"
+      }
+    >
       <section className="ccswitch-openwrt-daemon-card">
         <div className="ccswitch-openwrt-daemon-card__head">
           <div className="ccswitch-openwrt-daemon-card__intro">
