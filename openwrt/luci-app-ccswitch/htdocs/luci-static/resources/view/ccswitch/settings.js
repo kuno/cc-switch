@@ -324,6 +324,20 @@ var callActivateProviderByProviderId = rpc.declare({
 	expect: { '': {} }
 });
 
+var callUploadCodexAuth = rpc.declare({
+	object: 'ccswitch',
+	method: 'upload_codex_auth',
+	params: ['app', 'provider_id', 'auth_json_text'],
+	expect: { '': {} }
+});
+
+var callRemoveCodexAuth = rpc.declare({
+	object: 'ccswitch',
+	method: 'remove_codex_auth',
+	params: ['app', 'provider_id'],
+	expect: { '': {} }
+});
+
 var callRestartService = rpc.declare({
 	object: 'ccswitch',
 	method: 'restart_service',
@@ -581,6 +595,29 @@ function callOpenWrtActivateProvider(appId, providerId) {
 		});
 	}, function () {
 		return L.resolveDefault(callActivateProviderByProviderId(appId, providerId), { ok: false });
+	});
+}
+
+function callOpenWrtUploadCodexAuth(appId, providerId, authJsonText) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/providers/' + encodeURIComponent(providerId) + '/codex-auth', {
+			method: 'POST',
+			body: {
+				authJsonText: authJsonText
+			}
+		});
+	}, function () {
+		return L.resolveDefault(callUploadCodexAuth(appId, providerId, authJsonText), { ok: false });
+	});
+}
+
+function callOpenWrtRemoveCodexAuth(appId, providerId) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/providers/' + encodeURIComponent(providerId) + '/codex-auth', {
+			method: 'DELETE'
+		});
+	}, function () {
+		return L.resolveDefault(callRemoveCodexAuth(appId, providerId), { ok: false });
 	});
 }
 
@@ -2399,6 +2436,12 @@ return view.extend({
 			},
 			activateProviderById: function (appId, providerId) {
 				return callOpenWrtActivateProvider(appId, providerId);
+			},
+			uploadCodexAuth: function (appId, providerId, authJsonText) {
+				return callOpenWrtUploadCodexAuth(appId, providerId, authJsonText);
+			},
+			removeCodexAuth: function (appId, providerId) {
+				return callOpenWrtRemoveCodexAuth(appId, providerId);
 			},
 			addToFailoverQueue: function (appId, providerId) {
 				return callOpenWrtAddToFailoverQueue(appId, providerId);

@@ -34,13 +34,19 @@ use crate::app_config::AppType;
 #[cfg(not(feature = "tauri-desktop"))]
 use crate::openwrt_admin::{self, OpenWrtProviderPayload};
 #[cfg(not(feature = "tauri-desktop"))]
+use crate::proxy::providers::codex_oauth_store::codex_auth_upload_limit_bytes;
+use crate::proxy::providers::codex_oauth_store::load_codex_auth_for_provider;
+use crate::services::subscription::query_codex_quota;
+#[cfg(not(feature = "tauri-desktop"))]
 use axum::extract::Path;
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use bytes::Bytes;
+use futures::future::join_all;
 use http_body_util::BodyExt;
 #[cfg(not(feature = "tauri-desktop"))]
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::collections::HashSet;
 
 // ============================================================================
 // 健康检查和状态查询（简单端点）
@@ -57,7 +63,92 @@ pub async fn health_check() -> (StatusCode, Json<Value>) {
     )
 }
 
+fn is_codex_oauth_provider(provider: &crate::provider::Provider) -> bool {
+    matches!(
+        provider
+            .settings_config
+            .get("auth_mode")
+            .and_then(Value::as_str),
+        Some("codex_oauth" | "client_passthrough")
+    )
+}
+
+async fn refresh_codex_quota_snapshots(state: &ProxyState) {
+    let providers = match state.db.get_all_providers("codex") {
+        Ok(providers) => providers,
+        Err(error) => {
+            log::warn!("[Quota] failed to list codex providers for live quota refresh: {error}");
+            return;
+        }
+    };
+
+    let mut live_refresh_provider_ids = HashSet::new();
+    let mut live_fetches = Vec::new();
+
+    for provider in providers.into_values().filter(is_codex_oauth_provider) {
+        let Some(auth) = load_codex_auth_for_provider(&provider.id) else {
+            continue;
+        };
+
+        live_refresh_provider_ids.insert(provider.id.clone());
+        live_fetches.push(async move {
+            let quota = query_codex_quota(
+                &auth.access_token,
+                auth.account_id.as_deref(),
+                "codex_oauth",
+                "Codex OAuth access token expired or rejected. Please re-login via cc-switch.",
+            )
+            .await;
+
+            if !quota.success {
+                log::warn!(
+                    "[Quota] live Codex quota refresh failed for {}: {}",
+                    provider.id,
+                    quota
+                        .error
+                        .clone()
+                        .unwrap_or_else(|| "unknown upstream error".to_string())
+                );
+                return None;
+            }
+
+            let previous = {
+                let store = state.rate_limits.read().await;
+                store.get(&provider.id).cloned()
+            };
+
+            super::rate_limit::snapshot_from_subscription_quota(
+                "codex",
+                &provider.id,
+                &provider.name,
+                &quota,
+                previous.as_ref(),
+            )
+        });
+    }
+
+    {
+        let mut store = state.rate_limits.write().await;
+        store.retain(|_, snapshot| {
+            !(snapshot.app_type == "codex"
+                && snapshot.source.as_deref() == Some("subscription_quota")
+                && !live_refresh_provider_ids.contains(&snapshot.provider_id))
+        });
+    }
+
+    if live_fetches.is_empty() {
+        return;
+    }
+
+    let refreshed = join_all(live_fetches).await;
+    let mut store = state.rate_limits.write().await;
+    for snapshot in refreshed.into_iter().flatten() {
+        store.insert(snapshot.provider_id.clone(), snapshot);
+    }
+}
+
 pub async fn get_quota(State(state): State<ProxyState>) -> (StatusCode, Json<Value>) {
+    refresh_codex_quota_snapshots(&state).await;
     let store = state.rate_limits.read().await;
     let providers: Vec<_> = store.values().cloned().collect();
     (
@@ -106,6 +197,13 @@ pub struct OpenWrtEnabledPayload {
 #[serde(rename_all = "camelCase")]
 pub struct OpenWrtMaxRetriesPayload {
     value: u32,
+}
+
+#[cfg(not(feature = "tauri-desktop"))]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtCodexAuthUploadPayload {
+    auth_json_text: String,
 }
 
 #[cfg(not(feature = "tauri-desktop"))]
@@ -354,6 +452,110 @@ pub async fn openwrt_activate_provider(
 }
 
 #[cfg(not(feature = "tauri-desktop"))]
+pub async fn openwrt_upload_codex_auth(
+    Path((app, provider_id)): Path<(String, String)>,
+    State(state): State<ProxyState>,
+    Json(payload): Json<OpenWrtCodexAuthUploadPayload>,
+) -> (StatusCode, Json<Value>) {
+    if payload.auth_json_text.as_bytes().len() > codex_auth_upload_limit_bytes() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "ok": false,
+                "error": format!(
+                    "auth_json_text exceeds {} KiB limit",
+                    codex_auth_upload_limit_bytes() / 1024
+                )
+            })),
+        );
+    }
+
+    match parse_openwrt_app(&app).and_then(|app_type| {
+        openwrt_admin::upload_codex_auth(
+            state.db.as_ref(),
+            &app_type,
+            &provider_id,
+            payload.auth_json_text.as_bytes(),
+        )
+    }) {
+        Ok(view) => openwrt_admin_ok(view),
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+#[cfg(all(test, not(feature = "tauri-desktop")))]
+mod tests {
+    use super::*;
+    use crate::database::Database;
+    use crate::proxy::providers::codex_oauth_store::codex_auth_upload_limit_bytes;
+    use crate::proxy::{
+        failover_switch::FailoverSwitchManager,
+        provider_router::ProviderRouter,
+        rate_limit::new_rate_limit_store,
+        server::ProxyState,
+        types::{ProxyConfig, ProxyStatus},
+    };
+    use axum::extract::Path;
+    use std::collections::HashMap;
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
+
+    fn test_proxy_state() -> ProxyState {
+        let db = Arc::new(Database::memory().expect("db"));
+        let current_providers = Arc::new(RwLock::new(HashMap::new()));
+
+        ProxyState {
+            db: db.clone(),
+            config: Arc::new(RwLock::new(ProxyConfig::default())),
+            status: Arc::new(RwLock::new(ProxyStatus::default())),
+            start_time: Arc::new(RwLock::new(None)),
+            current_providers: current_providers.clone(),
+            provider_router: Arc::new(ProviderRouter::new(db.clone())),
+            copilot_auth: None,
+            codex_oauth_auth: None,
+            failover_manager: Arc::new(FailoverSwitchManager::new(db, current_providers)),
+            rate_limits: new_rate_limit_store(),
+            #[cfg(feature = "tauri-desktop")]
+            app_handle: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn openwrt_upload_codex_auth_rejects_oversized_payload() {
+        let state = test_proxy_state();
+        let payload = OpenWrtCodexAuthUploadPayload {
+            auth_json_text: "x".repeat(codex_auth_upload_limit_bytes() + 1),
+        };
+
+        let (status, body) = openwrt_upload_codex_auth(
+            Path(("codex".to_string(), "provider-1".to_string())),
+            State(state),
+            Json(payload),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(body["error"]
+            .as_str()
+            .expect("error string")
+            .contains("64 KiB limit"));
+    }
+}
+
+#[cfg(not(feature = "tauri-desktop"))]
+pub async fn openwrt_remove_codex_auth(
+    Path((app, provider_id)): Path<(String, String)>,
+    State(state): State<ProxyState>,
+) -> (StatusCode, Json<Value>) {
+    match parse_openwrt_app(&app).and_then(|app_type| {
+        openwrt_admin::remove_codex_auth(state.db.as_ref(), &app_type, &provider_id)
+    }) {
+        Ok(view) => openwrt_admin_ok(view),
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+#[cfg(not(feature = "tauri-desktop"))]
 pub async fn openwrt_add_to_failover_queue(
     Path((app, provider_id)): Path<(String, String)>,
     State(state): State<ProxyState>,
@@ -531,7 +733,7 @@ pub async fn handle_messages(
     }
 
     // 通用响应处理（透传模式）
-    process_response(response, &ctx, &state, &CLAUDE_PARSER_CONFIG).await
+    process_response(response, &ctx, &state, &CLAUDE_PARSER_CONFIG, is_stream).await
 }
 
 /// Claude 格式转换处理（独有逻辑）
@@ -807,7 +1009,7 @@ pub async fn handle_chat_completions(
     ctx.provider = result.provider;
     let response = result.response;
 
-    process_response(response, &ctx, &state, &OPENAI_PARSER_CONFIG).await
+    process_response(response, &ctx, &state, &OPENAI_PARSER_CONFIG, is_stream).await
 }
 
 /// 处理 /v1/responses 请求（OpenAI Responses API - Codex CLI 透传）
@@ -861,7 +1063,7 @@ pub async fn handle_responses(
     ctx.provider = result.provider;
     let response = result.response;
 
-    process_response(response, &ctx, &state, &CODEX_PARSER_CONFIG).await
+    process_response(response, &ctx, &state, &CODEX_PARSER_CONFIG, is_stream).await
 }
 
 /// 处理 /v1/responses/compact 请求（OpenAI Responses Compact API - Codex CLI 透传）
@@ -915,7 +1117,7 @@ pub async fn handle_responses_compact(
     ctx.provider = result.provider;
     let response = result.response;
 
-    process_response(response, &ctx, &state, &CODEX_PARSER_CONFIG).await
+    process_response(response, &ctx, &state, &CODEX_PARSER_CONFIG, is_stream).await
 }
 
 // ============================================================================
@@ -980,7 +1182,7 @@ pub async fn handle_gemini(
     ctx.provider = result.provider;
     let response = result.response;
 
-    process_response(response, &ctx, &state, &GEMINI_PARSER_CONFIG).await
+    process_response(response, &ctx, &state, &GEMINI_PARSER_CONFIG, is_stream).await
 }
 
 fn should_use_claude_transform_streaming(

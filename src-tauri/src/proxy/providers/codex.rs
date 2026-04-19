@@ -16,7 +16,8 @@ use std::sync::LazyLock;
 static CODEX_CLIENT_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(codex_vscode|codex_cli_rs)/[\d.]+").unwrap());
 
-const CODEX_CLIENT_PASSTHROUGH_AUTH_MODE: &str = "client_passthrough";
+const CODEX_OAUTH_AUTH_MODE: &str = "codex_oauth";
+const CODEX_LEGACY_CLIENT_PASSTHROUGH_AUTH_MODE: &str = "client_passthrough";
 const CODEX_OFFICIAL_PROVIDER_ID: &str = "codex-official";
 
 /// Codex 适配器
@@ -35,7 +36,7 @@ impl CodexAdapter {
         CODEX_CLIENT_REGEX.is_match(user_agent)
     }
 
-    fn is_client_passthrough_mode(&self, provider: &Provider) -> bool {
+    fn is_codex_oauth_mode(&self, provider: &Provider) -> bool {
         if provider.id == CODEX_OFFICIAL_PROVIDER_ID {
             return true;
         }
@@ -45,7 +46,13 @@ impl CodexAdapter {
             .get("auth_mode")
             .and_then(|v| v.as_str())
         {
-            if auth_mode == CODEX_CLIENT_PASSTHROUGH_AUTH_MODE {
+            // Accept both "codex_oauth" (new canonical name) and "client_passthrough"
+            // (legacy name from commit 9e879695) for back-compat with already-stored
+            // provider rows. Remove the legacy match once DB rows are migrated.
+            if matches!(
+                auth_mode,
+                CODEX_OAUTH_AUTH_MODE | CODEX_LEGACY_CLIENT_PASSTHROUGH_AUTH_MODE
+            ) {
                 return true;
             }
         }
@@ -155,8 +162,8 @@ impl ProviderAdapter for CodexAdapter {
     fn extract_auth(&self, provider: &Provider) -> Option<AuthInfo> {
         let key = self.extract_key(provider);
 
-        if key.is_none() && self.is_client_passthrough_mode(provider) {
-            log::debug!("[Codex] 使用客户端 Authorization 透传模式");
+        if key.is_none() && self.is_codex_oauth_mode(provider) {
+            log::debug!("[Codex] 使用 Codex OAuth 鉴权模式");
             return None;
         }
 
@@ -164,7 +171,7 @@ impl ProviderAdapter for CodexAdapter {
     }
 
     fn allows_inbound_auth_passthrough(&self, provider: &Provider) -> bool {
-        self.is_client_passthrough_mode(provider)
+        self.is_codex_oauth_mode(provider)
     }
 
     fn build_url(&self, base_url: &str, endpoint: &str) -> String {
@@ -271,6 +278,28 @@ mod tests {
 
         let auth = adapter.extract_auth(&provider).unwrap();
         assert_eq!(auth.api_key, "sk-env-key-12345678");
+    }
+
+    #[test]
+    fn test_extract_auth_codex_oauth_mode_allows_missing_key() {
+        let adapter = CodexAdapter::new();
+        let provider = create_provider(json!({
+            "auth_mode": "codex_oauth"
+        }));
+
+        assert!(adapter.extract_auth(&provider).is_none());
+        assert!(adapter.allows_inbound_auth_passthrough(&provider));
+    }
+
+    #[test]
+    fn test_extract_auth_legacy_client_passthrough_mode_still_allowed() {
+        let adapter = CodexAdapter::new();
+        let provider = create_provider(json!({
+            "auth_mode": "client_passthrough"
+        }));
+
+        assert!(adapter.extract_auth(&provider).is_none());
+        assert!(adapter.allows_inbound_auth_passthrough(&provider));
     }
 
     #[test]
