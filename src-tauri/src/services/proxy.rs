@@ -19,6 +19,7 @@ use crate::services::provider::{
 use serde_json::{json, Map, Value};
 use std::str::FromStr;
 use std::sync::Arc;
+#[cfg(feature = "tauri-desktop")]
 use tauri::Emitter;
 use tokio::sync::RwLock;
 
@@ -1358,6 +1359,7 @@ impl ProxyService {
                             &app, &provider,
                         )
                     {
+                        #[cfg(feature = "tauri-desktop")]
                         if let Some(handle) = self.app_handle.read().await.as_ref() {
                             let _ = handle.emit(
                                 "proxy-official-warning",
