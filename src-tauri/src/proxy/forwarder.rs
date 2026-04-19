@@ -28,7 +28,7 @@ use crate::proxy::providers::copilot_auth::CopilotAuthManager;
 use crate::proxy::providers::xai_oauth_auth::XaiOAuthManager;
 use crate::{
     app_config::AppType,
-    provider::{LocalProxyRequestOverrides, Provider},
+    provider::{LocalProxyRequestOverrides, Provider, ProviderProxyConfig},
 };
 use bytes::Bytes;
 use futures::StreamExt;
@@ -150,6 +150,32 @@ pub struct RequestForwarder {
     /// AppHandle for failover UI updates (desktop only)
     #[cfg(feature = "tauri-desktop")]
     app_handle: Option<tauri::AppHandle>,
+}
+
+fn resolve_upstream_proxy_url(proxy_config: Option<&ProviderProxyConfig>) -> Option<String> {
+    proxy_config
+        .filter(|config| config.enabled)
+        .and_then(super::http_client::build_proxy_url_from_config)
+        .or_else(super::http_client::get_current_proxy_url)
+}
+
+fn build_effective_auth_headers(
+    incoming_name: &http::HeaderName,
+    incoming_value: &http::HeaderValue,
+    auth_headers: &[(http::HeaderName, http::HeaderValue)],
+    allow_inbound_authorization_passthrough: bool,
+) -> Vec<(http::HeaderName, http::HeaderValue)> {
+    if !auth_headers.is_empty() {
+        return auth_headers.to_vec();
+    }
+
+    if allow_inbound_authorization_passthrough
+        && incoming_name.as_str().eq_ignore_ascii_case("authorization")
+    {
+        return vec![(incoming_name.clone(), incoming_value.clone())];
+    }
+
+    Vec::new()
 }
 
 impl RequestForwarder {
@@ -1797,6 +1823,8 @@ impl RequestForwarder {
         } else {
             Vec::new()
         };
+        let allow_inbound_authorization_passthrough =
+            auth_headers.is_empty() && adapter.allows_inbound_auth_passthrough(provider);
 
         // 注入 Codex OAuth 的 ChatGPT-Account-Id header（如果有 account_id）
         if let Some(ref account_id) = codex_oauth_account_id {
@@ -2005,9 +2033,18 @@ impl RequestForwarder {
                     continue;
                 }
                 if !saw_auth {
-                    saw_auth = true;
-                    for (ah_name, ah_value) in &auth_headers {
-                        ordered_headers.append(ah_name.clone(), ah_value.clone());
+                    let effective_auth_headers = build_effective_auth_headers(
+                        key,
+                        value,
+                        &auth_headers,
+                        allow_inbound_authorization_passthrough,
+                    );
+
+                    if !effective_auth_headers.is_empty() {
+                        saw_auth = true;
+                        for (ah_name, ah_value) in effective_auth_headers {
+                            ordered_headers.append(ah_name, ah_value);
+                        }
                     }
                 }
                 continue;
@@ -2229,8 +2266,9 @@ impl RequestForwarder {
             self.non_streaming_timeout
         };
 
-        // 获取全局代理 URL
-        let upstream_proxy_url: Option<String> = super::http_client::get_current_proxy_url();
+        // 解析上游代理 URL（供应商单独代理 > 全局代理 > 无）
+        let proxy_config = provider.meta.as_ref().and_then(|m| m.proxy_config.as_ref());
+        let upstream_proxy_url = resolve_upstream_proxy_url(proxy_config);
 
         // SOCKS5 代理不支持 CONNECT 隧道，需要用 reqwest
         let is_socks_proxy = upstream_proxy_url
@@ -3617,6 +3655,7 @@ mod tests {
     use bytes::Bytes;
     use http::StatusCode;
     use serde_json::json;
+    use serial_test::serial;
     use std::collections::HashMap;
     use std::time::Duration;
 
@@ -3653,6 +3692,9 @@ mod tests {
             gemini_shadow: Arc::new(GeminiShadowStore::new()),
             codex_chat_history: Arc::new(CodexChatHistoryStore::default()),
             failover_manager: Arc::new(FailoverSwitchManager::new(db)),
+            copilot_auth: None,
+            codex_oauth_auth: None,
+            #[cfg(feature = "tauri-desktop")]
             app_handle: None,
             current_provider_id_at_start: String::new(),
             session_id: String::new(),
@@ -4659,6 +4701,90 @@ mod tests {
             &json!({ "model": "gpt-5" }),
             &headers
         ));
+    }
+
+    #[test]
+    #[serial]
+    fn resolve_upstream_proxy_url_prefers_provider_proxy_over_runtime_global_proxy() {
+        super::super::http_client::update_proxy(Some("http://127.0.0.1:7890"))
+            .expect("set runtime proxy");
+
+        let provider_proxy = ProviderProxyConfig {
+            enabled: true,
+            proxy_type: Some("http".to_string()),
+            proxy_host: Some("provider.proxy".to_string()),
+            proxy_port: Some(8080),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            resolve_upstream_proxy_url(Some(&provider_proxy)).as_deref(),
+            Some("http://provider.proxy:8080")
+        );
+
+        super::super::http_client::update_proxy(None).expect("clear runtime proxy");
+    }
+
+    #[test]
+    #[serial]
+    fn resolve_upstream_proxy_url_falls_back_to_runtime_global_proxy() {
+        super::super::http_client::update_proxy(Some("http://127.0.0.1:7890"))
+            .expect("set runtime proxy");
+
+        assert_eq!(
+            resolve_upstream_proxy_url(None).as_deref(),
+            Some("http://127.0.0.1:7890")
+        );
+
+        super::super::http_client::update_proxy(None).expect("clear runtime proxy");
+    }
+
+    #[test]
+    fn build_effective_auth_headers_preserves_inbound_authorization_when_enabled() {
+        let headers = build_effective_auth_headers(
+            &http::HeaderName::from_static("authorization"),
+            &http::HeaderValue::from_static("Bearer inbound-token"),
+            &[],
+            true,
+        );
+
+        assert_eq!(headers.len(), 1);
+        assert_eq!(headers[0].0, http::HeaderName::from_static("authorization"));
+        assert_eq!(
+            headers[0].1,
+            http::HeaderValue::from_static("Bearer inbound-token")
+        );
+    }
+
+    #[test]
+    fn build_effective_auth_headers_prefers_provider_auth_over_inbound_authorization() {
+        let headers = build_effective_auth_headers(
+            &http::HeaderName::from_static("authorization"),
+            &http::HeaderValue::from_static("Bearer inbound-token"),
+            &[(
+                http::HeaderName::from_static("authorization"),
+                http::HeaderValue::from_static("Bearer provider-token"),
+            )],
+            true,
+        );
+
+        assert_eq!(headers.len(), 1);
+        assert_eq!(
+            headers[0].1,
+            http::HeaderValue::from_static("Bearer provider-token")
+        );
+    }
+
+    #[test]
+    fn build_effective_auth_headers_does_not_passthrough_non_authorization_headers() {
+        let headers = build_effective_auth_headers(
+            &http::HeaderName::from_static("x-api-key"),
+            &http::HeaderValue::from_static("client-key"),
+            &[],
+            true,
+        );
+
+        assert!(headers.is_empty());
     }
 
     // ==================== Copilot 动态 endpoint 路由相关测试 ====================
