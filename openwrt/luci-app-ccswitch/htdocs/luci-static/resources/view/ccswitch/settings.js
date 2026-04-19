@@ -1,31 +1,19 @@
 'use strict';
 'require view';
-'require form';
 'require uci';
 'require rpc';
-'require ui';
 
 var DEFAULT_TOKEN_FIELD = 'ANTHROPIC_AUTH_TOKEN';
 var ALT_TOKEN_FIELD = 'ANTHROPIC_API_KEY';
 var CODEX_TOKEN_FIELD = 'OPENAI_API_KEY';
 var GEMINI_TOKEN_FIELD = 'GEMINI_API_KEY';
 var APP_STORAGE_KEY = 'ccswitch-openwrt-selected-app';
-var SHARED_PROVIDER_UI_CUTOVER_MODE_STORAGE_KEY = 'ccswitch-openwrt-provider-ui-cutover-mode';
-var SHARED_PROVIDER_UI_CUTOVER_MODE_FALLBACK = 'fallback';
-var SHARED_PROVIDER_UI_DISABLE_GLOBAL_KEY = '__CCSWITCH_OPENWRT_DISABLE_REAL_PROVIDER_UI__';
 var SHARED_PROVIDER_UI_GLOBAL_KEY = '__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__';
 var SHARED_PROVIDER_UI_SCRIPT_ID = 'ccswitch-openwrt-shared-provider-ui-bundle';
 var SHARED_PROVIDER_UI_STYLE_ID = 'ccswitch-openwrt-shared-provider-ui-styles';
 var HOST_PAGE_STYLE_ID = 'ccswitch-openwrt-host-page-shell-styles';
-var STATIC_PROTOTYPE_STYLE_ID = 'ccswitch-openwrt-static-prototype-styles';
-var STATIC_PROTOTYPE_MIN_HEIGHT = 960;
 var SHARED_PROVIDER_UI_BUNDLE_PATH = '/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js';
 var SHARED_PROVIDER_UI_STYLE_PATH = '/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.css';
-var OPENWRT_STATIC_PROTOTYPE_MODE = true;
-var OPENWRT_STATIC_PROTOTYPE_PATH = '/luci-static/resources/ccswitch/prototype-b24/index.html';
-var SHARED_PROVIDER_UI_FALLBACK_REASON_GATE_DISABLED = 'gate-disabled';
-var SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_FAILURE = 'bundle-failure';
-var SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_REGRESSION = 'bundle-regression';
 var BANNER_COLORS = {
 	success: '#256f3a',
 	warning: '#d97706',
@@ -296,13 +284,6 @@ var callListProviders = rpc.declare({
 	expect: { '': {} }
 });
 
-var callListSavedProviders = rpc.declare({
-	object: 'ccswitch',
-	method: 'list_saved_providers',
-	params: ['app'],
-	expect: { '': {} }
-});
-
 var callUpsertActiveProvider = rpc.declare({
 	object: 'ccswitch',
 	method: 'upsert_active_provider',
@@ -317,24 +298,10 @@ var callUpsertProvider = rpc.declare({
 	expect: { '': {} }
 });
 
-var callSaveProvider = rpc.declare({
-	object: 'ccswitch',
-	method: 'save_provider',
-	params: ['app', 'provider'],
-	expect: { '': {} }
-});
-
 var callUpsertProviderByProviderId = rpc.declare({
 	object: 'ccswitch',
 	method: 'upsert_provider',
 	params: ['app', 'provider_id', 'provider'],
-	expect: { '': {} }
-});
-
-var callUpsertProviderById = rpc.declare({
-	object: 'ccswitch',
-	method: 'upsert_provider',
-	params: ['app', 'id', 'provider'],
 	expect: { '': {} }
 });
 
@@ -345,38 +312,10 @@ var callDeleteProviderByProviderId = rpc.declare({
 	expect: { '': {} }
 });
 
-var callDeleteProviderById = rpc.declare({
-	object: 'ccswitch',
-	method: 'delete_provider',
-	params: ['app', 'id'],
-	expect: { '': {} }
-});
-
 var callActivateProviderByProviderId = rpc.declare({
 	object: 'ccswitch',
 	method: 'activate_provider',
 	params: ['app', 'provider_id'],
-	expect: { '': {} }
-});
-
-var callActivateProviderById = rpc.declare({
-	object: 'ccswitch',
-	method: 'activate_provider',
-	params: ['app', 'id'],
-	expect: { '': {} }
-});
-
-var callSwitchProviderByProviderId = rpc.declare({
-	object: 'ccswitch',
-	method: 'switch_provider',
-	params: ['app', 'provider_id'],
-	expect: { '': {} }
-});
-
-var callSwitchProviderById = rpc.declare({
-	object: 'ccswitch',
-	method: 'switch_provider',
-	params: ['app', 'id'],
 	expect: { '': {} }
 });
 
@@ -386,12 +325,273 @@ var callRestartService = rpc.declare({
 	expect: { '': {} }
 });
 
-var callUciCommit = rpc.declare({
-	object: 'uci',
-	method: 'commit',
-	params: ['config'],
+var callGetHostConfig = rpc.declare({
+	object: 'ccswitch',
+	method: 'get_host_config',
 	expect: { '': {} }
 });
+
+var callSetHostConfig = rpc.declare({
+	object: 'ccswitch',
+	method: 'set_host_config',
+	params: ['host'],
+	expect: { '': {} }
+});
+
+function createDaemonAdminUnavailableError(message) {
+	var error = new Error(message || 'OpenWrt daemon admin API unavailable');
+
+	error.ccswitchDaemonAdminUnavailable = true;
+	return error;
+}
+
+function isDaemonAdminUnavailableError(error) {
+	return !!(error && error.ccswitchDaemonAdminUnavailable === true);
+}
+
+function getDaemonAdminBaseUrl() {
+	var hostname;
+	var override;
+
+	if (typeof window === 'undefined' || !window.location || window.location.protocol !== 'http:')
+		return null;
+
+	override = window.__CCSWITCH_OPENWRT_DAEMON_ADMIN_BASE_URL__;
+	if (typeof override === 'string' && override)
+		return override.replace(/\/+$/, '');
+
+	hostname = window.location.hostname;
+	if (!hostname)
+		return null;
+
+	if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1')
+		return null;
+
+	if (hostname.indexOf(':') >= 0 && hostname.charAt(0) !== '[')
+		hostname = '[' + hostname + ']';
+
+	return 'http://' + hostname + ':15721/openwrt/admin';
+}
+
+function readDaemonAdminJson(response) {
+	if (!response || typeof response.json !== 'function')
+		return Promise.reject(createDaemonAdminUnavailableError('OpenWrt daemon admin API returned an invalid response object.'));
+
+	if (response.ok !== true)
+		return Promise.reject(createDaemonAdminUnavailableError('OpenWrt daemon admin API responded with HTTP ' + response.status + '.'));
+
+	return response.json().then(function (payload) {
+		if (!payload || typeof payload !== 'object')
+			throw createDaemonAdminUnavailableError('OpenWrt daemon admin API returned invalid JSON.');
+
+		return payload;
+	});
+}
+
+function callDaemonAdminJson(path, options) {
+	var baseUrl = getDaemonAdminBaseUrl();
+	var request = options || {};
+	var headers = {
+		Accept: 'application/json'
+	};
+	var key;
+
+	if (!baseUrl)
+		return Promise.reject(createDaemonAdminUnavailableError('OpenWrt daemon admin API disabled for this page origin.'));
+
+	if (typeof fetch !== 'function')
+		return Promise.reject(createDaemonAdminUnavailableError('Browser fetch API is unavailable.'));
+
+	if (request.headers && typeof request.headers === 'object') {
+		for (key in request.headers)
+			headers[key] = request.headers[key];
+	}
+
+	if (request.body != null && headers['Content-Type'] == null)
+		headers['Content-Type'] = 'application/json';
+
+	return fetch(baseUrl + path, {
+		method: request.method || 'GET',
+		headers: headers,
+		body: request.body != null ? JSON.stringify(request.body) : undefined
+	}).then(function (response) {
+		return readDaemonAdminJson(response);
+	}).catch(function (error) {
+		if (isDaemonAdminUnavailableError(error))
+			throw error;
+
+		throw createDaemonAdminUnavailableError((error && error.message) || String(error));
+	});
+}
+
+function daemonAdminOrFallback(apiCall, fallbackCall) {
+	return Promise.resolve().then(apiCall).catch(function (error) {
+		if (isDaemonAdminUnavailableError(error))
+			return fallbackCall();
+
+		throw error;
+	});
+}
+
+function callOpenWrtRuntimeStatus() {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/runtime');
+	}, function () {
+		return L.resolveDefault(callGetRuntimeStatus(), { ok: false });
+	});
+}
+
+function callOpenWrtAppRuntimeStatus(appId) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/runtime');
+	}, function () {
+		return L.resolveDefault(callGetAppRuntimeStatus(appId), { ok: false });
+	});
+}
+
+function callOpenWrtListProviders(appId) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/providers');
+	}, function () {
+		return L.resolveDefault(callListProviders(appId), null);
+	});
+}
+
+function callOpenWrtGetActiveProvider(appId) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/providers/active');
+	}, function () {
+		return L.resolveDefault(callGetActiveProvider(appId), { ok: false });
+	});
+}
+
+function callOpenWrtGetProviderFailover(appId, providerId) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/providers/' + encodeURIComponent(providerId) + '/failover');
+	}, function () {
+		return L.resolveDefault(callGetProviderFailover(appId, providerId), { ok: false });
+	});
+}
+
+function callOpenWrtGetAvailableFailoverProviders(appId) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/failover/providers/available');
+	}, function () {
+		return L.resolveDefault(callGetAvailableFailoverProviders(appId), { ok: false });
+	});
+}
+
+function callOpenWrtCreateProvider(appId, providerPayload) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/providers', {
+			method: 'POST',
+			body: providerPayload
+		});
+	}, function () {
+		return L.resolveDefault(callUpsertProvider(appId, providerPayload), { ok: false });
+	});
+}
+
+function callOpenWrtUpdateProvider(appId, providerId, providerPayload) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/providers/' + encodeURIComponent(providerId), {
+			method: 'PUT',
+			body: providerPayload
+		});
+	}, function () {
+		return L.resolveDefault(callUpsertProviderByProviderId(appId, providerId, providerPayload), { ok: false });
+	});
+}
+
+function callOpenWrtSaveActiveProvider(appId, providerPayload) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/providers/active', {
+			method: 'POST',
+			body: providerPayload
+		});
+	}, function () {
+		return L.resolveDefault(callUpsertActiveProvider(appId, providerPayload), { ok: false });
+	});
+}
+
+function callOpenWrtDeleteProvider(appId, providerId) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/providers/' + encodeURIComponent(providerId), {
+			method: 'DELETE'
+		});
+	}, function () {
+		return L.resolveDefault(callDeleteProviderByProviderId(appId, providerId), { ok: false });
+	});
+}
+
+function callOpenWrtActivateProvider(appId, providerId) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/providers/' + encodeURIComponent(providerId) + '/activate', {
+			method: 'POST'
+		});
+	}, function () {
+		return L.resolveDefault(callActivateProviderByProviderId(appId, providerId), { ok: false });
+	});
+}
+
+function callOpenWrtAddToFailoverQueue(appId, providerId) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/failover/providers/' + encodeURIComponent(providerId), {
+			method: 'POST'
+		});
+	}, function () {
+		return L.resolveDefault(callAddToFailoverQueue(appId, providerId), { ok: false });
+	});
+}
+
+function callOpenWrtRemoveFromFailoverQueue(appId, providerId) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/failover/providers/' + encodeURIComponent(providerId), {
+			method: 'DELETE'
+		});
+	}, function () {
+		return L.resolveDefault(callRemoveFromFailoverQueue(appId, providerId), { ok: false });
+	});
+}
+
+function callOpenWrtReorderFailoverQueue(appId, providerIds) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/failover/queue', {
+			method: 'PUT',
+			body: {
+				providerIds: providerIds
+			}
+		});
+	}, function () {
+		return L.resolveDefault(callReorderFailoverQueue(appId, providerIds), { ok: false });
+	});
+}
+
+function callOpenWrtSetAutoFailoverEnabled(appId, enabled) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/failover/auto-enabled', {
+			method: 'PUT',
+			body: {
+				enabled: enabled
+			}
+		});
+	}, function () {
+		return L.resolveDefault(callSetAutoFailoverEnabled(appId, enabled), { ok: false });
+	});
+}
+
+function callOpenWrtSetMaxRetries(appId, value) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/failover/max-retries', {
+			method: 'PUT',
+			body: {
+				value: value
+			}
+		});
+	}, function () {
+		return L.resolveDefault(callSetMaxRetries(appId, value), { ok: false });
+	});
+}
 
 return view.extend({
 	handleSaveApply: null,
@@ -399,96 +599,11 @@ return view.extend({
 	handleReset: null,
 
 	load: function () {
-		if (OPENWRT_STATIC_PROTOTYPE_MODE)
-			return Promise.all([
-				uci.load('ccswitch'),
-				L.resolveDefault(callServiceList('ccswitch'), {}),
-				L.resolveDefault(callGetRuntimeStatus(), { ok: false }),
-				this.loadAllStaticPrototypeProviderStates()
-			]);
-
 		return Promise.all([
-			uci.load('ccswitch'),
+			this.loadHostConfigSnapshot(),
 			L.resolveDefault(callServiceList('ccswitch'), {}),
-			this.loadProviderState(this.getSelectedApp())
+			callOpenWrtRuntimeStatus()
 		]);
-	},
-
-	renderStaticPrototype: function (data) {
-		var self = this;
-		var bindings = this.getStaticPrototypeBindings(data || []);
-		var workspaceData = this.buildStaticPrototypeWorkspaceData(data || []);
-		var prototypeSrc = OPENWRT_STATIC_PROTOTYPE_PATH + '?' + this.buildStaticPrototypeQuery(bindings);
-		var existingStyle = document.getElementById(STATIC_PROTOTYPE_STYLE_ID);
-		var wrapper = E('div', {
-			'id': 'ccswitch-static-prototype-shell',
-			'style': 'padding:0;margin:0;'
-		});
-		var frame = E('iframe', {
-			'src': prototypeSrc,
-			'title': _('CC Switch OpenWrt prototype'),
-			'style': 'display:block;width:100%;min-height:' + String(STATIC_PROTOTYPE_MIN_HEIGHT) + 'px;border:0;border-radius:28px;background:#fff;overflow:hidden;'
-		});
-		var syncHeight = function () {
-			try {
-				var doc = frame.contentWindow && frame.contentWindow.document;
-				var bodyHeight = doc && doc.body ? doc.body.scrollHeight : 0;
-				var rootHeight = doc && doc.documentElement ? doc.documentElement.scrollHeight : 0;
-				var nextHeight = Math.max(bodyHeight, rootHeight, STATIC_PROTOTYPE_MIN_HEIGHT);
-
-				frame.style.height = nextHeight + 'px';
-			} catch (e) {
-				frame.style.height = String(STATIC_PROTOTYPE_MIN_HEIGHT) + 'px';
-			}
-		};
-		var postWorkspaceData = function () {
-			try {
-				if (frame.contentWindow && typeof frame.contentWindow.postMessage === 'function') {
-					frame.contentWindow.postMessage({
-						type: 'ccswitch-prototype-live-data',
-						payload: workspaceData
-					}, '*');
-				}
-			} catch (e) {
-				/* no-op */
-			}
-		};
-		var postHostState = function () {
-			return self.loadStaticPrototypeHostBindings().then(function (hostBindings) {
-				self.postStaticPrototypeFrameMessage(frame, 'ccswitch-prototype-host-state', hostBindings);
-			});
-		};
-		var handleFrameMessage = function (event) {
-			self.handleStaticPrototypeFrameMessage(frame, event);
-		};
-
-		if (!existingStyle) {
-			existingStyle = E('style', {
-				'id': STATIC_PROTOTYPE_STYLE_ID
-			}, [
-				'.cbi-page-actions, .cbi-page-actions.control-group { display:none !important; }'
-			]);
-			document.head.appendChild(existingStyle);
-		}
-
-		window.addEventListener('message', handleFrameMessage);
-
-		frame.addEventListener('load', function () {
-			postWorkspaceData();
-			postHostState();
-			syncHeight();
-			window.setTimeout(function () {
-				postWorkspaceData();
-				postHostState();
-				syncHeight();
-			}, 50);
-			window.setTimeout(syncHeight, 300);
-			window.setTimeout(syncHeight, 1000);
-		});
-
-		wrapper.appendChild(frame);
-
-		return wrapper;
 	},
 
 	parseServiceState: function (serviceStatus) {
@@ -510,22 +625,6 @@ return view.extend({
 	saveSelectedApp: function (appId) {
 		if (this.isSupportedApp(appId))
 			localStorage.setItem(APP_STORAGE_KEY, appId);
-	},
-
-	getSharedProviderUiCutoverMode: function () {
-		var storedMode = localStorage.getItem(SHARED_PROVIDER_UI_CUTOVER_MODE_STORAGE_KEY);
-
-		if (storedMode === SHARED_PROVIDER_UI_CUTOVER_MODE_FALLBACK)
-			return SHARED_PROVIDER_UI_CUTOVER_MODE_FALLBACK;
-
-		if (typeof window !== 'undefined' && window[SHARED_PROVIDER_UI_DISABLE_GLOBAL_KEY] === true)
-			return SHARED_PROVIDER_UI_CUTOVER_MODE_FALLBACK;
-
-		return 'real';
-	},
-
-	isSharedProviderUiDisabledByCutoverGate: function () {
-		return this.getSharedProviderUiCutoverMode() === SHARED_PROVIDER_UI_CUTOVER_MODE_FALLBACK;
 	},
 
 	isSupportedApp: function (appId) {
@@ -676,15 +775,59 @@ return view.extend({
 		};
 	},
 
-	getHostConfigSnapshot: function () {
+	defaultHostConfigSnapshot: function () {
 		return {
-			enabled: uci.get('ccswitch', 'main', 'enabled') === '1',
-			listenAddr: uci.get('ccswitch', 'main', 'listen_addr') || '',
-			listenPort: uci.get('ccswitch', 'main', 'listen_port') || '',
-			httpProxy: uci.get('ccswitch', 'main', 'http_proxy') || '',
-			httpsProxy: uci.get('ccswitch', 'main', 'https_proxy') || '',
-			logLevel: uci.get('ccswitch', 'main', 'log_level') || 'info'
+			enabled: false,
+			listenAddr: '',
+			listenPort: '',
+			httpProxy: '',
+			httpsProxy: '',
+			logLevel: 'info'
 		};
+	},
+
+	normalizeHostConfigSnapshot: function (response) {
+		var fallback = this.defaultHostConfigSnapshot();
+		var payload = response && typeof response === 'object' ? response : {};
+		var enabled = payload.enabled;
+
+		if (payload && payload.ok === true)
+			payload = response;
+
+		if (enabled !== true && enabled !== false)
+			enabled = fallback.enabled;
+
+		return {
+			enabled: enabled === true,
+			listenAddr: payload.listenAddr != null ? String(payload.listenAddr) : fallback.listenAddr,
+			listenPort: payload.listenPort != null ? String(payload.listenPort) : fallback.listenPort,
+			httpProxy: payload.httpProxy != null ? String(payload.httpProxy) : fallback.httpProxy,
+			httpsProxy: payload.httpsProxy != null ? String(payload.httpsProxy) : fallback.httpsProxy,
+			logLevel: payload.logLevel != null ? String(payload.logLevel) : fallback.logLevel
+		};
+	},
+
+	setHostConfigSnapshot: function (response) {
+		this.hostConfigSnapshot = this.normalizeHostConfigSnapshot(response);
+		return this.getHostConfigSnapshot();
+	},
+
+	getHostConfigSnapshot: function () {
+		if (!this.hostConfigSnapshot)
+			this.hostConfigSnapshot = this.defaultHostConfigSnapshot();
+
+		return Object.assign({}, this.hostConfigSnapshot);
+	},
+
+	loadHostConfigSnapshot: function () {
+		var fallback = this.getHostConfigSnapshot();
+
+		return L.resolveDefault(callGetHostConfig(), fallback).then(L.bind(function (response) {
+			if (!response || response.ok === false)
+				return fallback;
+
+			return this.setHostConfigSnapshot(response);
+		}, this));
 	},
 
 	isStaticPrototypeValidIpv4Address: function (value) {
@@ -777,8 +920,8 @@ return view.extend({
 		return value >= 1 && value <= 65535;
 	},
 
-	normalizeStaticPrototypeHostPayload: function (payload) {
-		var snapshot = this.getHostConfigSnapshot();
+	normalizeStaticPrototypeHostPayload: function (payload, currentSnapshot) {
+		var snapshot = currentSnapshot || this.getHostConfigSnapshot();
 		var listenAddr = payload && payload.listenAddr != null ? String(payload.listenAddr).trim() : snapshot.listenAddr || '';
 		var listenPort = payload && payload.listenPort != null ? String(payload.listenPort).trim() : snapshot.listenPort || '';
 		var logLevel = payload && typeof payload.logLevel === 'string'
@@ -811,30 +954,37 @@ return view.extend({
 	},
 
 	saveStaticPrototypeHostConfig: function (payload) {
-		var next = this.normalizeStaticPrototypeHostPayload(payload);
+		return this.loadHostConfigSnapshot().then(L.bind(function (current) {
+			var next = this.normalizeStaticPrototypeHostPayload(payload, current);
+			var host = {
+				enabled: current.enabled,
+				listenAddr: next.listenAddr,
+				listenPort: next.listenPort,
+				httpProxy: next.httpProxy,
+				httpsProxy: next.httpsProxy,
+				logLevel: next.logLevel
+			};
 
-		uci.set('ccswitch', 'main', 'listen_addr', next.listenAddr);
-		uci.set('ccswitch', 'main', 'listen_port', next.listenPort);
-		uci.set('ccswitch', 'main', 'http_proxy', next.httpProxy);
-		uci.set('ccswitch', 'main', 'https_proxy', next.httpsProxy);
-		uci.set('ccswitch', 'main', 'log_level', next.logLevel);
+			return Promise.resolve(callSetHostConfig(host)).then(L.bind(function (response) {
+				if (!response || response.ok === false)
+					throw new Error(this.rpcFailureMessage(response) || _('Failed to save host settings.'));
 
-		return Promise.resolve(uci.save()).then(function () {
-			return callUciCommit('ccswitch');
-		}).then(function () {
-			return next;
-		});
+				this.setHostConfigSnapshot(response);
+				return next;
+			}, this));
+		}, this));
 	},
 
 	loadStaticPrototypeHostBindings: function () {
 		return Promise.all([
+			this.loadHostConfigSnapshot(),
 			L.resolveDefault(callServiceList('ccswitch'), {}),
-			L.resolveDefault(callGetRuntimeStatus(), { ok: false })
+			callOpenWrtRuntimeStatus()
 		]).then(L.bind(function (results) {
 			return this.getStaticPrototypeBindings([
-				null,
 				results[0],
-				results[1]
+				results[1],
+				results[2]
 			]);
 		}, this));
 	},
@@ -863,68 +1013,12 @@ return view.extend({
 		return tryLoad();
 	},
 
-	postStaticPrototypeFrameMessage: function (frame, type, payload) {
-		try {
-			if (frame && frame.contentWindow && typeof frame.contentWindow.postMessage === 'function') {
-				frame.contentWindow.postMessage({
-					type: type,
-					payload: payload
-				}, '*');
-			}
-		} catch (e) {
-			/* no-op */
-		}
-	},
-
-	handleStaticPrototypeFrameMessage: function (frame, event) {
-		if (!frame || !frame.contentWindow || !event || event.source !== frame.contentWindow || !event.data)
-			return Promise.resolve(false);
-
-		if (event.data.type === 'ccswitch-prototype-host-save')
-			return this.saveStaticPrototypeHostConfig(event.data.payload).then(L.bind(function () {
-				return this.loadStaticPrototypeHostBindings().then(L.bind(function (hostBindings) {
-					this.postStaticPrototypeFrameMessage(frame, 'ccswitch-prototype-host-save-result', {
-						ok: true,
-						host: hostBindings
-					});
-					return true;
-				}, this));
-			}, this)).catch(L.bind(function (err) {
-				this.postStaticPrototypeFrameMessage(frame, 'ccswitch-prototype-host-save-result', {
-					ok: false,
-					message: this.rpcFailureMessage(err) || _('Failed to save host settings.')
-				});
-				return true;
-			}, this));
-
-		if (event.data.type === 'ccswitch-prototype-restart-service')
-			return this.restartService().then(L.bind(function (result) {
-				if (!this.isRpcSuccess(result))
-					throw new Error(this.rpcError(result) || _('Failed to restart service.'));
-
-				return this.loadStaticPrototypeHostBindingsAfterRestart().then(L.bind(function (hostBindings) {
-					this.postStaticPrototypeFrameMessage(frame, 'ccswitch-prototype-restart-result', {
-						ok: true,
-						host: hostBindings
-					});
-					return true;
-				}, this));
-			}, this)).catch(L.bind(function (err) {
-				this.postStaticPrototypeFrameMessage(frame, 'ccswitch-prototype-restart-result', {
-					ok: false,
-					message: this.rpcFailureMessage(err) || _('Failed to restart service.')
-				});
-				return true;
-			}, this));
-
-		return Promise.resolve(false);
-	},
-
 	getStaticPrototypeBindings: function (data) {
+		var hostConfigResponse = data && data[0] && typeof data[0] === 'object' ? data[0] : null;
 		var serviceStatus = data && data[1] ? data[1] : {};
 		var runtimeResponse = data && data[2] ? data[2] : {};
 		var runtime = this.parseRuntimeStatusPayload(runtimeResponse);
-		var hostConfig = this.getHostConfigSnapshot();
+		var hostConfig = hostConfigResponse ? this.setHostConfigSnapshot(hostConfigResponse) : this.getHostConfigSnapshot();
 		var isRunning = this.parseServiceState(serviceStatus);
 		var proxyEnabled = runtime.statusSource ? runtime.proxyEnabled : !!(hostConfig.httpProxy || hostConfig.httpsProxy);
 		var health = 'unknown';
@@ -946,6 +1040,89 @@ return view.extend({
 			proxyEnabled: proxyEnabled ? '1' : '0',
 			logLevel: hostConfig.logLevel || 'info'
 		};
+	},
+
+	normalizeNativeHostState: function (bindings) {
+		var payload = bindings && typeof bindings === 'object' ? bindings : {};
+
+		return {
+			app: this.isSupportedApp(payload.app) ? payload.app : this.getSelectedApp(),
+			status: payload.status === 'running' ? 'running' : 'stopped',
+			health: payload.health || 'unknown',
+			listenAddr: payload.listenAddr != null ? String(payload.listenAddr) : '',
+			listenPort: payload.listenPort != null ? String(payload.listenPort) : '',
+			serviceLabel: payload.serviceLabel != null ? String(payload.serviceLabel) : _('Router daemon'),
+			httpProxy: payload.httpProxy != null ? String(payload.httpProxy) : '',
+			httpsProxy: payload.httpsProxy != null ? String(payload.httpsProxy) : '',
+			proxyEnabled: payload.proxyEnabled === true || payload.proxyEnabled === '1',
+			logLevel: payload.logLevel != null ? String(payload.logLevel) : 'info'
+		};
+	},
+
+	setNativeHostState: function (uiState, bindings) {
+		uiState.hostState = this.normalizeNativeHostState(bindings);
+		uiState.isRunning = uiState.hostState.status === 'running';
+
+		return Object.assign({}, uiState.hostState);
+	},
+
+	refreshNativeHostState: function (uiState) {
+		return this.loadStaticPrototypeHostBindings().then(L.bind(function (bindings) {
+			var hostState = this.setNativeHostState(uiState, bindings);
+
+			this.notifyShellListeners(uiState);
+			return hostState;
+		}, this));
+	},
+
+	saveNativeHostConfig: function (uiState, payload) {
+		this.setMessage(uiState, 'info', _('Saving host settings...'));
+		this.notifyShellListeners(uiState);
+
+		return this.saveStaticPrototypeHostConfig(payload).then(L.bind(function () {
+			return this.loadStaticPrototypeHostBindings().then(L.bind(function (bindings) {
+				var hostState = this.setNativeHostState(uiState, bindings);
+
+				this.setMessage(uiState, 'success', _('Host settings saved.'));
+				this.notifyShellListeners(uiState);
+				return hostState;
+			}, this));
+		}, this)).catch(L.bind(function (err) {
+			this.setMessage(uiState, 'error', this.rpcFailureMessage(err) || _('Failed to save host settings.'));
+			this.notifyShellListeners(uiState);
+			throw err;
+		}, this));
+	},
+
+	restartServiceFromNativeShellBridge: function (uiState) {
+		uiState.busy = true;
+		uiState.restartInFlight = true;
+		this.setMessage(uiState, 'info', _('Restarting service...'));
+		this.notifyShellListeners(uiState);
+
+		return this.restartService().then(L.bind(function (result) {
+			if (!this.isRpcSuccess(result))
+				throw new Error(this.rpcError(result) || _('Failed to restart service.'));
+
+			return this.loadStaticPrototypeHostBindingsAfterRestart().then(L.bind(function (bindings) {
+				this.setNativeHostState(uiState, bindings);
+				uiState.restartPending = false;
+				this.setMessage(uiState, 'success', _('Service restarted.'));
+				this.notifyShellListeners(uiState);
+
+				return {
+					isRunning: uiState.isRunning
+				};
+			}, this));
+		}, this)).catch(L.bind(function (err) {
+			this.setMessage(uiState, 'error', this.rpcFailureMessage(err) || _('Failed to restart service.'));
+			this.notifyShellListeners(uiState);
+			throw err;
+		}, this)).finally(L.bind(function () {
+			uiState.busy = false;
+			uiState.restartInFlight = false;
+			this.notifyShellListeners(uiState);
+		}, this));
 	},
 
 	buildStaticPrototypeQuery: function (bindings) {
@@ -1019,7 +1196,7 @@ return view.extend({
 				return;
 
 			requests.push(
-				L.resolveDefault(callGetProviderFailover(appId, providerId), null).then(function (response) {
+				L.resolveDefault(callOpenWrtGetProviderFailover(appId, providerId), null).then(function (response) {
 					return {
 						providerId: providerId,
 						failover: self.parseStaticPrototypeFailoverState(response, providerId)
@@ -1085,6 +1262,17 @@ return view.extend({
 
 		if (!parsed && providerResponse && providerResponse.provider)
 			parsed = providerResponse.provider;
+
+		if (!parsed && providerResponse && typeof providerResponse === 'object' && (
+			providerResponse.providerId != null ||
+			providerResponse.provider_id != null ||
+			providerResponse.configured != null ||
+			providerResponse.baseUrl != null ||
+			providerResponse.base_url != null ||
+			providerResponse.tokenField != null ||
+			providerResponse.token_field != null
+		))
+			parsed = providerResponse;
 
 		if (!parsed)
 			return this.emptyProviderView(appId);
@@ -1468,13 +1656,11 @@ return view.extend({
 
 	loadProviderState: function (appId) {
 		return Promise.all([
-			L.resolveDefault(callListProviders(appId), null),
-			L.resolveDefault(callListSavedProviders(appId), null),
-			L.resolveDefault(callGetActiveProvider(appId), { ok: false })
+			callOpenWrtListProviders(appId),
+			callOpenWrtGetActiveProvider(appId)
 		]).then(L.bind(function (results) {
-			var activeProvider = this.parseProviderState(results[2], appId);
-			var phase2State = this.parsePhase2ProviderState(results[0], activeProvider, appId) ||
-				this.parsePhase2ProviderState(results[1], activeProvider, appId);
+			var activeProvider = this.parseProviderState(results[1], appId);
+			var phase2State = this.parsePhase2ProviderState(results[0], activeProvider, appId);
 
 			if (phase2State)
 				return phase2State;
@@ -1850,542 +2036,6 @@ return view.extend({
 		]);
 	},
 
-	createStatusPanel: function (uiState, shellNodes) {
-		var self = this;
-		var serviceValue = E('strong');
-		var summaryValue = E('span', { 'class': 'ccswitch-host-summary-text' });
-		var messageRoot = E('div', { 'class': 'ccswitch-host-inline-banner', 'hidden': 'hidden', 'style': 'display:none' });
-		var messageText = E('div');
-		var restartButton = E('button', {
-			'class': 'btn cbi-button cbi-button-action',
-			'type': 'button',
-			'click': ui.createHandlerFn(this, async function (ev) {
-				ev.preventDefault();
-				await self.restartServiceFromShellBridge(uiState, nodes, shellNodes);
-			})
-		}, [_('Restart Service')]);
-		var root;
-		var nodes;
-
-		this.ensureHostPageStyles();
-		root = E('section', { 'class': 'ccswitch-host-surface ccswitch-host-surface-muted ccswitch-host-status-shell' }, [
-			E('div', { 'class': 'ccswitch-host-status-shell-main' }, [
-				this.createSectionIntro(
-					_('Service Status'),
-					_('Router Service'),
-					_('Keep service status and restart in LuCI. Provider workspace changes below can request a restart when needed, but the host shell remains authoritative.')
-				),
-				E('div', { 'class': 'ccswitch-host-service-row' }, [
-					this.createStatusMetric(_('Current State'), serviceValue),
-					E('div', { 'class': 'ccswitch-host-actions' }, [restartButton])
-				]),
-				E('div', { 'class': 'ccswitch-host-summary' }, [
-					E('span', { 'class': 'ccswitch-host-summary-label' }, [_('Restart Framing')]),
-					summaryValue
-				]),
-				messageRoot
-			])
-		]);
-		nodes = {
-			root: root,
-			serviceValue: serviceValue,
-			summaryValue: summaryValue,
-			messageRoot: messageRoot,
-			messageText: messageText,
-			restartButton: restartButton
-		};
-		messageRoot.appendChild(messageText);
-
-		this.updateStatusPanel(nodes, uiState);
-
-		return nodes;
-	},
-
-	updateStatusPanel: function (nodes, uiState) {
-		var summaryText;
-
-		nodes.serviceValue.textContent = uiState.isRunning ? _('Running') : _('Stopped');
-		this.setTone(nodes.serviceValue, uiState.isRunning ? 'success' : 'error');
-
-		if (uiState.restartInFlight)
-			summaryText = _('Restart in progress. Provider changes apply after the service comes back.');
-		else if (uiState.restartPending)
-			summaryText = _('Provider changes are saved. Restart in LuCI when you want them applied.');
-		else if (uiState.isRunning)
-			summaryText = _('Service is running. Host controls above remain authoritative for router settings.');
-		else
-			summaryText = _('Service is stopped. Saved provider changes will apply when the service starts.');
-
-		nodes.summaryValue.textContent = summaryText;
-		nodes.restartButton.disabled = !!uiState.busy;
-		this.updateMessageBanner(nodes.messageRoot, nodes.messageText, uiState.message);
-	},
-
-	createProviderShell: function (uiState) {
-		var runtimeMountRoot = E('div', {
-			'id': 'ccswitch-shared-runtime-surface-root',
-			'class': 'ccswitch-host-shared-mount ccswitch-host-runtime-mount'
-		});
-		var mountRoot = E('div', {
-			'id': 'ccswitch-shared-provider-ui-root',
-			'class': 'ccswitch-host-shared-mount ccswitch-host-provider-mount'
-		});
-		var shellNodes = {
-			runtimeMountRoot: runtimeMountRoot,
-			mountRoot: mountRoot,
-			root: null
-		};
-		var root = E('div', { 'class': 'ccswitch-host-workspace-stack' }, [
-			E('section', { 'class': 'ccswitch-host-surface ccswitch-host-surface-muted' }, [
-				this.createSectionIntro(
-					_('Provider Workspace'),
-					_('Workspace Surface'),
-					_('The bottom block is the primary product surface. Runtime status and provider management live here with shared light and dark tokens.')
-				)
-			]),
-			E('div', { 'class': 'ccswitch-host-shell-grid' }, [
-				E('section', { 'class': 'ccswitch-host-surface ccswitch-host-runtime-shell ccswitch-host-nonlive-shell' }, [
-					this.createSectionIntro(
-						_('Shared Runtime'),
-						_('Runtime Status'),
-						_('The shared OpenWrt bundle mounts the read-only runtime and failover panel here. Service settings, outbound proxy controls, and restart actions stay in LuCI.')
-					),
-					runtimeMountRoot
-				]),
-				E('section', { 'class': 'ccswitch-host-surface ccswitch-host-provider-shell ccswitch-host-nonlive-shell' }, [
-					this.createSectionIntro(
-						_('Shared Provider Surface'),
-						_('Provider Manager'),
-						_('The shared OpenWrt bundle mounts the main provider panel here. LuCI fallback mode stays available only if the shared bundle is unavailable or fails compatibility checks.')
-					),
-					E('p', { 'class': 'ccswitch-host-shell-note' }, [
-						_('Service settings, outbound proxy controls, status, and restart actions stay in the LuCI shell.')
-					]),
-					mountRoot
-				])
-			])
-		]);
-
-		shellNodes.root = root;
-		this.setProviderShellMode(shellNodes, 'shared');
-		this.updateProviderShell(shellNodes, uiState);
-
-		return shellNodes;
-	},
-
-	setProviderShellMode: function (shellNodes, mode) {
-		if (shellNodes && shellNodes.root)
-			shellNodes.root.setAttribute('data-mode', mode || 'shared');
-	},
-
-	updateMessageBanner: function (messageRoot, messageText, message) {
-		if (!message || !message.text) {
-			messageRoot.style.display = 'none';
-			messageRoot.setAttribute('hidden', 'hidden');
-			messageRoot.removeAttribute('data-kind');
-			messageText.textContent = '';
-			return;
-		}
-
-		messageRoot.style.display = '';
-		messageRoot.removeAttribute('hidden');
-		messageRoot.setAttribute('data-kind', message.kind || 'info');
-		messageText.textContent = message.text;
-	},
-
-	updateProviderShell: function (shellNodes, uiState) {
-		return;
-	},
-
-	updateShellChrome: function (uiState, statusNodes, shellNodes) {
-		this.updateStatusPanel(statusNodes, uiState);
-		this.updateProviderShell(shellNodes, uiState);
-	},
-
-	renderAppSelector: function (uiState, root, statusNodes) {
-		var self = this;
-		var select = E('select', { 'class': 'cbi-input-select' });
-		var i;
-
-		for (i = 0; i < APP_OPTIONS.length; i++) {
-			select.appendChild(E('option', {
-				'value': APP_OPTIONS[i].id,
-				'selected': APP_OPTIONS[i].id === uiState.selectedApp ? 'selected' : null
-			}, [APP_OPTIONS[i].label]));
-		}
-
-		select.addEventListener('change', function () {
-			self.handleSwitchApp(root, uiState, statusNodes, select.value);
-		});
-
-		return this.renderValue(_('Application'), select, _('Choose which CLI tool provider set to manage on this router.'));
-	},
-
-	renderCompatibilityNotice: function () {
-		return this.createInlineStateNotice(
-			'warning',
-			null,
-			_('Phase 2 LuCI UI is ready, but this build only exposes the Phase 1 active-provider RPCs. Add/edit still works for the active provider; saved-provider add/delete/activate depends on the backend and ubus bridge slices landing first.')
-		);
-	},
-
-	renderProviderBadge: function (text, style) {
-		return E('span', {
-			'class': 'ccswitch-host-fallback-badge',
-			'data-kind': style || 'active'
-		}, [text]);
-	},
-
-	renderProviderMetaRow: function (label, value) {
-		return E('div', { 'class': 'ccswitch-host-fallback-card-meta-row' }, [
-			E('strong', {}, [label + ': ']),
-			E('span', { 'style': 'word-break:break-all' }, [value])
-		]);
-	},
-
-	renderProviderCard: function (provider, uiState, root, statusNodes) {
-		var self = this;
-		var headerChildren = [E('strong', {}, [provider.name || _('Unnamed provider')])];
-		var actionChildren = [];
-		var detailsChildren = [];
-		var tokenSummary = provider.tokenConfigured
-			? provider.tokenMasked + ' (' + provider.tokenField + ')'
-			: _('Not stored');
-
-		if (provider.active)
-			headerChildren.push(this.renderProviderBadge(_('Active'), 'active'));
-
-		if (!provider.tokenConfigured)
-			headerChildren.push(this.renderProviderBadge(_('No token'), 'warning'));
-
-		if (uiState.providerState.phase2Available) {
-			actionChildren.push(E('button', {
-				'class': 'btn cbi-button',
-				'type': 'button',
-				'disabled': uiState.busy ? 'disabled' : null,
-				'click': ui.createHandlerFn(this, function (ev) {
-					ev.preventDefault();
-					self.setEditorModeEdit(uiState, provider.providerId);
-					self.clearMessage(uiState);
-					self.rerenderManager(root, uiState, statusNodes);
-				})
-			}, [_('Edit')]));
-
-			if (!provider.active) {
-				actionChildren.push(E('button', {
-					'class': 'btn cbi-button cbi-button-action',
-					'type': 'button',
-					'disabled': uiState.busy ? 'disabled' : null,
-					'click': ui.createHandlerFn(this, async function (ev) {
-						ev.preventDefault();
-						await self.handleActivateProvider(root, uiState, statusNodes, provider.providerId);
-					})
-				}, [_('Activate')]));
-			}
-
-			actionChildren.push(E('button', {
-				'class': 'btn cbi-button',
-				'type': 'button',
-				'disabled': uiState.busy ? 'disabled' : null,
-				'click': ui.createHandlerFn(this, async function (ev) {
-					ev.preventDefault();
-					await self.handleDeleteProvider(root, uiState, statusNodes, provider);
-				})
-			}, [_('Delete')]));
-		}
-
-		detailsChildren.push(this.renderProviderMetaRow(_('Token'), tokenSummary));
-		detailsChildren.push(this.renderProviderMetaRow(_('Model'), provider.model || _('Not forced')));
-		if (provider.notes)
-			detailsChildren.push(this.renderProviderMetaRow(_('Notes'), provider.notes));
-
-		return E('div', {
-			'class': 'ccswitch-host-fallback-card',
-			'data-active': provider.active ? 'true' : 'false'
-		}, [
-			E('div', {
-				'class': 'ccswitch-host-fallback-card-header'
-			}, [
-				E('div', { 'class': 'ccswitch-host-fallback-card-title' }, headerChildren),
-				E('div', { 'class': 'ccswitch-host-fallback-card-actions' }, actionChildren)
-			]),
-			E('div', { 'class': 'ccswitch-host-fallback-card-url' }, [
-				provider.baseUrl || _('No Base URL set')
-			]),
-			E('div', { 'class': 'ccswitch-host-fallback-card-meta' }, detailsChildren)
-		]);
-	},
-
-	renderProviderList: function (uiState, root, statusNodes) {
-		var appMeta = this.getAppMeta(uiState.selectedApp);
-		var self = this;
-		var children = [];
-
-		children.push(E('h4', { 'class': 'ccswitch-host-fallback-list-title' }, [appMeta.providerLabel]));
-
-		if (!uiState.providerState.providers.length) {
-			children.push(E('p', { 'class': 'ccswitch-host-fallback-empty' }, [
-				uiState.providerState.phase2Available
-					? _('No saved providers yet. Add one below, then activate it when ready.')
-					: _('No provider is configured yet.')
-			]));
-			return E('div', { 'class': 'ccswitch-host-fallback-list' }, children);
-		}
-
-		uiState.providerState.providers.forEach(function (provider) {
-			children.push(self.renderProviderCard(provider, uiState, root, statusNodes));
-		});
-
-		return E('div', { 'class': 'ccswitch-host-fallback-list' }, children);
-	},
-
-	renderEditorSection: function (uiState, root, statusNodes) {
-		var appMeta = this.getAppMeta(uiState.selectedApp);
-		var self = this;
-		var editingProvider = this.getEditorProvider(uiState);
-		var payload = this.providerToEditorPayload(editingProvider, uiState.selectedApp);
-		var presetId = this.inferPresetIdFromPayload(uiState.selectedApp, payload);
-		var title;
-		var description;
-		var presetSelect;
-		var presetDescriptionNode = E('div', { 'class': 'cbi-value-description' }, [
-			_('Use a preset to prefill the fields below. You can continue editing after selection.')
-		]);
-		var tokenHint = E('div', { 'class': 'cbi-value-description' }, [
-			editingProvider.tokenConfigured
-				? _('Stored credential: ') + editingProvider.tokenMasked
-				: _('No credential stored yet.')
-		]);
-		var nameInput;
-		var baseUrlInput;
-		var tokenFieldSelect;
-		var tokenInput;
-		var modelInput;
-		var notesInput;
-		var actionChildren = [];
-
-		if (!uiState.providerState.phase2Available) {
-			title = editingProvider.configured ? appMeta.activeProviderLabel : _('Configure Provider');
-			description = editingProvider.configured
-				? _('This compatibility editor updates the active provider only until the multi-provider backend slice lands.')
-				: _('Save the first provider here. Once the backend app-aware RPCs land, this page will expand into a full saved-provider manager.');
-		} else if (uiState.editorMode === 'edit') {
-			title = _('Edit Saved Provider');
-			description = _('Leave the credential blank to keep the stored secret. Saving does not automatically activate a different provider.');
-		} else {
-			title = _('Add Saved Provider');
-			description = appMeta.summaryInactive;
-		}
-
-		nameInput = E('input', {
-			'class': 'cbi-input-text',
-			'type': 'text',
-			'placeholder': appMeta.newProviderExample,
-			'value': payload.name
-		});
-
-		baseUrlInput = E('input', {
-			'class': 'cbi-input-text',
-			'type': 'url',
-			'placeholder': appMeta.baseUrlPlaceholder,
-			'value': payload.baseUrl
-		});
-
-		presetSelect = E('select', {
-			'class': 'cbi-input-select'
-		});
-		presetSelect.appendChild(E('option', {
-			'value': 'custom',
-			'selected': presetId === 'custom' ? 'selected' : null
-		}, [_('Custom')]));
-		this.getPresetOptions(uiState.selectedApp).forEach(function (preset) {
-			presetSelect.appendChild(E('option', {
-				'value': preset.id,
-				'selected': preset.id === presetId ? 'selected' : null
-			}, [preset.label]));
-		});
-		this.updatePresetDescription(presetDescriptionNode, uiState.selectedApp, presetId);
-
-		tokenFieldSelect = E('select', {
-			'class': 'cbi-input-select',
-			'disabled': appMeta.tokenFieldChoices.length === 1 ? 'disabled' : null
-		});
-		appMeta.tokenFieldChoices.forEach(function (choice) {
-			tokenFieldSelect.appendChild(E('option', {
-				'value': choice,
-				'selected': payload.tokenField === choice || (!payload.tokenField && choice === appMeta.tokenFieldChoices[0]) ? 'selected' : null
-			}, [choice]));
-		});
-		presetSelect.addEventListener('change', function () {
-			self.applyPresetToInputs(uiState.selectedApp, presetSelect.value, {
-				nameInput: nameInput,
-				baseUrlInput: baseUrlInput,
-				tokenFieldSelect: tokenFieldSelect,
-				modelInput: modelInput,
-				presetDescriptionNode: presetDescriptionNode
-			});
-		});
-
-		tokenInput = E('input', {
-			'class': 'cbi-input-password',
-			'type': 'password',
-			'autocomplete': 'off',
-			'placeholder': editingProvider.tokenConfigured
-				? _('Leave blank to keep the stored credential')
-				: _('Enter credential')
-		});
-
-		modelInput = E('input', {
-			'class': 'cbi-input-text',
-			'type': 'text',
-			'placeholder': appMeta.modelPlaceholder,
-			'value': payload.model
-		});
-
-		notesInput = E('textarea', {
-			'class': 'cbi-input-textarea',
-			'rows': '3',
-			'placeholder': _('Optional notes')
-		}, [payload.notes]);
-
-		actionChildren.push(E('button', {
-			'class': 'btn cbi-button cbi-button-save',
-			'type': 'button',
-			'disabled': uiState.busy ? 'disabled' : null,
-			'click': ui.createHandlerFn(this, async function (ev) {
-				ev.preventDefault();
-				await self.handleSaveProvider(root, uiState, statusNodes, {
-					nameInput: nameInput,
-					baseUrlInput: baseUrlInput,
-					tokenFieldSelect: tokenFieldSelect,
-					tokenInput: tokenInput,
-					modelInput: modelInput,
-					notesInput: notesInput
-				});
-			})
-		}, [uiState.editorMode === 'edit' ? _('Save Changes') : _('Save Provider')]));
-
-		if (uiState.providerState.phase2Available && uiState.editorMode === 'edit') {
-			actionChildren.push(E('button', {
-				'class': 'btn cbi-button',
-				'type': 'button',
-				'disabled': uiState.busy ? 'disabled' : null,
-				'click': ui.createHandlerFn(this, function (ev) {
-					ev.preventDefault();
-					self.setEditorModeNew(uiState);
-					self.clearMessage(uiState);
-					self.rerenderManager(root, uiState, statusNodes);
-				})
-			}, [_('Cancel')]));
-		}
-
-		return E('section', { 'class': 'cbi-section ccswitch-host-fallback-editor' }, [
-			E('h4', {}, [title]),
-			E('p', { 'class': 'ccswitch-host-shell-note' }, [description]),
-			this.renderValue(_('Preset'), presetSelect, presetDescriptionNode),
-			this.renderValue(_('Name'), nameInput, appMeta.editorNameDescription),
-			this.renderValue(_('Base URL'), baseUrlInput, appMeta.baseUrlDescription),
-			this.renderValue(_('Token Field'), tokenFieldSelect, appMeta.tokenDescription),
-			this.renderValue(appMeta.tokenLabel, tokenInput, tokenHint),
-			this.renderValue(_('Model'), modelInput, appMeta.modelDescription),
-			this.renderValue(_('Notes'), notesInput, _('Optional notes stored with this provider.')),
-			E('div', { 'class': 'cbi-page-actions' }, actionChildren)
-		]);
-	},
-
-	renderManagerActions: function (uiState, root, statusNodes) {
-		var self = this;
-		var actions = [];
-
-		if (uiState.providerState.phase2Available) {
-			actions.push(E('button', {
-				'class': 'btn cbi-button',
-				'type': 'button',
-				'disabled': uiState.busy ? 'disabled' : null,
-				'click': ui.createHandlerFn(this, function (ev) {
-					ev.preventDefault();
-					self.setEditorModeNew(uiState);
-					self.clearMessage(uiState);
-					self.rerenderManager(root, uiState, statusNodes);
-				})
-			}, [_('Add Provider')]));
-		}
-
-		actions.push(E('button', {
-			'class': 'btn cbi-button cbi-button-action',
-			'type': 'button',
-			'disabled': uiState.busy ? 'disabled' : null,
-			'click': ui.createHandlerFn(this, async function (ev) {
-				ev.preventDefault();
-				await self.handleRestartService(root, uiState, statusNodes);
-			})
-		}, [_('Restart Service')]));
-
-		return E('div', { 'class': 'cbi-page-actions', 'style': 'margin-bottom:1rem' }, actions);
-	},
-
-	renderProviderManagerContent: function (root, uiState, statusNodes) {
-		var appMeta = this.getAppMeta(uiState.selectedApp);
-
-		return E('div', { 'class': 'ccswitch-host-provider-manager-fallback' }, [
-			E('section', { 'class': 'cbi-section ccswitch-host-surface' }, [
-				this.createSectionIntro(_('LuCI Fallback Path'), appMeta.providerLabel, appMeta.manageDescription),
-				this.renderAppSelector(uiState, root, statusNodes),
-				this.renderMessageBanner(uiState.message),
-				!uiState.providerState.phase2Available ? this.renderCompatibilityNotice() : E('div', { 'class': 'ccswitch-host-inline-banner', 'hidden': 'hidden' }),
-				this.renderManagerActions(uiState, root, statusNodes),
-				E('p', { 'class': 'ccswitch-host-shell-note' }, [
-					_('LuCI fallback mode stays available here if the shared bundle is unavailable or fails compatibility checks.')
-				]),
-				this.renderProviderList(uiState, root, statusNodes),
-				this.renderEditorSection(uiState, root, statusNodes)
-			])
-		]);
-	},
-
-	rerenderManager: function (root, uiState, statusNodes) {
-		while (root.firstChild)
-			root.removeChild(root.firstChild);
-
-		this.updateStatusPanel(statusNodes, uiState);
-		root.appendChild(this.renderProviderManagerContent(root, uiState, statusNodes));
-	},
-
-	collectProviderPayload: function (refs) {
-		return {
-			name: refs.nameInput.value.trim(),
-			baseUrl: refs.baseUrlInput.value.trim(),
-			tokenField: refs.tokenFieldSelect.value,
-			token: refs.tokenInput.value,
-			model: refs.modelInput.value.trim(),
-			notes: refs.notesInput.value.trim()
-		};
-	},
-
-	validateProviderPayload: function (payload, existingProvider, appId) {
-		var appMeta = this.getAppMeta(appId || 'claude');
-
-		if (!payload.name)
-			return _('Provider name is required.');
-
-		if (!payload.baseUrl)
-			return _('Base URL is required.');
-
-		if (!payload.token && !(existingProvider && existingProvider.tokenConfigured))
-			return appMeta.tokenRequiredMessage;
-
-		if (appMeta.tokenFieldChoices.indexOf(payload.tokenField) < 0)
-			return _('Unsupported token field.');
-
-		return null;
-	},
-
-	refreshServiceState: function () {
-		return L.resolveDefault(callServiceList('ccswitch'), {}).then(L.bind(function (serviceStatus) {
-			return this.parseServiceState(serviceStatus);
-		}, this));
-	},
-
 	isRpcSuccess: function (result) {
 		return result === true || (result && result.ok === true);
 	},
@@ -2475,11 +2125,7 @@ return view.extend({
 		if (providerId) {
 			return this.invokeRpcCandidates([
 				{
-					call: function () { return callUpsertProviderByProviderId(appId, providerId, providerPayload); },
-					compatibilityFallback: true
-				},
-				{
-					call: function () { return callUpsertProviderById(appId, providerId, providerPayload); },
+					call: function () { return callOpenWrtUpdateProvider(appId, providerId, providerPayload); },
 					compatibilityFallback: true
 				}
 			], missingMessage);
@@ -2487,11 +2133,7 @@ return view.extend({
 
 		return this.invokeRpcCandidates([
 			{
-				call: function () { return callUpsertProvider(appId, providerPayload); },
-				compatibilityFallback: true
-			},
-			{
-				call: function () { return callSaveProvider(appId, providerPayload); },
+				call: function () { return callOpenWrtCreateProvider(appId, providerPayload); },
 				compatibilityFallback: true
 			}
 		], missingMessage);
@@ -2500,11 +2142,7 @@ return view.extend({
 	invokePhase2Delete: function (appId, providerId) {
 		return this.invokeRpcCandidates([
 			{
-				call: function () { return callDeleteProviderByProviderId(appId, providerId); },
-				compatibilityFallback: true
-			},
-			{
-				call: function () { return callDeleteProviderById(appId, providerId); },
+				call: function () { return callOpenWrtDeleteProvider(appId, providerId); },
 				compatibilityFallback: true
 			}
 		], _('The Phase 2 provider delete RPC is not available in this build.'));
@@ -2513,19 +2151,7 @@ return view.extend({
 	invokePhase2Activate: function (appId, providerId) {
 		return this.invokeRpcCandidates([
 			{
-				call: function () { return callActivateProviderByProviderId(appId, providerId); },
-				compatibilityFallback: true
-			},
-			{
-				call: function () { return callActivateProviderById(appId, providerId); },
-				compatibilityFallback: true
-			},
-			{
-				call: function () { return callSwitchProviderByProviderId(appId, providerId); },
-				compatibilityFallback: true
-			},
-			{
-				call: function () { return callSwitchProviderById(appId, providerId); },
+				call: function () { return callOpenWrtActivateProvider(appId, providerId); },
 				compatibilityFallback: true
 			}
 		], _('The Phase 2 provider activate RPC is not available in this build.'));
@@ -2540,242 +2166,61 @@ return view.extend({
 		], _('Failed to restart service.'));
 	},
 
-	handleSwitchApp: async function (root, uiState, statusNodes, appId) {
-		var refreshed;
-
-		uiState.busy = true;
-		uiState.selectedApp = appId;
-		this.saveSelectedApp(appId);
-		this.setEditorModeNew(uiState);
-		this.setMessage(uiState, 'info', _('Loading provider set...'));
-		this.rerenderManager(root, uiState, statusNodes);
-
-		try {
-			refreshed = await this.refreshPageState(appId);
-			uiState.isRunning = refreshed.isRunning;
-			uiState.providerState = refreshed.providerState;
-			this.setEditorModeNew(uiState);
-			this.clearMessage(uiState);
-		} catch (err) {
-			this.setMessage(uiState, 'error', err.message || String(err));
-		} finally {
-			uiState.busy = false;
-			this.rerenderManager(root, uiState, statusNodes);
-		}
-	},
-
-	handleSaveProvider: async function (root, uiState, statusNodes, refs) {
-		var payload = this.collectProviderPayload(refs);
-		var existingProvider = this.getEditorProvider(uiState);
-		var validationError = this.validateProviderPayload(payload, existingProvider, uiState.selectedApp);
-		var previousActiveId = uiState.providerState.activeProviderId;
-		var editingId = uiState.editorMode === 'edit' ? uiState.editProviderId : null;
-		var refreshed;
-		var shouldRestart = false;
-		var message = _('Provider saved.');
-
-		if (validationError) {
-			this.setMessage(uiState, 'error', validationError);
-			this.rerenderManager(root, uiState, statusNodes);
-			return;
-		}
-
-		uiState.busy = true;
-		this.setMessage(uiState, 'info', _('Saving provider...'));
-		this.rerenderManager(root, uiState, statusNodes);
-
-		try {
-			if (uiState.providerState.phase2Available) {
-				await this.invokePhase2Upsert(uiState.selectedApp, editingId, payload);
-				refreshed = await this.refreshPageState(uiState.selectedApp);
-				shouldRestart = refreshed.isRunning && (
-					previousActiveId !== refreshed.providerState.activeProviderId ||
-					(editingId && editingId === previousActiveId) ||
-					(!previousActiveId && !!refreshed.providerState.activeProviderId)
-				);
-			} else {
-				var legacyResult = await L.resolveDefault(callUpsertActiveProvider(uiState.selectedApp, payload), { ok: false });
-				if (!this.isRpcSuccess(legacyResult))
-					throw new Error(this.rpcError(legacyResult) || _('Failed to save provider.'));
-
-				refreshed = await this.refreshPageState(uiState.selectedApp);
-				shouldRestart = refreshed.isRunning;
-			}
-
-			if (shouldRestart) {
-				await this.restartService();
-				refreshed = await this.refreshPageState(uiState.selectedApp);
-				message = _('Provider saved and service restarted.');
-			}
-
-			uiState.isRunning = refreshed.isRunning;
-			uiState.providerState = refreshed.providerState;
-
-			if (!uiState.providerState.phase2Available)
-				this.setEditorModeEdit(uiState, uiState.providerState.activeProviderId);
-			else if (!editingId || !this.findProviderById(uiState.providerState.providers, editingId))
-				this.setEditorModeNew(uiState);
-
-			this.setMessage(uiState, 'success', message);
-		} catch (err) {
-			this.setMessage(uiState, 'error', err.message || String(err));
-		} finally {
-			uiState.busy = false;
-			this.rerenderManager(root, uiState, statusNodes);
-		}
-	},
-
-	handleActivateProvider: async function (root, uiState, statusNodes, providerId) {
-		var previousActiveId = uiState.providerState.activeProviderId;
-		var refreshed;
-		var message = _('Provider activated.');
-
-		uiState.busy = true;
-		this.setMessage(uiState, 'info', _('Activating provider...'));
-		this.rerenderManager(root, uiState, statusNodes);
-
-		try {
-			await this.invokePhase2Activate(uiState.selectedApp, providerId);
-			refreshed = await this.refreshPageState(uiState.selectedApp);
-
-			if (refreshed.isRunning && previousActiveId !== refreshed.providerState.activeProviderId) {
-				await this.restartService();
-				refreshed = await this.refreshPageState(uiState.selectedApp);
-				message = _('Provider activated and service restarted.');
-			}
-
-			uiState.isRunning = refreshed.isRunning;
-			uiState.providerState = refreshed.providerState;
-			this.setMessage(uiState, 'success', message);
-		} catch (err) {
-			this.setMessage(uiState, 'error', err.message || String(err));
-		} finally {
-			uiState.busy = false;
-			this.rerenderManager(root, uiState, statusNodes);
-		}
-	},
-
-	handleDeleteProvider: async function (root, uiState, statusNodes, provider) {
-		var previousActiveId = uiState.providerState.activeProviderId;
-		var refreshed;
-		var message = _('Provider deleted.');
-
-		if (!confirm(_('Delete provider "') + provider.name + _('" ? This cannot be undone.')))
-			return;
-
-		uiState.busy = true;
-		this.setMessage(uiState, 'info', _('Deleting provider...'));
-		this.rerenderManager(root, uiState, statusNodes);
-
-		try {
-			await this.invokePhase2Delete(uiState.selectedApp, provider.providerId);
-			refreshed = await this.refreshPageState(uiState.selectedApp);
-
-			if (refreshed.isRunning &&
-				(provider.providerId === previousActiveId ||
-					previousActiveId !== refreshed.providerState.activeProviderId)) {
-				await this.restartService();
-				refreshed = await this.refreshPageState(uiState.selectedApp);
-				message = _('Provider deleted and service restarted.');
-			}
-
-			uiState.isRunning = refreshed.isRunning;
-			uiState.providerState = refreshed.providerState;
-
-			if (uiState.editProviderId === provider.providerId)
-				this.setEditorModeNew(uiState);
-
-			this.setMessage(uiState, 'success', message);
-		} catch (err) {
-			this.setMessage(uiState, 'error', err.message || String(err));
-		} finally {
-			uiState.busy = false;
-			this.rerenderManager(root, uiState, statusNodes);
-		}
-	},
-
-	handleRestartService: async function (root, uiState, statusNodes) {
-		var refreshed;
-
-		uiState.busy = true;
-		this.setMessage(uiState, 'info', _('Restarting service...'));
-		this.rerenderManager(root, uiState, statusNodes);
-
-		try {
-			await this.restartService();
-			refreshed = await this.refreshPageState(uiState.selectedApp);
-			uiState.isRunning = refreshed.isRunning;
-			uiState.providerState = refreshed.providerState;
-			this.setMessage(uiState, 'success', _('Service restarted.'));
-		} catch (err) {
-			this.setMessage(uiState, 'error', err.message || String(err));
-		} finally {
-			uiState.busy = false;
-			this.rerenderManager(root, uiState, statusNodes);
-		}
-	},
-
 	createProviderTransport: function () {
 		return {
 			listProviders: function (appId) {
-				return L.resolveDefault(callListProviders(appId), null);
+				return callOpenWrtListProviders(appId);
 			},
 			listSavedProviders: function (appId) {
-				return L.resolveDefault(callListSavedProviders(appId), null);
+				return callOpenWrtListProviders(appId);
 			},
 			getActiveProvider: function (appId) {
-				return L.resolveDefault(callGetActiveProvider(appId), { ok: false });
+				return callOpenWrtGetActiveProvider(appId);
 			},
 			getProviderFailoverState: function (appId, providerId) {
-				return L.resolveDefault(callGetProviderFailover(appId, providerId), { ok: false });
+				return callOpenWrtGetProviderFailover(appId, providerId);
 			},
 			upsertProvider: function (appId, provider) {
-				return L.resolveDefault(callUpsertProvider(appId, provider), { ok: false });
+				return callOpenWrtCreateProvider(appId, provider);
 			},
 			saveProvider: function (appId, provider) {
-				return L.resolveDefault(callSaveProvider(appId, provider), { ok: false });
+				return callOpenWrtCreateProvider(appId, provider);
 			},
 			upsertProviderByProviderId: function (appId, providerId, provider) {
-				return L.resolveDefault(callUpsertProviderByProviderId(appId, providerId, provider), { ok: false });
+				return callOpenWrtUpdateProvider(appId, providerId, provider);
 			},
 			upsertProviderById: function (appId, providerId, provider) {
-				return L.resolveDefault(callUpsertProviderById(appId, providerId, provider), { ok: false });
+				return callOpenWrtUpdateProvider(appId, providerId, provider);
 			},
 			upsertActiveProvider: function (appId, provider) {
-				return L.resolveDefault(callUpsertActiveProvider(appId, provider), { ok: false });
+				return callOpenWrtSaveActiveProvider(appId, provider);
 			},
 			deleteProviderByProviderId: function (appId, providerId) {
-				return L.resolveDefault(callDeleteProviderByProviderId(appId, providerId), { ok: false });
+				return callOpenWrtDeleteProvider(appId, providerId);
 			},
 			deleteProviderById: function (appId, providerId) {
-				return L.resolveDefault(callDeleteProviderById(appId, providerId), { ok: false });
+				return callOpenWrtDeleteProvider(appId, providerId);
 			},
 			activateProviderByProviderId: function (appId, providerId) {
-				return L.resolveDefault(callActivateProviderByProviderId(appId, providerId), { ok: false });
+				return callOpenWrtActivateProvider(appId, providerId);
 			},
 			activateProviderById: function (appId, providerId) {
-				return L.resolveDefault(callActivateProviderById(appId, providerId), { ok: false });
-			},
-			switchProviderByProviderId: function (appId, providerId) {
-				return L.resolveDefault(callSwitchProviderByProviderId(appId, providerId), { ok: false });
-			},
-			switchProviderById: function (appId, providerId) {
-				return L.resolveDefault(callSwitchProviderById(appId, providerId), { ok: false });
+				return callOpenWrtActivateProvider(appId, providerId);
 			},
 			addToFailoverQueue: function (appId, providerId) {
-				return L.resolveDefault(callAddToFailoverQueue(appId, providerId), { ok: false });
+				return callOpenWrtAddToFailoverQueue(appId, providerId);
 			},
 			removeFromFailoverQueue: function (appId, providerId) {
-				return L.resolveDefault(callRemoveFromFailoverQueue(appId, providerId), { ok: false });
+				return callOpenWrtRemoveFromFailoverQueue(appId, providerId);
 			},
 			setAutoFailoverEnabled: function (appId, enabled) {
-				return L.resolveDefault(callSetAutoFailoverEnabled(appId, enabled), { ok: false });
+				return callOpenWrtSetAutoFailoverEnabled(appId, enabled);
 			},
 			reorderFailoverQueue: function (appId, providerIds) {
-				return L.resolveDefault(callReorderFailoverQueue(appId, providerIds), { ok: false });
+				return callOpenWrtReorderFailoverQueue(appId, providerIds);
 			},
 			setMaxRetries: function (appId, value) {
-				return L.resolveDefault(callSetMaxRetries(appId, value), { ok: false });
+				return callOpenWrtSetMaxRetries(appId, value);
 			},
 			restartService: function () {
 				return L.resolveDefault(callRestartService(), { ok: false });
@@ -2783,31 +2228,7 @@ return view.extend({
 		};
 	},
 
-	createRuntimeTransport: function () {
-		return {
-			failoverControlsAvailable: true,
-			getRuntimeStatus: function () {
-				return L.resolveDefault(callGetRuntimeStatus(), { ok: false });
-			},
-			getAppRuntimeStatus: function (appId) {
-				return L.resolveDefault(callGetAppRuntimeStatus(appId), { ok: false });
-			},
-			getAvailableFailoverProviders: function (appId) {
-				return L.resolveDefault(callGetAvailableFailoverProviders(appId), { ok: false });
-			},
-			addToFailoverQueue: function (appId, providerId) {
-				return L.resolveDefault(callAddToFailoverQueue(appId, providerId), { ok: false });
-			},
-			removeFromFailoverQueue: function (appId, providerId) {
-				return L.resolveDefault(callRemoveFromFailoverQueue(appId, providerId), { ok: false });
-			},
-			setAutoFailoverEnabled: function (appId, enabled) {
-				return L.resolveDefault(callSetAutoFailoverEnabled(appId, enabled), { ok: false });
-			}
-		};
-	},
-
-	createShellBridge: function (uiState, statusNodes, shellNodes) {
+	createNativePageShellBridge: function (uiState) {
 		var self = this;
 
 		return {
@@ -2820,7 +2241,8 @@ return view.extend({
 
 				uiState.selectedApp = appId;
 				self.saveSelectedApp(appId);
-				self.updateShellChrome(uiState, statusNodes, shellNodes);
+				if (uiState.hostState)
+					uiState.hostState.app = appId;
 				self.notifyShellListeners(uiState);
 
 				return uiState.selectedApp;
@@ -2845,8 +2267,16 @@ return view.extend({
 				if (typeof restartState.inFlight === 'boolean')
 					uiState.restartInFlight = restartState.inFlight;
 
-				self.updateShellChrome(uiState, statusNodes, shellNodes);
 				self.notifyShellListeners(uiState);
+			},
+			getHostState: function () {
+				return Object.assign({}, uiState.hostState || self.normalizeNativeHostState({ app: uiState.selectedApp }));
+			},
+			getMessage: function () {
+				return uiState.message ? {
+					kind: uiState.message.kind,
+					text: uiState.message.text
+				} : null;
 			},
 			subscribe: function (listener) {
 				if (typeof listener !== 'function')
@@ -2864,50 +2294,29 @@ return view.extend({
 				};
 			},
 			refreshServiceStatus: async function () {
-				uiState.isRunning = await self.refreshServiceState();
-				self.updateShellChrome(uiState, statusNodes, shellNodes);
-				self.notifyShellListeners(uiState);
+				var hostState = await self.refreshNativeHostState(uiState);
 
 				return {
-					isRunning: uiState.isRunning
+					isRunning: hostState.status === 'running'
 				};
+			},
+			refreshHostState: async function () {
+				return self.refreshNativeHostState(uiState);
+			},
+			saveHostConfig: async function (payload) {
+				return self.saveNativeHostConfig(uiState, payload);
 			},
 			showMessage: function (kind, text) {
 				self.setMessage(uiState, kind, text);
-				self.updateShellChrome(uiState, statusNodes, shellNodes);
 				self.notifyShellListeners(uiState);
 			},
 			clearMessage: function () {
 				self.clearMessage(uiState);
-				self.updateShellChrome(uiState, statusNodes, shellNodes);
 				self.notifyShellListeners(uiState);
 			},
 			restartService: async function () {
-				return self.restartServiceFromShellBridge(uiState, statusNodes, shellNodes);
+				return self.restartServiceFromNativeShellBridge(uiState);
 			}
-		};
-	},
-
-	createSharedRuntimeMountOptions: function (shellNodes) {
-		return {
-			target: shellNodes.runtimeMountRoot,
-			transport: this.createRuntimeTransport()
-		};
-	},
-
-	createSharedProviderMountOptions: function (uiState, statusNodes, shellNodes) {
-		var transport = this.createProviderTransport();
-
-		delete transport.restartService;
-
-		return {
-			target: shellNodes.mountRoot,
-			appId: uiState.selectedApp,
-			serviceStatus: {
-				isRunning: uiState.isRunning
-			},
-			transport: transport,
-			shell: this.createShellBridge(uiState, statusNodes, shellNodes)
 		};
 	},
 
@@ -2921,19 +2330,6 @@ return view.extend({
 		return function () {};
 	},
 
-	teardownSharedRuntimeSurface: function (uiState) {
-		if (!uiState.runtimeMountHandle)
-			return;
-
-		try {
-			uiState.runtimeMountHandle();
-		} catch (e) {
-			/* no-op */
-		}
-
-		uiState.runtimeMountHandle = null;
-	},
-
 	teardownSharedProviderUi: function (uiState) {
 		if (!uiState.mountHandle)
 			return;
@@ -2945,52 +2341,6 @@ return view.extend({
 		}
 
 		uiState.mountHandle = null;
-	},
-
-	showBundleFallback: function (mountRoot, message) {
-		while (mountRoot.firstChild)
-			mountRoot.removeChild(mountRoot.firstChild);
-
-		mountRoot.appendChild(this.createInlineStateNotice(
-			'error',
-			_('Shared Provider UI unavailable'),
-			message || _('The shared provider manager bundle is missing or failed to initialize.'),
-			_('The OpenWrt-native service settings, proxy controls, and restart actions above still remain functional.')
-		));
-	},
-
-	showBundleLoading: function (mountRoot) {
-		while (mountRoot.firstChild)
-			mountRoot.removeChild(mountRoot.firstChild);
-
-		mountRoot.appendChild(this.createInlineStateNotice(
-			'info',
-			null,
-			_('Loading the shared provider manager...')
-		));
-	},
-
-	showRuntimeSurfaceFallback: function (mountRoot, message) {
-		while (mountRoot.firstChild)
-			mountRoot.removeChild(mountRoot.firstChild);
-
-		mountRoot.appendChild(this.createInlineStateNotice(
-			'error',
-			_('Runtime surface unavailable'),
-			message || _('The shared runtime surface could not be loaded from the OpenWrt browser bundle.'),
-			_('The LuCI-owned service settings, outbound proxy controls, restart actions, and provider manager below still remain available.')
-		));
-	},
-
-	showRuntimeSurfaceLoading: function (mountRoot) {
-		while (mountRoot.firstChild)
-			mountRoot.removeChild(mountRoot.firstChild);
-
-		mountRoot.appendChild(this.createInlineStateNotice(
-			'info',
-			null,
-			_('Loading the shared runtime surface...')
-		));
 	},
 
 	loadSharedProviderBundle: function () {
@@ -3055,253 +2405,59 @@ return view.extend({
 			return this._sharedProviderBundlePromise;
 		},
 
-	restartServiceFromShellBridge: async function (uiState, statusNodes, shellNodes) {
-			var result;
+	renderNativePage: function (data) {
+		var self = this;
+		var selectedApp = this.getSelectedApp();
+		var hostBindings = this.getStaticPrototypeBindings(data || []);
+		var uiState = this.createUiState(hostBindings.status === 'running', selectedApp);
+		var wrapper = E('div', {
+			'id': 'ccswitch-openwrt-native-page-root'
+		});
 
-			uiState.busy = true;
-			uiState.restartInFlight = true;
-			this.setMessage(uiState, 'info', _('Restarting service...'));
-			this.updateShellChrome(uiState, statusNodes, shellNodes);
-			this.notifyShellListeners(uiState);
+		this.setNativeHostState(uiState, hostBindings);
+		this.clearMessage(uiState);
 
-		try {
-			result = await L.resolveDefault(callRestartService(), { ok: false });
-			if (!this.isRpcSuccess(result))
-				throw new Error(this.rpcFailureMessage(result) || _('Failed to restart service.'));
+		wrapper.appendChild(this.createInlineStateNotice(
+			'info',
+			null,
+			_('Loading the OpenWrt-native workspace...')
+		));
 
-			uiState.isRunning = await this.refreshServiceState();
-			uiState.restartPending = false;
-			this.setMessage(uiState, 'success', _('Service restarted.'));
-		} catch (err) {
-			this.setMessage(uiState, 'error', this.rpcFailureMessage(err) || _('Failed to restart service.'));
-		} finally {
-			uiState.busy = false;
-			uiState.restartInFlight = false;
-			this.updateShellChrome(uiState, statusNodes, shellNodes);
-			this.notifyShellListeners(uiState);
-		}
+		window.setTimeout(function () {
+			self.loadSharedProviderBundle().then(function (api) {
+				var handle;
 
-			return {
-				isRunning: uiState.isRunning
-			};
-	},
-
-	bundleProvidesProviderManager: function (api) {
-		return !(api && api.capabilities && api.capabilities.providerManager === false);
-	},
-
-	bundleProvidesRuntimeSurface: function (api) {
-		return !!(api &&
-			typeof api.mountRuntimeSurface === 'function' &&
-			!(api.capabilities && api.capabilities.runtimeSurface === false));
-	},
-
-	renderFallbackProviderManager: function (uiState, statusNodes, shellNodes, kind, text, bundleStatus, fallbackReason) {
-		this.teardownSharedProviderUi(uiState);
-		this.setProviderShellMode(shellNodes, 'fallback');
-		this.setBundleStatus(uiState, bundleStatus || 'fallback', text || null, fallbackReason || null);
-
-		if (kind && text)
-			this.setMessage(uiState, kind, text);
-		else if (!kind)
-			this.clearMessage(uiState);
-
-		this.updateShellChrome(uiState, statusNodes, shellNodes);
-		this.rerenderManager(shellNodes.mountRoot, uiState, statusNodes);
-	},
-
-	mountSharedRuntimeSurface: async function (uiState, shellNodes) {
-		var requestId;
-		var mountOptions;
-		var api;
-		var handle;
-
-		uiState.runtimeMountRequestId += 1;
-		requestId = uiState.runtimeMountRequestId;
-		this.teardownSharedRuntimeSurface(uiState);
-		this.showRuntimeSurfaceLoading(shellNodes.runtimeMountRoot);
-
-		try {
-			api = await this.loadSharedProviderBundle();
-			if (requestId !== uiState.runtimeMountRequestId)
-				return;
-
-			if (!this.bundleProvidesRuntimeSurface(api)) {
-				this.showRuntimeSurfaceFallback(
-					shellNodes.runtimeMountRoot,
-					_('The shared bundle is missing runtime-panel support, so the OpenWrt runtime panel cannot load here.')
-				);
-				return;
-			}
-
-			mountOptions = this.createSharedRuntimeMountOptions(shellNodes);
-			handle = await Promise.resolve(api.mountRuntimeSurface(mountOptions));
-			uiState.runtimeMountHandle = this.normalizeMountHandle(handle);
-		} catch (err) {
-			if (requestId !== uiState.runtimeMountRequestId)
-				return;
-
-			this.showRuntimeSurfaceFallback(
-				shellNodes.runtimeMountRoot,
-				this.rpcFailureMessage(err) || _('The shared runtime surface failed to load or mount.')
-			);
-		}
-	},
-
-	mountSharedProviderUi: async function (uiState, statusNodes, shellNodes) {
-			var requestId;
-			var mountOptions;
-			var api;
-			var handle;
-
-			uiState.mountRequestId += 1;
-			requestId = uiState.mountRequestId;
-			this.teardownSharedProviderUi(uiState);
-
-			if (this.isSharedProviderUiDisabledByCutoverGate()) {
-				this.renderFallbackProviderManager(
-					uiState,
-					statusNodes,
-					shellNodes,
-					'info',
-					_('The shared provider panel is disabled for this browser by the local cutover setting, so LuCI fallback mode remains active for router verification.'),
-					'fallback',
-					SHARED_PROVIDER_UI_FALLBACK_REASON_GATE_DISABLED
-				);
-				return;
-			}
-
-			this.setProviderShellMode(shellNodes, 'shared');
-			this.clearMessage(uiState);
-			this.setBundleStatus(uiState, 'loading', null, null);
-			this.updateShellChrome(uiState, statusNodes, shellNodes);
-			this.showBundleLoading(shellNodes.mountRoot);
-
-			try {
-				api = await this.loadSharedProviderBundle();
-				if (requestId !== uiState.mountRequestId)
-					return;
-
-				if (!this.bundleProvidesProviderManager(api)) {
-					this.renderFallbackProviderManager(
-						uiState,
-						statusNodes,
-						shellNodes,
-						'error',
-						_('The shared bundle loaded without provider-panel support, so LuCI fallback mode remains active until that bundle contract is fixed.'),
-						'fallback',
-						SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_REGRESSION
-					);
-					return;
+				if (!api || typeof api.mountPage !== 'function') {
+					throw new Error(_('The shared provider bundle did not register a page-shell mount API.'));
 				}
 
-				mountOptions = this.createSharedProviderMountOptions(uiState, statusNodes, shellNodes);
-				handle = await Promise.resolve(api.mount(mountOptions));
-				uiState.mountHandle = this.normalizeMountHandle(handle);
-				this.setBundleStatus(uiState, 'ready', null, null);
-				this.updateShellChrome(uiState, statusNodes, shellNodes);
-			} catch (err) {
-				if (requestId !== uiState.mountRequestId)
-					return;
+				while (wrapper.firstChild)
+					wrapper.removeChild(wrapper.firstChild);
 
-				this.renderFallbackProviderManager(
-					uiState,
-					statusNodes,
-					shellNodes,
+				return Promise.resolve(api.mountPage({
+					target: wrapper,
+					transport: self.createProviderTransport(),
+					shell: self.createNativePageShellBridge(uiState)
+				})).then(function (mountedHandle) {
+					handle = mountedHandle;
+					uiState.mountHandle = self.normalizeMountHandle(handle);
+				});
+			}).catch(function (err) {
+				while (wrapper.firstChild)
+					wrapper.removeChild(wrapper.firstChild);
+
+				wrapper.appendChild(self.createInlineStateNotice(
 					'error',
-					this.rpcFailureMessage(err) || _('The shared provider manager failed to load or mount.'),
-					'error',
-					SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_FAILURE
-				);
-			}
-		},
+					_('Native page shell unavailable'),
+					self.rpcFailureMessage(err) || _('The OpenWrt-native page shell failed to load. Reinstall the package or refresh the page after updating the browser bundle.')
+				));
+			});
+		}, 0);
 
-		render: function (data) {
-			if (OPENWRT_STATIC_PROTOTYPE_MODE)
-				return Promise.resolve(this.renderStaticPrototype(data));
+		return wrapper;
+	},
 
-			var selectedApp = this.getSelectedApp();
-			var isRunning = this.parseServiceState(data[1]);
-			var providerState = data[2];
-			var uiState = this.createUiState(isRunning, providerState, selectedApp);
-			var pageHero;
-			var m = new form.Map('ccswitch', _('Open CC Switch'),
-				_('Configure the OpenWrt service, outbound proxy settings, and provider routing for the router proxy.')
-			);
-		var s, o;
-		var self = this;
-
-		s = m.section(form.NamedSection, 'main', 'ccswitch', _('Service'));
-		s.anonymous = true;
-		s.addremove = false;
-
-		o = s.option(form.Flag, 'enabled', _('Enable'));
-		o.rmempty = false;
-
-		o = s.option(form.Value, 'listen_addr', _('Listen Address'),
-			_('Address to bind the proxy server. Use 0.0.0.0 for all interfaces.'));
-		o.datatype = 'ipaddr';
-		o.placeholder = '0.0.0.0';
-		o.rmempty = false;
-
-		o = s.option(form.Value, 'listen_port', _('Listen Port'),
-			_('Port for the proxy server.'));
-		o.datatype = 'port';
-		o.placeholder = '15721';
-		o.rmempty = false;
-
-		s = m.section(form.NamedSection, 'main', 'ccswitch', _('Outbound Proxy'),
-			_('Leave these blank for direct internet access, or point them to another OpenWrt app such as Clash.'));
-		s.anonymous = true;
-		s.addremove = false;
-
-		o = s.option(form.Value, 'http_proxy', _('HTTP Proxy'));
-		o.placeholder = 'http://127.0.0.1:7890';
-		o.rmempty = true;
-
-		o = s.option(form.Value, 'https_proxy', _('HTTPS Proxy'));
-		o.placeholder = 'http://127.0.0.1:7890';
-		o.rmempty = true;
-
-		s = m.section(form.NamedSection, 'main', 'ccswitch', _('Logging'));
-		s.anonymous = true;
-		s.addremove = false;
-
-		o = s.option(form.ListValue, 'log_level', _('Log Level'));
-		o.value('error', _('Error'));
-		o.value('warn', _('Warning'));
-		o.value('info', _('Info'));
-		o.value('debug', _('Debug'));
-		o.value('trace', _('Trace'));
-		o.default = 'info';
-
-		return m.render().then(function (mapEl) {
-			var shellNodes = self.createProviderShell(uiState);
-			var statusNodes = self.createStatusPanel(uiState, shellNodes);
-			var pageShell;
-			var topBlock;
-			var bottomBlock;
-
-			self.ensureHostPageStyles();
-			pageHero = self.createHostPageHero();
-			mapEl = self.decorateMapElement(mapEl);
-			topBlock = E('div', { 'class': 'ccswitch-host-block ccswitch-host-top-block' }, [
-				pageHero,
-				statusNodes.root,
-				mapEl
-			]);
-			bottomBlock = E('div', { 'class': 'ccswitch-host-block ccswitch-host-bottom-block' }, [
-				shellNodes.root
-			]);
-			pageShell = E('div', { 'id': 'ccswitch-host-page-shell' }, [
-				topBlock,
-				bottomBlock
-			]);
-
-			void self.mountSharedRuntimeSurface(uiState, shellNodes);
-			void self.mountSharedProviderUi(uiState, statusNodes, shellNodes);
-
-			return pageShell;
-		});
+	render: function (data) {
+		return Promise.resolve(this.renderNativePage(data));
 	}
 });

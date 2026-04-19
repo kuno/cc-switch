@@ -80,14 +80,6 @@ function parsePayload(
     return null;
   }
 
-  if (typeof response.status_json === "string") {
-    try {
-      return JSON.parse(response.status_json) as RuntimeLike;
-    } catch {
-      return null;
-    }
-  }
-
   if (
     response.service != null ||
     response.runtime != null ||
@@ -105,17 +97,6 @@ function parseProviderListPayload(
 ): RuntimeLike | null {
   if (!response) {
     return null;
-  }
-
-  for (const key of ["providers_json", "list_json"]) {
-    const candidate = response[key];
-    if (typeof candidate === "string") {
-      try {
-        return JSON.parse(candidate) as RuntimeLike;
-      } catch {
-        return null;
-      }
-    }
   }
 
   if (

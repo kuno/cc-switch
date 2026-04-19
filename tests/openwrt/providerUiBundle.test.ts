@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY,
   __private__,
+  type OpenWrtHostState,
   type OpenWrtSharedProviderBundleApi,
 } from "@/openwrt-provider-ui/index";
 import type {
@@ -34,26 +35,24 @@ function createTransport(
 
     return {
       ok: true,
-      providers_json: JSON.stringify({
-        activeProviderId: state.activeProviderId,
-        providers: Object.fromEntries(
-          state.providers.map((provider) => [
-            provider.providerId ?? provider.name,
-            {
-              active: provider.active,
-              baseUrl: provider.baseUrl,
-              configured: provider.configured,
-              model: provider.model,
-              name: provider.name,
-              notes: provider.notes,
-              providerId: provider.providerId,
-              tokenConfigured: provider.tokenConfigured,
-              tokenField: provider.tokenField,
-              tokenMasked: provider.tokenMasked,
-            },
-          ]),
-        ),
-      }),
+      activeProviderId: state.activeProviderId,
+      providers: Object.fromEntries(
+        state.providers.map((provider) => [
+          provider.providerId ?? provider.name,
+          {
+            active: provider.active,
+            baseUrl: provider.baseUrl,
+            configured: provider.configured,
+            model: provider.model,
+            name: provider.name,
+            notes: provider.notes,
+            providerId: provider.providerId,
+            tokenConfigured: provider.tokenConfigured,
+            tokenField: provider.tokenField,
+            tokenMasked: provider.tokenMasked,
+          },
+        ]),
+      ),
     };
   }
 
@@ -66,18 +65,16 @@ function createTransport(
 
     return {
       ok: true,
-      provider_json: JSON.stringify({
-        active: state.activeProvider.active,
-        baseUrl: state.activeProvider.baseUrl,
-        configured: state.activeProvider.configured,
-        model: state.activeProvider.model,
-        name: state.activeProvider.name,
-        notes: state.activeProvider.notes,
-        providerId: state.activeProvider.providerId,
-        tokenConfigured: state.activeProvider.tokenConfigured,
-        tokenField: state.activeProvider.tokenField,
-        tokenMasked: state.activeProvider.tokenMasked,
-      }),
+      active: state.activeProvider.active,
+      baseUrl: state.activeProvider.baseUrl,
+      configured: state.activeProvider.configured,
+      model: state.activeProvider.model,
+      name: state.activeProvider.name,
+      notes: state.activeProvider.notes,
+      providerId: state.activeProvider.providerId,
+      tokenConfigured: state.activeProvider.tokenConfigured,
+      tokenField: state.activeProvider.tokenField,
+      tokenMasked: state.activeProvider.tokenMasked,
     };
   }
 
@@ -160,96 +157,92 @@ function createRuntimeTransport(
     failoverControlsAvailable: false,
     getRuntimeStatus: vi.fn().mockResolvedValue({
       ok: true,
-      status_json: JSON.stringify({
-        service: {
-          running: false,
-          reachable: false,
-          listenAddress: "127.0.0.1",
-          listenPort: 15721,
-          proxyEnabled: true,
-          enableLogging: true,
-          statusSource: "config-fallback",
-          statusError: "dial tcp 127.0.0.1:15721: connect: connection refused",
-        },
-        runtime: {
-          running: false,
-          address: "127.0.0.1",
-          port: 15721,
-          active_connections: 0,
-          total_requests: 12,
-          success_requests: 10,
-          failed_requests: 2,
-          success_rate: 83.3,
-          uptime_seconds: 90,
-          current_provider: "Claude Primary",
-          current_provider_id: "claude-primary",
-          last_request_at: "2026-04-13T08:00:00Z",
-          last_error: "dial tcp timeout",
-          failover_count: 1,
-          active_targets: [],
-        },
-        apps: [],
-      }),
+      service: {
+        running: false,
+        reachable: false,
+        listenAddress: "127.0.0.1",
+        listenPort: 15721,
+        proxyEnabled: true,
+        enableLogging: true,
+        statusSource: "config-fallback",
+        statusError: "dial tcp 127.0.0.1:15721: connect: connection refused",
+      },
+      runtime: {
+        running: false,
+        address: "127.0.0.1",
+        port: 15721,
+        active_connections: 0,
+        total_requests: 12,
+        success_requests: 10,
+        failed_requests: 2,
+        success_rate: 83.3,
+        uptime_seconds: 90,
+        current_provider: "Claude Primary",
+        current_provider_id: "claude-primary",
+        last_request_at: "2026-04-13T08:00:00Z",
+        last_error: "dial tcp timeout",
+        failover_count: 1,
+        active_targets: [],
+      },
+      apps: [],
     }),
     getAppRuntimeStatus: vi.fn().mockImplementation(async (appId) => ({
       ok: true,
-      status_json: JSON.stringify({
-        app: appId,
-        providerCount: appId === "claude" ? 2 : 1,
-        proxyEnabled: appId !== "gemini",
-        autoFailoverEnabled: appId === "claude",
-        maxRetries: appId === "claude" ? 4 : 3,
-        activeProviderId: `${appId}-primary`,
-        activeProvider: {
-          configured: true,
-          providerId: `${appId}-primary`,
-          name:
-            appId === "claude"
-              ? "Claude Primary"
-              : appId === "codex"
-                ? "Codex Primary"
-                : "Gemini Primary",
-          baseUrl: `https://${appId}.example.com`,
-          tokenField:
-            appId === "claude"
-              ? "ANTHROPIC_AUTH_TOKEN"
-              : appId === "codex"
-                ? "OPENAI_API_KEY"
-                : "GEMINI_API_KEY",
-          tokenConfigured: true,
-        },
-        activeProviderHealth: {
-          providerId: `${appId}-primary`,
-          observed: appId !== "gemini",
-          healthy: appId === "codex",
-          consecutiveFailures: appId === "claude" ? 2 : 0,
-          lastSuccessAt: appId === "gemini" ? null : "2026-04-13T07:59:00Z",
-          lastFailureAt: appId === "claude" ? "2026-04-13T07:58:00Z" : null,
-          lastError: appId === "claude" ? "upstream timeout" : null,
-          updatedAt: "2026-04-13T08:00:00Z",
-        },
-        usingLegacyDefault: appId === "gemini",
-        failoverQueueDepth: appId === "claude" ? 1 : 0,
-        failoverQueue:
+      app: appId,
+      providerCount: appId === "claude" ? 2 : 1,
+      proxyEnabled: appId !== "gemini",
+      autoFailoverEnabled: appId === "claude",
+      maxRetries: appId === "claude" ? 4 : 3,
+      activeProviderId: `${appId}-primary`,
+      activeProvider: {
+        configured: true,
+        providerId: `${appId}-primary`,
+        name:
           appId === "claude"
-            ? [
-                {
+            ? "Claude Primary"
+            : appId === "codex"
+              ? "Codex Primary"
+              : "Gemini Primary",
+        baseUrl: `https://${appId}.example.com`,
+        tokenField:
+          appId === "claude"
+            ? "ANTHROPIC_AUTH_TOKEN"
+            : appId === "codex"
+              ? "OPENAI_API_KEY"
+              : "GEMINI_API_KEY",
+        tokenConfigured: true,
+      },
+      activeProviderHealth: {
+        providerId: `${appId}-primary`,
+        observed: appId !== "gemini",
+        healthy: appId === "codex",
+        consecutiveFailures: appId === "claude" ? 2 : 0,
+        lastSuccessAt: appId === "gemini" ? null : "2026-04-13T07:59:00Z",
+        lastFailureAt: appId === "claude" ? "2026-04-13T07:58:00Z" : null,
+        lastError: appId === "claude" ? "upstream timeout" : null,
+        updatedAt: "2026-04-13T08:00:00Z",
+      },
+      usingLegacyDefault: appId === "gemini",
+      failoverQueueDepth: appId === "claude" ? 1 : 0,
+      failoverQueue:
+        appId === "claude"
+          ? [
+              {
+                providerId: "claude-backup",
+                providerName: "Claude Backup",
+                sortIndex: 0,
+                active: false,
+                health: {
                   providerId: "claude-backup",
-                  providerName: "Claude Backup",
-                  sortIndex: 0,
-                  active: false,
-                  health: {
-                    providerId: "claude-backup",
-                    observed: false,
-                    healthy: true,
-                  },
+                  observed: false,
+                  healthy: true,
                 },
-              ]
-            : [],
-        observedProviderCount: appId === "gemini" ? 0 : 1,
-        healthyProviderCount: appId === "codex" ? 1 : 0,
-        unhealthyProviderCount: appId === "claude" ? 1 : 0,
-      }),
+              },
+            ]
+          : [],
+      observedProviderCount: appId === "gemini" ? 0 : 1,
+      healthyProviderCount: appId === "codex" ? 1 : 0,
+      unhealthyProviderCount: appId === "claude" ? 1 : 0,
     })),
     getAvailableFailoverProviders: vi
       .fn()
@@ -408,14 +401,17 @@ describe("OpenWrt provider UI bundle", () => {
     const transport = createRuntimeTransport();
 
     expect(api?.capabilities).toEqual({
+      pageShell: true,
       providerManager: true,
       runtimeSurface: true,
     });
     expect(Object.keys(api ?? {}).sort()).toEqual([
       "capabilities",
       "mount",
+      "mountPage",
       "mountRuntimeSurface",
     ]);
+    expect(typeof api?.mountPage).toBe("function");
     expect(typeof api?.mountRuntimeSurface).toBe("function");
     expect(typeof api?.mount).toBe("function");
 
@@ -493,35 +489,33 @@ describe("OpenWrt provider UI bundle", () => {
         .fn()
         .mockImplementation(async (appId) => ({
           ok: true,
-          providers_json: JSON.stringify({
-            activeProviderId: `${appId}-primary`,
-            providers: {
-              [`${appId}-backup`]: {
-                active: false,
-                configured: true,
-                model:
-                  appId === "claude"
-                    ? "claude-haiku-4-5"
-                    : appId === "codex"
-                      ? "gpt-5.4-mini"
-                      : "gemini-2.5-flash",
-                name:
-                  appId === "claude"
-                    ? "Claude Backup"
-                    : appId === "codex"
-                      ? "Codex Backup"
-                      : "Gemini Backup",
-                providerId: `${appId}-backup`,
-                tokenConfigured: true,
-                tokenField:
-                  appId === "claude"
-                    ? "ANTHROPIC_AUTH_TOKEN"
-                    : appId === "codex"
-                      ? "OPENAI_API_KEY"
-                      : "GEMINI_API_KEY",
-              },
+          activeProviderId: `${appId}-primary`,
+          providers: {
+            [`${appId}-backup`]: {
+              active: false,
+              configured: true,
+              model:
+                appId === "claude"
+                  ? "claude-haiku-4-5"
+                  : appId === "codex"
+                    ? "gpt-5.4-mini"
+                    : "gemini-2.5-flash",
+              name:
+                appId === "claude"
+                  ? "Claude Backup"
+                  : appId === "codex"
+                    ? "Codex Backup"
+                    : "Gemini Backup",
+              providerId: `${appId}-backup`,
+              tokenConfigured: true,
+              tokenField:
+                appId === "claude"
+                  ? "ANTHROPIC_AUTH_TOKEN"
+                  : appId === "codex"
+                    ? "OPENAI_API_KEY"
+                    : "GEMINI_API_KEY",
             },
-          }),
+          },
         })),
       addToFailoverQueue: vi.fn().mockResolvedValue({ ok: true }),
       removeFromFailoverQueue: vi.fn().mockResolvedValue({ ok: true }),
@@ -641,6 +635,7 @@ describe("OpenWrt provider UI bundle", () => {
 
     expect(api).toBeDefined();
     expect(api?.capabilities).toEqual({
+      pageShell: true,
       providerManager: true,
       runtimeSurface: true,
     });
@@ -809,6 +804,151 @@ describe("OpenWrt provider UI bundle", () => {
     expect(
       document.body.classList.contains("ccswitch-openwrt-provider-ui-theme"),
     ).toBe(false);
+    expect(target.textContent).toBe("");
+    target.remove();
+  });
+
+  it("mounts the native OpenWrt page shell with a live top card and provider workspace", async () => {
+    const globalScope = globalThis as typeof globalThis & {
+      [OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY]?: OpenWrtSharedProviderBundleApi;
+    };
+    const api = globalScope[OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY];
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    let selectedApp: SharedProviderAppId = "claude";
+    let hostState: OpenWrtHostState = {
+      app: "claude",
+      status: "running",
+      health: "healthy",
+      listenAddr: "0.0.0.0",
+      listenPort: "15721",
+      serviceLabel: "Router daemon",
+      httpProxy: "http://127.0.0.1:7890",
+      httpsProxy: "http://127.0.0.1:7890",
+      proxyEnabled: true,
+      logLevel: "debug",
+    };
+    const listeners: Array<() => void> = [];
+    const transport = createTransport({
+      claude: createProviderState("claude", [
+        {
+          active: true,
+          baseUrl: "https://claude-primary.example.com",
+          model: "claude-sonnet-4-5",
+          name: "Claude Primary",
+          providerId: "claude-primary",
+          tokenConfigured: true,
+          tokenField: "ANTHROPIC_AUTH_TOKEN",
+        },
+      ]),
+    });
+    const shell = {
+      clearMessage: vi.fn(),
+      getHostState: vi.fn().mockImplementation(() => hostState),
+      getMessage: vi.fn().mockReturnValue(null),
+      getSelectedApp: vi.fn().mockImplementation(() => selectedApp),
+      getServiceStatus: vi.fn().mockImplementation(() => ({
+        isRunning: hostState.status === "running",
+      })),
+      getRestartState: vi.fn().mockReturnValue({
+        pending: false,
+        inFlight: false,
+      }),
+      refreshHostState: vi.fn().mockImplementation(async () => hostState),
+      refreshServiceStatus: vi.fn().mockResolvedValue({ isRunning: true }),
+      restartService: vi.fn().mockResolvedValue({ isRunning: true }),
+      saveHostConfig: vi.fn().mockImplementation(async (payload) => {
+        hostState = {
+          ...hostState,
+          ...payload,
+        };
+        listeners.forEach((listener) => listener());
+        return hostState;
+      }),
+      setRestartState: vi.fn(),
+      setSelectedApp: vi
+        .fn()
+        .mockImplementation((appId: SharedProviderAppId) => {
+          selectedApp = appId;
+          hostState = {
+            ...hostState,
+            app: appId,
+          };
+          listeners.forEach((listener) => listener());
+          return appId;
+        }),
+      showMessage: vi.fn(),
+      subscribe: vi.fn().mockImplementation((listener: () => void) => {
+        listeners.push(listener);
+        return vi.fn();
+      }),
+    };
+
+    let handle:
+      | void
+      | (() => void)
+      | {
+          unmount(): void;
+        };
+
+    await act(async () => {
+      handle = await Promise.resolve(
+        api!.mountPage({
+          shell,
+          target,
+          transport,
+        }),
+      );
+    });
+
+    await waitFor(() =>
+      expect(target).toHaveTextContent("Configure routes and provider details"),
+    );
+
+    expect(target).toHaveTextContent("Router daemon");
+    expect(target).toHaveTextContent("Running");
+    expect(target).toHaveTextContent("Healthy");
+    expect(target).toHaveTextContent("0.0.0.0:15721");
+    expect(
+      within(target).getByRole("button", { name: "Save" }),
+    ).toBeDisabled();
+    expect(
+      within(target).getByRole("button", { name: "Restart" }),
+    ).toBeInTheDocument();
+    expect(
+      within(target).getByRole("button", { name: "Edit Claude Primary" }),
+    ).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.change(within(target).getByDisplayValue("15721"), {
+        target: { value: "18443" },
+      });
+    });
+
+    expect(
+      within(target).getByRole("button", { name: "Save" }),
+    ).toBeEnabled();
+
+    await act(async () => {
+      fireEvent.click(within(target).getByRole("button", { name: "Save" }));
+    });
+
+    expect(shell.saveHostConfig).toHaveBeenCalledWith({
+      httpProxy: "http://127.0.0.1:7890",
+      httpsProxy: "http://127.0.0.1:7890",
+      listenAddr: "0.0.0.0",
+      listenPort: "18443",
+      logLevel: "debug",
+    });
+
+    await act(async () => {
+      if (typeof handle === "function") {
+        handle();
+      } else if (handle && typeof handle.unmount === "function") {
+        handle.unmount();
+      }
+    });
+
     expect(target.textContent).toBe("");
     target.remove();
   });
@@ -1478,8 +1618,10 @@ describe("OpenWrt provider UI bundle", () => {
     expect(stagedBundleSource).toContain(
       "__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__",
     );
+    expect(stagedBundleSource).toContain("pageShell");
     expect(stagedBundleSource).toContain("providerManager");
     expect(stagedBundleSource).toContain("runtimeSurface");
+    expect(stagedBundleSource).toContain("mountPage");
     expect(stagedBundleSource).toContain("mountRuntimeSurface");
     expect(stagedStylesheetSource).toContain(
       "body.ccswitch-openwrt-provider-ui-theme",
