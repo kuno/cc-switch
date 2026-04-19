@@ -18,7 +18,7 @@ export function SharedProviderLoadingState({
   appId: SharedProviderAppId;
 }) {
   return (
-    <div className="space-y-4 rounded-2xl border border-dashed border-border-default bg-muted/10 p-6">
+    <div className="ccswitch-openwrt-state-shell space-y-4 rounded-2xl border border-dashed border-border-default bg-muted/10 p-6">
       <div className="space-y-2">
         <div className="flex items-center gap-3">
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -33,7 +33,7 @@ export function SharedProviderLoadingState({
         {[0, 1].map((index) => (
           <div
             key={index}
-            className="space-y-3 rounded-2xl border border-border-default bg-background p-4"
+            className="ccswitch-openwrt-group ccswitch-openwrt-group--raised space-y-3 rounded-2xl border border-border-default bg-background p-4"
           >
             <div className="h-4 w-1/3 animate-pulse rounded bg-muted" />
             <div className="h-10 animate-pulse rounded bg-muted/70" />
@@ -52,7 +52,7 @@ export function SharedProviderLoadingState({
 
 export function SharedProviderErrorState({ onRetry }: { onRetry: () => void }) {
   return (
-    <div className="flex min-h-48 flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-destructive/40 bg-destructive/5 px-6 text-center">
+    <div className="ccswitch-openwrt-state-shell ccswitch-openwrt-state-shell--warning flex min-h-48 flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-destructive/40 bg-destructive/5 px-6 text-center">
       <div className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
         <ServerCrash className="h-6 w-6 text-destructive" />
       </div>
@@ -80,7 +80,7 @@ export function SharedProviderEmptyState({
   const isSearchEmpty = Boolean(searchQuery?.trim());
 
   return (
-    <div className="flex min-h-56 flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-border-default bg-muted/10 px-6 text-center">
+    <div className="ccswitch-openwrt-state-shell flex min-h-56 flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-border-default bg-muted/10 px-6 text-center">
       <div
         className={cn(
           "flex h-14 w-14 items-center justify-center rounded-full",
@@ -135,9 +135,9 @@ export function SharedProviderAccessState({
   return (
     <div
       className={cn(
-        "rounded-2xl border px-4 py-3 text-sm",
+        "ccswitch-openwrt-inline-note rounded-2xl border px-4 py-3 text-sm",
         tone === "warning"
-          ? "border-amber-500/30 bg-amber-500/5"
+          ? "ccswitch-openwrt-inline-note--warning border-amber-500/30 bg-amber-500/5"
           : "border-border-default bg-muted/20",
       )}
     >
