@@ -82,7 +82,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-const OPENWRT_COMMAND_HELP: &str = "unsupported command. expected one of: `cc-switch openwrt get-runtime-status`, `cc-switch openwrt [claude|codex|gemini] get-runtime-status`, `cc-switch openwrt [claude|codex|gemini] get-active-provider`, `cc-switch openwrt [claude|codex|gemini] upsert-active-provider`, `cc-switch openwrt [claude|codex|gemini] list-providers`, `cc-switch openwrt [claude|codex|gemini] get-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] upsert-provider [provider-id]`, `cc-switch openwrt [claude|codex|gemini] delete-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] activate-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] get-available-failover-providers`, `cc-switch openwrt [claude|codex|gemini] add-to-failover-queue <provider-id>`, `cc-switch openwrt [claude|codex|gemini] remove-from-failover-queue <provider-id>`, `cc-switch openwrt [claude|codex|gemini] set-auto-failover-enabled <true|false>`";
+const OPENWRT_COMMAND_HELP: &str = "unsupported command. expected one of: `cc-switch openwrt get-runtime-status`, `cc-switch openwrt [claude|codex|gemini] get-runtime-status`, `cc-switch openwrt [claude|codex|gemini] get-active-provider`, `cc-switch openwrt [claude|codex|gemini] upsert-active-provider`, `cc-switch openwrt [claude|codex|gemini] list-providers`, `cc-switch openwrt [claude|codex|gemini] get-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] get-provider-failover <provider-id>`, `cc-switch openwrt [claude|codex|gemini] upsert-provider [provider-id]`, `cc-switch openwrt [claude|codex|gemini] delete-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] activate-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] get-available-failover-providers`, `cc-switch openwrt [claude|codex|gemini] add-to-failover-queue <provider-id>`, `cc-switch openwrt [claude|codex|gemini] remove-from-failover-queue <provider-id>`, `cc-switch openwrt [claude|codex|gemini] reorder-failover-queue`, `cc-switch openwrt [claude|codex|gemini] set-auto-failover-enabled <true|false>`, `cc-switch openwrt [claude|codex|gemini] set-max-retries <value>`";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -158,6 +158,13 @@ async fn run_cli(args: Vec<String>) -> anyhow::Result<()> {
             print_json(&openwrt_admin::get_provider(&db, &app_type, provider_id)?)?;
             Ok(())
         }
+        (Some("get-provider-failover"), [provider_id]) => {
+            print_json(&openwrt_admin::get_provider_failover(
+                &db, &app_type, provider_id,
+            )
+            .await?)?;
+            Ok(())
+        }
         (Some("upsert-provider"), []) => {
             print_json(&openwrt_admin::upsert_provider(&db, &app_type, None)?)?;
             Ok(())
@@ -208,9 +215,27 @@ async fn run_cli(args: Vec<String>) -> anyhow::Result<()> {
             )?;
             Ok(())
         }
+        (Some("reorder-failover-queue"), []) => {
+            let provider_ids = read_string_array_from_stdin()?;
+            print_json(&openwrt_admin::reorder_failover_queue(
+                &db,
+                &app_type,
+                &provider_ids,
+            )
+            .await?)?;
+            Ok(())
+        }
         (Some("set-auto-failover-enabled"), [enabled]) => {
             let enabled = parse_bool_flag(enabled)?;
             print_json(&openwrt_admin::set_auto_failover_enabled(&db, &app_type, enabled).await?)?;
+            Ok(())
+        }
+        (Some("set-max-retries"), [value]) => {
+            let value = value
+                .trim()
+                .parse::<u32>()
+                .map_err(|e| anyhow::anyhow!("invalid max retries `{value}`: {e}"))?;
+            print_json(&openwrt_admin::set_max_retries(&db, &app_type, value).await?)?;
             Ok(())
         }
         _ => Err(anyhow::anyhow!(OPENWRT_COMMAND_HELP)),
@@ -231,6 +256,15 @@ fn print_json<T: serde::Serialize>(value: &T) -> anyhow::Result<()> {
     serde_json::to_writer_pretty(std::io::stdout(), value)?;
     println!();
     Ok(())
+}
+
+fn read_string_array_from_stdin() -> anyhow::Result<Vec<String>> {
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+    let parsed = serde_json::from_str::<Vec<String>>(input.trim())
+        .map_err(|e| anyhow::anyhow!("failed to parse provider id array from stdin: {e}"))?;
+
+    Ok(parsed)
 }
 
 async fn run_daemon() -> anyhow::Result<()> {
