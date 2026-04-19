@@ -18,6 +18,8 @@ use super::{
     ProxyError,
 };
 use crate::database::Database;
+use crate::proxy::providers::codex_oauth_auth::CodexOAuthManager;
+use crate::proxy::providers::copilot_auth::CopilotAuthManager;
 use axum::{
     extract::DefaultBodyLimit,
     routing::{any, get, post},
@@ -28,6 +30,45 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::{oneshot, RwLock};
 use tokio::task::JoinHandle;
+
+fn active_target_priority(app_type: &str) -> u8 {
+    if app_type.eq_ignore_ascii_case("claude") {
+        0
+    } else {
+        1
+    }
+}
+
+pub(crate) fn populate_status_active_targets(
+    status: &mut ProxyStatus,
+    current_providers: &std::collections::HashMap<String, (String, String)>,
+) {
+    status.active_targets = current_providers
+        .iter()
+        .map(|(app_type, (provider_id, provider_name))| ActiveTarget {
+            app_type: app_type.clone(),
+            provider_id: provider_id.clone(),
+            provider_name: provider_name.clone(),
+        })
+        .collect();
+
+    status.active_targets.sort_by(|left, right| {
+        active_target_priority(&left.app_type)
+            .cmp(&active_target_priority(&right.app_type))
+            .then_with(|| left.app_type.cmp(&right.app_type))
+            .then_with(|| left.provider_name.cmp(&right.provider_name))
+            .then_with(|| left.provider_id.cmp(&right.provider_id))
+    });
+
+    status.current_provider = status
+        .active_targets
+        .first()
+        .map(|target| target.provider_name.clone());
+    status.current_provider_id = status
+        .active_targets
+        .first()
+        .map(|target| target.provider_id.clone());
+}
 
 /// 代理服务器状态（共享）
 #[derive(Clone)]
@@ -45,6 +86,12 @@ pub struct ProxyState {
     /// Codex Chat bridge history，用于恢复 previous_response_id 指向的 tool call
     pub codex_chat_history: Arc<CodexChatHistoryStore>,
     /// AppHandle，用于发射事件和更新托盘菜单
+    /// Copilot auth manager — injected directly, no Tauri needed
+    pub copilot_auth: Option<Arc<RwLock<CopilotAuthManager>>>,
+    /// Codex OAuth auth manager — injected directly, no Tauri needed
+    pub codex_oauth_auth: Option<Arc<RwLock<CodexOAuthManager>>>,
+    /// AppHandle for UI notifications (desktop only)
+    #[cfg(feature = "tauri-desktop")]
     pub app_handle: Option<tauri::AppHandle>,
     /// 故障转移切换管理器
     pub failover_manager: Arc<FailoverSwitchManager>,
@@ -63,22 +110,32 @@ impl ProxyServer {
     pub fn new(
         config: ProxyConfig,
         db: Arc<Database>,
-        app_handle: Option<tauri::AppHandle>,
+        copilot_auth: Option<Arc<RwLock<CopilotAuthManager>>>,
+        codex_oauth_auth: Option<Arc<RwLock<CodexOAuthManager>>>,
+        #[cfg(feature = "tauri-desktop")] app_handle: Option<tauri::AppHandle>,
     ) -> Self {
         // 创建共享的 ProviderRouter（熔断器状态将跨所有请求保持）
         let provider_router = Arc::new(ProviderRouter::new(db.clone()));
+        // 创建共享的 current_providers map
+        let current_providers = Arc::new(RwLock::new(std::collections::HashMap::new()));
         // 创建故障转移切换管理器
-        let failover_manager = Arc::new(FailoverSwitchManager::new(db.clone()));
+        let failover_manager = Arc::new(FailoverSwitchManager::new(
+            db.clone(),
+            current_providers.clone(),
+        ));
 
         let state = ProxyState {
             db,
             config: Arc::new(RwLock::new(config.clone())),
             status: Arc::new(RwLock::new(ProxyStatus::default())),
             start_time: Arc::new(RwLock::new(None)),
-            current_providers: Arc::new(RwLock::new(std::collections::HashMap::new())),
+            current_providers,
             provider_router,
             gemini_shadow: Arc::new(GeminiShadowStore::default()),
             codex_chat_history: Arc::new(CodexChatHistoryStore::default()),
+            copilot_auth,
+            codex_oauth_auth,
+            #[cfg(feature = "tauri-desktop")]
             app_handle,
             failover_manager,
         };
@@ -260,21 +317,14 @@ impl ProxyServer {
 
         // 从 current_providers HashMap 获取每个应用类型当前正在使用的 provider
         let current_providers = self.state.current_providers.read().await;
-        status.active_targets = current_providers
-            .iter()
-            .map(|(app_type, (provider_id, provider_name))| ActiveTarget {
-                app_type: app_type.clone(),
-                provider_id: provider_id.clone(),
-                provider_name: provider_name.clone(),
-            })
-            .collect();
+        populate_status_active_targets(&mut status, &current_providers);
 
         status
     }
 
-    /// 更新某个应用类型当前“目标供应商”（用于 UI 展示 active_targets）
+    /// 更新某个应用类型当前"目标供应商"（用于 UI 展示 active_targets）
     ///
-    /// 注意：这不代表该供应商一定已经处理过请求，而是用于“热切换/启用故障转移立即切 P1”
+    /// 注意：这不代表该供应商一定已经处理过请求，而是用于"热切换/启用故障转移立即切 P1"
     /// 等场景下，让 UI 能立刻反映最新目标。
     pub async fn set_active_target(&self, app_type: &str, provider_id: &str, provider_name: &str) {
         let mut current_providers = self.state.current_providers.write().await;
@@ -384,5 +434,40 @@ impl ProxyServer {
             .provider_router
             .reset_provider_breaker(provider_id, app_type)
             .await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::database::Database;
+
+    #[tokio::test]
+    async fn get_status_prefers_claude_target_for_legacy_current_provider_fields() {
+        let db = Arc::new(Database::memory().expect("init db"));
+        let server = ProxyServer::new(
+            ProxyConfig::default(),
+            db,
+            None,
+            None,
+            #[cfg(feature = "tauri-desktop")]
+            None,
+        );
+
+        server
+            .set_active_target("Codex", "codex-provider", "Codex Provider")
+            .await;
+        server
+            .set_active_target("Claude", "claude-provider", "Claude Provider")
+            .await;
+
+        let status = server.get_status().await;
+        assert_eq!(status.active_targets.len(), 2);
+        assert_eq!(status.active_targets[0].app_type, "Claude");
+        assert_eq!(status.current_provider.as_deref(), Some("Claude Provider"));
+        assert_eq!(
+            status.current_provider_id.as_deref(),
+            Some("claude-provider")
+        );
     }
 }
