@@ -3169,7 +3169,10 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let _env = ScopedDataDirEnv::set(temp.path());
         let provider_id = "provider-explicit";
-        let path = temp.path().join("codex_auth").join(format!("{provider_id}.json"));
+        let path = temp
+            .path()
+            .join("codex_auth")
+            .join(format!("{provider_id}.json"));
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(
             &path,
@@ -3188,7 +3191,10 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let _env = ScopedDataDirEnv::set(temp.path());
         let provider_id = "provider-jwt";
-        let path = temp.path().join("codex_auth").join(format!("{provider_id}.json"));
+        let path = temp
+            .path()
+            .join("codex_auth")
+            .join(format!("{provider_id}.json"));
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         let jwt = format!(
             "{}.{}.",
