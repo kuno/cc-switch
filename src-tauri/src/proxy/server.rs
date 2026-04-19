@@ -360,6 +360,11 @@ impl ProxyServer {
         status
     }
 
+    /// 从内存中的快照存储移除指定供应商的速率限制快照
+    pub async fn evict_rate_limit_snapshot(&self, provider_id: &str) {
+        self.state.rate_limits.write().await.remove(provider_id);
+    }
+
     /// 更新某个应用类型当前"目标供应商"（用于 UI 展示 active_targets）
     ///
     /// 注意：这不代表该供应商一定已经处理过请求，而是用于"热切换/启用故障转移立即切 P1"
@@ -518,6 +523,20 @@ mod tests {
             .db
             .save_provider("codex", &provider)
             .expect("save codex provider");
+        // Seed a live Claude provider for the `claude-1` control snapshot so the
+        // new Claude stale-snapshot refresh (which runs in the same `get_quota`
+        // call) does not touch it — preserving this test's original intent.
+        let claude_control = Provider::with_id(
+            "claude-1".to_string(),
+            "Claude Provider".to_string(),
+            json!({}),
+            None,
+        );
+        server
+            .state
+            .db
+            .save_provider("claude", &claude_control)
+            .expect("save claude control provider");
 
         {
             let mut store = server.state.rate_limits.write().await;
@@ -589,6 +608,134 @@ mod tests {
         assert!(
             store.contains_key("claude-1"),
             "non-codex snapshots should not be touched by codex quota cleanup"
+        );
+    }
+
+    #[tokio::test]
+    async fn get_quota_removes_stale_claude_snapshots_for_providers_missing_from_db() {
+        let db = Arc::new(Database::memory().expect("init db"));
+        let server = ProxyServer::new(
+            ProxyConfig::default(),
+            db,
+            None,
+            None,
+            #[cfg(feature = "tauri-desktop")]
+            None,
+        );
+        let live = Provider::with_id(
+            "claude-live".to_string(),
+            "Claude Live".to_string(),
+            json!({}),
+            None,
+        );
+        server
+            .state
+            .db
+            .save_provider("claude", &live)
+            .expect("save live claude provider");
+
+        {
+            let mut store = server.state.rate_limits.write().await;
+            // Stale Claude snapshot: provider no longer in DB. Uses
+            // `response_headers` source because Claude rate-limit snapshots
+            // are captured from upstream response headers, not from a quota
+            // polling source — the refresh must not filter on `source`.
+            store.insert(
+                "claude-ghost".to_string(),
+                RateLimitSnapshot {
+                    app_type: "claude".to_string(),
+                    provider_id: "claude-ghost".to_string(),
+                    provider_name: "Claude Ghost".to_string(),
+                    source: Some("response_headers".to_string()),
+                    status: None,
+                    windows: Vec::new(),
+                    representative_claim: None,
+                    overage_status: None,
+                    fallback_percentage: None,
+                    requests_limit: None,
+                    requests_remaining: None,
+                    tokens_limit: None,
+                    tokens_remaining: None,
+                    captured_at: 1,
+                },
+            );
+            // Live Claude snapshot — must survive.
+            store.insert(
+                live.id.clone(),
+                RateLimitSnapshot {
+                    app_type: "claude".to_string(),
+                    provider_id: live.id.clone(),
+                    provider_name: live.name.clone(),
+                    source: Some("response_headers".to_string()),
+                    status: None,
+                    windows: Vec::new(),
+                    representative_claim: None,
+                    overage_status: None,
+                    fallback_percentage: None,
+                    requests_limit: None,
+                    requests_remaining: None,
+                    tokens_limit: None,
+                    tokens_remaining: None,
+                    captured_at: 2,
+                },
+            );
+            // Non-Claude snapshot — must not be affected by the Claude refresh.
+            store.insert(
+                "codex-passthrough".to_string(),
+                RateLimitSnapshot {
+                    app_type: "codex".to_string(),
+                    provider_id: "codex-passthrough".to_string(),
+                    provider_name: "Codex Passthrough".to_string(),
+                    source: Some("response_headers".to_string()),
+                    status: None,
+                    windows: Vec::new(),
+                    representative_claim: None,
+                    overage_status: None,
+                    fallback_percentage: None,
+                    requests_limit: None,
+                    requests_remaining: None,
+                    tokens_limit: None,
+                    tokens_remaining: None,
+                    captured_at: 3,
+                },
+            );
+        }
+
+        let (status, body) = crate::proxy::handlers::get_quota(State(server.state.clone())).await;
+        assert_eq!(status, StatusCode::OK);
+
+        let providers = body["providers"].as_array().expect("providers array");
+        assert!(
+            providers
+                .iter()
+                .all(|snapshot| snapshot["provider_id"] != "claude-ghost"),
+            "stale Claude snapshot for missing provider should be absent from the quota response"
+        );
+        assert!(
+            providers
+                .iter()
+                .any(|snapshot| snapshot["provider_id"] == live.id),
+            "live Claude provider snapshot should be preserved"
+        );
+        assert!(
+            providers
+                .iter()
+                .any(|snapshot| snapshot["provider_id"] == "codex-passthrough"),
+            "non-Claude snapshots should not be touched by Claude cleanup"
+        );
+
+        let store = server.state.rate_limits.read().await;
+        assert!(
+            !store.contains_key("claude-ghost"),
+            "ghost Claude snapshot should be evicted from the in-memory store"
+        );
+        assert!(
+            store.contains_key(&live.id),
+            "live Claude snapshot should remain in the in-memory store"
+        );
+        assert!(
+            store.contains_key("codex-passthrough"),
+            "codex snapshot should remain in the in-memory store"
         );
     }
 }

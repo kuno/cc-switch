@@ -430,7 +430,9 @@ impl Database {
                         Self::set_user_version(conn, 8)?;
                     }
                     8 => {
-                        log::info!("迁移数据库从 v8 到 v9（模型定价刷新 + Rate limit quota persistence）");
+                        log::info!(
+                            "迁移数据库从 v8 到 v9（模型定价刷新 + Rate limit quota persistence）"
+                        );
                         Self::migrate_v8_to_v9(conn)?;
                         Self::set_user_version(conn, 9)?;
                     }
