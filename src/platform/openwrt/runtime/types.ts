@@ -4,18 +4,16 @@ export interface OpenWrtRuntimeRpcResult {
   ok?: boolean;
   error?: string;
   message?: string;
-  status_json?: string;
-  list_json?: string;
-  providers_json?: string;
-  service?: unknown;
-  runtime?: unknown;
+  service?: Record<string, unknown>;
+  runtime?: Record<string, unknown>;
   apps?: unknown;
   app?: string;
   providers?: unknown;
   items?: unknown;
   savedProviders?: unknown;
   providerMap?: unknown;
-  [key: string]: unknown;
+  activeProviderId?: string | null;
+  active_provider_id?: string | null;
 }
 
 export interface OpenWrtRuntimeTransport {
