@@ -1,0 +1,3 @@
+# Mount repo root so #[path = "../../src-tauri/..."] directives in shared_core/services work inside cross's Docker sandbox.
+[build.env]
+volumes = ["REPO_ROOT=.."]
