@@ -146,8 +146,41 @@ async fn refresh_codex_quota_snapshots(state: &ProxyState) {
     }
 }
 
+/// Remove rate-limit snapshots for Claude providers that no longer exist in the DB.
+///
+/// Why: Claude rate-limit snapshots are written via `capture_rate_limits` off
+/// upstream response headers, then persisted on shutdown and reloaded on startup.
+/// When a Claude provider is deleted we also scrub the snapshot at delete time,
+/// but older installs may still carry a persisted stale snapshot from before
+/// that wiring existed. Filtering here at read time guarantees `/api/quota`
+/// can never surface a ghost Claude provider regardless of how the snapshot
+/// got there.
+///
+/// Unlike the codex refresh we do not filter on `source` — Claude snapshots
+/// are captured from response headers, so scoping by source would miss the
+/// actual bug case.
+async fn refresh_claude_quota_snapshots(state: &ProxyState) {
+    let providers = match state.db.get_all_providers("claude") {
+        Ok(providers) => providers,
+        Err(error) => {
+            log::warn!(
+                "[Quota] failed to list claude providers for stale snapshot cleanup: {error}"
+            );
+            return;
+        }
+    };
+
+    let live_claude_provider_ids: HashSet<String> = providers.into_keys().collect();
+
+    let mut store = state.rate_limits.write().await;
+    store.retain(|_, snapshot| {
+        snapshot.app_type != "claude" || live_claude_provider_ids.contains(&snapshot.provider_id)
+    });
+}
+
 pub async fn get_quota(State(state): State<ProxyState>) -> (StatusCode, Json<Value>) {
     refresh_codex_quota_snapshots(&state).await;
+    refresh_claude_quota_snapshots(&state).await;
     let store = state.rate_limits.read().await;
     let providers: Vec<_> = store.values().cloned().collect();
     (
