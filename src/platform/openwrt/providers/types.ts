@@ -10,18 +10,25 @@ export interface OpenWrtRpcResult {
   error?: string;
   message?: string;
   provider?: Record<string, unknown>;
-  provider_json?: string;
-  providers_json?: string;
-  state_json?: string;
-  list_json?: string;
-  status_json?: string;
   activeProviderId?: string | null;
   active_provider_id?: string | null;
   providers?: unknown;
   items?: unknown;
   savedProviders?: unknown;
   providerMap?: unknown;
-  [key: string]: unknown;
+  service?: Record<string, unknown>;
+  runtime?: Record<string, unknown>;
+  apps?: unknown;
+  app?: string;
+  providerId?: string | null;
+  provider_id?: string | null;
+  configured?: boolean;
+  baseUrl?: string;
+  base_url?: string;
+  tokenField?: string;
+  token_field?: string;
+  failoverQueue?: unknown;
+  failover_queue?: unknown;
 }
 
 export interface OpenWrtProviderTransport {

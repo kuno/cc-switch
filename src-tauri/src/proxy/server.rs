@@ -22,7 +22,7 @@ use crate::proxy::providers::codex_oauth_auth::CodexOAuthManager;
 use crate::proxy::providers::copilot_auth::CopilotAuthManager;
 use axum::{
     extract::DefaultBodyLimit,
-    routing::{any, get, post},
+    routing::{any, get, post, put},
     Router,
 };
 use hyper_util::rt::TokioIo;
@@ -30,6 +30,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::{oneshot, RwLock};
 use tokio::task::JoinHandle;
+use tower_http::cors::{Any, CorsLayer};
 
 fn active_target_priority(app_type: &str) -> u8 {
     if app_type.eq_ignore_ascii_case("claude") {
@@ -85,7 +86,6 @@ pub struct ProxyState {
     pub gemini_shadow: Arc<GeminiShadowStore>,
     /// Codex Chat bridge history，用于恢复 previous_response_id 指向的 tool call
     pub codex_chat_history: Arc<CodexChatHistoryStore>,
-    /// AppHandle，用于发射事件和更新托盘菜单
     /// Copilot auth manager — injected directly, no Tauri needed
     pub copilot_auth: Option<Arc<RwLock<CopilotAuthManager>>>,
     /// Codex OAuth auth manager — injected directly, no Tauri needed
@@ -339,7 +339,12 @@ impl ProxyServer {
     }
 
     fn build_router(&self) -> Router {
-        Router::new()
+        let cors = CorsLayer::new()
+            .allow_origin(Any)
+            .allow_methods(Any)
+            .allow_headers(Any);
+
+        let router = Router::new()
             // 健康检查
             .route("/health", get(handlers::health_check))
             .route("/status", get(handlers::get_status))
@@ -416,7 +421,64 @@ impl ProxyServer {
             .route("/gemini/v1/*path", any(handlers::handle_gemini))
             // 提高默认请求体大小限制（避免 413 Payload Too Large）
             .layer(DefaultBodyLimit::max(200 * 1024 * 1024))
-            .with_state(self.state.clone())
+            .layer(cors);
+
+        #[cfg(not(feature = "tauri-desktop"))]
+        let router = router
+            .route(
+                "/openwrt/admin/runtime",
+                get(handlers::openwrt_get_runtime_status),
+            )
+            .route(
+                "/openwrt/admin/apps/:app/runtime",
+                get(handlers::openwrt_get_app_runtime_status),
+            )
+            .route(
+                "/openwrt/admin/apps/:app/providers",
+                get(handlers::openwrt_list_providers).post(handlers::openwrt_upsert_provider),
+            )
+            .route(
+                "/openwrt/admin/apps/:app/providers/active",
+                get(handlers::openwrt_get_active_provider)
+                    .post(handlers::openwrt_upsert_active_provider),
+            )
+            .route(
+                "/openwrt/admin/apps/:app/providers/:provider_id",
+                get(handlers::openwrt_get_provider)
+                    .put(handlers::openwrt_upsert_provider_by_id)
+                    .delete(handlers::openwrt_delete_provider),
+            )
+            .route(
+                "/openwrt/admin/apps/:app/providers/:provider_id/activate",
+                post(handlers::openwrt_activate_provider),
+            )
+            .route(
+                "/openwrt/admin/apps/:app/providers/:provider_id/failover",
+                get(handlers::openwrt_get_provider_failover),
+            )
+            .route(
+                "/openwrt/admin/apps/:app/failover/providers/available",
+                get(handlers::openwrt_get_available_failover_providers),
+            )
+            .route(
+                "/openwrt/admin/apps/:app/failover/providers/:provider_id",
+                post(handlers::openwrt_add_to_failover_queue)
+                    .delete(handlers::openwrt_remove_from_failover_queue),
+            )
+            .route(
+                "/openwrt/admin/apps/:app/failover/queue",
+                put(handlers::openwrt_reorder_failover_queue),
+            )
+            .route(
+                "/openwrt/admin/apps/:app/failover/auto-enabled",
+                put(handlers::openwrt_set_auto_failover_enabled),
+            )
+            .route(
+                "/openwrt/admin/apps/:app/failover/max-retries",
+                put(handlers::openwrt_set_max_retries),
+            );
+
+        router.with_state(self.state.clone())
     }
 
     /// 在不重启服务的情况下更新运行时配置

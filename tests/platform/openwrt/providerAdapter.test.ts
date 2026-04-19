@@ -14,15 +14,13 @@ function createTransport(
     listSavedProviders: vi.fn().mockResolvedValue(null),
     getActiveProvider: vi.fn().mockResolvedValue({
       ok: true,
-      provider_json: JSON.stringify({
-        configured: true,
-        providerId: "openwrt-claude",
-        name: "Claude Official",
-        baseUrl: "https://api.anthropic.com",
-        tokenField: "ANTHROPIC_AUTH_TOKEN",
-        tokenConfigured: true,
-        tokenMasked: "********1234",
-      }),
+      configured: true,
+      providerId: "openwrt-claude",
+      name: "Claude Official",
+      baseUrl: "https://api.anthropic.com",
+      tokenField: "ANTHROPIC_AUTH_TOKEN",
+      tokenConfigured: true,
+      tokenMasked: "********1234",
     }),
     restartService: vi.fn().mockResolvedValue({ ok: true }),
     ...overrides,
@@ -44,10 +42,8 @@ function createPhase2ListResponse(
 ) {
   return {
     ok: true,
-    providers_json: JSON.stringify({
-      activeProviderId,
-      providers,
-    }),
+    activeProviderId,
+    providers,
   };
 }
 
@@ -63,16 +59,14 @@ function createActiveProviderResponse(
 
   return {
     ok: true,
-    provider_json: JSON.stringify({
-      configured: true,
-      providerId,
-      name: providerId,
-      baseUrl: `https://${providerId}.example.com`,
-      tokenField: tokenFieldByApp[appId],
-      tokenConfigured: true,
-      tokenMasked: "********1234",
-      active: true,
-    }),
+    configured: true,
+    providerId,
+    name: providerId,
+    baseUrl: `https://${providerId}.example.com`,
+    tokenField: tokenFieldByApp[appId],
+    tokenConfigured: true,
+    tokenMasked: "********1234",
+    active: true,
   };
 }
 
@@ -95,16 +89,10 @@ describe("OpenWrt provider adapter", () => {
       ),
       getActiveProvider: vi.fn().mockResolvedValue({
         ...createActiveProviderResponse("provider-b"),
-        provider_json: JSON.stringify({
-          configured: true,
-          providerId: "provider-b",
-          name: "Beta",
-          baseUrl: "https://beta.example.com",
-          tokenField: "ANTHROPIC_AUTH_TOKEN",
-          tokenConfigured: true,
-          tokenMasked: "********beta",
-          active: true,
-        }),
+        name: "Beta",
+        baseUrl: "https://beta.example.com",
+        tokenField: "ANTHROPIC_AUTH_TOKEN",
+        tokenMasked: "********beta",
       }),
     });
 
