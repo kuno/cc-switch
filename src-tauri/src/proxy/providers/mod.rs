@@ -16,6 +16,7 @@ mod auth;
 mod claude;
 mod codex;
 pub mod codex_oauth_auth;
+pub mod codex_oauth_store;
 pub mod copilot_auth;
 mod gemini;
 pub(crate) mod gemini_schema;
