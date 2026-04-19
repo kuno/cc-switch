@@ -1,10 +1,5 @@
 import { execFileSync } from "node:child_process";
-import {
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { act, fireEvent, waitFor, within } from "@testing-library/react";
@@ -25,7 +20,9 @@ import type {
 } from "@/shared/providers/domain";
 
 function createTransport(
-  providerStates: Partial<Record<SharedProviderAppId, SharedProviderState>> = {},
+  providerStates: Partial<
+    Record<SharedProviderAppId, SharedProviderState>
+  > = {},
 ): OpenWrtProviderTransport {
   function getProviderState(appId: SharedProviderAppId): SharedProviderState {
     return providerStates[appId] ?? createProviderState(appId, [], null);
@@ -85,13 +82,25 @@ function createTransport(
 
   return {
     listProviders: vi
-      .fn<(appId: SharedProviderAppId) => Promise<ReturnType<typeof createStateResponse>>>()
+      .fn<
+        (
+          appId: SharedProviderAppId,
+        ) => Promise<ReturnType<typeof createStateResponse>>
+      >()
       .mockImplementation(async (appId) => createStateResponse(appId)),
     listSavedProviders: vi
-      .fn<(appId: SharedProviderAppId) => Promise<ReturnType<typeof createStateResponse>>>()
+      .fn<
+        (
+          appId: SharedProviderAppId,
+        ) => Promise<ReturnType<typeof createStateResponse>>
+      >()
       .mockImplementation(async (appId) => createStateResponse(appId)),
     getActiveProvider: vi
-      .fn<(appId: SharedProviderAppId) => Promise<ReturnType<typeof createActiveProviderResponse>>>()
+      .fn<
+        (
+          appId: SharedProviderAppId,
+        ) => Promise<ReturnType<typeof createActiveProviderResponse>>
+      >()
       .mockImplementation(async (appId) => createActiveProviderResponse(appId)),
     restartService: vi.fn().mockResolvedValue({ ok: true }),
   };
@@ -167,10 +176,8 @@ function createRuntimeTransport(
           observed: appId !== "gemini",
           healthy: appId === "codex",
           consecutiveFailures: appId === "claude" ? 2 : 0,
-          lastSuccessAt:
-            appId === "gemini" ? null : "2026-04-13T07:59:00Z",
-          lastFailureAt:
-            appId === "claude" ? "2026-04-13T07:58:00Z" : null,
+          lastSuccessAt: appId === "gemini" ? null : "2026-04-13T07:59:00Z",
+          lastFailureAt: appId === "claude" ? "2026-04-13T07:58:00Z" : null,
           lastError: appId === "claude" ? "upstream timeout" : null,
           updatedAt: "2026-04-13T08:00:00Z",
         },
@@ -329,15 +336,13 @@ const FORBIDDEN_DESKTOP_SHELL_SELECTORS = [
 
 function getElementClassName(element: Element): string {
   return typeof element.getAttribute === "function"
-    ? element.getAttribute("class") ?? ""
+    ? (element.getAttribute("class") ?? "")
     : "";
 }
 
 function hasClassToken(root: ParentNode, token: string): boolean {
   return Array.from(root.querySelectorAll("*")).some((element) =>
-    getElementClassName(element)
-      .split(/\s+/)
-      .includes(token),
+    getElementClassName(element).split(/\s+/).includes(token),
   );
 }
 
@@ -437,38 +442,40 @@ describe("OpenWrt provider UI bundle", () => {
     document.body.appendChild(target);
     const transport = createRuntimeTransport({
       failoverControlsAvailable: true,
-      getAvailableFailoverProviders: vi.fn().mockImplementation(async (appId) => ({
-        ok: true,
-        providers_json: JSON.stringify({
-          activeProviderId: `${appId}-primary`,
-          providers: {
-            [`${appId}-backup`]: {
-              active: false,
-              configured: true,
-              model:
-                appId === "claude"
-                  ? "claude-haiku-4-5"
-                  : appId === "codex"
-                    ? "gpt-5.4-mini"
-                    : "gemini-2.5-flash",
-              name:
-                appId === "claude"
-                  ? "Claude Backup"
-                  : appId === "codex"
-                    ? "Codex Backup"
-                    : "Gemini Backup",
-              providerId: `${appId}-backup`,
-              tokenConfigured: true,
-              tokenField:
-                appId === "claude"
-                  ? "ANTHROPIC_AUTH_TOKEN"
-                  : appId === "codex"
-                    ? "OPENAI_API_KEY"
-                    : "GEMINI_API_KEY",
+      getAvailableFailoverProviders: vi
+        .fn()
+        .mockImplementation(async (appId) => ({
+          ok: true,
+          providers_json: JSON.stringify({
+            activeProviderId: `${appId}-primary`,
+            providers: {
+              [`${appId}-backup`]: {
+                active: false,
+                configured: true,
+                model:
+                  appId === "claude"
+                    ? "claude-haiku-4-5"
+                    : appId === "codex"
+                      ? "gpt-5.4-mini"
+                      : "gemini-2.5-flash",
+                name:
+                  appId === "claude"
+                    ? "Claude Backup"
+                    : appId === "codex"
+                      ? "Codex Backup"
+                      : "Gemini Backup",
+                providerId: `${appId}-backup`,
+                tokenConfigured: true,
+                tokenField:
+                  appId === "claude"
+                    ? "ANTHROPIC_AUTH_TOKEN"
+                    : appId === "codex"
+                      ? "OPENAI_API_KEY"
+                      : "GEMINI_API_KEY",
+              },
             },
-          },
-        }),
-      })),
+          }),
+        })),
       addToFailoverQueue: vi.fn().mockResolvedValue({ ok: true }),
       removeFromFailoverQueue: vi.fn().mockResolvedValue({ ok: true }),
       setAutoFailoverEnabled: vi.fn().mockResolvedValue({ ok: true }),
@@ -510,7 +517,9 @@ describe("OpenWrt provider UI bundle", () => {
         false,
       ),
     );
-    expect(transport.getAvailableFailoverProviders).toHaveBeenCalledWith("claude");
+    expect(transport.getAvailableFailoverProviders).toHaveBeenCalledWith(
+      "claude",
+    );
 
     await act(async () => {
       if (typeof handle === "function") {
@@ -620,10 +629,9 @@ describe("OpenWrt provider UI bundle", () => {
       .getByText("Claude Backup")
       .closest("article");
 
-    expect(within(target).getByRole("button", { name: "Claude" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    expect(
+      within(target).getByRole("button", { name: "Claude" }),
+    ).toHaveAttribute("aria-pressed", "true");
     expect(
       within(target).getByRole("button", { name: "Add provider" }),
     ).toBeInTheDocument();
@@ -632,15 +640,11 @@ describe("OpenWrt provider UI bundle", () => {
     expect(claudePrimaryCard).toHaveTextContent(
       /Base URL\s*https:\/\/claude-primary\.example\.com/,
     );
-    expect(claudePrimaryCard).toHaveTextContent(
-      /Model\s*claude-sonnet-4-5/,
-    );
+    expect(claudePrimaryCard).toHaveTextContent(/Model\s*claude-sonnet-4-5/);
     expect(claudePrimaryCard).toHaveTextContent(
       /Token field\s*ANTHROPIC_AUTH_TOKEN/,
     );
-    expect(claudePrimaryCard).toHaveTextContent(
-      /Provider ID\s*claude-primary/,
-    );
+    expect(claudePrimaryCard).toHaveTextContent(/Provider ID\s*claude-primary/);
     expect(claudePrimaryCard).toHaveTextContent("Pinned for router traffic");
     expect(
       within(claudePrimaryCard as HTMLElement).getByText("Active", {
@@ -710,21 +714,16 @@ describe("OpenWrt provider UI bundle", () => {
       .getByText("Codex Primary")
       .closest("article");
 
-    expect(within(target).getByRole("button", { name: "Codex" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    expect(
+      within(target).getByRole("button", { name: "Codex" }),
+    ).toHaveAttribute("aria-pressed", "true");
     expect(codexPrimaryCard).not.toBeNull();
     expect(codexPrimaryCard).toHaveTextContent(
       /Base URL\s*https:\/\/codex-primary\.example\.com\/v1/,
     );
     expect(codexPrimaryCard).toHaveTextContent(/Model\s*gpt-5\.4/);
-    expect(codexPrimaryCard).toHaveTextContent(
-      /Token field\s*OPENAI_API_KEY/,
-    );
-    expect(codexPrimaryCard).toHaveTextContent(
-      /Provider ID\s*codex-primary/,
-    );
+    expect(codexPrimaryCard).toHaveTextContent(/Token field\s*OPENAI_API_KEY/);
+    expect(codexPrimaryCard).toHaveTextContent(/Provider ID\s*codex-primary/);
     expect(transport.listProviders).toHaveBeenCalledWith("codex");
     expect(transport.listSavedProviders).toHaveBeenCalledWith("codex");
     expect(transport.getActiveProvider).toHaveBeenCalledWith("codex");
@@ -776,11 +775,15 @@ describe("OpenWrt provider UI bundle", () => {
 
     const shell = {
       clearMessage: vi.fn(),
-      getSelectedApp: vi.fn().mockReturnValue("claude" satisfies SharedProviderAppId),
+      getSelectedApp: vi
+        .fn()
+        .mockReturnValue("claude" satisfies SharedProviderAppId),
       getServiceStatus: vi.fn().mockReturnValue({ isRunning: true }),
       refreshServiceStatus: vi.fn().mockResolvedValue({ isRunning: true }),
       restartService: vi.fn().mockResolvedValue({ isRunning: true }),
-      setSelectedApp: vi.fn().mockImplementation((appId: SharedProviderAppId) => appId),
+      setSelectedApp: vi
+        .fn()
+        .mockImplementation((appId: SharedProviderAppId) => appId),
       subscribe: vi.fn().mockReturnValue(vi.fn()),
       showMessage: vi.fn(),
     };
@@ -814,24 +817,32 @@ describe("OpenWrt provider UI bundle", () => {
     });
 
     await waitFor(() =>
-      expect(within(runtimeRoot).getByText("Runtime Surface")).toBeInTheDocument(),
+      expect(
+        within(runtimeRoot).getByText("Runtime Surface"),
+      ).toBeInTheDocument(),
     );
     await waitFor(() =>
       expect(
-        within(providerRoot).getByRole("button", { name: "Edit Claude Primary" }),
+        within(providerRoot).getByRole("button", {
+          name: "Edit Claude Primary",
+        }),
       ).toBeInTheDocument(),
     );
 
-    expect(document.body.classList.contains("ccswitch-openwrt-provider-ui-theme")).toBe(
-      true,
-    );
+    expect(
+      document.body.classList.contains("ccswitch-openwrt-provider-ui-theme"),
+    ).toBe(true);
     expect(runtimeRoot.firstElementChild?.tagName).toBe("SECTION");
     expect(runtimeRoot.querySelectorAll('[role="region"]').length).toBe(3);
     expect(
       runtimeRoot.querySelector("section.ccswitch-openwrt-page-section"),
     ).not.toBeNull();
-    expect(runtimeRoot.querySelector(".ccswitch-openwrt-page-header")).not.toBeNull();
-    expect(runtimeRoot.querySelector(".ccswitch-openwrt-surface-card")).not.toBeNull();
+    expect(
+      runtimeRoot.querySelector(".ccswitch-openwrt-page-header"),
+    ).not.toBeNull();
+    expect(
+      runtimeRoot.querySelector(".ccswitch-openwrt-surface-card"),
+    ).not.toBeNull();
     expect(hasClassToken(runtimeRoot, "sm:grid-cols-2")).toBe(true);
     expect(hasClassToken(runtimeRoot, "xl:grid-cols-3")).toBe(true);
     expect(
@@ -839,11 +850,15 @@ describe("OpenWrt provider UI bundle", () => {
         getElementClassName(element).includes("rounded-3xl"),
       ),
     ).toBe(true);
-    expect(providerRoot.querySelector(".ccswitch-openwrt-page-section")).not.toBeNull();
+    expect(
+      providerRoot.querySelector(".ccswitch-openwrt-page-section"),
+    ).not.toBeNull();
     expect(
       providerRoot.querySelector(".ccswitch-openwrt-page-header"),
     ).not.toBeNull();
-    expect(providerRoot.querySelector(".ccswitch-openwrt-app-switch")).not.toBeNull();
+    expect(
+      providerRoot.querySelector(".ccswitch-openwrt-app-switch"),
+    ).not.toBeNull();
     expect(
       providerRoot.querySelector(".ccswitch-openwrt-provider-card"),
     ).not.toBeNull();
@@ -863,7 +878,9 @@ describe("OpenWrt provider UI bundle", () => {
         getElementClassName(element).includes("rounded-[22px]"),
       ),
     ).toBe(true);
-    expect(shellRoot.querySelector("main, nav, aside, [role='navigation']")).toBeNull();
+    expect(
+      shellRoot.querySelector("main, nav, aside, [role='navigation']"),
+    ).toBeNull();
     expect(shellRoot.querySelector("dialog")).toBeNull();
     expect(
       document.body.querySelector(".ccswitch-openwrt-provider-ui-dialog"),
@@ -884,7 +901,10 @@ describe("OpenWrt provider UI bundle", () => {
 
       if (typeof providerHandle === "function") {
         providerHandle();
-      } else if (providerHandle && typeof providerHandle.unmount === "function") {
+      } else if (
+        providerHandle &&
+        typeof providerHandle.unmount === "function"
+      ) {
         providerHandle.unmount();
       }
     });
@@ -894,6 +914,137 @@ describe("OpenWrt provider UI bundle", () => {
     expect(
       document.body.classList.contains("ccswitch-openwrt-provider-ui-theme"),
     ).toBe(false);
+    shellRoot.remove();
+  });
+
+  it("keeps editor and delete dialogs inside the OpenWrt body portal without creating host-owned controls", async () => {
+    const globalScope = globalThis as typeof globalThis & {
+      [OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY]?: OpenWrtSharedProviderBundleApi;
+    };
+    const api = globalScope[OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY];
+    const shellRoot = document.createElement("div");
+    const providerRoot = document.createElement("div");
+    const transport = createTransport({
+      claude: createProviderState("claude", [
+        {
+          active: true,
+          baseUrl: "https://claude-primary.example.com",
+          model: "claude-sonnet-4-5",
+          name: "Claude Primary",
+          providerId: "claude-primary",
+          tokenConfigured: true,
+          tokenField: "ANTHROPIC_AUTH_TOKEN",
+        },
+        {
+          active: false,
+          baseUrl: "https://claude-backup.example.com",
+          model: "claude-haiku-4-5",
+          name: "Claude Backup",
+          providerId: "claude-backup",
+          tokenConfigured: false,
+          tokenField: "ANTHROPIC_API_KEY",
+        },
+      ]),
+    });
+
+    providerRoot.id = "ccswitch-shared-provider-ui-root";
+    shellRoot.appendChild(providerRoot);
+    document.body.appendChild(shellRoot);
+
+    const shell = {
+      clearMessage: vi.fn(),
+      getSelectedApp: vi.fn().mockReturnValue("claude" satisfies SharedProviderAppId),
+      getServiceStatus: vi.fn().mockReturnValue({ isRunning: true }),
+      refreshServiceStatus: vi.fn().mockResolvedValue({ isRunning: true }),
+      restartService: vi.fn().mockResolvedValue({ isRunning: true }),
+      setSelectedApp: vi.fn().mockImplementation((appId: SharedProviderAppId) => appId),
+      subscribe: vi.fn().mockReturnValue(vi.fn()),
+      showMessage: vi.fn(),
+    };
+
+    let providerHandle:
+      | void
+      | (() => void)
+      | {
+          unmount(): void;
+        };
+
+    await act(async () => {
+      providerHandle = await api?.mount({
+        appId: "claude",
+        serviceStatus: { isRunning: true },
+        shell,
+        target: providerRoot,
+        transport,
+      });
+    });
+
+    await waitFor(() =>
+      expect(
+        within(providerRoot).getByRole("button", { name: "Edit Claude Primary" }),
+      ).toBeInTheDocument(),
+    );
+
+    await act(async () => {
+      fireEvent.click(
+        within(providerRoot).getByRole("button", { name: "Edit Claude Primary" }),
+      );
+    });
+
+    const editDialog = await within(document.body).findByRole("dialog", {
+      name: "Edit Claude provider",
+    });
+
+    expect(editDialog).toHaveClass("ccswitch-openwrt-provider-ui-dialog");
+    expect(shellRoot.contains(editDialog)).toBe(false);
+    expect(
+      document.body.querySelector(".ccswitch-openwrt-provider-ui-overlay"),
+    ).not.toBeNull();
+    expect(within(editDialog).queryByRole("button", { name: /restart/i })).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(within(editDialog).getByRole("button", { name: "Cancel" }));
+    });
+
+    await waitFor(() =>
+      expect(
+        document.body.querySelector(".ccswitch-openwrt-provider-ui-dialog"),
+      ).toBeNull(),
+    );
+
+    await act(async () => {
+      fireEvent.click(
+        within(providerRoot).getByRole("button", { name: "Delete Claude Backup" }),
+      );
+    });
+
+    const deleteDialog = await within(document.body).findByRole("dialog", {
+      name: "Delete Claude provider",
+    });
+
+    expect(deleteDialog).toHaveClass("ccswitch-openwrt-provider-ui-dialog");
+    expect(deleteDialog).toHaveClass("max-w-sm");
+    expect(shellRoot.contains(deleteDialog)).toBe(false);
+    expect(
+      document.body.querySelectorAll(".ccswitch-openwrt-provider-ui-overlay"),
+    ).toHaveLength(1);
+    expect(within(deleteDialog).queryByRole("button", { name: /restart/i })).toBeNull();
+
+    await act(async () => {
+      if (typeof providerHandle === "function") {
+        providerHandle();
+      } else if (providerHandle && typeof providerHandle.unmount === "function") {
+        providerHandle.unmount();
+      }
+    });
+
+    expect(providerRoot.textContent).toBe("");
+    expect(
+      document.body.querySelector(".ccswitch-openwrt-provider-ui-dialog"),
+    ).toBeNull();
+    expect(
+      document.body.querySelector(".ccswitch-openwrt-provider-ui-overlay"),
+    ).toBeNull();
     shellRoot.remove();
   });
 
@@ -1083,7 +1234,9 @@ describe("OpenWrt provider UI bundle", () => {
     const stylesheetSource = readFileSync(stagedStylesheetOutputPath, "utf8");
     expect(bundleSource).toBe(stagedBundleSource);
     expect(stylesheetSource).toBe(stagedStylesheetSource);
-    expect(stagedBundleSource).toContain("__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__");
+    expect(stagedBundleSource).toContain(
+      "__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__",
+    );
     expect(stagedBundleSource).toContain("providerManager");
     expect(stagedBundleSource).toContain("Add provider");
     expect(stagedBundleSource).toContain("Secret stored");
@@ -1101,6 +1254,12 @@ describe("OpenWrt provider UI bundle", () => {
     expect(stagedStylesheetSource).toMatch(
       /#ccswitch-shared-provider-ui-root\s+:focus-visible,\s*#ccswitch-shared-runtime-surface-root\s+:focus-visible,\s*body\.ccswitch-openwrt-provider-ui-theme\s+\.ccswitch-openwrt-provider-ui-dialog\s+:focus-visible/,
     );
+    expect(stagedStylesheetSource).toMatch(
+      /body\.ccswitch-openwrt-provider-ui-theme\s+\.ccswitch-openwrt-provider-ui-dialog\{[^}]*width:min\(calc\(100vw - 1\.5rem\),72rem\)[^}]*max-width:calc\(100vw - 1\.5rem\)[^}]*max-height:min\(calc\(100dvh - 1\.5rem\),60rem\)[^}]*overflow:hidden/,
+    );
+    expect(stagedStylesheetSource).toMatch(
+      /body\.ccswitch-openwrt-provider-ui-theme\s+\.ccswitch-openwrt-provider-ui-dialog>form\{max-height:inherit\}/,
+    );
     expect(stagedStylesheetSource).toContain(".bg-background");
     expect(stagedStylesheetSource).not.toContain("color-scheme:light");
     expect(stagedStylesheetSource).not.toContain("scrollbar-width:none");
@@ -1114,14 +1273,20 @@ describe("OpenWrt provider UI bundle", () => {
     expect(viteConfig).toContain("openwrt/provider-ui-dist");
   });
 
-  it("ships shared layout hook selectors and responsive utilities in staged artifacts", () => {
+  it("ships required embed-safe host-fit selectors in staged artifacts", () => {
     const repoRoot = process.cwd();
     const stagedBundleSource = readFileSync(
-      path.resolve(repoRoot, "openwrt/provider-ui-dist/ccswitch-provider-ui.js"),
+      path.resolve(
+        repoRoot,
+        "openwrt/provider-ui-dist/ccswitch-provider-ui.js",
+      ),
       "utf8",
     );
     const stagedStylesheetSource = readFileSync(
-      path.resolve(repoRoot, "openwrt/provider-ui-dist/ccswitch-provider-ui.css"),
+      path.resolve(
+        repoRoot,
+        "openwrt/provider-ui-dist/ccswitch-provider-ui.css",
+      ),
       "utf8",
     );
 
@@ -1138,36 +1303,45 @@ describe("OpenWrt provider UI bundle", () => {
     }
 
     expect(stagedStylesheetSource).toMatch(
-      /@media\(max-width:960px\)\{[^}]*body\.ccswitch-openwrt-provider-ui-theme \.cbi-value\{[^}]*grid-template-columns:1fr[^}]*\}/,
+      /body\.ccswitch-openwrt-provider-ui-theme \.ccswitch-openwrt-provider-ui-dialog/,
     );
-    expect(stagedStylesheetSource).toContain(
-      ".sm\\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}",
+    expect(stagedStylesheetSource).toMatch(
+      /body\.ccswitch-openwrt-provider-ui-theme \.ccswitch-openwrt-provider-ui-overlay/,
     );
-    expect(stagedStylesheetSource).toContain(
-      ".md\\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}",
+    expect(stagedStylesheetSource).toMatch(
+      /#ccswitch-shared-provider-ui-root \[data-ccswitch-layout=stack-to-split\]/,
     );
-    expect(stagedStylesheetSource).toContain(
-      ".lg\\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}",
+    expect(stagedStylesheetSource).toMatch(
+      /#ccswitch-shared-runtime-surface-root \[data-ccswitch-layout=stack-to-row\]/,
     );
-    expect(stagedStylesheetSource).toContain(
-      ".xl\\:grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}",
+    expect(stagedStylesheetSource).toMatch(
+      /#ccswitch-shared-provider-ui-root \[data-ccswitch-layout=responsive-grid\]/,
     );
-    expect(stagedStylesheetSource).toContain(
-      '#ccswitch-shared-provider-ui-root [data-ccswitch-layout=stack-to-split]{display:grid;gap:.875rem;grid-template-columns:minmax(0,1fr);align-items:start}',
+    expect(stagedStylesheetSource).toMatch(
+      /#ccswitch-shared-runtime-surface-root \[data-ccswitch-layout=responsive-grid\]/,
     );
-    expect(stagedStylesheetSource).toContain(
-      '@media(min-width:1080px){#ccswitch-shared-provider-ui-root [data-ccswitch-layout=stack-to-split]{grid-template-columns:minmax(0,1.05fr) minmax(18rem,.7fr)}}',
+    expect(stagedStylesheetSource).toMatch(
+      /@media\(max-width:\d+px\)\{[^}]*body\.ccswitch-openwrt-provider-ui-theme \.cbi-value\{[^}]*grid-template-columns:1fr[^}]*\}/,
+    );
+    expect(stagedStylesheetSource).toMatch(
+      /@media\(max-width:720px\)\{[^}]*body\.ccswitch-openwrt-provider-ui-theme \.ccswitch-openwrt-provider-ui-dialog\{[^}]*width:min\(calc\(100vw - 1rem\),72rem\)[^}]*max-width:calc\(100vw - 1rem\)[^}]*max-height:calc\(100dvh - 1rem\)[^}]*border-radius:1\.2rem[^}]*\}/,
     );
   });
 
   it("keeps the staged OpenWrt bundle free of split-shell selectors and desktop-shell structure", () => {
     const repoRoot = process.cwd();
     const stagedBundleSource = readFileSync(
-      path.resolve(repoRoot, "openwrt/provider-ui-dist/ccswitch-provider-ui.js"),
+      path.resolve(
+        repoRoot,
+        "openwrt/provider-ui-dist/ccswitch-provider-ui.js",
+      ),
       "utf8",
     ).toLowerCase();
     const stagedStylesheetSource = readFileSync(
-      path.resolve(repoRoot, "openwrt/provider-ui-dist/ccswitch-provider-ui.css"),
+      path.resolve(
+        repoRoot,
+        "openwrt/provider-ui-dist/ccswitch-provider-ui.css",
+      ),
       "utf8",
     ).toLowerCase();
 
@@ -1194,7 +1368,10 @@ describe("OpenWrt provider UI bundle", () => {
       "openwrt/prepare-provider-ui-bundle.sh",
     );
     const explicitBundlePath = path.join(sourceDir, "explicit-real-bundle.js");
-    const explicitStylesheetPath = path.join(sourceDir, "explicit-real-bundle.css");
+    const explicitStylesheetPath = path.join(
+      sourceDir,
+      "explicit-real-bundle.css",
+    );
     const stagedBundlePath = path.resolve(
       repoRoot,
       "openwrt/provider-ui-dist/ccswitch-provider-ui.js",
@@ -1223,7 +1400,8 @@ describe("OpenWrt provider UI bundle", () => {
       "};",
       "",
     ].join("\n");
-    const explicitStylesheetSource = ":root { --ccswitch-explicit-bundle: 1; }\n";
+    const explicitStylesheetSource =
+      ":root { --ccswitch-explicit-bundle: 1; }\n";
 
     writeFileSync(explicitBundlePath, explicitBundleSource, "utf8");
     writeFileSync(explicitStylesheetPath, explicitStylesheetSource, "utf8");
