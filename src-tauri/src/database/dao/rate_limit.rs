@@ -31,6 +31,16 @@ impl Database {
         Ok(())
     }
 
+    pub fn delete_rate_limit_snapshot(&self, provider_id: &str) -> Result<(), AppError> {
+        let conn = lock_conn!(self.conn);
+        conn.execute(
+            "DELETE FROM rate_limit_snapshots WHERE provider_id = ?1",
+            rusqlite::params![provider_id],
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+        Ok(())
+    }
+
     pub fn load_rate_limit_snapshots(&self) -> Vec<RateLimitSnapshot> {
         let conn = match self.conn.lock() {
             Ok(c) => c,
