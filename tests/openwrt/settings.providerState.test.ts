@@ -573,13 +573,25 @@ describe("OpenWrt settings shared-provider shell", () => {
 
     expect(styleNode).not.toBeNull();
     expect(styleText).toContain(
+      "#ccswitch-host-page-shell{--ccswitch-host-foreground:hsl(222 47% 11%)",
+    );
+    expect(styleText).toContain(
+      "html.dark #ccswitch-host-page-shell,body.dark #ccswitch-host-page-shell{--ccswitch-host-foreground:hsl(210 40% 96%)",
+    );
+    expect(styleText).toContain(
+      "#ccswitch-host-page-shell .ccswitch-host-surface{position:relative;margin:0;border:1px solid var(--ccswitch-host-border-strong);border-radius:18px;background:linear-gradient(180deg,var(--ccswitch-host-surface-top) 0%,var(--ccswitch-host-surface-bottom) 100%);box-shadow:var(--ccswitch-host-shadow);padding:1.05rem 1.1rem}",
+    );
+    expect(styleText).toContain(
       "#ccswitch-host-page-shell .ccswitch-host-shell-grid{display:grid;gap:.9rem;align-items:start;grid-template-columns:minmax(0,1fr) minmax(0,1.12fr)}",
     );
     expect(styleText).toContain(
       "#ccswitch-host-page-shell .ccswitch-host-shell-grid>.ccswitch-host-surface,#ccswitch-host-page-shell .ccswitch-host-settings-grid>.ccswitch-host-surface{min-width:0}",
     );
     expect(styleText).toContain(
-      "#ccswitch-host-page-shell .ccswitch-host-map .cbi-value{display:grid;grid-template-columns:minmax(0,10.5rem) minmax(0,1fr);column-gap:.9rem;row-gap:.35rem;align-items:flex-start;margin:0;padding:.8rem 0;border-top:1px solid #eef2f7}",
+      "#ccswitch-host-page-shell .ccswitch-host-map .cbi-value{display:grid;grid-template-columns:minmax(0,10.5rem) minmax(0,1fr);column-gap:.9rem;row-gap:.35rem;align-items:flex-start;margin:0;padding:.8rem 0;border-top:1px solid var(--ccswitch-host-divider)}",
+    );
+    expect(styleText).toContain(
+      "#ccswitch-host-page-shell .ccswitch-host-map input[type=\"text\"],#ccswitch-host-page-shell .ccswitch-host-map input[type=\"password\"],#ccswitch-host-page-shell .ccswitch-host-map input[type=\"number\"],#ccswitch-host-page-shell .ccswitch-host-map select,#ccswitch-host-page-shell .ccswitch-host-map textarea{width:100%;min-height:2.65rem;padding:.6rem .8rem;border:1px solid var(--ccswitch-host-border-strong);border-radius:14px;background:linear-gradient(180deg,var(--ccswitch-host-input-top) 0%,var(--ccswitch-host-input-bottom) 100%);box-shadow:inset 0 1px 0 hsl(0 0% 100% / .24),0 10px 18px -18px hsl(220 38% 12% / .35);color:var(--ccswitch-host-foreground)}",
     );
     expect(styleText).toContain(
       "@media (max-width:1120px){#ccswitch-host-page-shell .ccswitch-host-shell-grid,#ccswitch-host-page-shell .ccswitch-host-settings-grid{grid-template-columns:minmax(0,1fr)}#ccswitch-host-page-shell .ccswitch-host-section-title{font-size:1.18rem}}",

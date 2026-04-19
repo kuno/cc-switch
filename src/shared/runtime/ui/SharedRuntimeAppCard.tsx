@@ -40,11 +40,11 @@ function getErrorMessage(error: unknown): string {
 
 function AppStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="ccswitch-openwrt-stat-card rounded-2xl border border-border-default bg-background/70 px-3 py-3">
-      <p className="text-xs uppercase tracking-wide text-muted-foreground">
+    <div className="ccswitch-openwrt-stat-card rounded-2xl border border-border-default bg-background/70 px-4 py-3">
+      <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
         {label}
       </p>
-      <p className="mt-1 text-lg font-semibold">{value}</p>
+      <p className="mt-2 text-base font-semibold">{value}</p>
     </div>
   );
 }
@@ -197,6 +197,15 @@ export function SharedRuntimeAppCard({
     availableProvidersQuery.isPending ||
     Boolean(availableProvidersError) ||
     !selectedProviderId;
+  const healthSummary = status.activeProviderHealth?.observed
+    ? `${formatSharedRuntimeCount(status.activeProviderHealth.consecutiveFailures)} consecutive failures recorded.`
+    : "No live observation reported yet.";
+  const runtimeModeLabel = status.proxyEnabled
+    ? "Proxy enabled"
+    : "Proxy disabled";
+  const failoverModeLabel = status.autoFailoverEnabled
+    ? "Auto-failover enabled"
+    : "Auto-failover disabled";
 
   return (
     <Card
@@ -209,8 +218,8 @@ export function SharedRuntimeAppCard({
       )}
     >
       <CardHeader className="space-y-4 p-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="space-y-2">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="min-w-0 space-y-3">
             <div className="flex flex-wrap items-center gap-2">
               <span
                 className={cn(
@@ -220,24 +229,6 @@ export function SharedRuntimeAppCard({
               >
                 {appPresentation.label}
               </span>
-              <SharedRuntimeStatusChip
-                label={status.proxyEnabled ? "Proxy enabled" : "Proxy disabled"}
-                tone={status.proxyEnabled ? "enabled" : "disabled"}
-              />
-              <SharedRuntimeStatusChip
-                label={
-                  status.autoFailoverEnabled
-                    ? "Auto-failover enabled"
-                    : "Auto-failover disabled"
-                }
-                tone={status.autoFailoverEnabled ? "enabled" : "disabled"}
-              />
-              <SharedRuntimeStatusChip
-                label={
-                  controlsEnabled ? "Controls available" : "Read-only"
-                }
-                tone="neutral"
-              />
               {status.usingLegacyDefault ? (
                 <SharedRuntimeStatusChip
                   label="Legacy default"
@@ -258,53 +249,54 @@ export function SharedRuntimeAppCard({
 
           <div
             className={cn(
-              "ccswitch-openwrt-group rounded-2xl border px-4 py-3 text-sm",
+              "ccswitch-openwrt-group w-full rounded-2xl border px-4 py-3 text-sm xl:max-w-sm",
               appPresentation.mutedPanelClassName,
             )}
           >
-            <p className="text-xs uppercase tracking-wide opacity-80">
-              Active provider health
+            <p className="text-xs uppercase tracking-[0.18em] opacity-80">
+              Current routing state
             </p>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <SharedRuntimeHealthBadge health={status.activeProviderHealth} />
-              {status.activeProviderHealth?.observed ? (
-                <span>
-                  {status.activeProviderHealth.consecutiveFailures} consecutive
-                  failures
-                </span>
-              ) : (
-                <span>No live observation reported yet.</span>
-              )}
+              <span className="font-medium text-foreground">
+                {controlsEnabled ? "Controls available" : "Read-only"}
+              </span>
             </div>
+            <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-foreground/90">
+              <span>{runtimeModeLabel}</span>
+              <span aria-hidden="true" className="text-current/60">
+                •
+              </span>
+              <span>{failoverModeLabel}</span>
+            </p>
+            <p className="mt-2 text-sm opacity-90">{healthSummary}</p>
+            {controlsEnabled ? (
+              <p className="mt-2 text-sm opacity-80">
+                Use the controls below to change queue membership without
+                changing the active provider.
+              </p>
+            ) : null}
           </div>
         </div>
       </CardHeader>
 
       <CardContent className="space-y-5 p-5 pt-0">
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <AppStat
-            label="Providers"
+            label="Saved providers"
             value={formatSharedRuntimeCount(status.providerCount)}
           />
           <AppStat
-            label="Observed"
+            label="Observed health"
             value={formatSharedRuntimeCount(status.observedProviderCount)}
           />
           <AppStat
-            label="Healthy"
-            value={formatSharedRuntimeCount(status.healthyProviderCount)}
+            label="Healthy / unhealthy"
+            value={`${formatSharedRuntimeCount(status.healthyProviderCount)} / ${formatSharedRuntimeCount(status.unhealthyProviderCount)}`}
           />
           <AppStat
-            label="Unhealthy"
-            value={formatSharedRuntimeCount(status.unhealthyProviderCount)}
-          />
-          <AppStat
-            label="Queue depth"
-            value={formatSharedRuntimeCount(status.failoverQueueDepth)}
-          />
-          <AppStat
-            label="Max retries"
-            value={formatSharedRuntimeCount(status.maxRetries)}
+            label="Queue depth / retries"
+            value={`${formatSharedRuntimeCount(status.failoverQueueDepth)} queued / ${formatSharedRuntimeCount(status.maxRetries)} max retries`}
           />
         </div>
 
@@ -313,8 +305,7 @@ export function SharedRuntimeAppCard({
             <div className="space-y-1">
               <p className="text-sm font-medium">Failover queue preview</p>
               <p className="text-sm text-muted-foreground">
-                Read-only queue order and health for the next available
-                providers.
+                Ordered fallback candidates and their latest queue health.
               </p>
             </div>
             <SharedRuntimeStatusChip
@@ -347,7 +338,7 @@ export function SharedRuntimeAppCard({
               ) : null}
             </div>
 
-            <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+            <div className="mt-4 grid gap-4 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
               <div className="ccswitch-openwrt-group ccswitch-openwrt-group--raised rounded-2xl border border-border-default bg-background/80 p-4">
                 <div className="flex items-center justify-between gap-4">
                   <div className="space-y-1">
