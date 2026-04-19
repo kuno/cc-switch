@@ -156,6 +156,20 @@ function getProvider(app, providerId) {
 	);
 }
 
+function getProviderFailover(app, providerId) {
+	let normalizedApp = normalizeApp(app);
+	let missing = requireProviderId(providerId);
+	if (missing)
+		return missing;
+
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
+
+	return runStatusCommand(
+		daemonCommand(`openwrt ${shellquote(normalizedApp)} get-provider-failover ${shellquote(providerId)}`)
+	);
+}
+
 function getActiveProvider(app) {
 	let normalizedApp = normalizeApp(app);
 
@@ -282,6 +296,22 @@ function removeFromFailoverQueue(app, providerId) {
 	);
 }
 
+function reorderFailoverQueue(app, providerIds) {
+	let normalizedApp = normalizeApp(app);
+
+	if (!providerIds || length(providerIds) === 0)
+		return { ok: false, error: 'provider_ids must be a non-empty array' };
+
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
+
+	let providerIdsJson = sprintf('%J', providerIds);
+
+	return runStatusCommand(
+		`printf '%s\n' ${shellquote(providerIdsJson)} | ${daemonCommand(`openwrt ${shellquote(normalizedApp)} reorder-failover-queue`)}`
+	);
+}
+
 function setAutoFailoverEnabled(app, enabled) {
 	let normalizedApp = normalizeApp(app);
 	let normalizedEnabled = normalizeEnabled(enabled);
@@ -294,6 +324,20 @@ function setAutoFailoverEnabled(app, enabled) {
 
 	return runStatusCommand(
 		daemonCommand(`openwrt ${shellquote(normalizedApp)} set-auto-failover-enabled ${shellquote(normalizedEnabled ? 'true' : 'false')}`)
+	);
+}
+
+function setMaxRetries(app, value) {
+	let normalizedApp = normalizeApp(app);
+
+	if (value == null || value === '')
+		return { ok: false, error: 'value is required' };
+
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
+
+	return runStatusCommand(
+		daemonCommand(`openwrt ${shellquote(normalizedApp)} set-max-retries ${shellquote(value)}`)
 	);
 }
 
@@ -328,6 +372,17 @@ return {
 
 			call: function(request) {
 				return getProvider(request.args.app, request.args.provider_id);
+			}
+		},
+
+		get_provider_failover: {
+			args: {
+				app: 'claude',
+				provider_id: 'provider-id'
+			},
+
+			call: function(request) {
+				return getProviderFailover(request.args.app, request.args.provider_id);
 			}
 		},
 
@@ -444,6 +499,17 @@ return {
 			}
 		},
 
+		reorder_failover_queue: {
+			args: {
+				app: 'claude',
+				provider_ids: [ 'provider-id' ]
+			},
+
+			call: function(request) {
+				return reorderFailoverQueue(request.args.app, request.args.provider_ids);
+			}
+		},
+
 		set_auto_failover_enabled: {
 			args: {
 				app: 'claude',
@@ -452,6 +518,17 @@ return {
 
 			call: function(request) {
 				return setAutoFailoverEnabled(request.args.app, request.args.enabled);
+			}
+		},
+
+		set_max_retries: {
+			args: {
+				app: 'claude',
+				value: 3
+			},
+
+			call: function(request) {
+				return setMaxRetries(request.args.app, request.args.value);
 			}
 		},
 

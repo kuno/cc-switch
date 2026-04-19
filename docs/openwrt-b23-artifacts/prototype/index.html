@@ -1,0 +1,1774 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CC Switch OpenWrt Clickable Mock</title>
+    <style>
+      :root {
+        --bg: #eef3f8;
+        --panel: rgba(255, 255, 255, 0.86);
+        --panel-strong: #ffffff;
+        --panel-soft: #f8fbff;
+        --line: #d8e2ef;
+        --line-strong: #ccd7e6;
+        --text: #172133;
+        --muted: #708198;
+        --soft-text: #90a0b4;
+        --accent: #4d7cff;
+        --accent-soft: #ebf2ff;
+        --accent-text: #2752c9;
+        --success: #2d8a5a;
+        --success-soft: #edf8f1;
+        --success-line: #bfe4cd;
+        --row-active: #edf4ff;
+        --row: #ffffff;
+        --button: #f5f8fd;
+        --shadow: 0 24px 60px -34px rgba(50, 72, 103, 0.28);
+        --shadow-soft: 0 16px 34px -28px rgba(50, 72, 103, 0.18);
+      }
+
+      body[data-theme="dark"] {
+        --bg: #0f141b;
+        --panel: rgba(20, 28, 38, 0.92);
+        --panel-strong: #151d27;
+        --panel-soft: #121923;
+        --line: #263241;
+        --line-strong: #314258;
+        --text: #eef4fb;
+        --muted: #93a2b8;
+        --soft-text: #6e7d92;
+        --accent: #7f94ff;
+        --accent-soft: #212d48;
+        --accent-text: #dfe5ff;
+        --success: #49b06d;
+        --success-soft: #183122;
+        --success-line: #275139;
+        --row-active: #1b2a42;
+        --row: #161f2b;
+        --button: #192332;
+        --shadow: none;
+        --shadow-soft: none;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "SF Pro Display", Inter, ui-sans-serif, system-ui, sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(77, 124, 255, 0.08), transparent 28%),
+          linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 24%),
+          var(--bg);
+        color: var(--text);
+        transition: background 180ms ease, color 180ms ease;
+      }
+
+      img {
+        display: block;
+      }
+
+      button {
+        font: inherit;
+      }
+
+      .shell {
+        max-width: 1600px;
+        margin: 0 auto;
+        padding: 28px 28px 40px;
+      }
+
+      .page-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 20px;
+        margin-bottom: 20px;
+      }
+
+      .eyebrow {
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .title {
+        margin: 4px 0 6px;
+        font-size: 52px;
+        line-height: 0.95;
+        font-weight: 760;
+        letter-spacing: -0.04em;
+      }
+
+      .subtitle {
+        color: var(--muted);
+        font-size: 16px;
+        font-weight: 520;
+      }
+
+      .head-actions {
+        display: flex;
+        gap: 10px;
+      }
+
+      .pill {
+        height: 34px;
+        padding: 0 16px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: var(--button);
+        color: var(--text);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .pill.accent {
+        background: var(--accent-soft);
+        color: var(--accent-text);
+      }
+
+      .band,
+      .workspace {
+        background: var(--panel);
+        backdrop-filter: blur(16px);
+        border: 1px solid var(--line);
+        border-radius: 28px;
+        box-shadow: var(--shadow);
+      }
+
+      .band {
+        padding: 22px 24px;
+        margin-bottom: 24px;
+      }
+
+      .band-grid {
+        display: grid;
+        grid-template-columns: 1.8fr 1fr 1fr;
+        gap: 0;
+        align-items: stretch;
+      }
+
+      .band-cell {
+        min-height: 82px;
+        padding: 6px 18px 6px 0;
+      }
+
+      .band-cell + .band-cell {
+        border-left: 1px solid var(--line);
+        padding-left: 18px;
+      }
+
+      .cell-label {
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.11em;
+        text-transform: uppercase;
+      }
+
+      .cell-value {
+        margin-top: 10px;
+        font-size: 20px;
+        font-weight: 680;
+        letter-spacing: -0.03em;
+      }
+
+      .band-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 8px;
+      }
+
+      .band-actions .status-text {
+        font-size: 20px;
+        font-weight: 760;
+        letter-spacing: -0.03em;
+      }
+
+      .chip {
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: var(--button);
+        color: var(--text);
+        padding: 0 14px;
+        height: 30px;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .chip.success {
+        background: var(--success-soft);
+        border-color: var(--success-line);
+        color: var(--success);
+      }
+
+      .chip.active {
+        background: var(--accent);
+        color: #fff;
+        border-color: transparent;
+      }
+
+      .workspace {
+        padding: 0;
+        overflow: hidden;
+      }
+
+      .host-settings {
+        margin-bottom: 24px;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .host-card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        box-shadow: var(--shadow-soft);
+        padding: 16px;
+      }
+
+      .host-card h3 {
+        margin: 0 0 6px;
+        font-size: 14px;
+        font-weight: 760;
+        color: var(--muted);
+      }
+
+      .host-card p {
+        margin: 0 0 14px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
+        font-weight: 520;
+      }
+
+      .workspace-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 18px 20px 14px;
+        border-bottom: 1px solid var(--line);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent);
+      }
+
+      .workspace-title {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .workspace-title strong {
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--muted);
+      }
+
+      .workspace-title span {
+        font-size: 20px;
+        font-weight: 760;
+        letter-spacing: -0.03em;
+      }
+
+      .toolbar-group {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .app-picker {
+        position: relative;
+      }
+
+      .app-trigger {
+        min-width: 254px;
+        height: 44px;
+        padding: 0 14px 0 12px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--button);
+        color: var(--text);
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        cursor: pointer;
+      }
+
+      .app-trigger-copy {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1px;
+      }
+
+      .app-trigger-label {
+        color: var(--muted);
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .app-trigger-value {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 15px;
+        font-weight: 760;
+        letter-spacing: -0.02em;
+      }
+
+      .app-trigger-meta {
+        margin-left: auto;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .chevron {
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 800;
+      }
+
+      .app-menu {
+        position: absolute;
+        top: calc(100% + 10px);
+        right: 0;
+        width: 360px;
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        background: var(--panel-strong);
+        box-shadow: var(--shadow);
+        padding: 8px;
+        display: none;
+        z-index: 40;
+      }
+
+      .app-picker.open .app-menu {
+        display: block;
+      }
+
+      .app-menu-section + .app-menu-section {
+        margin-top: 6px;
+        padding-top: 8px;
+        border-top: 1px solid var(--line);
+      }
+
+      .app-menu-title {
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.11em;
+        text-transform: uppercase;
+        padding: 8px 10px 6px;
+      }
+
+      .app-menu-row {
+        width: 100%;
+        border: 0;
+        border-radius: 16px;
+        background: transparent;
+        color: var(--text);
+        padding: 10px;
+        display: grid;
+        grid-template-columns: 36px minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: center;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .app-menu-row:hover,
+      .app-menu-row.selected {
+        background: var(--panel-soft);
+      }
+
+      .glyph-shell {
+        width: 36px;
+        height: 36px;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--panel-soft);
+        flex: 0 0 auto;
+      }
+
+      .glyph-shell.round {
+        border-radius: 999px;
+      }
+
+      .glyph-shell img {
+        width: 20px;
+        height: 20px;
+      }
+
+      .glyph-fallback {
+        color: var(--text);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.03em;
+      }
+
+      .app-row-copy {
+        min-width: 0;
+      }
+
+      .app-row-name {
+        font-size: 14px;
+        font-weight: 760;
+        margin-bottom: 2px;
+      }
+
+      .app-row-meta {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .switcher {
+        display: flex;
+        gap: 6px;
+        padding: 5px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: var(--button);
+      }
+
+      .switcher button {
+        height: 34px;
+        min-width: 110px;
+        padding: 0 14px;
+        border: 0;
+        border-radius: 999px;
+        background: transparent;
+        color: var(--muted);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .switcher button.selected {
+        background: var(--panel-strong);
+        color: var(--text);
+        box-shadow: inset 0 0 0 1px var(--line);
+      }
+
+      .switcher button.compact {
+        min-width: 0;
+        padding: 0 16px;
+      }
+
+      .toolbar-add {
+        height: 40px;
+        padding: 0 18px;
+        border: 0;
+        border-radius: 999px;
+        background: var(--accent);
+        color: #fff;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .workspace-body {
+        display: grid;
+        grid-template-columns: 312px minmax(0, 1fr);
+        min-height: 900px;
+      }
+
+      .sidebar {
+        border-right: 1px solid var(--line);
+        padding: 14px 14px 18px;
+      }
+
+      .sidebar-head {
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 760;
+        margin-bottom: 10px;
+      }
+
+      .search-row {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+
+      .search {
+        flex: 1;
+        height: 42px;
+        padding: 0 14px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--panel-soft);
+        color: var(--soft-text);
+        display: flex;
+        align-items: center;
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .provider-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .provider-empty {
+        padding: 18px 16px;
+        border: 1px dashed var(--line-strong);
+        border-radius: 18px;
+        background: var(--panel-soft);
+      }
+
+      .provider-empty-title {
+        font-size: 14px;
+        font-weight: 760;
+        margin-bottom: 4px;
+      }
+
+      .provider-empty-copy {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 1.5;
+      }
+
+      .provider-row {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: var(--row);
+        box-shadow: var(--shadow-soft);
+        padding: 12px 12px 10px;
+        display: grid;
+        grid-template-columns: 42px minmax(0, 1fr) auto;
+        gap: 12px;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .provider-row.selected {
+        background: var(--row-active);
+      }
+
+      .provider-icon-shell {
+        width: 42px;
+        height: 42px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .provider-icon-shell img {
+        width: 24px;
+        height: 24px;
+      }
+
+      .provider-main {
+        min-width: 0;
+      }
+
+      .provider-name {
+        font-size: 15px;
+        font-weight: 760;
+        margin-bottom: 4px;
+      }
+
+      .provider-url {
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 600;
+        margin-bottom: 4px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      body[data-theme="dark"] .provider-url {
+        color: var(--muted);
+      }
+
+      .provider-usage {
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 600;
+      }
+
+      .editor {
+        padding: 14px 18px 18px;
+      }
+
+      .editor-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: flex-start;
+        margin-bottom: 16px;
+      }
+
+      .editor-kicker {
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 760;
+        margin-bottom: 2px;
+      }
+
+      .editor-name {
+        font-size: 28px;
+        line-height: 1;
+        letter-spacing: -0.04em;
+        font-weight: 780;
+        margin-bottom: 6px;
+      }
+
+      .editor-subtitle {
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 520;
+      }
+
+      .action-row {
+        display: flex;
+        gap: 10px;
+      }
+
+      .action-row button {
+        height: 34px;
+        padding: 0 14px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: var(--button);
+        color: var(--text);
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .action-row .primary {
+        background: var(--accent);
+        color: #fff;
+        border-color: transparent;
+      }
+
+      .section-tabs {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-bottom: 14px;
+      }
+
+      .tag {
+        height: 32px;
+        padding: 0 16px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--button);
+        color: var(--text);
+        display: inline-flex;
+        align-items: center;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .tag.selected {
+        background: var(--accent);
+        border-color: transparent;
+        color: #fff;
+      }
+
+      .summary {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 14px 16px;
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        background: var(--panel-soft);
+        margin-bottom: 14px;
+      }
+
+      .detail-workspace-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 14px;
+        margin-bottom: 10px;
+      }
+
+      .detail-workspace-copy {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .selection-note {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 600;
+        margin-bottom: 14px;
+      }
+
+      .summary-main {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        min-width: 0;
+      }
+
+      .summary-copy {
+        min-width: 0;
+      }
+
+      .summary-copy .label {
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .summary-copy .value {
+        font-size: 15px;
+        font-weight: 760;
+        margin-top: 4px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .editor-empty {
+        padding: 18px;
+        border: 1px dashed var(--line-strong);
+        border-radius: 22px;
+        background: var(--panel-soft);
+      }
+
+      .editor-empty-title {
+        font-size: 16px;
+        font-weight: 760;
+        margin-bottom: 6px;
+      }
+
+      .editor-empty-copy {
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 600;
+        line-height: 1.55;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px 18px;
+      }
+
+      .field {
+        min-width: 0;
+      }
+
+      .field.wide {
+        grid-column: 1 / -1;
+      }
+
+      .field label {
+        display: block;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.11em;
+        text-transform: uppercase;
+        margin-bottom: 8px;
+      }
+
+      .value-box {
+        min-height: 48px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--panel-strong);
+        padding: 14px 16px;
+        display: flex;
+        align-items: center;
+        font-size: 15px;
+        font-weight: 650;
+        color: var(--text);
+      }
+
+      .mono {
+        font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+        letter-spacing: -0.03em;
+      }
+
+      .footer-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        margin-top: 18px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+      }
+
+      .footer-actions button {
+        height: 38px;
+        padding: 0 16px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: var(--button);
+        color: var(--text);
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .footer-actions button:disabled,
+      .action-row button:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+
+      .footer-actions .primary {
+        background: var(--accent);
+        color: #fff;
+        border-color: transparent;
+      }
+
+      .toast {
+        position: fixed;
+        right: 24px;
+        bottom: 24px;
+        max-width: 340px;
+        padding: 14px 16px;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        background: var(--panel-strong);
+        box-shadow: var(--shadow);
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--text);
+        opacity: 0;
+        transform: translateY(14px);
+        pointer-events: none;
+        transition: opacity 160ms ease, transform 160ms ease;
+      }
+
+      .toast.visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(12, 18, 26, 0.32);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+      }
+
+      .modal-backdrop.visible {
+        display: flex;
+      }
+
+      .modal {
+        width: min(720px, 100%);
+        border-radius: 28px;
+        border: 1px solid var(--line);
+        background: var(--panel-strong);
+        box-shadow: var(--shadow);
+        padding: 22px;
+      }
+
+      .modal-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: flex-start;
+        margin-bottom: 14px;
+      }
+
+      .modal-title {
+        font-size: 26px;
+        font-weight: 780;
+        letter-spacing: -0.04em;
+        margin-bottom: 4px;
+      }
+
+      .modal-subtitle {
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 520;
+      }
+
+      .icon-btn {
+        width: 34px;
+        height: 34px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: var(--button);
+        color: var(--text);
+        cursor: pointer;
+      }
+
+      .modal-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px 18px;
+        margin-top: 14px;
+      }
+
+      .modal-grid .field.wide {
+        grid-column: 1 / -1;
+      }
+
+      .modal-input {
+        width: 100%;
+        min-height: 48px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--panel-soft);
+        padding: 12px 14px;
+        font: inherit;
+        color: var(--text);
+      }
+
+      @media (max-width: 1200px) {
+        .workspace-body {
+          grid-template-columns: 1fr;
+        }
+
+        .sidebar {
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+
+        .band-grid {
+          grid-template-columns: 1fr 1fr;
+          gap: 14px;
+        }
+
+        .band-cell + .band-cell {
+          border-left: 0;
+          padding-left: 0;
+        }
+      }
+    </style>
+  </head>
+  <body data-theme="light">
+    <div class="shell">
+      <div class="page-head">
+        <div>
+          <div class="eyebrow">OpenWrt / Services</div>
+          <div class="title">CC Switch</div>
+          <div class="subtitle">Daemon control and provider routing</div>
+        </div>
+        <div class="head-actions">
+          <button class="pill" id="themeToggle" type="button">Light</button>
+        </div>
+      </div>
+
+      <section class="band">
+        <div class="band-grid">
+          <div class="band-cell">
+            <div class="cell-label">Daemon control</div>
+            <div class="band-actions">
+              <div class="status-text">Running</div>
+              <div class="chip success">Healthy</div>
+              <div class="chip active">Restart</div>
+              <div class="chip">Stop</div>
+            </div>
+          </div>
+          <div class="band-cell">
+            <div class="cell-label">Listen endpoint</div>
+            <div class="cell-value mono">0.0.0.0:15721</div>
+          </div>
+          <div class="band-cell">
+            <div class="cell-label">Service</div>
+            <div class="cell-value">Router daemon</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="host-settings">
+        <div class="host-card">
+          <h3>Listen settings</h3>
+          <p>Daemon network settings.</p>
+          <div class="grid">
+            <div class="field">
+              <label>Listen address</label>
+              <div class="value-box mono">0.0.0.0</div>
+            </div>
+            <div class="field">
+              <label>Listen port</label>
+              <div class="value-box mono">15721</div>
+            </div>
+          </div>
+        </div>
+        <div class="host-card">
+          <h3>Outbound proxy</h3>
+          <p>Optional upstream routing.</p>
+          <div class="grid">
+            <div class="field wide">
+              <label>HTTP proxy</label>
+              <div class="value-box mono">http://127.0.0.1:7890</div>
+            </div>
+            <div class="field wide">
+              <label>HTTPS proxy</label>
+              <div class="value-box mono">http://127.0.0.1:7890</div>
+            </div>
+          </div>
+        </div>
+        <div class="host-card">
+          <h3>Service flags</h3>
+          <p>Runtime service options.</p>
+          <div class="grid">
+            <div class="field">
+              <label>Proxy enabled</label>
+              <div class="value-box">On</div>
+            </div>
+            <div class="field">
+              <label>Logging</label>
+              <div class="value-box">On</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <div class="workspace-top">
+          <div class="workspace-title">
+            <strong>Configuration workspace</strong>
+            <span id="workspaceTitle">Provider setup</span>
+          </div>
+          <div class="toolbar-group">
+            <div class="app-picker" id="appPicker"></div>
+            <button class="toolbar-add" type="button">Add</button>
+          </div>
+        </div>
+
+        <div class="workspace-body">
+          <aside class="sidebar">
+            <div class="sidebar-head">Providers</div>
+            <div class="search-row">
+              <div class="search">Search provider or endpoint</div>
+              <div class="chip">All</div>
+            </div>
+            <div class="provider-list" id="providerList"></div>
+          </aside>
+
+          <main class="editor">
+            <div class="editor-head">
+              <div>
+                <div class="editor-kicker">Selected provider</div>
+                <div class="editor-name" id="editorName"></div>
+                <div class="editor-subtitle" id="editorSubtitle"></div>
+              </div>
+              <div class="action-row">
+                <button type="button">Duplicate</button>
+                <button class="primary" type="button">Save</button>
+              </div>
+            </div>
+
+            <div class="selection-note" id="selectionNote"></div>
+            <div class="detail-workspace-row">
+              <div class="detail-workspace-copy">Sections</div>
+              <div class="switcher" id="detailWorkspaceSwitcher"></div>
+            </div>
+            <div class="summary" id="summaryCard"></div>
+            <div class="section-tabs" id="sectionTabs"></div>
+            <div class="grid" id="fieldGrid"></div>
+
+            <div class="footer-actions">
+              <button type="button">Cancel</button>
+              <button class="primary" type="button">Save</button>
+            </div>
+          </main>
+        </div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="modalBackdrop" aria-hidden="true">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <div class="modal-head">
+          <div>
+            <div class="modal-title" id="modalTitle">Add provider</div>
+            <div class="modal-subtitle" id="modalSubtitle">Choose a preset or enter details manually.</div>
+          </div>
+          <button class="icon-btn" id="modalClose" type="button">×</button>
+        </div>
+        <div class="preset-row" id="modalPresetRow"></div>
+        <div class="modal-grid">
+          <div class="field">
+            <label>Provider name</label>
+            <input class="modal-input" id="modalName" />
+          </div>
+          <div class="field">
+            <label>Notes</label>
+            <input class="modal-input" id="modalNotes" />
+          </div>
+          <div class="field wide">
+            <label>Website URL</label>
+            <input class="modal-input" id="modalWebsite" />
+          </div>
+          <div class="field wide">
+            <label>Base URL</label>
+            <input class="modal-input" id="modalBaseUrl" />
+          </div>
+        </div>
+        <div class="footer-actions">
+          <button id="modalCancel" type="button">Cancel</button>
+          <button class="primary" id="modalSave" type="button">Add draft</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+      const ICONS = {
+        claude: "./icons/claude.svg",
+        codex: "./icons/openai.svg",
+        gemini: "./icons/gemini.svg",
+        minimax: "./icons/minimax.svg",
+        deepseek: "./icons/deepseek.svg",
+        qwen: "./icons/qwen.svg",
+        packycode: "./icons/packycode.svg",
+      };
+
+      const APPS = {
+        claude: {
+          label: "Claude",
+          iconKey: "claude",
+          pageTitle: "Provider setup",
+          providerSubtitle: "General provider settings for the Claude workspace",
+          routingSubtitle: "Failover settings for the Claude workspace",
+          envSubtitle: "Credential settings for the Claude workspace",
+          providers: [
+            { name: "MiniMax en", url: "https://platform.minimax.io", status: "Active", tone: "success", iconKey: "minimax", bg: "#fff1f1", usage: "Used 157.47   Remaining 52.53 USD" },
+            { name: "Claude Official", url: "https://api.anthropic.com", status: "Preset", tone: "accent", iconKey: "claude", bg: "#fff4eb" },
+            { name: "DeepSeek", url: "https://platform.deepseek.com", status: "Saved", tone: "neutral", iconKey: "deepseek", bg: "#eef4ff" },
+            { name: "Qwen Coder", url: "https://bailian.console.aliyun.com", status: "Saved", tone: "neutral", iconKey: "qwen", bg: "#f2edff" },
+            { name: "PackyCode", url: "https://www.packyapi.com", status: "Draft", tone: "neutral", iconKey: "packycode", bg: "#eef6ef" },
+          ],
+          presets: ["Custom", "Claude Official", "MiniMax en", "DeepSeek", "Qwen Coder"],
+          fields: {
+            providers: [
+              ["Provider name", "MiniMax en"],
+              ["Notes", "Dedicated Claude route"],
+              ["Website URL", "https://platform.minimax.io", "wide"],
+              ["Base URL", "https://api.minimax.chat/v1", "wide"],
+              ["API key", "•••••••••••••••••••••••", "wide mono"],
+              ["Model", "MiniMax-M1"],
+              ["Health check", "/models", "mono"],
+              ["Fallback model", "claude-sonnet-4.5"],
+              ["Latency budget", "3000 ms", "mono"],
+            ],
+            routing: [
+              ["Provider name", "MiniMax en"],
+              ["Route mode", "Pinned"],
+              ["Outbound target", "Router proxy host fields above", "wide"],
+              ["Priority", "1", "mono"],
+              ["Fallback policy", "Use next healthy provider"],
+              ["Health gate", "Healthy required"],
+              ["Queue role", "Primary"],
+              ["Notes", "Claude traffic prefers this provider before failover.", "wide"],
+              ["Latency budget", "3000 ms", "mono"],
+              ["Health check", "/models", "mono"],
+            ],
+            env: [
+              ["Provider name", "MiniMax en"],
+              ["Secret policy", "Blank preserves stored secret"],
+              ["Primary env key", "•••••••••••••••••••••••", "wide mono"],
+              ["Base URL env", "https://api.minimax.chat/v1", "wide"],
+              ["Model env", "MiniMax-M1"],
+              ["Fallback model", "claude-sonnet-4.5"],
+              ["Health probe", "/models", "mono"],
+              ["Latency budget", "3000 ms", "mono"],
+              ["Notes", "Credential settings for the selected provider.", "wide"],
+            ],
+          },
+          summary: {
+            providers: { label: "Platform endpoint", value: "https://platform.minimax.io" },
+            routing: { label: "Route target", value: "Claude traffic prefers MiniMax en" },
+            env: { label: "Primary env mapping", value: "ANTHROPIC_AUTH_TOKEN + ANTHROPIC_BASE_URL" },
+          },
+        },
+        codex: {
+          label: "Codex",
+          iconKey: "codex",
+          pageTitle: "Provider setup",
+          providerSubtitle: "General provider settings for the Codex workspace",
+          routingSubtitle: "Failover settings for the Codex workspace",
+          envSubtitle: "Credential settings for the Codex workspace",
+          providers: [
+            { name: "OpenAI Official", url: "https://api.openai.com/v1", status: "Active", tone: "success", iconKey: "codex", bg: "#eef6ef", iconStyle: "filter: brightness(0) saturate(100%) invert(10%) sepia(7%) saturate(1851%) hue-rotate(175deg) brightness(99%) contrast(94%);" },
+            { name: "Azure OpenAI", url: "https://YOUR_RESOURCE.openai.azure.com/openai", status: "Saved", tone: "neutral", iconKey: "codex", bg: "#eef4ff", iconStyle: "filter: brightness(0) saturate(100%) invert(10%) sepia(7%) saturate(1851%) hue-rotate(175deg) brightness(99%) contrast(94%);" },
+            { name: "PackyCode", url: "https://www.packyapi.com/v1", status: "Saved", tone: "neutral", iconKey: "packycode", bg: "#eef6ef" },
+            { name: "CTok.ai", url: "https://api.ctok.ai/v1", status: "Preset", tone: "accent", iconKey: "codex", bg: "#f5f0ff", iconStyle: "filter: brightness(0) saturate(100%) invert(10%) sepia(7%) saturate(1851%) hue-rotate(175deg) brightness(99%) contrast(94%);" },
+            { name: "OpenRouter", url: "https://openrouter.ai/api/v1", status: "Draft", tone: "neutral", iconKey: "codex", bg: "#eef4ff", iconStyle: "filter: brightness(0) saturate(100%) invert(10%) sepia(7%) saturate(1851%) hue-rotate(175deg) brightness(99%) contrast(94%);" },
+          ],
+          presets: ["Custom", "OpenAI Official", "Azure OpenAI", "PackyCode", "CTok.ai"],
+          fields: {
+            providers: [
+              ["Provider name", "OpenAI Official"],
+              ["Notes", "Primary Codex route"],
+              ["Website URL", "https://chatgpt.com/codex", "wide"],
+              ["Base URL", "https://api.openai.com/v1", "wide"],
+              ["API key", "•••••••••••••••••••••••", "wide mono"],
+              ["Model", "gpt-5.4"],
+              ["Health check", "/models", "mono"],
+              ["Fallback model", "gpt-5.4-mini"],
+              ["Latency budget", "2500 ms", "mono"],
+            ],
+            routing: [
+              ["Provider name", "OpenAI Official"],
+              ["Route mode", "Pinned"],
+              ["Outbound target", "Router proxy host fields above", "wide"],
+              ["Priority", "1", "mono"],
+              ["Fallback policy", "Use next healthy provider"],
+              ["Health gate", "Healthy required"],
+              ["Queue role", "Primary"],
+              ["Notes", "Codex traffic prefers OpenAI Official before failover.", "wide"],
+              ["Latency budget", "2500 ms", "mono"],
+              ["Health check", "/models", "mono"],
+            ],
+            env: [
+              ["Provider name", "OpenAI Official"],
+              ["Secret policy", "Blank preserves stored secret"],
+              ["Primary env key", "•••••••••••••••••••••••", "wide mono"],
+              ["Base URL env", "https://api.openai.com/v1", "wide"],
+              ["Model env", "gpt-5.4"],
+              ["Fallback model", "gpt-5.4-mini"],
+              ["Health probe", "/models", "mono"],
+              ["Latency budget", "2500 ms", "mono"],
+              ["Notes", "Credential settings for the selected provider.", "wide"],
+            ],
+          },
+          summary: {
+            providers: { label: "Responses endpoint", value: "https://api.openai.com/v1" },
+            routing: { label: "Route target", value: "Codex traffic prefers OpenAI Official" },
+            env: { label: "Primary env mapping", value: "OPENAI_API_KEY + base_url" },
+          },
+        },
+        gemini: {
+          label: "Gemini",
+          iconKey: "gemini",
+          pageTitle: "Provider setup",
+          providerSubtitle: "General provider settings for the Gemini workspace",
+          routingSubtitle: "Failover settings for the Gemini workspace",
+          envSubtitle: "Credential settings for the Gemini workspace",
+          providers: [
+            { name: "Google Official", url: "https://generativelanguage.googleapis.com/v1beta", status: "Active", tone: "success", iconKey: "gemini", bg: "#eef4ff" },
+            { name: "PackyCode", url: "https://www.packyapi.com", status: "Saved", tone: "neutral", iconKey: "packycode", bg: "#eef6ef" },
+            { name: "CTok.ai", url: "https://api.ctok.ai/v1beta", status: "Saved", tone: "neutral", iconKey: "gemini", bg: "#fff7ec" },
+            { name: "OpenRouter", url: "https://openrouter.ai/api", status: "Preset", tone: "accent", iconKey: "gemini", bg: "#eef4ff" },
+            { name: "Cubence", url: "https://api.cubence.com", status: "Draft", tone: "neutral", iconKey: "gemini", bg: "#eef4ff" },
+          ],
+          presets: ["Custom", "Google Official", "PackyCode", "CTok.ai", "OpenRouter"],
+          fields: {
+            providers: [
+              ["Provider name", "Google Official"],
+              ["Notes", "Primary Gemini route"],
+              ["Website URL", "https://ai.google.dev/", "wide"],
+              ["Base URL", "https://generativelanguage.googleapis.com/v1beta", "wide"],
+              ["API key", "•••••••••••••••••••••••", "wide mono"],
+              ["Model", "gemini-3.1-pro"],
+              ["Health check", "/models", "mono"],
+              ["Fallback model", "gemini-3.1-flash"],
+              ["Latency budget", "2800 ms", "mono"],
+            ],
+            routing: [
+              ["Provider name", "Google Official"],
+              ["Route mode", "Pinned"],
+              ["Outbound target", "Router proxy host fields above", "wide"],
+              ["Priority", "1", "mono"],
+              ["Fallback policy", "Use next healthy provider"],
+              ["Health gate", "Healthy required"],
+              ["Queue role", "Primary"],
+              ["Notes", "Gemini traffic prefers Google Official before failover.", "wide"],
+              ["Latency budget", "2800 ms", "mono"],
+              ["Health check", "/models", "mono"],
+            ],
+            env: [
+              ["Provider name", "Google Official"],
+              ["Secret policy", "Blank preserves stored secret"],
+              ["Primary env key", "•••••••••••••••••••••••", "wide mono"],
+              ["Base URL env", "https://generativelanguage.googleapis.com/v1beta", "wide"],
+              ["Model env", "gemini-3.1-pro"],
+              ["Fallback model", "gemini-3.1-flash"],
+              ["Health probe", "/models", "mono"],
+              ["Latency budget", "2800 ms", "mono"],
+              ["Notes", "Credential settings for the selected provider.", "wide"],
+            ],
+          },
+          summary: {
+            providers: { label: "Generative Language endpoint", value: "https://generativelanguage.googleapis.com/v1beta" },
+            routing: { label: "Route target", value: "Gemini traffic prefers Google Official" },
+            env: { label: "Primary env mapping", value: "GEMINI_API_KEY + GOOGLE_GEMINI_BASE_URL" },
+          },
+        },
+      };
+
+      const WORKSPACES = {
+        providers: { label: "General", tabs: ["General", "Endpoint", "Model", "Notes"] },
+        routing: { label: "Failover", tabs: ["Queue", "Health", "Policy", "Notes"] },
+        env: { label: "Credentials", tabs: ["Credentials", "Endpoint", "Models", "Notes"] },
+      };
+
+      const state = {
+        theme: "light",
+        app: "claude",
+        workspace: "providers",
+        selectedProvider: 0,
+        activePreset: "",
+        detailTab: 0,
+        modalOpen: false,
+        modalPreset: "Custom",
+        appMenuOpen: false,
+      };
+
+      const els = {
+        body: document.body,
+        themeToggle: document.getElementById("themeToggle"),
+        appPicker: document.getElementById("appPicker"),
+        detailWorkspaceSwitcher: document.getElementById("detailWorkspaceSwitcher"),
+        workspaceTitle: document.getElementById("workspaceTitle"),
+        providerList: document.getElementById("providerList"),
+        editorName: document.getElementById("editorName"),
+        editorSubtitle: document.getElementById("editorSubtitle"),
+        selectionNote: document.getElementById("selectionNote"),
+        summaryCard: document.getElementById("summaryCard"),
+        sectionTabs: document.getElementById("sectionTabs"),
+        fieldGrid: document.getElementById("fieldGrid"),
+        modalBackdrop: document.getElementById("modalBackdrop"),
+        modalTitle: document.getElementById("modalTitle"),
+        modalSubtitle: document.getElementById("modalSubtitle"),
+        modalPresetRow: document.getElementById("modalPresetRow"),
+        modalName: document.getElementById("modalName"),
+        modalNotes: document.getElementById("modalNotes"),
+        modalWebsite: document.getElementById("modalWebsite"),
+        modalBaseUrl: document.getElementById("modalBaseUrl"),
+        modalClose: document.getElementById("modalClose"),
+        modalCancel: document.getElementById("modalCancel"),
+        modalSave: document.getElementById("modalSave"),
+        toast: document.getElementById("toast"),
+        addButton: document.querySelector(".toolbar-add"),
+        duplicateButton: document.querySelectorAll(".action-row button")[0],
+        editorSaveButton: document.querySelectorAll(".action-row button")[1],
+        footerSaveButton: document.querySelectorAll(".footer-actions .primary")[0],
+      };
+
+      let toastTimer = null;
+
+      function initFromQuery() {
+        const params = new URLSearchParams(window.location.search);
+        const app = params.get("app");
+        const theme = params.get("theme");
+        const menu = params.get("menu");
+        const workspace = params.get("workspace");
+
+        if (APPS[app]) state.app = app;
+        if (theme === "dark" || theme === "light") state.theme = theme;
+        if (WORKSPACES[workspace]) state.workspace = workspace;
+        if (menu === "open") state.appMenuOpen = true;
+      }
+
+      function showToast(message) {
+        els.toast.textContent = message;
+        els.toast.classList.add("visible");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => els.toast.classList.remove("visible"), 1800);
+      }
+
+      function currentApp() {
+        return APPS[state.app];
+      }
+
+      function currentProvider() {
+        const app = currentApp();
+        if (!app.providers.length) return null;
+        return app.providers[Math.min(state.selectedProvider, app.providers.length - 1)];
+      }
+
+      function resetDetailContext() {
+        state.detailTab = 0;
+        state.activePreset = currentProvider()?.name || currentApp().presets[0] || "Custom";
+      }
+
+      function clampSelection() {
+        const app = currentApp();
+        if (!app.providers.length) {
+          state.selectedProvider = 0;
+          return;
+        }
+        if (state.selectedProvider >= app.providers.length) state.selectedProvider = app.providers.length - 1;
+        if (state.selectedProvider < 0) state.selectedProvider = 0;
+      }
+
+      function countLabel(app) {
+        const count = app.providers.length;
+        if (!count) return "No providers";
+        return `${count} provider${count === 1 ? "" : "s"}`;
+      }
+
+      function toneChip(status, tone) {
+        const className = tone === "success" ? "chip success" : tone === "accent" ? "chip" : "chip";
+        const activeStyle = tone === "accent" ? ' style="background: var(--accent-soft); color: var(--accent-text);"' : "";
+        return `<div class="${className}"${activeStyle}>${status}</div>`;
+      }
+
+      function iconMarkup(key, label, options = {}) {
+        const src = key ? ICONS[key] : null;
+        const style = options.style ? ` style="${options.style}"` : "";
+        const shellClass = `glyph-shell ${options.round ? "round" : ""}`.trim();
+        if (src)
+          return `<div class="${shellClass}"${options.background ? ` style="background:${options.background}"` : ""}><img src="${src}" alt="${label}"${style}></div>`;
+        return `<div class="${shellClass}"${options.background ? ` style="background:${options.background}"` : ""}><span class="glyph-fallback">${options.monogram || label.slice(0, 2).toUpperCase()}</span></div>`;
+      }
+
+      function makeIcon(provider) {
+        return iconMarkup(provider.iconKey, provider.name, {
+          round: true,
+          background: provider.bg,
+          style: provider.iconStyle || "",
+          monogram: provider.monogram,
+        });
+      }
+
+      function renderSwitchers() {
+        const app = currentApp();
+        const appStyle = app.iconKey === "codex"
+          ? 'filter: brightness(0) saturate(100%) invert(10%) sepia(7%) saturate(1851%) hue-rotate(175deg) brightness(99%) contrast(94%);'
+          : "";
+        const appRows = Object.entries(APPS)
+          .map(([key, entry]) => appMenuRow(key, entry))
+          .join("");
+
+        els.appPicker.className = `app-picker ${state.appMenuOpen ? "open" : ""}`.trim();
+        els.appPicker.innerHTML = `
+          <button class="app-trigger" id="appTrigger" type="button" aria-expanded="${state.appMenuOpen ? "true" : "false"}">
+            ${iconMarkup(app.iconKey, app.label, { background: app.iconKey ? "var(--panel-strong)" : "var(--panel-soft)", style: appStyle, monogram: app.monogram })}
+            <span class="app-trigger-copy">
+              <span class="app-trigger-label">Application</span>
+              <span class="app-trigger-value">${app.label}</span>
+            </span>
+            <span class="app-trigger-meta">${countLabel(app)}</span>
+            <span class="chevron">▾</span>
+          </button>
+          <div class="app-menu" id="appMenu">
+            <div class="app-menu-section">
+              <div class="app-menu-title">Applications</div>
+              ${appRows}
+            </div>
+          </div>
+        `;
+
+        els.appPicker.querySelector("#appTrigger").addEventListener("click", (event) => {
+          event.stopPropagation();
+          state.appMenuOpen = !state.appMenuOpen;
+          render();
+        });
+        els.appPicker.querySelectorAll(".app-menu-row").forEach((button) => {
+          button.addEventListener("click", (event) => {
+            const key = event.currentTarget.dataset.app;
+            state.app = key;
+            state.selectedProvider = 0;
+            state.appMenuOpen = false;
+            resetDetailContext();
+            render();
+          });
+        });
+
+        els.detailWorkspaceSwitcher.innerHTML = "";
+        Object.entries(WORKSPACES).forEach(([key, workspace]) => {
+          const button = document.createElement("button");
+          button.className = `compact ${key === state.workspace ? "selected" : ""}`.trim();
+          button.textContent = workspace.label;
+          button.type = "button";
+          button.addEventListener("click", () => {
+            state.workspace = key;
+            state.detailTab = 0;
+            render();
+          });
+          els.detailWorkspaceSwitcher.appendChild(button);
+        });
+      }
+
+      function appMenuRow(key, app) {
+        const selected = key === state.app ? " selected" : "";
+        const appStyle = app.iconKey === "codex"
+          ? 'filter: brightness(0) saturate(100%) invert(10%) sepia(7%) saturate(1851%) hue-rotate(175deg) brightness(99%) contrast(94%);'
+          : "";
+        const meta = app.providers.length ? `${countLabel(app)} configured` : "No providers configured";
+        return `
+          <button class="app-menu-row${selected}" data-app="${key}" type="button">
+            ${iconMarkup(app.iconKey, app.label, { background: "var(--panel-soft)", style: appStyle, monogram: app.monogram })}
+            <div class="app-row-copy">
+              <div class="app-row-name">${app.label}</div>
+              <div class="app-row-meta">${meta}</div>
+            </div>
+            <div class="chip">${app.providers.length ? `${app.providers.length}` : "Empty"}</div>
+          </button>
+        `;
+      }
+
+      function renderProviders(app) {
+        els.providerList.innerHTML = "";
+        if (!app.providers.length) {
+          els.providerList.innerHTML = `
+            <div class="provider-empty">
+              <div class="provider-empty-title">No providers yet</div>
+              <div class="provider-empty-copy">Add a provider to start configuring this app.</div>
+            </div>
+          `;
+          return;
+        }
+        app.providers.forEach((provider, index) => {
+          const row = document.createElement("button");
+          row.type = "button";
+          row.className = `provider-row ${index === state.selectedProvider ? "selected" : ""}`.trim();
+          row.innerHTML = `
+            ${makeIcon(provider)}
+            <div class="provider-main">
+              <div class="provider-name">${provider.name}</div>
+              <div class="provider-url">${provider.url}</div>
+              <div class="provider-usage">${provider.usage || ""}</div>
+            </div>
+            ${toneChip(provider.status, provider.tone)}
+          `;
+          row.addEventListener("click", () => {
+            state.selectedProvider = index;
+            state.activePreset = provider.name;
+            state.detailTab = 0;
+            render();
+          });
+          els.providerList.appendChild(row);
+        });
+      }
+
+      function renderEditor(app) {
+        const provider = currentProvider();
+        els.workspaceTitle.textContent = app.pageTitle;
+        els.editorName.textContent = provider ? provider.name : app.label;
+        els.editorSubtitle.textContent =
+          state.workspace === "providers"
+            ? app.providerSubtitle
+            : state.workspace === "routing"
+              ? app.routingSubtitle
+              : app.envSubtitle;
+
+        if (provider) {
+          els.selectionNote.textContent = `Source preset: ${state.activePreset || provider.name}`;
+          els.selectionNote.style.display = "";
+        } else {
+          els.selectionNote.textContent = "";
+          els.selectionNote.style.display = "none";
+        }
+
+        const summary = app.summary[state.workspace];
+        els.summaryCard.innerHTML = `
+          <div class="summary-main">
+            ${provider
+              ? makeIcon(provider)
+              : iconMarkup(app.iconKey, app.label, { round: true, background: "var(--panel-soft)", monogram: app.monogram })}
+            <div class="summary-copy">
+              <div class="label">${summary.label}</div>
+              <div class="value">${summary.value}</div>
+            </div>
+          </div>
+        `;
+
+        els.sectionTabs.innerHTML = "";
+        WORKSPACES[state.workspace].tabs.forEach((label, index) => {
+          const div = document.createElement("div");
+          div.className = `tag ${index === state.detailTab ? "selected" : ""}`.trim();
+          div.textContent = label;
+          div.addEventListener("click", () => {
+            state.detailTab = index;
+            showToast(`${label} section selected`);
+            render();
+          });
+          els.sectionTabs.appendChild(div);
+        });
+
+        els.fieldGrid.innerHTML = "";
+        if (!provider) {
+          els.fieldGrid.innerHTML = `
+            <div class="editor-empty">
+              <div class="editor-empty-title">No selected provider</div>
+              <div class="editor-empty-copy">Add a provider to start configuring this workspace.</div>
+            </div>
+          `;
+          return;
+        }
+
+        const allFields = app.fields[state.workspace];
+        const groupedFields = state.workspace === "providers"
+          ? [
+              allFields.slice(0, 4),
+              allFields.slice(4, 5),
+              allFields.slice(5, 7),
+              allFields.slice(7),
+            ]
+          : state.workspace === "routing"
+            ? [
+                allFields.slice(0, 3),
+                allFields.slice(3, 6),
+                allFields.slice(6, 8),
+                allFields.slice(8),
+              ]
+            : [
+                allFields.slice(0, 3),
+                allFields.slice(3, 5),
+                allFields.slice(5, 7),
+                allFields.slice(7),
+              ];
+
+        groupedFields[state.detailTab].forEach(([label, value, kind]) => {
+          const field = document.createElement("div");
+          field.className = `field ${kind && kind.includes("wide") ? "wide" : ""}`.trim();
+          const mono = kind && kind.includes("mono") ? " mono" : "";
+          field.innerHTML = `
+            <label>${label}</label>
+            <div class="value-box${mono}">${value}</div>
+          `;
+          els.fieldGrid.appendChild(field);
+        });
+      }
+
+      function render() {
+        clampSelection();
+        const app = APPS[state.app];
+        els.body.dataset.theme = state.theme;
+        els.themeToggle.textContent = state.theme === "dark" ? "Dark" : "Light";
+        renderSwitchers();
+        renderProviders(app);
+        renderEditor(app);
+        const hasProvider = !!currentProvider();
+        els.duplicateButton.disabled = !hasProvider;
+        els.editorSaveButton.disabled = !hasProvider;
+        els.footerSaveButton.disabled = !hasProvider;
+      }
+
+      els.addButton.addEventListener("click", () => {
+        const app = currentApp();
+        state.modalOpen = true;
+        state.modalPreset = "Custom";
+        els.modalTitle.textContent = `Add ${app.label} provider`;
+        els.modalSubtitle.textContent = `Choose a preset or enter details for ${app.label}.`;
+        els.modalName.value = "";
+        els.modalNotes.value = "";
+        els.modalWebsite.value = "";
+        els.modalBaseUrl.value = "";
+        els.modalPresetRow.innerHTML = "";
+        app.presets.forEach((label) => {
+          const div = document.createElement("div");
+          div.className = `tag ${label === state.modalPreset ? "selected" : ""}`.trim();
+          div.textContent = label;
+          div.addEventListener("click", () => {
+            state.modalPreset = label;
+            els.modalName.value = label === "Custom" ? "" : label;
+            els.modalNotes.value = label === "Custom" ? "" : `${app.label} draft preset`;
+            els.modalWebsite.value = label === "Custom" ? "" : app.providers.find((entry) => entry.name === label)?.url || "";
+            els.modalBaseUrl.value = els.modalWebsite.value;
+            Array.from(els.modalPresetRow.children).forEach((child) => child.classList.remove("selected"));
+            div.classList.add("selected");
+          });
+          els.modalPresetRow.appendChild(div);
+        });
+        els.modalBackdrop.classList.add("visible");
+      });
+
+      function closeModal() {
+        state.modalOpen = false;
+        els.modalBackdrop.classList.remove("visible");
+      }
+
+      els.modalClose.addEventListener("click", closeModal);
+      els.modalCancel.addEventListener("click", closeModal);
+      els.modalBackdrop.addEventListener("click", (event) => {
+        if (event.target === els.modalBackdrop) closeModal();
+      });
+
+      els.modalSave.addEventListener("click", () => {
+        const app = currentApp();
+        const name = (els.modalName.value || "New Provider").trim();
+        app.providers.unshift({
+          name,
+          url: (els.modalWebsite.value || els.modalBaseUrl.value || "https://example.com").trim(),
+          status: "Draft",
+          tone: "neutral",
+          iconKey: app.iconKey,
+          bg: "#eef4ff",
+          ...(app.iconKey === "codex" ? { iconStyle: "filter: brightness(0) saturate(100%) invert(10%) sepia(7%) saturate(1851%) hue-rotate(175deg) brightness(99%) contrast(94%);" } : {}),
+        });
+        state.selectedProvider = 0;
+        state.activePreset = name;
+        closeModal();
+        showToast(`${name} added as draft`);
+        render();
+      });
+
+      els.duplicateButton.addEventListener("click", () => {
+        const app = currentApp();
+        const source = currentProvider();
+        if (!source) return;
+        const clone = { ...source, name: `${source.name} copy`, status: "Draft", tone: "neutral", usage: "" };
+        app.providers.splice(state.selectedProvider + 1, 0, clone);
+        state.selectedProvider += 1;
+        state.activePreset = clone.name;
+        showToast(`${clone.name} created`);
+        render();
+      });
+
+      els.editorSaveButton.addEventListener("click", () => {
+        if (!currentProvider()) return;
+        showToast(`Saved mock state for ${currentProvider().name}`);
+      });
+
+      els.footerSaveButton.addEventListener("click", () => {
+        if (!currentProvider()) return;
+        showToast(`Saved mock state for ${currentProvider().name}`);
+      });
+
+      els.themeToggle.addEventListener("click", () => {
+        state.theme = state.theme === "dark" ? "light" : "dark";
+        render();
+      });
+
+      document.addEventListener("click", (event) => {
+        if (!els.appPicker.contains(event.target)) {
+          if (state.appMenuOpen) {
+            state.appMenuOpen = false;
+            render();
+          }
+        }
+      });
+
+      initFromQuery();
+      resetDetailContext();
+      render();
+    </script>
+  </body>
+</html>

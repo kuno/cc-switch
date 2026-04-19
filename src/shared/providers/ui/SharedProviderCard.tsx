@@ -1,4 +1,5 @@
 import { Pencil, Zap, Trash2, Loader2 } from "lucide-react";
+import type { KeyboardEvent, MouseEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { SharedProviderAppId, SharedProviderView } from "../domain";
@@ -15,9 +16,11 @@ interface SharedProviderCardProps {
   actionVisibility: SharedProviderCardActionVisibility;
   isBusy?: boolean;
   isActivatePending?: boolean;
+  selected?: boolean;
   onEdit?: () => void;
   onActivate?: () => void;
   onDelete?: () => void;
+  onSelect?: () => void;
 }
 
 export function SharedProviderCard({
@@ -27,9 +30,11 @@ export function SharedProviderCard({
   actionVisibility,
   isBusy = false,
   isActivatePending = false,
+  selected = false,
   onEdit,
   onActivate,
   onDelete,
+  onSelect,
 }: SharedProviderCardProps) {
   const providerName = getSharedProviderDisplayName(provider);
   const appPresentation = SHARED_PROVIDER_APP_PRESENTATION[appId];
@@ -44,15 +49,43 @@ export function SharedProviderCard({
     provider.providerId ? `Provider ID ${provider.providerId}` : null,
   ].filter((value): value is string => Boolean(value));
 
+  function handleSelect() {
+    onSelect?.();
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (event.target !== event.currentTarget) {
+      return;
+    }
+
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+
+    event.preventDefault();
+    handleSelect();
+  }
+
+  function stopSelection(event: MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+  }
+
   return (
     <article
       aria-busy={isBusy || isActivatePending}
+      aria-selected={selected}
+      data-ccswitch-provider-selected={selected ? "true" : "false"}
+      tabIndex={0}
       className={cn(
         "ccswitch-openwrt-provider-card group relative overflow-hidden rounded-[22px] border bg-card p-4 shadow-sm transition-all sm:p-5",
+        "focus:outline-none focus:ring-2 focus:ring-blue-500/20",
         provider.active
           ? appPresentation.activeCardClassName
           : "border-border-default hover:border-border-active hover:shadow-md",
+        selected && "ring-2 ring-border-active ring-offset-2 ring-offset-background",
       )}
+      onClick={handleSelect}
+      onKeyDown={handleKeyDown}
     >
       <div
         className={cn(
@@ -137,7 +170,10 @@ export function SharedProviderCard({
             <Button
               type="button"
               variant={primaryAction === "edit" ? "default" : "outline"}
-              onClick={onEdit}
+              onClick={(event) => {
+                stopSelection(event);
+                onEdit?.();
+              }}
               disabled={isBusy}
               aria-label={`Edit ${providerName}`}
               aria-busy={isBusy}
@@ -150,7 +186,10 @@ export function SharedProviderCard({
             <Button
               type="button"
               variant="default"
-              onClick={onActivate}
+              onClick={(event) => {
+                stopSelection(event);
+                onActivate?.();
+              }}
               disabled={isBusy}
               aria-label={`Activate ${providerName}`}
               aria-busy={isActivatePending}
@@ -168,7 +207,10 @@ export function SharedProviderCard({
               type="button"
               variant="ghost"
               className="text-destructive hover:text-destructive"
-              onClick={onDelete}
+              onClick={(event) => {
+                stopSelection(event);
+                onDelete?.();
+              }}
               disabled={isBusy}
               aria-label={`Delete ${providerName}`}
               aria-busy={isBusy}
