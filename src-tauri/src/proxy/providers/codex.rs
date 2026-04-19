@@ -19,6 +19,9 @@ use toml::Value as TomlValue;
 static CODEX_CLIENT_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(codex_vscode|codex_cli_rs)/[\d.]+").unwrap());
 
+const CODEX_CLIENT_PASSTHROUGH_AUTH_MODE: &str = "client_passthrough";
+const CODEX_OFFICIAL_PROVIDER_ID: &str = "codex-official";
+
 /// Codex 适配器
 pub struct CodexAdapter;
 
@@ -882,6 +885,24 @@ impl CodexAdapter {
         CODEX_CLIENT_REGEX.is_match(user_agent)
     }
 
+    fn is_client_passthrough_mode(&self, provider: &Provider) -> bool {
+        if provider.id == CODEX_OFFICIAL_PROVIDER_ID {
+            return true;
+        }
+
+        if let Some(auth_mode) = provider
+            .settings_config
+            .get("auth_mode")
+            .and_then(|v| v.as_str())
+        {
+            if auth_mode == CODEX_CLIENT_PASSTHROUGH_AUTH_MODE {
+                return true;
+            }
+        }
+
+        false
+    }
+
     /// 从 Provider 配置中提取 API Key
     fn extract_key(&self, provider: &Provider) -> Option<String> {
         // 1. 尝试从 env 中获取
@@ -1024,6 +1045,13 @@ impl ProviderAdapter for CodexAdapter {
             ));
         }
 
+        let key = self.extract_key(provider);
+
+        if key.is_none() && self.is_client_passthrough_mode(provider) {
+            log::debug!("[Codex] 使用客户端 Authorization 透传模式");
+            return None;
+        }
+
         // Anthropic upstream: the auth field is chosen by the user in the UI (meta.apiKeyField).
         //   ANTHROPIC_API_KEY    → x-api-key (AuthStrategy::Anthropic)
         //   ANTHROPIC_AUTH_TOKEN → Authorization: Bearer (default, AuthStrategy::Bearer)
@@ -1044,8 +1072,11 @@ impl ProviderAdapter for CodexAdapter {
         } else {
             AuthStrategy::Bearer
         };
-        self.extract_key(provider)
-            .map(|key| AuthInfo::new(key, strategy))
+        key.map(|key| AuthInfo::new(key, strategy))
+    }
+
+    fn allows_inbound_auth_passthrough(&self, provider: &Provider) -> bool {
+        self.is_client_passthrough_mode(provider)
     }
 
     fn build_url(&self, base_url: &str, endpoint: &str) -> String {
