@@ -1,0 +1,7 @@
+config ccswitch 'main'
+	option enabled '0'
+	option listen_addr '0.0.0.0'
+	option listen_port '15721'
+	option http_proxy ''
+	option https_proxy ''
+	option log_level 'info'

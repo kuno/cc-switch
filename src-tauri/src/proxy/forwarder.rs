@@ -35,7 +35,6 @@ use futures::StreamExt;
 use http::Extensions;
 use serde_json::Value;
 use std::sync::Arc;
-use tauri::Manager;
 use tokio::sync::RwLock;
 
 const PROXY_AUTH_PLACEHOLDER: &str = "PROXY_MANAGED";
@@ -122,8 +121,10 @@ pub struct RequestForwarder {
     codex_chat_history: Arc<CodexChatHistoryStore>,
     /// 故障转移切换管理器
     failover_manager: Arc<FailoverSwitchManager>,
-    /// AppHandle，用于发射事件和更新托盘
-    app_handle: Option<tauri::AppHandle>,
+    /// Copilot auth manager（直接注入，无 Tauri 依赖）
+    copilot_auth: Option<Arc<RwLock<CopilotAuthManager>>>,
+    /// Codex OAuth auth manager（直接注入，无 Tauri 依赖）
+    codex_oauth_auth: Option<Arc<RwLock<CodexOAuthManager>>>,
     /// 请求开始时的"当前供应商 ID"（用于判断是否需要同步 UI/托盘）
     current_provider_id_at_start: String,
     /// 代理会话 ID（用于 Gemini Native shadow replay）
@@ -146,6 +147,9 @@ pub struct RequestForwarder {
     /// `max_attempts = max_retries + 1`，所以 max_retries=0 表示仅尝试一家、
     /// max_retries=3（默认）表示最多 4 家。loop 同时受 providers.len() 自然限制。
     max_attempts: usize,
+    /// AppHandle for failover UI updates (desktop only)
+    #[cfg(feature = "tauri-desktop")]
+    app_handle: Option<tauri::AppHandle>,
 }
 
 impl RequestForwarder {
@@ -203,7 +207,8 @@ impl RequestForwarder {
         gemini_shadow: Arc<GeminiShadowStore>,
         codex_chat_history: Arc<CodexChatHistoryStore>,
         failover_manager: Arc<FailoverSwitchManager>,
-        app_handle: Option<tauri::AppHandle>,
+        copilot_auth: Option<Arc<RwLock<CopilotAuthManager>>>,
+        codex_oauth_auth: Option<Arc<RwLock<CodexOAuthManager>>>,
         current_provider_id_at_start: String,
         session_id: String,
         session_client_provided: bool,
@@ -213,6 +218,7 @@ impl RequestForwarder {
         optimizer_config: OptimizerConfig,
         copilot_optimizer_config: CopilotOptimizerConfig,
         max_retries: u32,
+        #[cfg(feature = "tauri-desktop")] app_handle: Option<tauri::AppHandle>,
     ) -> Self {
         // max_retries 是「失败后重试次数」语义，attempt 上限 = retries + 1。
         // saturating_add 防止 u32::MAX + 1 溢出。
@@ -224,7 +230,8 @@ impl RequestForwarder {
             gemini_shadow,
             codex_chat_history,
             failover_manager,
-            app_handle,
+            copilot_auth,
+            codex_oauth_auth,
             current_provider_id_at_start,
             session_id,
             session_client_provided,
@@ -236,6 +243,8 @@ impl RequestForwarder {
                 streaming_first_byte_timeout,
             ),
             max_attempts,
+            #[cfg(feature = "tauri-desktop")]
+            app_handle,
         }
     }
 
@@ -515,15 +524,24 @@ impl RequestForwarder {
                         if should_switch {
                             status.failover_count += 1;
 
-                            // 异步触发供应商切换，更新 UI/托盘，并把“当前供应商”同步为实际使用的 provider
+                            // 异步触发供应商切换，更新 UI/托盘，并把"当前供应商"同步为实际使用的 provider
                             let fm = self.failover_manager.clone();
-                            let ah = self.app_handle.clone();
                             let pid = provider.id.clone();
                             let pname = provider.name.clone();
                             let at = app_type_str.to_string();
+                            #[cfg(feature = "tauri-desktop")]
+                            let ah = self.app_handle.clone();
 
                             tokio::spawn(async move {
-                                let _ = fm.try_switch(ah.as_ref(), &at, &pid, &pname).await;
+                                let _ = fm
+                                    .try_switch(
+                                        #[cfg(feature = "tauri-desktop")]
+                                        ah.as_ref(),
+                                        &at,
+                                        &pid,
+                                        &pname,
+                                    )
+                                    .await;
                             });
                         }
                         // 重新计算成功率
@@ -767,14 +785,21 @@ impl RequestForwarder {
 
                                                 // 异步触发供应商切换，更新 UI/托盘
                                                 let fm = self.failover_manager.clone();
-                                                let ah = self.app_handle.clone();
                                                 let pid = provider.id.clone();
                                                 let pname = provider.name.clone();
                                                 let at = app_type_str.to_string();
+                                                #[cfg(feature = "tauri-desktop")]
+                                                let ah = self.app_handle.clone();
 
                                                 tokio::spawn(async move {
                                                     let _ = fm
-                                                        .try_switch(ah.as_ref(), &at, &pid, &pname)
+                                                        .try_switch(
+                                                            #[cfg(feature = "tauri-desktop")]
+                                                            ah.as_ref(),
+                                                            &at,
+                                                            &pid,
+                                                            &pname,
+                                                        )
                                                         .await;
                                                 });
                                             }
@@ -929,13 +954,20 @@ impl RequestForwarder {
                                         if should_switch {
                                             status.failover_count += 1;
                                             let fm = self.failover_manager.clone();
-                                            let ah = self.app_handle.clone();
                                             let pid = provider.id.clone();
                                             let pname = provider.name.clone();
                                             let at = app_type_str.to_string();
+                                            #[cfg(feature = "tauri-desktop")]
+                                            let ah = self.app_handle.clone();
                                             tokio::spawn(async move {
                                                 let _ = fm
-                                                    .try_switch(ah.as_ref(), &at, &pid, &pname)
+                                                    .try_switch(
+                                                        #[cfg(feature = "tauri-desktop")]
+                                                        ah.as_ref(),
+                                                        &at,
+                                                        &pid,
+                                                        &pname,
+                                                    )
                                                     .await;
                                             });
                                         }
@@ -1305,9 +1337,8 @@ impl RequestForwarder {
         // GitHub Copilot 动态 endpoint 路由
         // 从 CopilotAuthManager 获取缓存的 API endpoint（支持企业版等非默认 endpoint）
         if is_copilot && !is_full_url {
-            if let Some(app_handle) = &self.app_handle {
-                let copilot_state = app_handle.state::<CopilotAuthState>();
-                let copilot_auth = copilot_state.0.read().await;
+            if let Some(copilot_auth_arc) = &self.copilot_auth {
+                let copilot_auth = copilot_auth_arc.read().await;
 
                 // 从 provider.meta 获取关联的 GitHub 账号 ID
                 let account_id = provider
@@ -1622,10 +1653,8 @@ impl RequestForwarder {
         let mut auth_headers = if let Some(mut auth) = adapter.extract_auth(provider) {
             // GitHub Copilot 特殊处理：从 CopilotAuthManager 获取真实 token
             if auth.strategy == AuthStrategy::GitHubCopilot {
-                if let Some(app_handle) = &self.app_handle {
-                    let copilot_state = app_handle.state::<CopilotAuthState>();
-                    let copilot_auth: tokio::sync::RwLockReadGuard<'_, CopilotAuthManager> =
-                        copilot_state.0.read().await;
+                if let Some(copilot_auth_arc) = &self.copilot_auth {
+                    let copilot_auth = copilot_auth_arc.read().await;
 
                     // 从 provider.meta 获取关联的 GitHub 账号 ID（多账号支持）
                     let account_id = provider
@@ -1664,19 +1693,17 @@ impl RequestForwarder {
                         }
                     }
                 } else {
-                    log::error!("[Copilot] AppHandle 不可用");
+                    log::error!("[Copilot] CopilotAuthManager 不可用");
                     return Err(ProxyError::AuthError(
-                        "GitHub Copilot 认证不可用（无 AppHandle）".to_string(),
+                        "GitHub Copilot 认证不可用".to_string(),
                     ));
                 }
             }
 
             // Codex OAuth 特殊处理：从 CodexOAuthManager 获取真实 access_token
             if auth.strategy == AuthStrategy::CodexOAuth {
-                if let Some(app_handle) = &self.app_handle {
-                    let codex_state = app_handle.state::<CodexOAuthState>();
-                    let codex_auth: tokio::sync::RwLockReadGuard<'_, CodexOAuthManager> =
-                        codex_state.0.read().await;
+                if let Some(codex_oauth_arc) = &self.codex_oauth_auth {
+                    let codex_auth = codex_oauth_arc.read().await;
 
                     // 从 provider.meta 获取关联的 ChatGPT 账号 ID
                     let account_id = provider
@@ -1717,10 +1744,8 @@ impl RequestForwarder {
                         }
                     }
                 } else {
-                    log::error!("[CodexOAuth] AppHandle 不可用");
-                    return Err(ProxyError::AuthError(
-                        "Codex OAuth 认证不可用（无 AppHandle）".to_string(),
-                    ));
+                    log::error!("[CodexOAuth] CodexOAuthManager 不可用");
+                    return Err(ProxyError::AuthError("Codex OAuth 认证不可用".to_string()));
                 }
             }
 
@@ -2613,13 +2638,12 @@ impl RequestForwarder {
     }
 
     async fn is_copilot_openai_vendor_model(&self, provider: &Provider, model_id: &str) -> bool {
-        let Some(app_handle) = &self.app_handle else {
-            log::debug!("[Copilot] AppHandle unavailable, fallback to chat/completions");
+        let Some(copilot_auth_arc) = &self.copilot_auth else {
+            log::debug!("[Copilot] CopilotAuthManager unavailable, fallback to chat/completions");
             return false;
         };
 
-        let copilot_state = app_handle.state::<CopilotAuthState>();
-        let copilot_auth = copilot_state.0.read().await;
+        let copilot_auth = copilot_auth_arc.read().await;
         let account_id = provider
             .meta
             .as_ref()
