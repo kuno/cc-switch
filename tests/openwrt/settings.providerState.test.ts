@@ -1,73 +1,163 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
-import {
-  getSharedProviderPresets,
-  inferSharedProviderPresetId,
-} from "@/shared/providers/domain";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type AppId = "claude" | "codex" | "gemini";
 
-type PresetOption = {
-  id: string;
-  label: string;
-  providerName: string;
-  baseUrl: string;
-  tokenField: string;
-  model: string;
-  description: string;
+type UiState = {
+  isRunning: boolean;
+  selectedApp: AppId;
+  busy: boolean;
+  message: { kind: "success" | "error" | "info"; text: string } | null;
+  bundleStatus: "idle" | "loading" | "ready" | "fallback" | "error";
+  bundleError: string | null;
+  mountHandle: (() => void) | null;
+  mountRequestId: number;
 };
 
-type ProviderView = {
-  configured: boolean;
-  providerId: string | null;
-  name: string;
-  baseUrl: string;
-  tokenField: string;
-  tokenConfigured: boolean;
-  tokenMasked: string;
-  model: string;
-  notes: string;
-  active: boolean;
+type StatusNodes = {
+  appValue: HTMLElement;
+  bundleValue: HTMLElement;
+  root: HTMLElement;
+  serviceValue: HTMLElement;
+  summaryValue: HTMLElement;
+  providerTitle?: HTMLElement;
+  providerValue?: HTMLElement;
+  savedCountValue?: HTMLElement;
 };
 
-type ProviderState = {
-  phase2Available: boolean;
-  providers: ProviderView[];
-  activeProviderId: string | null;
-  activeProvider: ProviderView;
+type ShellNodes = {
+  sharedChromeRoot?: HTMLElement;
+  messageRoot: HTMLElement;
+  messageText: HTMLElement;
+  mountRoot: HTMLElement;
+  restartButton: HTMLButtonElement;
+  root: HTMLElement;
+};
+
+type ShellBridge = {
+  clearMessage(): void;
+  getSelectedApp(): AppId;
+  getServiceStatus(): { isRunning: boolean };
+  refreshServiceStatus(): Promise<{ isRunning: boolean }>;
+  restartService(): Promise<{ isRunning: boolean }>;
+  setSelectedApp(appId: AppId): AppId;
+  showMessage(kind: "success" | "error" | "info", text: string): void;
+};
+
+type MountOptions = {
+  appId: AppId;
+  serviceStatus: { isRunning: boolean };
+  shell: ShellBridge;
+  target: HTMLElement;
+  transport: Record<string, (...args: unknown[]) => Promise<unknown>>;
 };
 
 type SettingsView = {
-  emptyProviderView(): ProviderView;
-  getPresetOptions(appId: string): PresetOption[];
-  inferPresetIdFromPayload(
-    appId: string,
-    payload: Partial<Pick<ProviderView, "baseUrl" | "tokenField">>,
-  ): string;
-  applyPresetToInputs(
-    appId: string,
-    presetId: string,
-    refs: {
-      nameInput: { value: string };
-      baseUrlInput: { value: string };
-      tokenFieldSelect: { value: string };
-      modelInput: { value: string };
-      presetDescriptionNode: { textContent: string };
-    },
-  ): void;
-  normalizeProviderView(
-    provider: Record<string, unknown>,
-    fallbackId: string | null,
-    activeProviderId: string | null,
-  ): ProviderView;
-  parsePhase2ProviderState(
-    listResponse: Record<string, unknown> | null,
-    activeHint: ProviderView,
-  ): ProviderState | null;
+  createProviderShell(uiState: UiState, statusNodes: StatusNodes): ShellNodes;
+  createProviderTransport(): Record<string, (...args: unknown[]) => Promise<unknown>>;
+  createShellBridge(
+    uiState: UiState,
+    statusNodes: StatusNodes,
+    shellNodes: ShellNodes,
+  ): ShellBridge;
+  createStatusPanel(uiState: UiState): StatusNodes;
+  createUiState(isRunning: boolean, selectedApp: AppId): UiState;
+  getBundleAssetPath(): string;
+  getSelectedApp(): AppId;
+  loadSharedProviderBundle(): Promise<{
+    mount(options: MountOptions): { unmount(): void } | (() => void) | void;
+  }>;
+  mountSharedProviderUi(
+    uiState: UiState,
+    statusNodes: StatusNodes,
+    shellNodes: ShellNodes,
+  ): Promise<void>;
+  saveSelectedApp(appId: AppId): void;
+  teardownSharedProviderUi(uiState: UiState): void;
 };
 
-function loadSettingsView(): SettingsView {
+type RpcSpec = {
+  expect?: Record<string, unknown>;
+  method: string;
+  object: string;
+  params?: string[];
+};
+
+function createElement(
+  tag: string,
+  attrs?: Record<string, unknown> | unknown[] | string,
+  children?: unknown[] | string,
+): HTMLElement {
+  const element = document.createElement(tag);
+  let resolvedAttrs = attrs;
+  let resolvedChildren = children;
+
+  if (
+    Array.isArray(attrs) ||
+    typeof attrs === "string" ||
+    attrs instanceof Node
+  ) {
+    resolvedAttrs = undefined;
+    resolvedChildren = attrs as unknown[] | string;
+  }
+
+  if (resolvedAttrs && typeof resolvedAttrs === "object") {
+    Object.entries(resolvedAttrs).forEach(([key, value]) => {
+      if (value == null) {
+        return;
+      }
+
+      if (key === "class") {
+        element.className = String(value);
+        return;
+      }
+
+      if (key === "style") {
+        element.setAttribute("style", String(value));
+        return;
+      }
+
+      if (key === "click" && typeof value === "function") {
+        element.addEventListener("click", value as EventListener);
+        return;
+      }
+
+      element.setAttribute(key, String(value));
+    });
+  }
+
+  const appendChild = (child: unknown) => {
+    if (child == null) {
+      return;
+    }
+
+    if (Array.isArray(child)) {
+      child.forEach(appendChild);
+      return;
+    }
+
+    if (child instanceof Node) {
+      element.appendChild(child);
+      return;
+    }
+
+    element.appendChild(document.createTextNode(String(child)));
+  };
+
+  appendChild(resolvedChildren);
+
+  return element;
+}
+
+function loadSettingsView(selectedApp?: AppId) {
+  const rpcDeclares: RpcSpec[] = [];
+  const storage = new Map<string, string>();
+
+  if (selectedApp) {
+    storage.set("ccswitch-openwrt-selected-app", selectedApp);
+  }
+
   const source = readFileSync(
     path.resolve(
       process.cwd(),
@@ -85,386 +175,221 @@ function loadSettingsView(): SettingsView {
     "localStorage",
     source,
   );
+  const localStorage = {
+    getItem: vi.fn((key: string) => storage.get(key) ?? null),
+    setItem: vi.fn((key: string, value: string) => {
+      storage.set(key, value);
+    }),
+  };
 
-  return factory(
+  const settings = factory(
     {
       extend(definition: SettingsView) {
         return definition;
       },
     },
     {},
-    {},
     {
-      declare() {
-        return () => Promise.resolve({});
+      load: vi.fn().mockResolvedValue(null),
+    },
+    {
+      declare(spec: RpcSpec) {
+        rpcDeclares.push(spec);
+
+        return (...args: unknown[]) =>
+          Promise.resolve({
+            args,
+            ok: true,
+            spec,
+          });
       },
     },
-    {},
+    {
+      createHandlerFn(_ctx: unknown, handler: (...args: unknown[]) => unknown) {
+        return handler;
+      },
+    },
     (value: string) => value,
-    {
-      getItem() {
-        return null;
-      },
-      setItem() {},
-    },
+    localStorage,
   ) as SettingsView;
-}
 
-const EXPECTED_PRESET_IDS: Record<AppId, string[]> = {
-  claude: [
-    "claude-official",
-    "claude-deepseek",
-    "claude-zhipu-glm",
-    "claude-zhipu-glm-en",
-    "claude-bailian",
-    "claude-bailian-coding",
-    "claude-kimi",
-    "claude-kimi-coding",
-    "claude-modelscope",
-    "claude-longcat",
-    "claude-minimax",
-    "claude-minimax-en",
-    "claude-doubaoseed",
-    "claude-bailing",
-    "claude-aihubmix",
-    "claude-siliconflow",
-    "claude-siliconflow-en",
-    "claude-dmxapi",
-    "claude-packycode",
-    "claude-cubence",
-    "claude-aigocode",
-    "claude-rightcode",
-    "claude-aicodemirror",
-    "claude-aicoding",
-    "claude-crazyrouter",
-    "claude-sssaicode",
-    "claude-compshare",
-    "claude-micu",
-    "claude-x-code-api",
-    "claude-ctok",
-    "claude-openrouter",
-    "claude-novita-ai",
-    "claude-xiaomi-mimo",
-  ],
-  codex: [
-    "codex-openai-official",
-    "codex-azure-openai",
-    "codex-aihubmix",
-    "codex-dmxapi",
-    "codex-packycode",
-    "codex-cubence",
-    "codex-aigocode",
-    "codex-rightcode",
-    "codex-aicodemirror",
-    "codex-aicoding",
-    "codex-crazyrouter",
-    "codex-sssaicode",
-    "codex-compshare",
-    "codex-micu",
-    "codex-x-code-api",
-    "codex-ctok",
-    "codex-openrouter",
-  ],
-  gemini: [
-    "gemini-google-official",
-    "gemini-packycode",
-    "gemini-cubence",
-    "gemini-aigocode",
-    "gemini-aicodemirror",
-    "gemini-aicoding",
-    "gemini-crazyrouter",
-    "gemini-sssaicode",
-    "gemini-ctok",
-    "gemini-openrouter",
-  ],
-};
-
-const ALLOWED_TOKEN_FIELDS: Record<AppId, string[]> = {
-  claude: ["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"],
-  codex: ["OPENAI_API_KEY"],
-  gemini: ["GEMINI_API_KEY"],
-};
-
-const LEGACY_PRESET_DESCRIPTIONS: Record<string, string> = {
-  "claude-official": "Official Anthropic Claude endpoint.",
-  "claude-deepseek": "DeepSeek Claude-compatible endpoint.",
-  "claude-kimi": "Moonshot Kimi Claude-compatible endpoint.",
-  "claude-minimax": "MiniMax Claude-compatible endpoint.",
-  "codex-openai-official": "Official OpenAI Responses endpoint for Codex.",
-  "codex-azure-openai":
-    "Azure OpenAI Codex endpoint template. Replace YOUR_RESOURCE_NAME before saving.",
-  "codex-openrouter": "OpenRouter Responses-compatible endpoint for Codex.",
-  "codex-packycode": "PackyCode Codex-compatible endpoint.",
-  "gemini-google-official": "Official Google Gemini API endpoint.",
-  "gemini-openrouter": "OpenRouter Gemini-compatible endpoint.",
-  "gemini-packycode": "PackyCode Gemini-compatible endpoint.",
-  "gemini-ctok": "CTok Gemini-compatible endpoint.",
-};
-
-const GENERIC_SELECTED_PRESET_DESCRIPTION =
-  "Preset selected. You can still adjust the fields below before saving.";
-
-function makeActiveHint(
-  settingsView: SettingsView,
-  providerId: string,
-  name: string,
-): ProviderView {
-  return settingsView.normalizeProviderView(
-    {
-      provider_id: providerId,
-      name,
-      base_url: `https://${providerId}.example.com`,
-    },
-    providerId,
-    null,
-  );
-}
-
-function makePresetRefs() {
   return {
-    nameInput: { value: "" },
-    baseUrlInput: { value: "" },
-    tokenFieldSelect: { value: "" },
-    modelInput: { value: "" },
-    presetDescriptionNode: { textContent: "" },
+    localStorage,
+    rpcDeclares,
+    settings,
+    storage,
   };
 }
 
-function normalizeBaseUrl(baseUrl: string) {
-  return baseUrl.trim().replace(/\/+$/, "");
-}
+beforeEach(() => {
+  (globalThis as Record<string, unknown>).E = createElement;
+  (globalThis as Record<string, unknown>).L = {
+    bind<T extends (...args: never[]) => unknown>(fn: T, ctx: unknown) {
+      return fn.bind(ctx);
+    },
+    resolveDefault<T>(promise: Promise<T>, fallback: T) {
+      return Promise.resolve(promise).catch(() => fallback);
+    },
+  };
+});
 
-function expectExpandedPresetCatalog(settingsView: SettingsView, appId: AppId) {
-  const presets = settingsView.getPresetOptions(appId);
-  const ids = presets.map((preset) => preset.id);
-  const normalizedTargets = new Set<string>();
+describe("OpenWrt settings shared-provider shell", () => {
+  it("keeps selected-app persistence in the LuCI shell and exposes the fixed bundle path", () => {
+    const { settings, localStorage } = loadSettingsView("gemini");
 
-  expect(ids).toEqual(EXPECTED_PRESET_IDS[appId]);
-  expect(new Set(ids).size).toBe(ids.length);
+    expect(settings.getSelectedApp()).toBe("gemini");
+    expect(settings.getBundleAssetPath()).toBe(
+      "/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js",
+    );
 
-  presets.forEach((preset) => {
-    expect(preset.id.startsWith(`${appId}-`)).toBe(true);
-    expect(preset.label).not.toHaveLength(0);
-    expect(preset.providerName).not.toHaveLength(0);
-    expect(preset.baseUrl).toMatch(/^https:\/\/\S+$/);
-    expect(ALLOWED_TOKEN_FIELDS[appId]).toContain(preset.tokenField);
-    expect(typeof preset.model).toBe("string");
-    expect(typeof preset.description).toBe("string");
+    settings.saveSelectedApp("codex");
 
-    const normalizedTarget = `${normalizeBaseUrl(preset.baseUrl)}::${preset.tokenField}`;
-    expect(normalizedTargets.has(normalizedTarget)).toBe(false);
-    normalizedTargets.add(normalizedTarget);
-
-    expect(
-      settingsView.inferPresetIdFromPayload(appId, {
-        baseUrl: `${preset.baseUrl}/`,
-        tokenField: preset.tokenField,
-      }),
-    ).toBe(preset.id);
+    expect(localStorage.setItem).toHaveBeenCalledWith(
+      "ccswitch-openwrt-selected-app",
+      "codex",
+    );
   });
-}
 
-describe("LuCI provider state parsing", () => {
-  const settingsView = loadSettingsView();
+  it("wires raw rpc transport methods for the shared provider bundle", async () => {
+    const { settings } = loadSettingsView();
+    const transport = settings.createProviderTransport();
 
-  it("exposes the expanded desktop-aligned preset catalog with stable ids and valid inference for all OpenWrt apps", () => {
-    expectExpandedPresetCatalog(settingsView, "claude");
-    expectExpandedPresetCatalog(settingsView, "codex");
-    expectExpandedPresetCatalog(settingsView, "gemini");
+    const listResult = await transport.listProviders("codex");
+    const activateResult = await transport.activateProviderByProviderId(
+      "gemini",
+      "provider-a",
+    );
+    const restartResult = await transport.restartService();
 
-    (["claude", "codex", "gemini"] as AppId[]).forEach((appId) => {
-      expect(settingsView.getPresetOptions(appId)).toEqual(
-        getSharedProviderPresets(appId).map((preset) => ({
-          id: preset.id,
-          label: preset.label,
-          providerName: preset.providerName,
-          baseUrl: preset.baseUrl,
-          tokenField: preset.tokenField,
-          model: preset.model,
-          description: preset.description,
-        })),
-      );
+    expect(listResult).toMatchObject({
+      args: ["codex"],
+      spec: {
+        method: "list_providers",
+        object: "ccswitch",
+        params: ["app"],
+      },
+    });
+    expect(activateResult).toMatchObject({
+      args: ["gemini", "provider-a"],
+      spec: {
+        method: "activate_provider",
+        object: "ccswitch",
+        params: ["app", "provider_id"],
+      },
+    });
+    expect(restartResult).toMatchObject({
+      args: [],
+      spec: {
+        method: "restart_service",
+        object: "ccswitch",
+      },
+    });
+  });
+
+  it("lets the shared bundle update the shell-owned selected app and banner state", () => {
+    const { settings, localStorage } = loadSettingsView("claude");
+    const uiState = settings.createUiState(true, "claude");
+    const statusNodes = settings.createStatusPanel(uiState);
+    const shellNodes = settings.createProviderShell(uiState, statusNodes);
+    const shell = settings.createShellBridge(uiState, statusNodes, shellNodes);
+
+    expect(shell.getSelectedApp()).toBe("claude");
+    expect(shell.getServiceStatus()).toEqual({ isRunning: true });
+
+    shell.setSelectedApp("gemini");
+    shell.showMessage("success", "Restart required.");
+
+    expect(uiState.selectedApp).toBe("gemini");
+    expect(localStorage.setItem).toHaveBeenCalledWith(
+      "ccswitch-openwrt-selected-app",
+      "gemini",
+    );
+    expect(statusNodes.appValue.textContent).toBe("Gemini");
+    expect(shellNodes.messageText.textContent).toBe("Restart required.");
+    expect(shellNodes.messageRoot.style.display).toBe("");
+  });
+
+  it("keeps the LuCI shell functional when the shared bundle fails to mount", async () => {
+    const { settings } = loadSettingsView();
+    const uiState = settings.createUiState(false, "claude");
+    const statusNodes = settings.createStatusPanel(uiState);
+    const shellNodes = settings.createProviderShell(uiState, statusNodes);
+
+    settings.loadSharedProviderBundle = vi
+      .fn()
+      .mockRejectedValue(new Error("bundle missing"));
+
+    await settings.mountSharedProviderUi(uiState, statusNodes, shellNodes);
+
+    expect(uiState.bundleStatus).toBe("error");
+    expect(statusNodes.bundleValue.textContent).toBe("Unavailable");
+    expect(shellNodes.mountRoot.textContent).toContain("Claude Providers");
+    expect(shellNodes.mountRoot.textContent).toContain("bundle missing");
+    expect(shellNodes.mountRoot.textContent).toContain(
+      "Configure Provider",
+    );
+  });
+
+  it("keeps the fallback LuCI provider manager active when the bundle is only a placeholder", async () => {
+    const { settings } = loadSettingsView();
+    const uiState = settings.createUiState(false, "claude");
+    const statusNodes = settings.createStatusPanel(uiState);
+    const shellNodes = settings.createProviderShell(uiState, statusNodes);
+    const mount = vi.fn();
+
+    settings.loadSharedProviderBundle = vi.fn().mockResolvedValue({
+      capabilities: { providerManager: false },
+      mount,
     });
 
-    expect(settingsView.getPresetOptions("claude")).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: "claude-zhipu-glm" }),
-        expect.objectContaining({
-          id: "claude-aihubmix",
-          tokenField: "ANTHROPIC_API_KEY",
+    await settings.mountSharedProviderUi(uiState, statusNodes, shellNodes);
+
+    expect(mount).not.toHaveBeenCalled();
+    expect(uiState.bundleStatus).toBe("fallback");
+    expect(statusNodes.bundleValue.textContent).toBe("Fallback");
+    expect(shellNodes.mountRoot.textContent).toContain("Claude Providers");
+    expect(shellNodes.mountRoot.textContent).toContain("Configure Provider");
+    expect(shellNodes.mountRoot.textContent).toContain(
+      "LuCI fallback provider manager",
+    );
+  });
+
+  it("hands a stable mount contract to the bundle and tears it down cleanly", async () => {
+    const { settings } = loadSettingsView("claude");
+    const uiState = settings.createUiState(true, "claude");
+    const statusNodes = settings.createStatusPanel(uiState);
+    const shellNodes = settings.createProviderShell(uiState, statusNodes);
+    const unmount = vi.fn();
+    const mount = vi.fn().mockReturnValue({ unmount });
+
+    settings.loadSharedProviderBundle = vi.fn().mockResolvedValue({
+      capabilities: { providerManager: true },
+      mount,
+    });
+
+    await settings.mountSharedProviderUi(uiState, statusNodes, shellNodes);
+
+    expect(uiState.bundleStatus).toBe("ready");
+    expect(mount).toHaveBeenCalledTimes(1);
+    expect(mount).toHaveBeenCalledWith(
+      expect.objectContaining({
+        appId: "claude",
+        serviceStatus: { isRunning: true },
+        shell: expect.objectContaining({
+          restartService: expect.any(Function),
+          setSelectedApp: expect.any(Function),
+          showMessage: expect.any(Function),
         }),
-        expect.objectContaining({
-          id: "claude-xiaomi-mimo",
-          model: "mimo-v2-pro",
+        target: shellNodes.mountRoot,
+        transport: expect.objectContaining({
+          listProviders: expect.any(Function),
+          restartService: expect.any(Function),
         }),
-      ]),
-    );
-    expect(settingsView.getPresetOptions("codex")).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: "codex-aihubmix" }),
-        expect.objectContaining({ id: "codex-sssaicode" }),
-        expect.objectContaining({
-          id: "codex-openrouter",
-          description: "OpenRouter Responses-compatible endpoint for Codex.",
-        }),
-      ]),
-    );
-    expect(settingsView.getPresetOptions("gemini")).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: "gemini-aicoding" }),
-        expect.objectContaining({ id: "gemini-sssaicode" }),
-        expect.objectContaining({
-          id: "gemini-ctok",
-          description: "CTok Gemini-compatible endpoint.",
-        }),
-      ]),
-    );
-  });
-
-  it("restores legacy preset descriptions while keeping the generic helper for newer catalog additions", () => {
-    const refs = makePresetRefs();
-
-    Object.entries(LEGACY_PRESET_DESCRIPTIONS).forEach(
-      ([presetId, expectedDescription]) => {
-        const appId = presetId.split("-")[0] as AppId;
-
-        settingsView.applyPresetToInputs(appId, presetId, refs);
-
-        expect(refs.presetDescriptionNode.textContent).toBe(
-          expectedDescription,
-        );
-        expect(
-          settingsView
-            .getPresetOptions(appId)
-            .find((preset) => preset.id === presetId)?.description,
-        ).toBe(expectedDescription);
-      },
-    );
-
-    settingsView.applyPresetToInputs("claude", "claude-aihubmix", refs);
-    expect(refs.presetDescriptionNode.textContent).toBe(
-      GENERIC_SELECTED_PRESET_DESCRIPTION,
-    );
-  });
-
-  it("autofills preset metadata and infers matching presets from saved payloads", () => {
-    const refs = makePresetRefs();
-
-    settingsView.applyPresetToInputs("claude", "claude-aihubmix", refs);
-    expect(refs.nameInput.value).toBe("AiHubMix");
-    expect(refs.baseUrlInput.value).toBe("https://aihubmix.com");
-    expect(refs.tokenFieldSelect.value).toBe("ANTHROPIC_API_KEY");
-    expect(refs.modelInput.value).toBe("");
-    expect(
-      settingsView.inferPresetIdFromPayload("claude", {
-        baseUrl: "https://aihubmix.com/",
-        tokenField: "ANTHROPIC_API_KEY",
       }),
-    ).toBe("claude-aihubmix");
-    expect(
-      inferSharedProviderPresetId("claude", {
-        baseUrl: "https://aihubmix.com/",
-        tokenField: "ANTHROPIC_API_KEY",
-      }),
-    ).toBe("claude-aihubmix");
-
-    settingsView.applyPresetToInputs("codex", "codex-sssaicode", refs);
-    expect(refs.nameInput.value).toBe("SSSAiCode");
-    expect(refs.baseUrlInput.value).toBe(
-      "https://node-hk.sssaicode.com/api/v1",
-    );
-    expect(refs.tokenFieldSelect.value).toBe("OPENAI_API_KEY");
-    expect(refs.modelInput.value).toBe("gpt-5.4");
-    expect(
-      settingsView.inferPresetIdFromPayload("codex", {
-        baseUrl: "https://node-hk.sssaicode.com/api/v1/",
-        tokenField: "OPENAI_API_KEY",
-      }),
-    ).toBe("codex-sssaicode");
-    expect(
-      inferSharedProviderPresetId("codex", {
-        baseUrl: "https://node-hk.sssaicode.com/api/v1/",
-        tokenField: "OPENAI_API_KEY",
-      }),
-    ).toBe("codex-sssaicode");
-
-    settingsView.applyPresetToInputs("gemini", "gemini-aicoding", refs);
-    expect(refs.nameInput.value).toBe("AICoding");
-    expect(refs.baseUrlInput.value).toBe("https://api.aicoding.sh");
-    expect(refs.tokenFieldSelect.value).toBe("GEMINI_API_KEY");
-    expect(refs.modelInput.value).toBe("gemini-3.1-pro");
-    expect(
-      settingsView.inferPresetIdFromPayload("gemini", {
-        baseUrl: "https://api.aicoding.sh/",
-        tokenField: "GEMINI_API_KEY",
-      }),
-    ).toBe("gemini-aicoding");
-    expect(
-      inferSharedProviderPresetId("gemini", {
-        baseUrl: "https://api.aicoding.sh/",
-        tokenField: "GEMINI_API_KEY",
-      }),
-    ).toBe("gemini-aicoding");
-  });
-
-  it("preserves item-level active when phase 2 omits the top-level activeProviderId", () => {
-    const state = settingsView.parsePhase2ProviderState(
-      {
-        providers: [
-          { provider_id: "alpha", name: "Alpha", active: true },
-          { provider_id: "beta", name: "Beta" },
-        ],
-      },
-      makeActiveHint(settingsView, "beta", "Beta"),
     );
 
-    expect(state?.activeProviderId).toBe("alpha");
-    expect(state?.activeProvider.providerId).toBe("alpha");
-    expect(
-      state?.providers.find((provider) => provider.providerId === "alpha")
-        ?.active,
-    ).toBe(true);
-    expect(
-      state?.providers.find((provider) => provider.providerId === "beta")
-        ?.active,
-    ).toBe(false);
-  });
+    settings.teardownSharedProviderUi(uiState);
 
-  it("preserves item-level is_current ahead of the phase 1 hint", () => {
-    const state = settingsView.parsePhase2ProviderState(
-      {
-        providers: {
-          alpha: { provider_id: "alpha", name: "Alpha" },
-          beta: { provider_id: "beta", name: "Beta", is_current: true },
-        },
-      },
-      makeActiveHint(settingsView, "alpha", "Alpha"),
-    );
-
-    expect(state?.activeProviderId).toBe("beta");
-    expect(state?.activeProvider.providerId).toBe("beta");
-    expect(
-      state?.providers.find((provider) => provider.providerId === "beta")
-        ?.active,
-    ).toBe(true);
-  });
-
-  it("keeps the phase 1 hint fallback when phase 2 provides no active flags", () => {
-    const state = settingsView.parsePhase2ProviderState(
-      {
-        providers: {
-          alpha: { provider_id: "alpha", name: "Alpha" },
-          beta: { provider_id: "beta", name: "Beta" },
-        },
-      },
-      makeActiveHint(settingsView, "beta", "Beta"),
-    );
-
-    expect(state?.activeProviderId).toBe("beta");
-    expect(state?.activeProvider.providerId).toBe("beta");
-    expect(
-      state?.providers.find((provider) => provider.providerId === "beta")
-        ?.active,
-    ).toBe(true);
+    expect(unmount).toHaveBeenCalledTimes(1);
   });
 });

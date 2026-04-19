@@ -3,30 +3,61 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { codeInspectorPlugin } from "code-inspector-plugin";
 
-export default defineConfig(({ command }) => ({
-  root: "src",
-  plugins: [
-    command === "serve" &&
-      codeInspectorPlugin({
-        bundler: "vite",
-      }),
-    react(),
-  ].filter(Boolean),
-  base: "./",
-  build: {
-    outDir: "../dist",
-    emptyOutDir: true,
-  },
-  server: {
-    port: 3000,
-    strictPort: true,
-  },
-  resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
-    },
-  },
-  clearScreen: false,
-  envPrefix: ["VITE_", "TAURI_"],
-}));
+const openWrtProviderUiEntry = path.resolve(
+  __dirname,
+  "src/openwrt-provider-ui/index.ts",
+);
+const openWrtProviderUiOutDir = path.resolve(
+  __dirname,
+  "openwrt/luci-app-ccswitch/htdocs/luci-static/resources/ccswitch/provider-ui",
+);
 
+export default defineConfig(({ command }) => {
+  const buildTarget = process.env.CCSWITCH_BUILD_TARGET;
+  const isOpenWrtProviderUiBuild = buildTarget === "openwrt-provider-ui";
+
+  return {
+    root: isOpenWrtProviderUiBuild ? "." : "src",
+    plugins: [
+      !isOpenWrtProviderUiBuild &&
+        command === "serve" &&
+        codeInspectorPlugin({
+          bundler: "vite",
+        }),
+      react(),
+    ].filter(Boolean),
+    base: "./",
+    build: isOpenWrtProviderUiBuild
+      ? {
+          outDir: openWrtProviderUiOutDir,
+          emptyOutDir: true,
+          cssCodeSplit: false,
+          lib: {
+            entry: openWrtProviderUiEntry,
+            formats: ["iife"],
+            name: "CCSwitchOpenWrtProviderUi",
+            fileName: () => "ccswitch-provider-ui.js",
+          },
+          rollupOptions: {
+            output: {
+              inlineDynamicImports: true,
+            },
+          },
+        }
+      : {
+          outDir: "../dist",
+          emptyOutDir: true,
+        },
+    server: {
+      port: 3000,
+      strictPort: true,
+    },
+    resolve: {
+      alias: {
+        "@": path.resolve(__dirname, "./src"),
+      },
+    },
+    clearScreen: false,
+    envPrefix: ["VITE_", "TAURI_"],
+  };
+});
