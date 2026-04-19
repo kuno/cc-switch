@@ -176,7 +176,7 @@ describe("SharedRuntimeAppCard", () => {
       }),
     );
 
-    expect(screen.getAllByText("Unknown")[0]).toBeInTheDocument();
+    expect(screen.getAllByText("Unknown")).toHaveLength(2);
     expect(
       screen.getByText("No live observation reported yet."),
     ).toBeInTheDocument();
@@ -193,7 +193,7 @@ describe("SharedRuntimeAppCard", () => {
     expect(
       screen.getByText("No live health observation reported for this queue entry yet."),
     ).toBeInTheDocument();
-    expect(screen.getAllByText("Unhealthy")).toHaveLength(2);
+    expect(screen.getAllByText("Unhealthy")).toHaveLength(1);
     expect(
       screen.getByText(/Last error:\s+TLS handshake failed/),
     ).toBeInTheDocument();
