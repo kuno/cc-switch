@@ -23,7 +23,11 @@ fn update_cached_override(value: Option<PathBuf>) {
 
 /// 获取缓存中的 app_config_dir 覆盖路径
 pub fn get_app_config_dir_override() -> Option<PathBuf> {
-    override_cache().read().ok()?.clone()
+    std::env::var("CC_SWITCH_DATA_DIR")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .map(PathBuf::from)
+        .or_else(|| override_cache().read().ok()?.clone())
 }
 
 fn read_override_from_store(app: &tauri::AppHandle) -> Option<PathBuf> {
