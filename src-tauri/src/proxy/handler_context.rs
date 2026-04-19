@@ -108,7 +108,9 @@ impl RequestContext {
         let copilot_optimizer_config = state.db.get_copilot_optimizer_config().unwrap_or_default();
 
         let current_provider_id =
-            crate::settings::get_current_provider(&app_type).unwrap_or_default();
+            crate::settings::get_effective_current_provider(&state.db, &app_type)
+                .map_err(|e| ProxyError::DatabaseError(e.to_string()))?
+                .unwrap_or_default();
 
         // 从请求体提取模型名称
         let request_model = body
@@ -231,7 +233,8 @@ impl RequestContext {
             state.gemini_shadow.clone(),
             state.codex_chat_history.clone(),
             state.failover_manager.clone(),
-            state.app_handle.clone(),
+            state.copilot_auth.clone(),
+            state.codex_oauth_auth.clone(),
             self.current_provider_id.clone(),
             self.session_id.clone(),
             self.session_client_provided,
@@ -241,6 +244,8 @@ impl RequestContext {
             self.optimizer_config.clone(),
             self.copilot_optimizer_config.clone(),
             max_retries,
+            #[cfg(feature = "tauri-desktop")]
+            state.app_handle.clone(),
         )
     }
 

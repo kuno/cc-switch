@@ -7,6 +7,7 @@ use crate::config::{get_claude_settings_path, read_json_file, write_json_file};
 use crate::database::Database;
 use crate::provider::Provider;
 use crate::proxy::providers::codex_oauth_auth::CodexOAuthManager;
+use crate::proxy::providers::copilot_auth::CopilotAuthManager;
 use crate::proxy::server::ProxyServer;
 use crate::proxy::switch_lock::SwitchLockManager;
 use crate::proxy::types::*;
@@ -390,7 +391,10 @@ pub struct ProxyService {
     db: Arc<Database>,
     codex_oauth_manager: Arc<CodexOAuthManager>,
     server: Arc<RwLock<Option<ProxyServer>>>,
+    copilot_auth: Arc<RwLock<Option<Arc<RwLock<CopilotAuthManager>>>>>,
+    codex_oauth_auth: Arc<RwLock<Option<Arc<CodexOAuthManager>>>>,
     /// AppHandle，用于传递给 ProxyServer 以支持故障转移时的 UI 更新
+    #[cfg(feature = "tauri-desktop")]
     app_handle: Arc<RwLock<Option<tauri::AppHandle>>>,
     switch_locks: SwitchLockManager,
 }
@@ -416,6 +420,9 @@ impl ProxyService {
             db,
             codex_oauth_manager,
             server: Arc::new(RwLock::new(None)),
+            copilot_auth: Arc::new(RwLock::new(None)),
+            codex_oauth_auth: Arc::new(RwLock::new(Some(codex_oauth_manager.clone()))),
+            #[cfg(feature = "tauri-desktop")]
             app_handle: Arc::new(RwLock::new(None)),
             switch_locks: SwitchLockManager::new(),
         }
@@ -915,6 +922,7 @@ impl ProxyService {
     }
 
     /// 设置 AppHandle（在应用初始化时调用）
+    #[cfg(feature = "tauri-desktop")]
     pub fn set_app_handle(&self, handle: tauri::AppHandle) {
         futures::executor::block_on(async {
             *self.app_handle.write().await = Some(handle);
@@ -931,6 +939,20 @@ impl ProxyService {
     /// 该应用是否正有切换 / 接管操作在进行中。见 `SwitchLockManager::is_locked_for_app`。
     pub(crate) async fn is_switch_in_progress_for_app(&self, app_type: &str) -> bool {
         self.switch_locks.is_locked_for_app(app_type).await
+    }
+
+    /// 设置 Copilot auth manager
+    pub fn set_copilot_auth(&self, auth: Arc<RwLock<CopilotAuthManager>>) {
+        futures::executor::block_on(async {
+            *self.copilot_auth.write().await = Some(auth);
+        });
+    }
+
+    /// 设置 Codex OAuth auth manager
+    pub fn set_codex_oauth_auth(&self, auth: Arc<CodexOAuthManager>) {
+        futures::executor::block_on(async {
+            *self.codex_oauth_auth.write().await = Some(auth);
+        });
     }
 
     /// 启动代理服务器
@@ -969,8 +991,18 @@ impl ProxyService {
         }
 
         // 4. 创建并启动服务器
+        let copilot_auth = self.copilot_auth.read().await.clone();
+        let codex_oauth_auth = self.codex_oauth_auth.read().await.clone();
+        #[cfg(feature = "tauri-desktop")]
         let app_handle = self.app_handle.read().await.clone();
-        let server = ProxyServer::new(config.clone(), self.db.clone(), app_handle);
+        let server = ProxyServer::new(
+            config.clone(),
+            self.db.clone(),
+            copilot_auth,
+            codex_oauth_auth,
+            #[cfg(feature = "tauri-desktop")]
+            app_handle,
+        );
         let info = server
             .start()
             .await
@@ -982,6 +1014,8 @@ impl ProxyService {
             let _ = server.stop().await;
             return Err(e);
         }
+
+        self.preload_active_targets(&server).await?;
 
         // 5. 保存服务器实例
         *self.server.write().await = Some(server);
@@ -1024,6 +1058,33 @@ impl ProxyService {
 
         self.start().await?;
         Ok(true)
+    }
+
+    async fn preload_active_targets(&self, server: &ProxyServer) -> Result<(), String> {
+        for app_type in [AppType::Claude, AppType::Codex, AppType::Gemini] {
+            let current_id =
+                crate::settings::get_effective_current_provider(&self.db, &app_type)
+                    .map_err(|e| format!("读取 {} 当前供应商失败: {e}", app_type.as_str()))?;
+
+            let Some(current_id) = current_id else {
+                continue;
+            };
+
+            let provider = self
+                .db
+                .get_provider_by_id(&current_id, app_type.as_str())
+                .map_err(|e| format!("读取 {} 供应商失败: {e}", app_type.as_str()))?;
+
+            let Some(provider) = provider else {
+                continue;
+            };
+
+            server
+                .set_active_target(app_type.as_str(), &provider.id, &provider.name)
+                .await;
+        }
+
+        Ok(())
     }
 
     /// 启动代理服务器（带 Live 配置接管）
@@ -3985,8 +4046,18 @@ impl ProxyService {
                     .map_err(|e| format!("重启前停止代理服务器失败: {e}"))?;
             }
 
+            let copilot_auth = self.copilot_auth.read().await.clone();
+            let codex_oauth_auth = self.codex_oauth_auth.read().await.clone();
+            #[cfg(feature = "tauri-desktop")]
             let app_handle = self.app_handle.read().await.clone();
-            let new_server = ProxyServer::new(new_config.clone(), self.db.clone(), app_handle);
+            let new_server = ProxyServer::new(
+                new_config.clone(),
+                self.db.clone(),
+                copilot_auth,
+                codex_oauth_auth,
+                #[cfg(feature = "tauri-desktop")]
+                app_handle,
+            );
             let info = new_server
                 .start()
                 .await
