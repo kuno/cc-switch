@@ -947,6 +947,12 @@ body.ccswitch-openwrt-provider-ui-theme
   gap: 0.75rem;
 }
 
+.ccswitch-openwrt-workspace-shell__request-logs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
 .ccswitch-openwrt-workspace-shell__provider-usage-head {
   display: flex;
   align-items: flex-start;
@@ -1055,6 +1061,120 @@ body.ccswitch-openwrt-provider-ui-theme
   font-weight: 640;
 }
 
+.ccswitch-openwrt-workspace-shell__request-logs-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.ccswitch-openwrt-workspace-shell__request-logs-page {
+  color: hsl(var(--muted-foreground));
+  font-size: 0.82rem;
+}
+
+.ccswitch-openwrt-workspace-shell__request-logs-button {
+  border: 1px solid hsl(var(--border) / 0.8);
+  border-radius: 999px;
+  background: hsl(var(--card) / 0.92);
+  color: hsl(var(--foreground));
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 640;
+  padding: 0.45rem 0.8rem;
+  cursor: pointer;
+}
+
+.ccswitch-openwrt-workspace-shell__request-logs-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.ccswitch-openwrt-workspace-shell__request-logs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.ccswitch-openwrt-workspace-shell__request-logs-row {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid hsl(var(--border) / 0.78);
+  border-radius: 1rem;
+  background: linear-gradient(
+    180deg,
+    hsl(var(--card) / 0.92),
+    hsl(var(--accent) / 0.12)
+  );
+  text-align: left;
+  cursor: pointer;
+}
+
+.ccswitch-openwrt-workspace-shell__request-logs-row[data-selected="true"] {
+  border-color: hsl(var(--ring) / 0.65);
+  box-shadow: 0 0 0 1px hsl(var(--ring) / 0.25);
+  background: linear-gradient(
+    180deg,
+    hsl(var(--card) / 0.96),
+    hsl(var(--accent) / 0.26)
+  );
+}
+
+.ccswitch-openwrt-workspace-shell__request-logs-main {
+  min-width: 0;
+}
+
+.ccswitch-openwrt-workspace-shell__request-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  padding: 1rem;
+  border: 1px solid hsl(var(--border) / 0.78);
+  border-radius: 1rem;
+  background: linear-gradient(
+    180deg,
+    hsl(var(--card) / 0.94),
+    hsl(var(--accent) / 0.2)
+  );
+}
+
+.ccswitch-openwrt-workspace-shell__request-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.ccswitch-openwrt-workspace-shell__request-detail-value {
+  margin: 0.4rem 0 0;
+  color: hsl(var(--foreground));
+  font-size: 0.9rem;
+  font-weight: 650;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.ccswitch-openwrt-workspace-shell__request-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem 1rem;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.84rem;
+}
+
+.ccswitch-openwrt-workspace-shell__request-detail-error {
+  padding: 0.9rem 1rem;
+  border-radius: 0.9rem;
+  background: hsl(8 80% 58% / 0.12);
+  color: hsl(8 68% 45%);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
 .ccswitch-openwrt-workspace-shell__body {
   min-width: 0;
   margin-top: 1rem;
@@ -1096,6 +1216,18 @@ body.ccswitch-openwrt-provider-ui-theme
 
   .ccswitch-openwrt-workspace-shell__recent-activity-metrics {
     align-items: flex-start;
+  }
+
+  .ccswitch-openwrt-workspace-shell__request-logs-nav {
+    justify-content: flex-start;
+  }
+
+  .ccswitch-openwrt-workspace-shell__request-logs-row {
+    flex-direction: column;
+  }
+
+  .ccswitch-openwrt-workspace-shell__request-detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

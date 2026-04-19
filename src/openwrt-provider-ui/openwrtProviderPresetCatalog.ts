@@ -238,7 +238,7 @@ const RAW_OPENWRT_PROVIDER_PRESETS: Record<
   ],
   codex: [
     {
-      id: "codex-openai-official",
+      id: "codex-official",
       label: "OpenAI Official",
       baseUrl: "https://api.openai.com/v1",
       model: "gpt-5.4",
@@ -349,7 +349,7 @@ const RAW_OPENWRT_PROVIDER_PRESETS: Record<
   ],
   gemini: [
     {
-      id: "gemini-google-official",
+      id: "gemini-official",
       label: "Google Official",
       baseUrl: "https://generativelanguage.googleapis.com/v1beta",
       model: "gemini-3.1-pro",

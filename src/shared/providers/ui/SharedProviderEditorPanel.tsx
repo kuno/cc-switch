@@ -52,7 +52,7 @@ function isCodexOpenAiOfficialPreset(
   appId: SharedProviderAppId,
   selectedPreset: SharedProviderPreset | null,
 ): boolean {
-  return appId === "codex" && selectedPreset?.id === "codex-openai-official";
+  return appId === "codex" && selectedPreset?.id === "codex-official";
 }
 
 function getCodexAuthMode(authMode?: string): "api_key" | "codex_oauth" {
