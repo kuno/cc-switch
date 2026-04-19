@@ -171,10 +171,7 @@ async fn run_cli(args: Vec<String>) -> anyhow::Result<()> {
             Ok(())
         }
         (Some("get-provider-failover"), [provider_id]) => {
-            print_json(&openwrt_admin::get_provider_failover(
-                &db, &app_type, provider_id,
-            )
-            .await?)?;
+            print_json(&openwrt_admin::get_provider_failover(&db, &app_type, provider_id).await?)?;
             Ok(())
         }
         (Some("upsert-provider"), []) => {
@@ -229,12 +226,9 @@ async fn run_cli(args: Vec<String>) -> anyhow::Result<()> {
         }
         (Some("reorder-failover-queue"), []) => {
             let provider_ids = read_string_array_from_stdin()?;
-            print_json(&openwrt_admin::reorder_failover_queue(
-                &db,
-                &app_type,
-                &provider_ids,
-            )
-            .await?)?;
+            print_json(
+                &openwrt_admin::reorder_failover_queue(&db, &app_type, &provider_ids).await?,
+            )?;
             Ok(())
         }
         (Some("set-auto-failover-enabled"), [enabled]) => {
@@ -279,6 +273,32 @@ fn read_string_array_from_stdin() -> anyhow::Result<Vec<String>> {
     Ok(parsed)
 }
 
+fn sync_openwrt_host_proxy_into_runtime_state(db: &database::Database) -> anyhow::Result<()> {
+    let host_proxy_url = proxy::http_client::get_host_proxy_url_from_env();
+    let current_proxy_url = db
+        .get_global_proxy_url()
+        .map_err(|e| anyhow::anyhow!("Failed to read global proxy URL: {e}"))?;
+
+    if current_proxy_url != host_proxy_url {
+        db.set_global_proxy_url(host_proxy_url.as_deref())
+            .map_err(|e| anyhow::anyhow!("Failed to persist OpenWrt host proxy URL: {e}"))?;
+    }
+
+    proxy::http_client::init(host_proxy_url.as_deref())
+        .map_err(|e| anyhow::anyhow!("Failed to initialize upstream proxy runtime: {e}"))?;
+
+    if let Some(url) = host_proxy_url {
+        log::info!(
+            "Initialized OpenWrt upstream proxy from host config: {}",
+            proxy::http_client::mask_url(&url)
+        );
+    } else {
+        log::info!("Initialized OpenWrt upstream proxy from host config: direct connection");
+    }
+
+    Ok(())
+}
+
 async fn run_daemon() -> anyhow::Result<()> {
     log::info!("cc-switch proxy daemon starting...");
 
@@ -316,6 +336,8 @@ async fn run_daemon() -> anyhow::Result<()> {
                 .map_err(|e| anyhow::anyhow!("Failed to update listen config: {e}"))?;
         }
     }
+
+    sync_openwrt_host_proxy_into_runtime_state(db.as_ref())?;
 
     // Config dir for auth managers
     let config_dir = config::get_app_config_dir();
@@ -365,6 +387,57 @@ async fn wait_for_shutdown_signal() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serial_test::serial;
+    use std::sync::{Mutex, OnceLock};
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    #[test]
+    #[serial]
+    fn sync_openwrt_host_proxy_into_runtime_state_persists_env_proxy_truth() {
+        let _guard = env_lock().lock().expect("lock env");
+        let db = database::Database::memory().expect("db");
+
+        for key in ["http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY"] {
+            std::env::remove_var(key);
+        }
+
+        std::env::set_var("http_proxy", "http://127.0.0.1:7890");
+        std::env::set_var("https_proxy", "http://127.0.0.1:9443");
+
+        sync_openwrt_host_proxy_into_runtime_state(&db).expect("sync host proxy");
+
+        assert_eq!(
+            db.get_global_proxy_url()
+                .expect("read global proxy url")
+                .as_deref(),
+            Some("http://127.0.0.1:9443")
+        );
+        assert_eq!(
+            proxy::http_client::get_current_proxy_url().as_deref(),
+            Some("http://127.0.0.1:9443")
+        );
+
+        for key in ["http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY"] {
+            std::env::remove_var(key);
+        }
+
+        sync_openwrt_host_proxy_into_runtime_state(&db).expect("clear host proxy");
+
+        assert_eq!(
+            db.get_global_proxy_url().expect("read global proxy url"),
+            None
+        );
+        assert_eq!(proxy::http_client::get_current_proxy_url(), None);
+    }
 }
 
 #[cfg(not(unix))]

@@ -426,6 +426,10 @@ pub async fn get_runtime_status(db: &Database) -> anyhow::Result<OpenWrtRuntimeS
         .get_global_proxy_config()
         .await
         .map_err(|e| anyhow!("failed to read proxy service config: {e}"))?;
+    let runtime_global_proxy_enabled = db
+        .get_global_proxy_url()
+        .map_err(|e| anyhow!("failed to read runtime global proxy URL: {e}"))?
+        .is_some();
 
     let apps = vec![
         build_app_runtime_status(db, &AppType::Claude).await?,
@@ -455,7 +459,7 @@ pub async fn get_runtime_status(db: &Database) -> anyhow::Result<OpenWrtRuntimeS
             reachable,
             listen_address: service_config.listen_address.clone(),
             listen_port: service_config.listen_port,
-            proxy_enabled: service_config.proxy_enabled,
+            proxy_enabled: runtime_global_proxy_enabled,
             enable_logging: service_config.enable_logging,
             status_source,
             status_error,
@@ -473,10 +477,7 @@ pub async fn get_app_runtime_status(
     build_app_runtime_status(db, app_type).await
 }
 
-pub fn get_usage_summary(
-    db: &Database,
-    app_type: &AppType,
-) -> anyhow::Result<UsageSummary> {
+pub fn get_usage_summary(db: &Database, app_type: &AppType) -> anyhow::Result<UsageSummary> {
     let profile = openwrt_app_profile(app_type)?;
 
     db.get_usage_summary(None, None, Some(profile.app_id))
@@ -2889,10 +2890,11 @@ mod tests {
         let mut global_config = db.get_global_proxy_config().await.expect("global config");
         global_config.listen_address = "127.0.0.1".to_string();
         global_config.listen_port = 59999;
-        global_config.proxy_enabled = true;
         db.update_global_proxy_config(global_config)
             .await
             .expect("update global config");
+        db.set_global_proxy_url(Some("http://127.0.0.1:7890"))
+            .expect("set runtime global proxy url");
 
         let status = get_runtime_status(&db).await.expect("runtime status");
         let claude = status_for_app(&status, CLAUDE_APP_TYPE);
@@ -2983,10 +2985,11 @@ mod tests {
         let mut global_config = db.get_global_proxy_config().await.expect("global config");
         global_config.listen_address = "127.0.0.1".to_string();
         global_config.listen_port = port;
-        global_config.proxy_enabled = true;
         db.update_global_proxy_config(global_config)
             .await
             .expect("update global config");
+        db.set_global_proxy_url(Some("http://127.0.0.1:7890"))
+            .expect("set runtime global proxy url");
 
         tokio::time::sleep(std::time::Duration::from_millis(25)).await;
 
@@ -2997,6 +3000,7 @@ mod tests {
 
         assert!(status.service.running);
         assert!(status.service.reachable);
+        assert!(status.service.proxy_enabled);
         assert_eq!(status.service.status_source, "live-status");
         assert_eq!(status.runtime.total_requests, 7);
         assert_eq!(status.runtime.success_requests, 6);
@@ -3015,5 +3019,21 @@ mod tests {
             status.runtime.active_targets[0].provider_id,
             "provider-live"
         );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    #[serial]
+    async fn runtime_status_reports_runtime_global_proxy_truth_from_database() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+
+        let status_without_proxy = get_runtime_status(&db).await.expect("runtime status");
+        assert!(!status_without_proxy.service.proxy_enabled);
+
+        db.set_global_proxy_url(Some("http://127.0.0.1:7890"))
+            .expect("set runtime global proxy url");
+
+        let status_with_proxy = get_runtime_status(&db).await.expect("runtime status");
+        assert!(status_with_proxy.service.proxy_enabled);
     }
 }

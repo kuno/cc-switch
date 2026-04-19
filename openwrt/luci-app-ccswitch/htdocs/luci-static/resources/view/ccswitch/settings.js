@@ -1012,9 +1012,21 @@ return view.extend({
 		};
 	},
 
+	staticPrototypeHostConfigRequiresRestart: function (current, next) {
+		var before = current || this.defaultHostConfigSnapshot();
+		var after = next || before;
+
+		return String(before.listenAddr || '') !== String(after.listenAddr || '') ||
+			String(before.listenPort || '') !== String(after.listenPort || '') ||
+			String(before.httpProxy || '') !== String(after.httpProxy || '') ||
+			String(before.httpsProxy || '') !== String(after.httpsProxy || '') ||
+			String(before.logLevel || 'info') !== String(after.logLevel || 'info');
+	},
+
 	saveStaticPrototypeHostConfig: function (payload) {
 		return this.loadHostConfigSnapshot().then(L.bind(function (current) {
 			var next = this.normalizeStaticPrototypeHostPayload(payload, current);
+			var restartRequired = this.staticPrototypeHostConfigRequiresRestart(current, next);
 			var host = {
 				enabled: current.enabled,
 				listenAddr: next.listenAddr,
@@ -1029,7 +1041,10 @@ return view.extend({
 					throw new Error(this.rpcFailureMessage(response) || _('Failed to save host settings.'));
 
 				this.setHostConfigSnapshot(response);
-				return next;
+				return {
+					bindings: next,
+					restartRequired: restartRequired
+				};
 			}, this));
 		}, this));
 	},
@@ -1079,7 +1094,9 @@ return view.extend({
 		var runtime = this.parseRuntimeStatusPayload(runtimeResponse);
 		var hostConfig = hostConfigResponse ? this.setHostConfigSnapshot(hostConfigResponse) : this.getHostConfigSnapshot();
 		var isRunning = this.parseServiceState(serviceStatus);
-		var proxyEnabled = runtime.statusSource ? runtime.proxyEnabled : !!(hostConfig.httpProxy || hostConfig.httpsProxy);
+		var proxyEnabled = isRunning && runtime.statusSource
+			? runtime.proxyEnabled
+			: !!(hostConfig.httpProxy || hostConfig.httpsProxy);
 		var health = 'unknown';
 
 		if (!isRunning)
@@ -1233,11 +1250,19 @@ return view.extend({
 		this.setMessage(uiState, 'info', _('Saving host settings...'));
 		this.notifyShellListeners(uiState);
 
-		return this.saveStaticPrototypeHostConfig(payload).then(L.bind(function () {
+		return this.saveStaticPrototypeHostConfig(payload).then(L.bind(function (saveResult) {
 			return this.loadStaticPrototypeHostBindings().then(L.bind(function (bindings) {
 				var hostState = this.setNativeHostState(uiState, bindings);
+				var restartRequired = !!(saveResult && saveResult.restartRequired);
 
-				this.setMessage(uiState, 'success', _('Host settings saved.'));
+				uiState.restartPending = restartRequired;
+				this.setMessage(
+					uiState,
+					'success',
+					restartRequired
+						? _('Host settings saved. Restart service to apply changes.')
+						: _('Host settings saved.')
+				);
 				this.notifyShellListeners(uiState);
 				return hostState;
 			}, this));

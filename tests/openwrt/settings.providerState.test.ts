@@ -1106,11 +1106,14 @@ describe("OpenWrt settings shared-provider shell", () => {
     });
 
     expect(saved).toStrictEqual({
-      listenAddr: "10.0.0.7",
-      listenPort: "28443",
-      httpProxy: "http://router-http.internal:7890",
-      httpsProxy: "http://router-https.internal:7891",
-      logLevel: "trace",
+      bindings: {
+        listenAddr: "10.0.0.7",
+        listenPort: "28443",
+        httpProxy: "http://router-http.internal:7890",
+        httpsProxy: "http://router-https.internal:7891",
+        logLevel: "trace",
+      },
+      restartRequired: true,
     });
     expect(uci.set).not.toHaveBeenCalled();
     expect(uci.save).not.toHaveBeenCalled();
@@ -1157,11 +1160,14 @@ describe("OpenWrt settings shared-provider shell", () => {
     });
 
     expect(saved).toStrictEqual({
-      listenAddr: "0.0.0.0",
-      listenPort: "15721",
-      httpProxy: "http://router-http.internal:7890",
-      httpsProxy: "http://router-https.internal:7891",
-      logLevel: "debug",
+      bindings: {
+        listenAddr: "0.0.0.0",
+        listenPort: "15721",
+        httpProxy: "http://router-http.internal:7890",
+        httpsProxy: "http://router-https.internal:7891",
+        logLevel: "debug",
+      },
+      restartRequired: true,
     });
     expect(uci.set).not.toHaveBeenCalled();
     expect(uci.save).not.toHaveBeenCalled();
