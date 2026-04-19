@@ -97,8 +97,11 @@ function createTransport(
   };
 }
 
-function createRuntimeTransport(): OpenWrtRuntimeTransport {
+function createRuntimeTransport(
+  overrides: Partial<OpenWrtRuntimeTransport> = {},
+): OpenWrtRuntimeTransport {
   return {
+    failoverControlsAvailable: false,
     getRuntimeStatus: vi.fn().mockResolvedValue({
       ok: true,
       status_json: JSON.stringify({
@@ -194,6 +197,19 @@ function createRuntimeTransport(): OpenWrtRuntimeTransport {
         unhealthyProviderCount: appId === "claude" ? 1 : 0,
       }),
     })),
+    getAvailableFailoverProviders: vi
+      .fn()
+      .mockResolvedValue({ ok: false, error: "method not found" }),
+    addToFailoverQueue: vi
+      .fn()
+      .mockResolvedValue({ ok: false, error: "method not found" }),
+    removeFromFailoverQueue: vi
+      .fn()
+      .mockResolvedValue({ ok: false, error: "method not found" }),
+    setAutoFailoverEnabled: vi
+      .fn()
+      .mockResolvedValue({ ok: false, error: "method not found" }),
+    ...overrides,
   };
 }
 
@@ -336,10 +352,112 @@ describe("OpenWrt provider UI bundle", () => {
       "No live health observation reported for this queue entry yet.",
     );
     expect(target).toHaveTextContent("Failover queue preview");
+    expect(target).not.toHaveTextContent("Failover controls");
+    expect(target).not.toHaveTextContent("Add to queue");
     expect(transport.getRuntimeStatus).toHaveBeenCalledOnce();
     expect(transport.getAppRuntimeStatus).toHaveBeenCalledWith("claude");
     expect(transport.getAppRuntimeStatus).toHaveBeenCalledWith("codex");
     expect(transport.getAppRuntimeStatus).toHaveBeenCalledWith("gemini");
+    expect(transport.getAvailableFailoverProviders).not.toHaveBeenCalled();
+    expect(transport.addToFailoverQueue).not.toHaveBeenCalled();
+    expect(transport.removeFromFailoverQueue).not.toHaveBeenCalled();
+    expect(transport.setAutoFailoverEnabled).not.toHaveBeenCalled();
+
+    await act(async () => {
+      if (typeof handle === "function") {
+        handle();
+      } else if (handle && typeof handle.unmount === "function") {
+        handle.unmount();
+      }
+    });
+
+    expect(target.textContent).toBe("");
+    target.remove();
+  });
+
+  it("mounts interactive runtime controls when the transport advertises phase 8 support", async () => {
+    const globalScope = globalThis as typeof globalThis & {
+      [OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY]?: OpenWrtSharedProviderBundleApi;
+    };
+    const api = globalScope[OPENWRT_SHARED_PROVIDER_UI_GLOBAL_KEY];
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    const transport = createRuntimeTransport({
+      failoverControlsAvailable: true,
+      getAvailableFailoverProviders: vi.fn().mockImplementation(async (appId) => ({
+        ok: true,
+        providers_json: JSON.stringify({
+          activeProviderId: `${appId}-primary`,
+          providers: {
+            [`${appId}-backup`]: {
+              active: false,
+              configured: true,
+              model:
+                appId === "claude"
+                  ? "claude-haiku-4-5"
+                  : appId === "codex"
+                    ? "gpt-5.4-mini"
+                    : "gemini-2.5-flash",
+              name:
+                appId === "claude"
+                  ? "Claude Backup"
+                  : appId === "codex"
+                    ? "Codex Backup"
+                    : "Gemini Backup",
+              providerId: `${appId}-backup`,
+              tokenConfigured: true,
+              tokenField:
+                appId === "claude"
+                  ? "ANTHROPIC_AUTH_TOKEN"
+                  : appId === "codex"
+                    ? "OPENAI_API_KEY"
+                    : "GEMINI_API_KEY",
+            },
+          },
+        }),
+      })),
+      addToFailoverQueue: vi.fn().mockResolvedValue({ ok: true }),
+      removeFromFailoverQueue: vi.fn().mockResolvedValue({ ok: true }),
+      setAutoFailoverEnabled: vi.fn().mockResolvedValue({ ok: true }),
+    });
+
+    let handle:
+      | void
+      | (() => void)
+      | {
+          unmount(): void;
+        };
+
+    await act(async () => {
+      handle = await api?.mountRuntimeSurface({
+        target,
+        transport,
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() =>
+      expect(
+        within(target).getByRole("switch", { name: "Claude auto-failover" }),
+      ).toBeInTheDocument(),
+    );
+
+    expect(target).toHaveTextContent("Failover controls");
+    expect(
+      within(target).getAllByRole("button", { name: "Add to queue" }).length,
+    ).toBeGreaterThan(0);
+
+    fireEvent.click(
+      within(target).getByRole("switch", { name: "Claude auto-failover" }),
+    );
+
+    await waitFor(() =>
+      expect(transport.setAutoFailoverEnabled).toHaveBeenCalledWith(
+        "claude",
+        false,
+      ),
+    );
+    expect(transport.getAvailableFailoverProviders).toHaveBeenCalledWith("claude");
 
     await act(async () => {
       if (typeof handle === "function") {
@@ -669,7 +787,15 @@ describe("OpenWrt provider UI bundle", () => {
       repoRoot,
       "openwrt/provider-ui-dist/ccswitch-provider-ui.js",
     );
+    const stagedStylesheetPath = path.resolve(
+      repoRoot,
+      "openwrt/provider-ui-dist/ccswitch-provider-ui.css",
+    );
     const stagedOutputPath = path.join(outputDir, "ccswitch-provider-ui.js");
+    const stagedStylesheetOutputPath = path.join(
+      outputDir,
+      "ccswitch-provider-ui.css",
+    );
     const luciMakefile = readFileSync(
       path.resolve(repoRoot, "openwrt/luci-app-ccswitch/Makefile"),
       "utf8",
@@ -682,23 +808,29 @@ describe("OpenWrt provider UI bundle", () => {
       path.resolve(repoRoot, "vite.config.ts"),
       "utf8",
     );
-    const stagedBundleSource = readFileSync(stagedBundlePath, "utf8");
-
     execFileSync("sh", [helperPath, "--output-dir", outputDir], {
       cwd: repoRoot,
     });
 
     expect(existsSync(stagedBundlePath)).toBe(true);
+    expect(existsSync(stagedStylesheetPath)).toBe(true);
     expect(existsSync(stagedOutputPath)).toBe(true);
+    expect(existsSync(stagedStylesheetOutputPath)).toBe(true);
+    const stagedBundleSource = readFileSync(stagedBundlePath, "utf8");
+    const stagedStylesheetSource = readFileSync(stagedStylesheetPath, "utf8");
     const bundleSource = readFileSync(stagedOutputPath, "utf8");
+    const stylesheetSource = readFileSync(stagedStylesheetOutputPath, "utf8");
 
     expect(bundleSource).toBe(stagedBundleSource);
+    expect(stylesheetSource).toBe(stagedStylesheetSource);
     expect(stagedBundleSource).toContain("__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__");
     expect(stagedBundleSource).toContain("providerManager");
     expect(stagedBundleSource).toContain("Add provider");
     expect(stagedBundleSource).toContain("Secret stored");
     expect(stagedBundleSource).toContain("Provider ID");
     expect(stagedBundleSource).toContain("cc-switch service");
+    expect(stagedStylesheetSource).toContain(":root");
+    expect(stagedStylesheetSource).toContain(".bg-background");
     expect(stagedBundleSource).not.toContain("process.env.NODE_ENV");
     expect(stagedBundleSource).not.toContain("Shared provider bundle loaded.");
     expect(stagedBundleSource).not.toContain(
@@ -722,14 +854,27 @@ describe("OpenWrt provider UI bundle", () => {
       "openwrt/prepare-provider-ui-bundle.sh",
     );
     const explicitBundlePath = path.join(sourceDir, "explicit-real-bundle.js");
+    const explicitStylesheetPath = path.join(sourceDir, "explicit-real-bundle.css");
     const stagedBundlePath = path.resolve(
       repoRoot,
       "openwrt/provider-ui-dist/ccswitch-provider-ui.js",
     );
+    const stagedStylesheetPath = path.resolve(
+      repoRoot,
+      "openwrt/provider-ui-dist/ccswitch-provider-ui.css",
+    );
     const stagedOutputPath = path.join(outputDir, "ccswitch-provider-ui.js");
+    const stagedStylesheetOutputPath = path.join(
+      outputDir,
+      "ccswitch-provider-ui.css",
+    );
     const stagedBundleExisted = existsSync(stagedBundlePath);
+    const stagedStylesheetExisted = existsSync(stagedStylesheetPath);
     const stagedBundleBefore = stagedBundleExisted
       ? readFileSync(stagedBundlePath, "utf8")
+      : null;
+    const stagedStylesheetBefore = stagedStylesheetExisted
+      ? readFileSync(stagedStylesheetPath, "utf8")
       : null;
     const explicitBundleSource = [
       "globalThis.__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__ = {",
@@ -738,8 +883,10 @@ describe("OpenWrt provider UI bundle", () => {
       "};",
       "",
     ].join("\n");
+    const explicitStylesheetSource = ":root { --ccswitch-explicit-bundle: 1; }\n";
 
     writeFileSync(explicitBundlePath, explicitBundleSource, "utf8");
+    writeFileSync(explicitStylesheetPath, explicitStylesheetSource, "utf8");
 
     execFileSync("sh", [helperPath, "--output-dir", outputDir], {
       cwd: repoRoot,
@@ -750,7 +897,11 @@ describe("OpenWrt provider UI bundle", () => {
     });
 
     expect(existsSync(stagedOutputPath)).toBe(true);
+    expect(existsSync(stagedStylesheetOutputPath)).toBe(true);
     expect(readFileSync(stagedOutputPath, "utf8")).toBe(explicitBundleSource);
+    expect(readFileSync(stagedStylesheetOutputPath, "utf8")).toBe(
+      explicitStylesheetSource,
+    );
     expect(readFileSync(stagedOutputPath, "utf8")).toContain(
       "providerManager: true",
     );
@@ -758,6 +909,13 @@ describe("OpenWrt provider UI bundle", () => {
       expect(readFileSync(stagedBundlePath, "utf8")).toBe(stagedBundleBefore);
     } else {
       expect(existsSync(stagedBundlePath)).toBe(false);
+    }
+    if (stagedStylesheetExisted) {
+      expect(readFileSync(stagedStylesheetPath, "utf8")).toBe(
+        stagedStylesheetBefore,
+      );
+    } else {
+      expect(existsSync(stagedStylesheetPath)).toBe(false);
     }
   });
 });

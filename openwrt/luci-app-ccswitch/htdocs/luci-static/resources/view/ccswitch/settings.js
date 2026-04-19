@@ -15,7 +15,9 @@ var SHARED_PROVIDER_UI_CUTOVER_MODE_FALLBACK = 'fallback';
 var SHARED_PROVIDER_UI_DISABLE_GLOBAL_KEY = '__CCSWITCH_OPENWRT_DISABLE_REAL_PROVIDER_UI__';
 var SHARED_PROVIDER_UI_GLOBAL_KEY = '__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__';
 var SHARED_PROVIDER_UI_SCRIPT_ID = 'ccswitch-openwrt-shared-provider-ui-bundle';
+var SHARED_PROVIDER_UI_STYLE_ID = 'ccswitch-openwrt-shared-provider-ui-styles';
 var SHARED_PROVIDER_UI_BUNDLE_PATH = '/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js';
+var SHARED_PROVIDER_UI_STYLE_PATH = '/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.css';
 var SHARED_PROVIDER_UI_FALLBACK_REASON_GATE_DISABLED = 'gate-disabled';
 var SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_FAILURE = 'bundle-failure';
 var SHARED_PROVIDER_UI_FALLBACK_REASON_BUNDLE_REGRESSION = 'bundle-regression';
@@ -229,6 +231,34 @@ var callGetAppRuntimeStatus = rpc.declare({
 	object: 'ccswitch',
 	method: 'get_app_runtime_status',
 	params: ['app'],
+	expect: { '': {} }
+});
+
+var callGetAvailableFailoverProviders = rpc.declare({
+	object: 'ccswitch',
+	method: 'get_available_failover_providers',
+	params: ['app'],
+	expect: { '': {} }
+});
+
+var callAddToFailoverQueue = rpc.declare({
+	object: 'ccswitch',
+	method: 'add_to_failover_queue',
+	params: ['app', 'provider_id'],
+	expect: { '': {} }
+});
+
+var callRemoveFromFailoverQueue = rpc.declare({
+	object: 'ccswitch',
+	method: 'remove_from_failover_queue',
+	params: ['app', 'provider_id'],
+	expect: { '': {} }
+});
+
+var callSetAutoFailoverEnabled = rpc.declare({
+	object: 'ccswitch',
+	method: 'set_auto_failover_enabled',
+	params: ['app', 'enabled'],
 	expect: { '': {} }
 });
 
@@ -791,6 +821,10 @@ return view.extend({
 
 	getBundleAssetPath: function () {
 		return SHARED_PROVIDER_UI_BUNDLE_PATH;
+	},
+
+	getBundleStylePath: function () {
+		return SHARED_PROVIDER_UI_STYLE_PATH;
 	},
 
 	createUiState: function (isRunning, providerStateOrSelectedApp, selectedApp) {
@@ -1872,11 +1906,24 @@ return view.extend({
 
 	createRuntimeTransport: function () {
 		return {
+			failoverControlsAvailable: true,
 			getRuntimeStatus: function () {
 				return L.resolveDefault(callGetRuntimeStatus(), { ok: false });
 			},
 			getAppRuntimeStatus: function (appId) {
 				return L.resolveDefault(callGetAppRuntimeStatus(appId), { ok: false });
+			},
+			getAvailableFailoverProviders: function (appId) {
+				return L.resolveDefault(callGetAvailableFailoverProviders(appId), { ok: false });
+			},
+			addToFailoverQueue: function (appId, providerId) {
+				return L.resolveDefault(callAddToFailoverQueue(appId, providerId), { ok: false });
+			},
+			removeFromFailoverQueue: function (appId, providerId) {
+				return L.resolveDefault(callRemoveFromFailoverQueue(appId, providerId), { ok: false });
+			},
+			setAutoFailoverEnabled: function (appId, enabled) {
+				return L.resolveDefault(callSetAutoFailoverEnabled(appId, enabled), { ok: false });
 			}
 		};
 	},
@@ -2036,12 +2083,22 @@ return view.extend({
 		var self = this;
 		var existingApi = window[SHARED_PROVIDER_UI_GLOBAL_KEY];
 		var existingScript;
+		var existingStylesheet;
 
 		if (existingApi && typeof existingApi.mount === 'function')
 			return Promise.resolve(existingApi);
 
 		if (this._sharedProviderBundlePromise)
 			return this._sharedProviderBundlePromise;
+
+		existingStylesheet = document.getElementById(SHARED_PROVIDER_UI_STYLE_ID);
+		if (!existingStylesheet) {
+			existingStylesheet = document.createElement('link');
+			existingStylesheet.id = SHARED_PROVIDER_UI_STYLE_ID;
+			existingStylesheet.rel = 'stylesheet';
+			existingStylesheet.href = self.getBundleStylePath();
+			document.head.appendChild(existingStylesheet);
+		}
 
 		existingScript = document.getElementById(SHARED_PROVIDER_UI_SCRIPT_ID);
 		this._sharedProviderBundlePromise = new Promise(function (resolve, reject) {

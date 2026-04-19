@@ -1,3 +1,7 @@
+import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Loader2, PlusCircle, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -5,8 +9,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
-import type { SharedRuntimeAppStatus } from "../domain";
+import type { SharedRuntimeAppStatus, SharedRuntimeFailoverQueueEntry } from "../domain";
+import type { RuntimeSurfaceFailoverControlAdapter } from "../types";
 import {
   SHARED_RUNTIME_APP_PRESENTATION,
   formatSharedRuntimeCount,
@@ -14,7 +20,20 @@ import {
 } from "./presentation";
 import { SharedRuntimeFailoverQueuePreview } from "./SharedRuntimeFailoverQueuePreview";
 import { SharedRuntimeHealthBadge } from "./SharedRuntimeHealthBadge";
+import { SharedRuntimeInlineNote } from "./SharedRuntimeStates";
 import { SharedRuntimeStatusChip } from "./SharedRuntimeStatusChip";
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (typeof error === "string" && error.trim()) {
+    return error;
+  }
+
+  return "Runtime failover control request failed.";
+}
 
 function AppStat({
   label,
@@ -35,17 +54,153 @@ function AppStat({
 
 export function SharedRuntimeAppCard({
   status,
+  failoverControls,
+  onRefresh,
 }: {
   status: SharedRuntimeAppStatus;
+  failoverControls?: RuntimeSurfaceFailoverControlAdapter;
+  onRefresh?: () => Promise<void>;
 }) {
   const appPresentation = SHARED_RUNTIME_APP_PRESENTATION[status.app];
   const activeProviderLabel = getSharedRuntimeActiveProviderLabel({
     providerName: status.activeProvider.name,
     providerId: status.activeProviderId,
   });
+  const controlsEnabled = Boolean(failoverControls && onRefresh);
+  const [selectedProviderId, setSelectedProviderId] = useState("");
+  const [mutationError, setMutationError] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const queueProviderIds = useMemo(
+    () => new Set(status.failoverQueue.map((entry) => entry.providerId)),
+    [status.failoverQueue],
+  );
+  const availableProvidersQuery = useQuery({
+    queryKey: ["shared-runtime-failover-providers", status.app],
+    queryFn: () => failoverControls!.getAvailableFailoverProviders(status.app),
+    enabled: controlsEnabled,
+    retry: false,
+  });
+  const availableProviders = useMemo(
+    () =>
+      (availableProvidersQuery.data ?? []).filter(
+        (provider) =>
+          provider.providerId.trim() && !queueProviderIds.has(provider.providerId),
+      ),
+    [availableProvidersQuery.data, queueProviderIds],
+  );
+
+  useEffect(() => {
+    if (!controlsEnabled) {
+      setSelectedProviderId("");
+      return;
+    }
+
+    if (availableProviders.length === 0) {
+      if (selectedProviderId) {
+        setSelectedProviderId("");
+      }
+      return;
+    }
+
+    if (
+      availableProviders.some((provider) => provider.providerId === selectedProviderId)
+    ) {
+      return;
+    }
+
+    setSelectedProviderId(availableProviders[0]?.providerId ?? "");
+  }, [availableProviders, controlsEnabled, selectedProviderId]);
+
+  async function refreshAvailableProviders() {
+    const result = await availableProvidersQuery.refetch();
+    if (result.error) {
+      throw result.error;
+    }
+  }
+
+  async function runMutation(
+    action: string,
+    mutation: () => Promise<void>,
+    options: {
+      refreshAvailableProviders?: boolean;
+    } = {},
+  ) {
+    if (!failoverControls || !onRefresh) {
+      return;
+    }
+
+    setMutationError(null);
+    setPendingAction(action);
+
+    try {
+      await mutation();
+      await onRefresh();
+
+      if (options.refreshAvailableProviders) {
+        await refreshAvailableProviders();
+      }
+    } catch (error) {
+      setMutationError(getErrorMessage(error));
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  function renderQueueEntryActions(
+    entry: SharedRuntimeFailoverQueueEntry,
+    index: number,
+  ) {
+    if (!controlsEnabled || !failoverControls || !onRefresh) {
+      return null;
+    }
+
+    return (
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="gap-1.5"
+        disabled={Boolean(pendingAction)}
+        aria-label={`Remove ${entry.providerName || entry.providerId} from ${appPresentation.label} failover queue`}
+        onClick={() => {
+          void runMutation(
+            `remove-${entry.providerId}-${index}`,
+            () =>
+              failoverControls.removeFromFailoverQueue(
+                status.app,
+                entry.providerId,
+              ),
+            {
+              refreshAvailableProviders: true,
+            },
+          );
+        }}
+      >
+        {pendingAction === `remove-${entry.providerId}-${index}` ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <Trash2 className="h-4 w-4" />
+        )}
+        Remove
+      </Button>
+    );
+  }
+
+  const availableProvidersError =
+    availableProvidersQuery.isError && controlsEnabled
+      ? getErrorMessage(availableProvidersQuery.error)
+      : null;
+  const addDisabled =
+    !controlsEnabled ||
+    Boolean(pendingAction) ||
+    availableProvidersQuery.isPending ||
+    Boolean(availableProvidersError) ||
+    !selectedProviderId;
 
   return (
     <Card
+      role="region"
+      aria-label={`${appPresentation.label} runtime card`}
       className={cn(
         "rounded-3xl border shadow-sm",
         appPresentation.panelClassName,
@@ -75,7 +230,10 @@ export function SharedRuntimeAppCard({
                 }
                 tone={status.autoFailoverEnabled ? "enabled" : "disabled"}
               />
-              <SharedRuntimeStatusChip label="Read only" tone="neutral" />
+              <SharedRuntimeStatusChip
+                label={controlsEnabled ? "Failover controls enabled" : "Read only"}
+                tone="neutral"
+              />
               {status.usingLegacyDefault ? (
                 <SharedRuntimeStatusChip
                   label="Legacy default slot"
@@ -164,8 +322,137 @@ export function SharedRuntimeAppCard({
           <SharedRuntimeFailoverQueuePreview
             queue={status.failoverQueue}
             className="mt-4"
+            renderEntryActions={controlsEnabled ? renderQueueEntryActions : undefined}
           />
         </div>
+
+        {controlsEnabled ? (
+          <div className="rounded-2xl border border-border-default bg-muted/10 p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div className="space-y-1">
+                <p className="text-sm font-medium">Failover controls</p>
+                <p className="text-sm text-muted-foreground">
+                  Persist auto-failover and queue membership for this app
+                  without changing provider activation directly.
+                </p>
+              </div>
+              {pendingAction ? (
+                <SharedRuntimeStatusChip label="Updating..." tone="neutral" />
+              ) : null}
+            </div>
+
+            <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+              <div className="rounded-2xl border border-border-default bg-background/80 p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Auto-failover</p>
+                    <p className="text-sm text-muted-foreground">
+                      Toggle the persisted `auto_failover_enabled` setting for{" "}
+                      {appPresentation.label}.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={status.autoFailoverEnabled}
+                    disabled={Boolean(pendingAction)}
+                    aria-label={`${appPresentation.label} auto-failover`}
+                    onCheckedChange={(enabled) => {
+                      void runMutation("toggle-auto-failover", () =>
+                        failoverControls!.setAutoFailoverEnabled(status.app, enabled),
+                      );
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-border-default bg-background/80 p-4">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Add saved provider</p>
+                  <p className="text-sm text-muted-foreground">
+                    Queue a saved provider for {appPresentation.label} without
+                    activating it.
+                  </p>
+                </div>
+
+                <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+                  <label className="sr-only" htmlFor={`${status.app}-failover-provider`}>
+                    Add saved provider to {appPresentation.label} failover queue
+                  </label>
+                  <select
+                    id={`${status.app}-failover-provider`}
+                    className="h-9 w-full rounded-md border border-border-default bg-background px-3 text-sm shadow-sm focus:border-border-active focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                    value={selectedProviderId}
+                    disabled={addDisabled}
+                    onChange={(event) => {
+                      setSelectedProviderId(event.target.value);
+                    }}
+                  >
+                    <option value="" disabled>
+                      {availableProvidersQuery.isPending
+                        ? "Loading saved providers..."
+                        : availableProviders.length > 0
+                          ? "Select a saved provider"
+                          : "No saved providers available"}
+                    </option>
+                    {availableProviders.map((provider) => (
+                      <option key={provider.providerId} value={provider.providerId}>
+                        {provider.providerName}
+                        {provider.model.trim() ? ` (${provider.model})` : ""}
+                      </option>
+                    ))}
+                  </select>
+
+                  <Button
+                    type="button"
+                    className="gap-1.5"
+                    disabled={addDisabled}
+                    onClick={() => {
+                      if (!selectedProviderId) {
+                        return;
+                      }
+
+                      void runMutation(
+                        `add-${selectedProviderId}`,
+                        () =>
+                          failoverControls!.addToFailoverQueue(
+                            status.app,
+                            selectedProviderId,
+                          ),
+                        {
+                          refreshAvailableProviders: true,
+                        },
+                      );
+                    }}
+                  >
+                    {pendingAction === `add-${selectedProviderId}` ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <PlusCircle className="h-4 w-4" />
+                    )}
+                    Add to queue
+                  </Button>
+                </div>
+
+                {availableProvidersError ? (
+                  <SharedRuntimeInlineNote
+                    title="Saved-provider options unavailable"
+                    description={availableProvidersError}
+                    tone="warning"
+                  />
+                ) : null}
+              </div>
+            </div>
+
+            {mutationError ? (
+              <div className="mt-4">
+                <SharedRuntimeInlineNote
+                  title="Last control action failed"
+                  description={mutationError}
+                  tone="warning"
+                />
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );

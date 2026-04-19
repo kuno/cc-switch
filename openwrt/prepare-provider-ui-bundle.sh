@@ -6,8 +6,10 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 PROJECT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 EMITTED_DIR="$SCRIPT_DIR/luci-app-ccswitch/htdocs/luci-static/resources/ccswitch/provider-ui"
 EMITTED_BUNDLE="$EMITTED_DIR/ccswitch-provider-ui.js"
+EMITTED_STYLESHEET="$EMITTED_DIR/ccswitch-provider-ui.css"
 STAGED_DIR="$SCRIPT_DIR/provider-ui-dist"
 STAGED_BUNDLE="$STAGED_DIR/ccswitch-provider-ui.js"
+STAGED_STYLESHEET="$STAGED_DIR/ccswitch-provider-ui.css"
 OUTPUT_DIR=""
 EXPLICIT_BUNDLE="${CCSWITCH_OPENWRT_PROVIDER_UI_BUNDLE:-}"
 
@@ -31,16 +33,34 @@ copy_bundle() {
 	cp "$src" "$dest"
 }
 
+copy_optional_stylesheet() {
+	src="$1"
+	dest_dir="$2"
+	dest="$dest_dir/ccswitch-provider-ui.css"
+
+	[ -f "$src" ] || return 0
+	mkdir -p "$dest_dir"
+
+	if [ "$src" = "$dest" ]; then
+		return 0
+	fi
+
+	cp "$src" "$dest"
+}
+
 stage_bundle() {
 	src="$1"
+	stylesheet="$2"
 
 	[ -f "$src" ] || die "bundle source does not exist: $src"
 
 	if [ "$src" != "$STAGED_BUNDLE" ]; then
 		copy_bundle "$src" "$STAGED_DIR"
 	fi
+	copy_optional_stylesheet "$stylesheet" "$STAGED_DIR"
 
 	copy_bundle "$STAGED_BUNDLE" "$OUTPUT_DIR"
+	copy_optional_stylesheet "$STAGED_STYLESHEET" "$OUTPUT_DIR"
 }
 
 usage() {
@@ -57,7 +77,8 @@ Resolution order:
 Note:
   An explicit CCSWITCH_OPENWRT_PROVIDER_UI_BUNDLE is copied only to the
   requested output directory. It does not overwrite the canonical staged
-  bundle under openwrt/provider-ui-dist/.
+  bundle under openwrt/provider-ui-dist/. If a sibling .css file exists,
+  it is copied alongside the JavaScript bundle.
 EOF
 }
 
@@ -85,16 +106,18 @@ fi
 
 if [ -n "$EXPLICIT_BUNDLE" ]; then
 	copy_bundle "$EXPLICIT_BUNDLE" "$OUTPUT_DIR"
+	copy_optional_stylesheet "${EXPLICIT_BUNDLE%.js}.css" "$OUTPUT_DIR"
 	exit 0
 fi
 
 if [ -f "$STAGED_BUNDLE" ]; then
 	copy_bundle "$STAGED_BUNDLE" "$OUTPUT_DIR"
+	copy_optional_stylesheet "$STAGED_STYLESHEET" "$OUTPUT_DIR"
 	exit 0
 fi
 
 if [ -f "$EMITTED_BUNDLE" ]; then
-	stage_bundle "$EMITTED_BUNDLE"
+	stage_bundle "$EMITTED_BUNDLE" "$EMITTED_STYLESHEET"
 	exit 0
 fi
 
@@ -106,6 +129,7 @@ if command -v pnpm >/dev/null 2>&1; then
 
 	[ -f "$STAGED_BUNDLE" ] || die "pnpm reported success but did not produce: $STAGED_BUNDLE"
 	copy_bundle "$STAGED_BUNDLE" "$OUTPUT_DIR"
+	copy_optional_stylesheet "$STAGED_STYLESHEET" "$OUTPUT_DIR"
 	exit 0
 fi
 

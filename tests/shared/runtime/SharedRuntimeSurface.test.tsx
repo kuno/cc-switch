@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { emptySharedProviderView } from "@/shared/providers/domain";
 import {
@@ -195,6 +195,82 @@ function createRuntimeSurfaceState(): SharedRuntimeStatusView {
   };
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((innerResolve, innerReject) => {
+    resolve = innerResolve;
+    reject = innerReject;
+  });
+
+  return {
+    promise,
+    reject,
+    resolve,
+  };
+}
+
+function createAvailableProviders(appId: "claude" | "codex" | "gemini") {
+  return (
+    {
+      claude: [
+        {
+          providerId: "claude-spare",
+          providerName: "Claude Spare",
+          model: "claude-haiku-4-5",
+        },
+      ],
+      codex: [
+        {
+          providerId: "codex-backup",
+          providerName: "Codex Backup",
+          model: "gpt-5.4-mini",
+        },
+      ],
+      gemini: [
+        {
+          providerId: "gemini-backup",
+          providerName: "Gemini Backup",
+          model: "gemini-2.5-flash",
+        },
+      ],
+    } as const
+  )[appId];
+}
+
+type ControlRuntimeAdapter = RuntimeSurfacePlatformAdapter &
+  Required<
+    Pick<
+      RuntimeSurfacePlatformAdapter,
+      | "getAvailableFailoverProviders"
+      | "addToFailoverQueue"
+      | "removeFromFailoverQueue"
+      | "setAutoFailoverEnabled"
+    >
+  >;
+
+function createControlAdapter(
+  overrides: Partial<RuntimeSurfacePlatformAdapter> = {},
+  runtimeStates: SharedRuntimeStatusView[] = [createRuntimeSurfaceState()],
+): ControlRuntimeAdapter {
+  let runtimeIndex = 0;
+
+  return {
+    getRuntimeSurface: vi.fn().mockImplementation(async () => {
+      const nextIndex = Math.min(runtimeIndex, runtimeStates.length - 1);
+      runtimeIndex += 1;
+      return runtimeStates[nextIndex]!;
+    }),
+    getAvailableFailoverProviders: vi
+      .fn()
+      .mockImplementation(async (appId) => createAvailableProviders(appId)),
+    addToFailoverQueue: vi.fn().mockResolvedValue(undefined),
+    removeFromFailoverQueue: vi.fn().mockResolvedValue(undefined),
+    setAutoFailoverEnabled: vi.fn().mockResolvedValue(undefined),
+    ...overrides,
+  };
+}
+
 function renderSurface(adapter: RuntimeSurfacePlatformAdapter) {
   const queryClient = createSharedRuntimeSurfaceQueryClient();
 
@@ -205,8 +281,12 @@ function renderSurface(adapter: RuntimeSurfacePlatformAdapter) {
   );
 }
 
+function getAppCard(appLabel: "Claude" | "Codex" | "Gemini") {
+  return within(screen.getByRole("region", { name: `${appLabel} runtime card` }));
+}
+
 describe("SharedRuntimeSurface", () => {
-  it("composes the service summary and app cards using the shared runtime primitives", async () => {
+  it("keeps the Phase 7 surface read-only when failover controls are unavailable", async () => {
     const adapter = {
       getRuntimeSurface: vi.fn().mockResolvedValue(createRuntimeSurfaceState()),
     } satisfies RuntimeSurfacePlatformAdapter;
@@ -222,19 +302,154 @@ describe("SharedRuntimeSurface", () => {
     expect(
       screen.getByRole("heading", { name: "Service Summary" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Runtime detail: connection refused on 127.0.0.1:15721")).toBeInTheDocument();
-    expect(screen.getAllByText("Claude Router Primary").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Codex Router Primary").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Gemini Router").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Read only").length).toBe(3);
     expect(
-      screen.queryByRole("button", { name: /edit|activate|delete/i }),
-    ).not.toBeInTheDocument();
+      screen.getByText("Runtime detail: connection refused on 127.0.0.1:15721"),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("Read only")).toHaveLength(3);
+    expect(screen.queryByText("Failover controls")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Refresh status" }));
 
     await waitFor(() =>
       expect(adapter.getRuntimeSurface).toHaveBeenCalledTimes(2),
     );
+  });
+
+  it("disables only the active app card controls while a mutation is pending", async () => {
+    const addDeferred = createDeferred<void>();
+    const adapter = createControlAdapter({
+      addToFailoverQueue: vi.fn().mockImplementation(() => addDeferred.promise),
+    });
+
+    renderSurface(adapter);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("region", { name: "Codex runtime card" }),
+      ).toBeInTheDocument(),
+    );
+
+    const codexCard = getAppCard("Codex");
+    const claudeCard = getAppCard("Claude");
+
+    await waitFor(() =>
+      expect(codexCard.getByRole("button", { name: "Add to queue" })).toBeEnabled(),
+    );
+
+    fireEvent.click(codexCard.getByRole("button", { name: "Add to queue" }));
+
+    await waitFor(() => {
+      expect(
+        codexCard.getByRole("button", { name: "Add to queue" }),
+      ).toBeDisabled();
+      expect(
+        codexCard.getByRole("switch", { name: "Codex auto-failover" }),
+      ).toBeDisabled();
+    });
+
+    expect(
+      claudeCard.getByRole("button", { name: "Add to queue" }),
+    ).toBeEnabled();
+    expect(
+      claudeCard.getByRole("switch", { name: "Claude auto-failover" }),
+    ).toBeEnabled();
+
+    addDeferred.resolve();
+
+    await waitFor(() =>
+      expect(
+        codexCard.getByRole("button", { name: "Add to queue" }),
+      ).toBeEnabled(),
+    );
+  });
+
+  it("refetches the runtime surface after a successful control mutation", async () => {
+    const initialState = createRuntimeSurfaceState();
+    const updatedState = createRuntimeSurfaceState();
+    updatedState.apps = updatedState.apps.map((app) =>
+      app.app === "claude"
+        ? {
+            ...app,
+            autoFailoverEnabled: false,
+          }
+        : app,
+    );
+    const adapter = createControlAdapter({}, [initialState, updatedState]);
+
+    renderSurface(adapter);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("region", { name: "Claude runtime card" }),
+      ).toBeInTheDocument(),
+    );
+
+    const claudeCard = getAppCard("Claude");
+
+    await waitFor(() =>
+      expect(
+        claudeCard.getByRole("switch", { name: "Claude auto-failover" }),
+      ).toBeEnabled(),
+    );
+
+    fireEvent.click(
+      claudeCard.getByRole("switch", { name: "Claude auto-failover" }),
+    );
+
+    await waitFor(() =>
+      expect(adapter.setAutoFailoverEnabled).toHaveBeenCalledWith(
+        "claude",
+        false,
+      ),
+    );
+    await waitFor(() =>
+      expect(adapter.getRuntimeSurface).toHaveBeenCalledTimes(2),
+    );
+    await waitFor(() =>
+      expect(
+        claudeCard.getByText("Auto-failover disabled"),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("keeps the last good snapshot visible and shows an inline error when a control mutation fails", async () => {
+    const adapter = createControlAdapter({
+      removeFromFailoverQueue: vi
+        .fn()
+        .mockRejectedValue(new Error("router write rejected")),
+    });
+
+    renderSurface(adapter);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("region", { name: "Claude runtime card" }),
+      ).toBeInTheDocument(),
+    );
+
+    const claudeCard = getAppCard("Claude");
+
+    await waitFor(() =>
+      expect(
+        claudeCard.getByRole("button", {
+          name: "Remove Claude Backup from Claude failover queue",
+        }),
+      ).toBeEnabled(),
+    );
+
+    fireEvent.click(
+      claudeCard.getByRole("button", {
+        name: "Remove Claude Backup from Claude failover queue",
+      }),
+    );
+
+    await waitFor(() =>
+      expect(
+        claudeCard.getByText("Last control action failed"),
+      ).toBeInTheDocument(),
+    );
+    expect(claudeCard.getByText("router write rejected")).toBeInTheDocument();
+    expect(claudeCard.getByText("Claude Backup")).toBeInTheDocument();
+    expect(adapter.getRuntimeSurface).toHaveBeenCalledTimes(1);
   });
 });
