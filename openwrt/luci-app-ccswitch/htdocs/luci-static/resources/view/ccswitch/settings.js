@@ -2846,6 +2846,14 @@ return view.extend({
 	},
 
 	render: function (data) {
-		return Promise.resolve(this.renderNativePage(data));
+		var wrapper = E('div', {
+			style: 'margin:0; padding:0;'
+		});
+		var iframe = E('iframe', {
+			src: '/luci-static/resources/ccswitch/revised/index.html',
+			style: 'border:0; width:100%; height:calc(100vh - 120px); display:block;'
+		});
+		wrapper.appendChild(iframe);
+		return wrapper;
 	}
 });

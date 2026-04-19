@@ -10,6 +10,7 @@
     "dev:renderer": "vite",
     "build:renderer": "vite build",
     "build:openwrt-provider-ui": "CCSWITCH_BUILD_TARGET=openwrt-provider-ui vite build",
+    "build:openwrt-island-daemon-card": "CCSWITCH_BUILD_TARGET=openwrt-island-daemon-card vite build",
     "build:openwrt-visual-harness": "CCSWITCH_BUILD_TARGET=openwrt-visual-harness vite build",
     "preview:openwrt-visual-harness": "CCSWITCH_BUILD_TARGET=openwrt-visual-harness vite preview --host 127.0.0.1 --port 4174 --strictPort",
     "typecheck": "tsc --noEmit",

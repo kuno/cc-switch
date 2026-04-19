@@ -1,4 +1,3 @@
-import { MoonStar, SunMedium } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { SharedProviderAppId } from "@/shared/providers/domain";
 import {
@@ -23,6 +22,17 @@ import type {
 const OPENWRT_PAGE_THEME_STORAGE_KEY = "ccswitch-openwrt-native-page-theme";
 const OPENWRT_PAGE_THEME_DARK_CLASS =
   "ccswitch-openwrt-provider-ui-theme-dark";
+
+/**
+ * Versions surfaced in the section-head chips. These are display-only —
+ * the real daemon version lives on `host.version` and is shown on the Daemon
+ * chip when present; the Apps chip is the luci-app package version.
+ *
+ * Keep in sync with the Makefile / package metadata. If the shell
+ * eventually exposes a `packageVersion`, swap these constants out.
+ */
+const LUCI_APP_VERSION = "v0.2.4";
+const DAEMON_FALLBACK_VERSION = "v0.4.2";
 
 type HostDraft = OpenWrtHostConfigPayload;
 
@@ -74,9 +84,7 @@ function getHostSnapshot(
 }
 
 function getInitialTheme(): OpenWrtPageTheme {
-  if (typeof window === "undefined") {
-    return "light";
-  }
+  if (typeof window === "undefined") return "light";
 
   const storedTheme = window.localStorage.getItem(
     OPENWRT_PAGE_THEME_STORAGE_KEY,
@@ -84,24 +92,17 @@ function getInitialTheme(): OpenWrtPageTheme {
   if (storedTheme === "dark" || storedTheme === "light") {
     return storedTheme;
   }
-
   return "light";
 }
 
 function clearLegacyGlobalDarkThemeLeak() {
-  if (typeof document === "undefined") {
-    return;
-  }
-
+  if (typeof document === "undefined") return;
   document.documentElement.classList.remove("dark");
   document.body.classList.remove("dark");
 }
 
 function applyTheme(theme: OpenWrtPageTheme) {
-  if (typeof document === "undefined") {
-    return;
-  }
-
+  if (typeof document === "undefined") return;
   clearLegacyGlobalDarkThemeLeak();
   document.body.classList.toggle(
     OPENWRT_PAGE_THEME_DARK_CLASS,
@@ -111,31 +112,26 @@ function applyTheme(theme: OpenWrtPageTheme) {
 }
 
 function clearTheme() {
-  if (typeof document === "undefined") {
-    return;
-  }
-
+  if (typeof document === "undefined") return;
   clearLegacyGlobalDarkThemeLeak();
   document.body.classList.remove(OPENWRT_PAGE_THEME_DARK_CLASS);
   delete document.body.dataset.ccswitchTheme;
 }
 
 function getMessageToneClass(message: OpenWrtPageMessage | null): string {
-  if (!message) {
-    return "";
-  }
-
-  if (message.kind === "success") {
-    return "ccswitch-openwrt-page-note--success";
-  }
-
-  if (message.kind === "error") {
-    return "ccswitch-openwrt-page-note--error";
-  }
-
+  if (!message) return "";
+  if (message.kind === "success") return "ccswitch-openwrt-page-note--success";
+  if (message.kind === "error") return "ccswitch-openwrt-page-note--error";
   return "ccswitch-openwrt-page-note--info";
 }
 
+function formatVersion(raw: string | null | undefined, fallback: string): string {
+  const trimmed = (raw ?? "").trim();
+  if (!trimmed) return fallback;
+  return trimmed.startsWith("v") ? trimmed : `v${trimmed}`;
+}
+
+/** Icon-based theme toggle — matches revised/index.html .theme-toggle. */
 function ThemeToggle({
   theme,
   onToggle,
@@ -147,16 +143,62 @@ function ThemeToggle({
     <button
       type="button"
       className="owt-theme-toggle"
+      data-theme={theme}
       onClick={onToggle}
       aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
     >
-      {theme === "dark" ? (
-        <SunMedium className="h-4 w-4" />
-      ) : (
-        <MoonStar className="h-4 w-4" />
-      )}
-      <span>{theme === "dark" ? "Light" : "Dark"}</span>
+      <svg
+        className="owt-theme-toggle__sun"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <circle cx="12" cy="12" r="4" />
+        <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+      </svg>
+      <svg
+        className="owt-theme-toggle__moon"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+      </svg>
     </button>
+  );
+}
+
+function SectionHead({
+  title,
+  version,
+  versionTitle,
+  trailing,
+  style,
+}: {
+  title: string;
+  version: string;
+  versionTitle: string;
+  trailing?: React.ReactNode;
+  style?: React.CSSProperties;
+}) {
+  return (
+    <div className="owt-section-head" style={style}>
+      <h2>
+        {title}{" "}
+        <span className="owt-section-head__version" title={versionTitle}>
+          {version}
+        </span>
+      </h2>
+      {trailing ?? null}
+    </div>
   );
 }
 
@@ -177,7 +219,6 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
     if (typeof window !== "undefined") {
       window.localStorage.setItem(OPENWRT_PAGE_THEME_STORAGE_KEY, theme);
     }
-
     return () => {
       clearTheme();
     };
@@ -196,7 +237,6 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
 
   useEffect(() => {
     const nextDraft = createHostDraft(snapshot.host);
-
     setHostDraft((current) =>
       isHostDraftEqual(current, previousHostDraftRef.current)
         ? nextDraft
@@ -236,6 +276,11 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
     providerPanelRef.current?.openForApp(appId);
   }
 
+  const daemonVersion = formatVersion(
+    snapshot.host.version,
+    DAEMON_FALLBACK_VERSION,
+  );
+
   return (
     <div
       className={
@@ -244,22 +289,8 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
           : "ccswitch-openwrt-provider-ui-shell ccswitch-openwrt-page-shell"
       }
     >
-      <header className="owt-header">
-        <div>
-          <div className="owt-breadcrumb">OpenWrt / Services</div>
-          <h1 className="owt-page-title">CC Switch</h1>
-        </div>
-        <div className="owt-header-actions">
-          <ThemeToggle
-            theme={theme}
-            onToggle={() =>
-              setTheme((current) => (current === "dark" ? "light" : "dark"))
-            }
-          />
-        </div>
-      </header>
-
       <main className="owt-main">
+        {/* Alert strip only renders when daemon is unhealthy/stopped */}
         <section className="owt-slot owt-slot-alert" data-slot="alert-strip">
           <AlertStrip
             host={snapshot.host}
@@ -272,6 +303,21 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
           />
         </section>
 
+        {/* ===== APPS ===== */}
+        <SectionHead
+          title="Apps"
+          version={LUCI_APP_VERSION}
+          versionTitle="luci-app-ccswitch version"
+          trailing={
+            <ThemeToggle
+              theme={theme}
+              onToggle={() =>
+                setTheme((current) => (current === "dark" ? "light" : "dark"))
+              }
+            />
+          }
+        />
+
         <section className="owt-slot owt-slot-apps" data-slot="apps-grid">
           <AppsGrid
             options={options}
@@ -279,6 +325,14 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
             onOpenProviderPanel={handleOpenProviderPanel}
           />
         </section>
+
+        {/* ===== DAEMON ===== */}
+        <SectionHead
+          title="Daemon"
+          version={daemonVersion}
+          versionTitle="ccswitch daemon version"
+          style={{ marginTop: 34 }}
+        />
 
         <section className="owt-slot owt-slot-daemon" data-slot="daemon-card">
           <DaemonCard

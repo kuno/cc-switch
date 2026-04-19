@@ -36,14 +36,8 @@ function createInitialCard(appId: SharedProviderAppId): AppGridData {
 }
 
 function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  if (typeof error === "string" && error.trim()) {
-    return error;
-  }
-
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string" && error.trim()) return error;
   return "Router data is unavailable right now.";
 }
 
@@ -91,6 +85,33 @@ async function loadCardData(
   };
 }
 
+/** Placeholder that fills the odd slot when a group has an uneven card count. */
+function SkeletonCard({ dashed = false }: { dashed?: boolean }) {
+  return (
+    <div
+      className={
+        dashed
+          ? "owt-app-card owt-app-card--skeleton owt-app-card--skeleton-dashed"
+          : "owt-app-card owt-app-card--skeleton"
+      }
+      aria-hidden="true"
+    />
+  );
+}
+
+/** "Not configured" group header — matches revised/index.html groupHeader(). */
+function GroupHeader({ label }: { label: string }) {
+  return (
+    <div className="owt-group-head">
+      <span className="owt-group-label">{label}</span>
+    </div>
+  );
+}
+
+function isConfigured(card: AppGridData): boolean {
+  return card.providerState?.activeProvider.configured ?? false;
+}
+
 export interface AppsGridProps {
   options: OpenWrtSharedPageMountOptions;
   onOpenActivity: (appId: SharedProviderAppId) => void;
@@ -117,18 +138,12 @@ export function AppsGrid({
     let cancelled = false;
 
     setCards((current) =>
-      current.map((card) => ({
-        ...card,
-        loading: true,
-      })),
+      current.map((card) => ({ ...card, loading: true })),
     );
 
     void Promise.all(APP_OPTIONS.map((appId) => loadCardData(options, appId))).then(
       (nextCards) => {
-        if (cancelled) {
-          return;
-        }
-
+        if (cancelled) return;
         setCards(nextCards);
       },
     );
@@ -141,24 +156,45 @@ export function AppsGrid({
   const hostState = options.shell.getHostState();
   const serviceRunning = options.shell.getServiceStatus().isRunning;
 
+  // Split into configured vs unconfigured groups, preserving APP_OPTIONS order.
+  const configured = cards.filter(isConfigured);
+  const unconfigured = cards.filter((card) => !isConfigured(card));
+
+  const renderCard = (card: AppGridData) => (
+    <AppCard
+      key={card.appId}
+      appId={card.appId}
+      hostState={hostState}
+      serviceRunning={serviceRunning}
+      providerState={card.providerState}
+      summary={card.summary}
+      providerStats={card.providerStats}
+      recentActivity={card.recentActivity}
+      loading={card.loading}
+      error={card.error}
+      onOpenActivity={onOpenActivity}
+      onOpenProviderPanel={onOpenProviderPanel}
+    />
+  );
+
   return (
     <div className="owt-apps-grid">
-      {cards.map((card) => (
-        <AppCard
-          key={card.appId}
-          appId={card.appId}
-          hostState={hostState}
-          serviceRunning={serviceRunning}
-          providerState={card.providerState}
-          summary={card.summary}
-          providerStats={card.providerStats}
-          recentActivity={card.recentActivity}
-          loading={card.loading}
-          error={card.error}
-          onOpenActivity={onOpenActivity}
-          onOpenProviderPanel={onOpenProviderPanel}
-        />
-      ))}
+      {configured.length > 0 && (
+        <div className="owt-group-grid">
+          {configured.map(renderCard)}
+          {configured.length % 2 === 1 && <SkeletonCard />}
+        </div>
+      )}
+
+      {unconfigured.length > 0 && (
+        <>
+          <GroupHeader label="Not configured" />
+          <div className="owt-group-grid">
+            {unconfigured.map(renderCard)}
+            {unconfigured.length % 2 === 1 && <SkeletonCard dashed />}
+          </div>
+        </>
+      )}
     </div>
   );
 }

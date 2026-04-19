@@ -11,6 +11,14 @@ const openWrtProviderUiOutDir = path.resolve(
   __dirname,
   "openwrt/provider-ui-dist",
 );
+const openWrtIslandDaemonCardEntry = path.resolve(
+  __dirname,
+  "src/openwrt-islands/daemon-card/entry.tsx",
+);
+const openWrtIslandDaemonCardOutDir = path.resolve(
+  __dirname,
+  "openwrt/luci-app-ccswitch/htdocs/luci-static/resources/ccswitch/islands",
+);
 const openWrtVisualHarnessRoot = path.resolve(
   __dirname,
   "tests/openwrt/visual/harness",
@@ -25,14 +33,17 @@ export default defineConfig(({ command }) => {
   const isOpenWrtProviderUiBuild = buildTarget === "openwrt-provider-ui";
   const isOpenWrtVisualHarnessBuild =
     buildTarget === "openwrt-visual-harness";
-  const define = isOpenWrtProviderUiBuild
-    ? {
-        "process.env.NODE_ENV": JSON.stringify("production"),
-      }
-    : undefined;
+  const isOpenWrtIslandDaemonCardBuild =
+    buildTarget === "openwrt-island-daemon-card";
+  const define =
+    isOpenWrtProviderUiBuild || isOpenWrtIslandDaemonCardBuild
+      ? {
+          "process.env.NODE_ENV": JSON.stringify("production"),
+        }
+      : undefined;
 
   return {
-    root: isOpenWrtProviderUiBuild
+    root: isOpenWrtProviderUiBuild || isOpenWrtIslandDaemonCardBuild
       ? "."
       : isOpenWrtVisualHarnessBuild
         ? openWrtVisualHarnessRoot
@@ -40,6 +51,7 @@ export default defineConfig(({ command }) => {
     plugins: [
       !isOpenWrtProviderUiBuild &&
         !isOpenWrtVisualHarnessBuild &&
+        !isOpenWrtIslandDaemonCardBuild &&
         command === "serve" &&
         codeInspectorPlugin({
           bundler: "vite",
@@ -65,6 +77,24 @@ export default defineConfig(({ command }) => {
             },
           },
         }
+      : isOpenWrtIslandDaemonCardBuild
+        ? {
+            outDir: openWrtIslandDaemonCardOutDir,
+            emptyOutDir: false,
+            cssCodeSplit: false,
+            lib: {
+              entry: openWrtIslandDaemonCardEntry,
+              formats: ["iife"],
+              name: "CCSwitchOpenWrtDaemonCardIsland",
+              fileName: () => "daemon-card.js",
+              cssFileName: "daemon-card",
+            },
+            rollupOptions: {
+              output: {
+                inlineDynamicImports: true,
+              },
+            },
+          }
       : isOpenWrtVisualHarnessBuild
         ? {
             outDir: openWrtVisualHarnessOutDir,

@@ -475,7 +475,9 @@ build_luci_package() {
 		"$data_dir/usr/share/rpcd/ucode" \
 		"$data_dir/usr/share/luci/menu.d" \
 		"$data_dir/www/luci-static/resources/view/ccswitch" \
-		"$data_dir/www/luci-static/resources/ccswitch/provider-ui"
+		"$data_dir/www/luci-static/resources/ccswitch/provider-ui" \
+		"$data_dir/www/luci-static/resources/ccswitch/revised/icons" \
+		"$data_dir/www/luci-static/resources/ccswitch/islands"
 
 	emit_control_file \
 		"$control_dir/control" \
@@ -509,6 +511,20 @@ build_luci_package() {
 	install -m 0644 \
 		"$OPENWRT_PROVIDER_UI_STYLESHEET" \
 		"$data_dir/www/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.css"
+
+	install -m 0644 \
+		"$LUCI_SRC/htdocs/luci-static/resources/ccswitch/revised/index.html" \
+		"$data_dir/www/luci-static/resources/ccswitch/revised/index.html"
+	for svg in "$LUCI_SRC/htdocs/luci-static/resources/ccswitch/revised/icons/"*.svg; do
+		install -m 0644 "$svg" "$data_dir/www/luci-static/resources/ccswitch/revised/icons/$(basename "$svg")"
+	done
+
+	local island_dir="$LUCI_SRC/htdocs/luci-static/resources/ccswitch/islands"
+	[ -f "$island_dir/daemon-card.js" ] || die "missing daemon-card island bundle: $island_dir/daemon-card.js
+Build it first with: pnpm build:openwrt-island-daemon-card"
+	install -m 0644 \
+		"$island_dir/daemon-card.js" \
+		"$data_dir/www/luci-static/resources/ccswitch/islands/daemon-card.js"
 
 	rm -f "$output"
 	build_ipk "$control_dir" "$data_dir" "$output"

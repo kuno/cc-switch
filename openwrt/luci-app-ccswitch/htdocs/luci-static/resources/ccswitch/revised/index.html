@@ -1,0 +1,3030 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>CC Switch · Revised</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  /* ---------- TOKENS ---------- */
+  :root {
+    --bg: #eef3f8;
+    --bg-glow: rgba(77, 124, 255, 0.08);
+    --bg-sheen: rgba(255, 255, 255, 0.05);
+    --panel: rgba(255, 255, 255, 0.86);
+    --panel-strong: #ffffff;
+    --panel-soft: #f8fbff;
+    --panel-softer: #f2f6fb;
+    --line: #d8e2ef;
+    --line-strong: #ccd7e6;
+    --text: #172133;
+    --muted: #708198;
+    --soft-text: #90a0b4;
+    --accent: #4d7cff;
+    --accent-soft: #ebf2ff;
+    --accent-text: #2752c9;
+    --success: #2d8a5a;
+    --success-soft: #edf8f1;
+    --success-line: #bfe4cd;
+    --warn: #b96a1a;
+    --warn-soft: #fbf0e2;
+    --warn-line: #ecd1ab;
+    --fail: #b03a3a;
+    --fail-soft: #fbeaea;
+    --fail-line: #ecbcbc;
+    --row-active: #edf4ff;
+    --row: #ffffff;
+    --button: #f5f8fd;
+    --shadow: 0 24px 60px -34px rgba(50, 72, 103, 0.28);
+    --shadow-soft: 0 16px 34px -28px rgba(50, 72, 103, 0.18);
+    --shadow-panel: 0 40px 100px -56px rgba(50, 72, 103, 0.48);
+    --radius-panel: 28px;
+    --radius-card: 20px;
+    --radius-control: 16px;
+    --radius-icon: 12px;
+  }
+
+  body[data-theme="dark"] {
+    --bg: #0f141b;
+    --bg-glow: rgba(127, 148, 255, 0.08);
+    --bg-sheen: transparent;
+    --panel: rgba(24, 32, 42, 0.92);
+    --panel-strong: #1a232f;
+    --panel-soft: #141c26;
+    --panel-softer: #121923;
+    --line: #263241;
+    --line-strong: #3a4a60;
+    --text: #eef4fb;
+    --muted: #a6b4c8;
+    --soft-text: #7b8aa0;
+    --accent: #7f94ff;
+    --accent-soft: #212d48;
+    --accent-text: #dfe5ff;
+    --success: #5dc07e;
+    --success-soft: #153126;
+    --success-line: #2a5540;
+    --warn: #d69252;
+    --warn-soft: #2e2216;
+    --warn-line: #553d22;
+    --fail: #e07878;
+    --fail-soft: #2e1717;
+    --fail-line: #5a2a2a;
+    --row-active: #1e2c46;
+    --row: #1a232f;
+    --button: #1d2835;
+    --shadow: 0 24px 60px -34px rgba(0, 0, 0, 0.6);
+    --shadow-soft: 0 16px 34px -28px rgba(0, 0, 0, 0.5);
+    --shadow-panel: 0 40px 100px -40px rgba(0, 0, 0, 0.7);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: "SF Pro Display", Inter, ui-sans-serif, system-ui, sans-serif;
+    background:
+      radial-gradient(circle at top left, var(--bg-glow), transparent 28%),
+      linear-gradient(180deg, var(--bg-sheen), transparent 24%),
+      var(--bg);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    transition: background 220ms ease, color 220ms ease;
+    min-height: 100vh;
+  }
+
+  /* ---------- SHELL ---------- */
+  .shell {
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 28px 28px 60px;
+  }
+
+  .page-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 20px;
+    margin-bottom: 24px;
+  }
+  .eyebrow {
+    color: var(--muted);
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .title {
+    margin: 4px 0 0;
+    font-size: 52px;
+    line-height: 0.95;
+    font-weight: 760;
+    letter-spacing: -0.04em;
+    color: var(--text);
+  }
+  .head-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+
+  /* ---------- PILLS / CHIPS / BUTTONS ---------- */
+  .pill {
+    height: 34px;
+    padding: 0 16px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--button);
+    color: var(--text);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 160ms, border-color 160ms, color 160ms, transform 160ms;
+  }
+  .pill:hover { border-color: var(--line-strong); }
+  .pill.primary {
+    background: var(--accent);
+    color: #fff;
+    border-color: transparent;
+  }
+  .pill.primary:hover { background: color-mix(in srgb, var(--accent) 88%, #fff 12%); }
+  /* Idle state — nothing to save */
+  .pill.is-idle {
+    color: var(--soft-text);
+    background: var(--button);
+    border-color: var(--line);
+    cursor: default;
+  }
+  .pill.is-idle:hover { border-color: var(--line); }
+  .pill.is-idle svg { opacity: 0.55; }
+  .pill.danger {
+    background: var(--fail-soft);
+    color: var(--fail);
+    border-color: var(--fail-line);
+  }
+  .pill.danger:hover { background: color-mix(in srgb, var(--fail) 88%, #fff 12%); color: #fff; border-color: transparent; }
+  .pill.ghost {
+    background: transparent;
+  }
+
+  .chip {
+    height: 28px;
+    padding: 0 12px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--button);
+    color: var(--text);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+    font-family: inherit;
+  }
+  .chip.success { background: var(--success-soft); color: var(--success); border-color: var(--success-line); }
+  .chip.accent  { background: var(--accent-soft);  color: var(--accent-text); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+  .chip.warn    { background: var(--warn-soft);    color: var(--warn); border-color: var(--warn-line); }
+  .chip.fail    { background: var(--fail-soft);    color: var(--fail); border-color: var(--fail-line); }
+
+  /* Clickable status chip (warn/fail) */
+  .chip.chip-btn {
+    cursor: pointer;
+    font-family: inherit;
+    gap: 6px;
+  }
+  .chip.chip-btn:hover { filter: brightness(0.97); }
+  body[data-theme="dark"] .chip.chip-btn:hover { filter: brightness(1.12); }
+  .chip-caret { opacity: 0.75; margin-left: -2px; }
+
+  /* Activity side panel — right drawer, mirrors providers panel */
+  .activity-pop {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 80;
+    width: 480px;
+    max-width: min(480px, 96vw);
+    background: var(--panel);
+    border-left: 1px solid var(--line);
+    box-shadow: var(--shadow-panel);
+    backdrop-filter: blur(18px);
+    display: flex;
+    flex-direction: column;
+    transform: translateX(100%);
+    visibility: hidden;
+    transition: transform 240ms cubic-bezier(0.32, 0.72, 0.16, 1), visibility 0s linear 240ms;
+    font-size: 13px;
+    color: var(--text);
+  }
+  .activity-pop.open {
+    transform: translateX(0);
+    visibility: visible;
+    transition: transform 260ms cubic-bezier(0.22, 0.8, 0.28, 1), visibility 0s linear 0s;
+  }
+  .ap-head {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    column-gap: 8px;
+    padding: 20px 22px 14px;
+    border-bottom: 1px solid var(--line);
+    flex: 0 0 auto;
+  }
+  .ap-title { font-weight: 720; letter-spacing: -0.015em; font-size: 18px; grid-column: 1; }
+  .ap-sub   { color: var(--muted); font-size: 12.5px; grid-column: 1; grid-row: 2; margin-top: 2px; }
+  .ap-close {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    width: 32px; height: 32px;
+    border: 1px solid var(--line);
+    background: var(--panel-softer);
+    border-radius: 10px;
+    color: var(--muted);
+    cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: background 120ms, color 120ms, border-color 120ms;
+  }
+  .ap-close:hover { color: var(--text); border-color: var(--line-strong); }
+
+  .ap-list {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .ap-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--panel-softer);
+  }
+  .ap-row:nth-child(even) { background: transparent; }
+  .ap-row-l { min-width: 0; }
+  .ap-row-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    font-size: 13.5px;
+    letter-spacing: -0.005em;
+  }
+  .ap-row-sub {
+    margin-top: 4px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ap-row-r {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-size: 11.5px;
+    color: var(--muted);
+    line-height: 1.45;
+  }
+  .ap-row-r .ap-tokens { color: var(--text); font-weight: 600; }
+  .ap-row-r .ap-ms     { color: var(--muted); }
+
+  .ap-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 20px;
+    padding: 0 8px;
+    border-radius: 999px;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    border: 1px solid;
+  }
+  .ap-status-pill.success { background: var(--success-soft); color: var(--success); border-color: var(--success-line); }
+  .ap-status-pill.warn    { background: var(--warn-soft);    color: var(--warn);    border-color: var(--warn-line); }
+  .ap-status-pill.fail    { background: var(--fail-soft);    color: var(--fail);    border-color: var(--fail-line); }
+
+  .ap-foot {
+    padding: 12px 14px;
+    border-top: 1px solid var(--line);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--panel-softer);
+    flex: 0 0 auto;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  /* Chip-style select (log level) */
+  .chip-select {
+    height: 28px;
+    padding: 0 4px 0 12px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    background: var(--accent-soft);
+    color: var(--accent-text);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .chip-select .chip-select-label { letter-spacing: 0.02em; }
+  .chip-select select {
+    appearance: none;
+    -webkit-appearance: none;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-weight: 700;
+    padding: 0 20px 0 8px;
+    cursor: pointer;
+    font-family: inherit;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path fill='none' stroke='%232752c9' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' d='M3 5l3 3 3-3'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 4px center;
+    background-size: 12px 12px;
+  }
+  body[data-theme="dark"] .chip-select select {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path fill='none' stroke='%23dfe5ff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' d='M3 5l3 3 3-3'/></svg>");
+  }
+  .chip-select:hover { border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
+  .chip-select select:focus { outline: none; }
+  .chip.dot::before {
+    content: "";
+    width: 7px; height: 7px;
+    border-radius: 999px;
+    background: currentColor;
+    display: inline-block;
+  }
+
+  /* Unavailable: really looks unavailable */
+  .pill.unavailable,
+  .chip.unavailable,
+  button.unavailable {
+    background: transparent;
+    color: var(--soft-text);
+    border-color: var(--line);
+    cursor: not-allowed;
+  }
+  .pill.unavailable:hover { transform: none; border-color: var(--line); }
+
+  /* ---------- ALERT STRIP (daemon down) ---------- */
+  .alert-strip {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 20px;
+    border-radius: var(--radius-control);
+    background: var(--fail-soft);
+    border: 1px solid var(--fail-line);
+    color: var(--fail);
+    margin-bottom: 20px;
+  }
+  .alert-strip .alert-dot {
+    width: 10px; height: 10px;
+    border-radius: 999px;
+    background: var(--fail);
+    flex: 0 0 auto;
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--fail) 20%, transparent);
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--fail) 20%, transparent); }
+    50%      { box-shadow: 0 0 0 8px color-mix(in srgb, var(--fail) 10%, transparent); }
+  }
+  .alert-copy { flex: 1; font-size: 14px; line-height: 1.4; }
+  .alert-copy strong { font-weight: 720; color: var(--fail); margin-right: 8px; }
+  .alert-copy span { color: color-mix(in srgb, var(--fail) 70%, var(--text)); }
+  .alert-strip .pill.primary {
+    background: var(--fail);
+  }
+  .alert-strip .pill.primary:hover { background: color-mix(in srgb, var(--fail) 85%, #000 15%); }
+
+  /* ---------- DAEMON CARD (top) ---------- */
+  .daemon-card {
+    background: var(--panel);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-panel);
+    box-shadow: var(--shadow);
+    padding: 24px 28px;
+    margin-bottom: 24px;
+    transition: background 220ms, border-color 220ms;
+  }
+  .daemon-row {
+    display: grid;
+    grid-template-columns: auto auto auto 1fr auto auto;
+    gap: 12px;
+    align-items: center;
+  }
+  .cell-label {
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+  }
+  .daemon-status {
+    font-size: 28px;
+    font-weight: 720;
+    letter-spacing: -0.025em;
+    color: var(--text);
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+  .daemon-status .dot {
+    width: 10px; height: 10px;
+    border-radius: 999px;    background: var(--success);
+    display: inline-block;
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--success) 18%, transparent);
+    transform: translateY(-3px);
+  }
+  .daemon-meta {
+    color: var(--muted);
+    font-size: 13px;
+    margin-left: 6px;
+  }
+  .daemon-ver {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: var(--panel-softer);
+    border: 1px solid var(--line);
+    margin-left: 10px;
+  }
+  .daemon-divider {
+    height: 1px;
+    background: var(--line);
+    margin: 18px 0 16px;
+  }
+  .daemon-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 18px 24px;
+  }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field-input {
+    background: var(--panel-strong);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-control);
+    padding: 12px 14px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    font-family: inherit;
+    font-variant-numeric: tabular-nums;
+    transition: border-color 140ms, box-shadow 140ms, background 140ms;
+  }
+  .field-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+  }
+  .field-input.mono {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+
+  /* Read-only value (no box) */
+  .field-value {
+    padding: 12px 0 10px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    border-bottom: 1px solid var(--line);
+  }
+  .field-value.mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13.5px; }
+  .field-value.muted { color: var(--muted); font-weight: 500; }
+
+  /* Placeholder (backend-not-wired) field — the pattern the original Failover pane nails */
+  .field-placeholder {
+    padding: 12px 14px;
+    font-size: 13px;
+    color: var(--muted);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    border: 1px dashed var(--line-strong);
+    border-radius: var(--radius-control);
+    background: color-mix(in srgb, var(--panel-soft) 80%, transparent);
+  }
+
+  /* ---------- APPS SECTION ---------- */
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin: 8px 4px 16px;
+  }
+  .section-head h2 {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 720;
+    letter-spacing: -0.02em;
+  }
+  .section-head .sub {
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .daemon-ver-inline {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    letter-spacing: 0.02em;
+    margin-left: 10px;
+    padding: 2px 8px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    vertical-align: 3px;
+    background: var(--panel-softer);
+  }
+
+  .apps-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    padding: 2px 4px 20px;
+  }
+
+  .group-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 6px 4px 2px;
+  }
+  .group-label {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .group-count {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--soft-text);
+    background: var(--button);
+    border: 1px solid var(--line);
+    padding: 1px 8px;
+    border-radius: 999px;
+  }
+  .group-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+  }
+  @media (max-width: 960px) {
+    .group-grid { grid-template-columns: 1fr; }
+    .daemon-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .daemon-row { grid-template-columns: 1fr auto; grid-auto-flow: row; }
+  }
+
+  /* Empty / not-configured card */
+  .app-card--empty {
+    border-style: dashed;
+    border-color: var(--line-strong);
+    background: transparent;
+    box-shadow: none;
+  }
+  .app-card--empty:hover {
+    background: var(--panel-soft);
+    border-color: var(--accent);
+  }
+  .app-icon--muted {
+    background: transparent;
+    border-style: dashed;
+    border-color: var(--line-strong);
+  }
+  .app-icon--muted img {
+    filter: grayscale(1);
+    opacity: 0.55;
+  }
+  .app-name--muted { color: var(--muted); font-weight: 700; }
+  .empty-cta {
+    margin-top: 18px;
+    padding: 16px 14px;
+    border-radius: var(--radius-control);
+    border: 1px dashed var(--line-strong);
+    background: var(--panel-soft);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .empty-cta-btn {
+    color: var(--accent-text);
+    font-weight: 700;
+    font-size: 13px;
+  }
+  .app-card--empty:hover .empty-cta-btn { text-decoration: underline; }
+
+  /* Skeleton placeholder card — fills the second column when a group has 1 app */
+  .app-card--skeleton {
+    cursor: default;
+    border-style: dashed;
+    border-color: var(--line);
+    background: transparent;
+    box-shadow: none;
+    pointer-events: none;
+    animation: none;
+  }
+  .app-card--skeleton:hover {
+    transform: none;
+    border-color: var(--line);
+  }
+  .sk-icon, .sk-chip, .sk-mini, .sk-line, .sk-usage-cell {
+    background: var(--panel-softer);
+    border-radius: 6px;
+  }
+  .sk-icon { width: 48px; height: 48px; border-radius: var(--radius-icon); flex: 0 0 auto; }
+  .sk-chip { width: 68px; height: 24px; border-radius: 999px; }
+  .sk-mini { width: 32px; height: 32px; border-radius: 10px; flex: 0 0 auto; }
+  .sk-line--xs { height: 8px; }
+  .sk-line--sm { height: 10px; }
+  .sk-line--md { height: 16px; }
+  .sk-line--lg { height: 18px; }
+  .sk-active {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: var(--radius-control);
+    background: var(--panel-softer);
+    border: 1px solid var(--line);
+    margin: 18px 0;
+  }
+  .sk-usage { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; margin-top: 4px; }
+  .sk-usage-cell { background: transparent; padding: 2px 14px; border-left: 1px solid var(--line); }
+  .sk-usage-cell:first-child { padding-left: 0; border-left: 0; }
+
+  /* Subtle shimmer */
+  @keyframes sk-shimmer {
+    0%   { opacity: 0.6; }
+    50%  { opacity: 1; }
+    100% { opacity: 0.6; }
+  }
+  .app-card--skeleton .sk-icon,
+  .app-card--skeleton .sk-chip,
+  .app-card--skeleton .sk-mini,
+  .app-card--skeleton .sk-line,
+  .app-card--skeleton .sk-active {
+    animation: sk-shimmer 2.4s ease-in-out infinite;
+  }
+
+  /* Empty state inside side-panel rail */
+  .sp-empty { padding: 24px 14px; text-align: left; }
+  .sp-empty-title { font-size: 14px; font-weight: 720; color: var(--text); margin-bottom: 4px; }
+  .sp-empty-sub { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+
+  .app-card {
+    background: var(--panel);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-panel);
+    box-shadow: var(--shadow);
+    padding: 22px 24px 20px;
+    cursor: pointer;
+    position: relative;
+    text-align: left;
+    font: inherit;
+    color: inherit;
+    transition: transform 160ms ease, border-color 160ms, box-shadow 200ms;
+  }
+  .app-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--line-strong);
+  }
+  .app-card:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: var(--shadow), 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+  .app-head {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 22px;
+  }
+  .app-icon {
+    width: 48px; height: 48px;
+    border-radius: var(--radius-icon);
+    background: var(--panel-softer);
+    border: 1px solid var(--line);
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+  }
+  .app-icon img { width: 26px; height: 26px; display: block; }
+  .app-name {
+    font-size: 24px;
+    font-weight: 720;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    margin: 0;
+  }
+  .app-sub {
+    color: var(--muted);
+    font-size: 13px;
+    margin-top: 3px;
+    font-weight: 500;
+  }
+  .app-head .spacer { flex: 1; }
+  .app-head-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+  }
+  .app-prov-count {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted);
+    letter-spacing: 0;
+    margin-left: 4px;
+    transition: color 140ms;
+  }
+  .app-prov-count:hover { color: var(--accent-text); }
+  .prov-hover-cta {
+    opacity: 0;
+    margin-left: 2px;
+    color: var(--accent-text);
+    font-weight: 700;
+    transition: opacity 140ms;
+  }
+  .app-prov-count:hover .prov-hover-cta { opacity: 1; }
+
+  .app-active {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: var(--radius-control);
+    background: var(--panel-soft);
+    border: 1px solid var(--line);
+    margin-bottom: 18px;
+  }
+  .app-active .mini-icon {
+    width: 32px; height: 32px;
+    border-radius: 10px;
+    background: var(--panel-strong);
+    border: 1px solid var(--line);
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+  }
+  .app-active .mini-icon img { width: 18px; height: 18px; }
+  .app-active .labels { min-width: 0; flex: 1; }
+  .app-active .label-top {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .app-active .label-main {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .app-active .endpoint {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    color: var(--accent-text);
+    font-size: 11.5px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .app-usage {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0;
+    margin-top: 4px;
+  }
+  .usage-cell {
+    padding: 2px 14px;
+    border-left: 1px solid var(--line);
+  }
+  .usage-cell:first-child { padding-left: 0; border-left: 0; }
+  .usage-label {
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .usage-value {
+    font-size: 20px;
+    font-weight: 720;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    margin-top: 4px;
+    font-variant-numeric: tabular-nums;
+  }
+  .usage-unit {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
+    margin-left: 3px;
+  }
+
+  .app-card .open-affordance {
+    position: absolute;
+    top: 22px;
+    right: 22px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    opacity: 0;
+    transition: opacity 160ms;
+  }
+  .app-card:hover .open-affordance { opacity: 1; }
+
+  /* ---------- SIDE PANEL ---------- */
+  .scrim {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 22, 34, 0);
+    pointer-events: none;
+    transition: background 200ms;
+    z-index: 40;
+  }
+  .scrim.open {
+    pointer-events: auto;
+    background: rgba(15, 22, 34, 0.32);
+  }
+  body[data-theme="dark"] .scrim.open { background: rgba(0, 0, 0, 0.58); }
+
+  .side-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    height: 100vh;
+    width: min(820px, 92vw);
+    background: var(--panel);
+    backdrop-filter: blur(24px);
+    border-left: 1px solid var(--line);
+    box-shadow: var(--shadow-panel);
+    z-index: 50;
+    transform: translateX(100%);
+    transition: transform 260ms cubic-bezier(.2,.7,.2,1);
+    display: flex;
+    flex-direction: column;
+  }
+  .side-panel.open { transform: translateX(0); }
+
+  .sp-head {
+    padding: 22px 26px 16px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .sp-head .app-icon { width: 40px; height: 40px; }
+  .sp-head .app-icon img { width: 22px; height: 22px; }
+  .sp-head h3 {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 720;
+    letter-spacing: -0.02em;
+  }
+  .sp-head .sp-sub {
+    color: var(--muted);
+    font-size: 12.5px;
+    margin-top: 2px;
+  }
+  .sp-close {
+    margin-left: auto;
+    width: 36px; height: 36px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--button);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 18px;
+    display: inline-grid;
+    place-items: center;
+    font-family: inherit;
+  }
+  .sp-close:hover { border-color: var(--line-strong); }
+
+  .sp-body {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 280px minmax(0, 1fr);
+  }
+  .sp-rail {
+    border-right: 1px solid var(--line);
+    padding: 18px 14px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .sp-rail .rail-scroll {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    min-height: 0;
+    margin: 0 -4px;
+    padding: 0 4px;
+  }
+  .sp-rail .rail-foot {
+    flex: 0 0 auto;
+    padding-top: 12px;
+    margin-top: 10px;
+    border-top: 1px dashed var(--line);
+  }
+  .sp-rail .rail-foot .pill {
+    width: 100%;
+    justify-content: center;
+    height: 36px;
+  }
+  .sp-search {
+    width: 100%;
+    height: 34px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--panel-soft);
+    padding: 0 14px;
+    font: inherit;
+    font-size: 13px;
+    color: var(--text);
+    margin-bottom: 12px;
+  }
+  .sp-search:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+  .prov-row {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    padding: 10px 10px;
+    border-radius: var(--radius-control);
+    border: 1px solid transparent;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    text-align: left;
+    margin-bottom: 4px;
+  }
+  .prov-row:hover { background: var(--panel-soft); }
+  .prov-row.active {
+    background: var(--row-active);
+    border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  .prov-icon {
+    width: 34px; height: 34px;
+    border-radius: 10px;
+    background: var(--panel-strong);
+    border: 1px solid var(--line);
+    display: grid;
+    place-items: center;
+  }
+  .prov-icon img { width: 18px; height: 18px; }
+  .prov-name {
+    font-size: 13.5px;
+    font-weight: 700;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .prov-url {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px;
+    color: var(--accent-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .prov-id {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 10.5px;
+    color: var(--soft-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 2px;
+    letter-spacing: 0.02em;
+  }
+  .prov-id-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 6px;
+    padding: 3px 8px;
+    border: 1px solid var(--line);
+    background: var(--panel-strong);
+    color: var(--soft-text);
+    border-radius: 999px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px;
+    cursor: copy;
+    transition: background 120ms, color 120ms, border-color 120ms;
+  }
+  .prov-id-chip:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
+  .prov-id-chip.is-copied { background: color-mix(in srgb, var(--success, #2f9e5e) 14%, transparent); color: var(--text); border-color: color-mix(in srgb, var(--success, #2f9e5e) 40%, var(--line)); }
+  .prov-id-chip svg { opacity: 0.7; }
+  .prov-badge {
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    background: var(--button);
+  }
+  .prov-badge.active  { background: var(--success-soft); color: var(--success); border-color: var(--success-line); }
+
+  .sp-detail {
+    padding: 22px 26px 26px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .sp-detail-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .sp-detail-head .title-wrap { flex: 1; min-width: 0; }
+  .sp-detail-head h4 {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 720;
+    letter-spacing: -0.02em;
+    color: var(--text);
+  }
+  .sp-detail-head .endpoint {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    color: var(--accent-text);
+    font-size: 12.5px;
+    font-weight: 600;
+    margin-top: 3px;
+  }
+
+  /* ONE tab system only — segmented with underline */
+  .seg {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 0 0 0 0;
+  }
+  .seg button {
+    border: 0;
+    background: transparent;
+    padding: 10px 14px 12px;
+    font: inherit;
+    font-size: 13.5px;
+    font-weight: 700;
+    color: var(--muted);
+    cursor: pointer;
+    position: relative;
+    font-family: inherit;
+  }
+  .seg button:hover { color: var(--text); }
+  .seg button.active { color: var(--text); }
+  .seg button.active::after {
+    content: "";
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: -1px;
+    height: 2px;
+    background: var(--accent);
+    border-radius: 2px;
+  }
+
+  .fields-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0,1fr));
+    gap: 16px;
+  }
+  .fields-grid .wide { grid-column: 1 / -1; }
+
+  .label-row {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .label-row .aux {
+    margin-left: 8px;
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 600;
+    color: var(--soft-text);
+  }
+  textarea.field-input {
+    min-height: 70px;
+    resize: vertical;
+  }
+
+  .sp-foot {
+    border-top: 1px solid var(--line);
+    padding: 14px 26px;
+    display: flex;
+    gap: 10px;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .sp-foot .muted { color: var(--muted); font-size: 12.5px; }
+
+  /* ---------- PRESET BROWSER ---------- */
+  .sp-preset { padding-bottom: 8px; }
+  .preset-eyebrow {
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 2px 0 10px;
+  }
+  .preset-intro {
+    background: #1b2533;
+    color: #d8e2ef;
+    border-radius: var(--radius-control);
+    padding: 18px 20px;
+    font-size: 14.5px;
+    line-height: 1.45;
+    font-weight: 500;
+  }
+  body[data-theme="dark"] .preset-intro { background: #0b1017; color: #cbd6e5; }
+  .preset-sub { color: var(--muted); font-size: 13px; margin: 10px 2px 22px; }
+  .preset-group { margin-top: 18px; }
+  .preset-group-label {
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .preset-group-desc { font-size: 12.5px; color: var(--muted); margin-bottom: 10px; }
+  .preset-card {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: var(--panel-strong);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
+    transition: border-color 140ms, background 140ms;
+  }
+  .preset-card:hover { border-color: var(--line-strong); }
+  .preset-card.selected { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent); }
+  .preset-card-title { font-size: 15px; font-weight: 720; color: var(--text); margin-bottom: 4px; }
+  .preset-card-desc { font-size: 13px; color: var(--muted); line-height: 1.45; }
+  .preset-card-meta { font-size: 12.5px; color: var(--soft-text); margin-top: 10px; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+
+  /* contents wrapper for grid-passthrough groups */
+  .contents { display: contents; }
+
+  /* Credentials: auth.json mode file row */
+  .authjson-file {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--panel-strong);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 13.5px;
+  }
+  .authjson-file input[type="file"] {
+    font: inherit;
+    color: var(--soft-text);
+  }
+  .authjson-file input[type="file"]::-webkit-file-upload-button {
+    font: inherit;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 6px 10px;
+    margin-right: 10px;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .authjson-filename { color: var(--muted); font-size: 13px; }
+  .authjson-hint {
+    background: var(--panel-strong);
+    border: 1px dashed var(--line);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.45;
+  }
+  .authjson-hint code {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 12.5px;
+    background: var(--panel);
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+  .authjson-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .authjson-actions .pill[disabled] { opacity: 0.5; cursor: not-allowed; }
+
+  /* Hide normal edit chrome when preset-picking */
+  .sp-detail.is-picking .sp-detail-head,
+  .sp-detail.is-picking .seg,
+  .sp-detail.is-picking .sp-section { display: none !important; }
+
+  /* ---------- THEME TOGGLE (icon-based so the label isn't backwards) ---------- */
+  .theme-toggle {
+    width: 36px; height: 36px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--button);
+    cursor: pointer;
+    display: inline-grid;
+    place-items: center;
+    color: var(--text);
+    font-family: inherit;
+  }
+  .theme-toggle svg { width: 18px; height: 18px; display: block; }
+  .theme-toggle .moon { display: none; }
+  body[data-theme="dark"] .theme-toggle .sun { display: none; }
+  body[data-theme="dark"] .theme-toggle .moon { display: block; }
+
+  /* Hide elements with .hidden */
+  [hidden] { display: none !important; }
+
+  /* ---------- TWEAKS PANEL ---------- */
+  .tweak-panel {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    width: 300px;
+    background: var(--panel);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    box-shadow: var(--shadow-panel);
+    z-index: 60;
+    display: none;
+    font-size: 13px;
+    color: var(--text);
+    overflow: hidden;
+  }
+  .tweak-panel.open { display: block; }
+  .tw-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  .tw-title { font-weight: 760; letter-spacing: -0.01em; font-size: 14px; }
+  .tw-reset {
+    border: 1px solid var(--line);
+    background: var(--button);
+    color: var(--muted);
+    padding: 4px 10px;
+    border-radius: 999px;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .tw-reset:hover { color: var(--text); }
+  .tw-body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 12px; }
+  .tw-row { display: flex; flex-direction: column; gap: 6px; }
+  .tw-row > label { font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .tw-check > label { display: flex; gap: 8px; align-items: center; text-transform: none; letter-spacing: 0; font-weight: 600; color: var(--text); font-size: 12.5px; }
+  .tw-row input[type=color] { width: 100%; height: 30px; border: 1px solid var(--line); border-radius: 8px; background: transparent; cursor: pointer; }
+  .tw-row input[type=range] { width: 100%; accent-color: var(--accent); }
+  .tw-seg { display: flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--button); }
+  .tw-seg button { flex: 1; border: 0; background: transparent; padding: 6px 4px; font: inherit; font-size: 11.5px; font-weight: 700; color: var(--muted); cursor: pointer; font-family: inherit; }
+  .tw-seg button.on { background: var(--accent); color: #fff; }
+
+  /* ---------- ENTRANCE ---------- */
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .daemon-card, .app-card, .section-head { animation: rise 220ms ease-out both; }
+  .app-card:nth-child(2) { animation-delay: 40ms; }
+  .app-card:nth-child(3) { animation-delay: 80ms; }
+  .app-card:nth-child(4) { animation-delay: 120ms; }
+</style>
+</head>
+<body data-theme="light">
+
+<!--
+  ============================================================================
+  WIRING CONVENTIONS (see revised/WIRING.md for cross-cutting rules)
+  - wire:   field binding  — which RPC response field fills this element
+  - action: user intent    — which RPC call a control triggers
+  - state:  visibility/tone — rules that switch element class/hidden/disabled
+  - note:   anything non-obvious that isn't a binding or action
+  All RPC calls target the `ccswitch` ubus object. Response `ok:false` ->
+  render `note/error` inline; never throw or bubble to page.
+  ============================================================================
+-->
+
+<div class="shell">
+  <!--
+    wire:   show-when status = get_runtime_status(); show = !status.service.running OR !status.service.reachable
+    state:  hidden by default; toggle via `[hidden]` attribute, not display:none
+    note:   polls get_runtime_status every ~5s while visible; backs off to 15s when healthy
+  -->
+  <div class="alert-strip" id="alertStrip" hidden>
+    <span class="alert-dot"></span>
+    <div class="alert-copy">
+      <!-- state: copy changes with failure mode:
+             !service.running       -> "Daemon stopped."      "All app routing is offline until the CC Switch service is restarted."
+             !service.reachable     -> "Daemon unreachable."  "The service is running but the HTTP port is not responding."
+      -->
+      <strong>Daemon stopped.</strong>
+      <span>All app routing is offline until the CC Switch service is restarted.</span>
+    </div>
+    <!-- action: restart_service(); on ok:true re-poll get_runtime_status after ~1.5s; disable button while pending -->
+    <button class="pill primary" id="alertRestart">Restart daemon</button>
+  </div>
+
+  <!-- ===== APPS ===== -->
+  <div class="section-head">
+    <!-- wire: "v0.2.4" = luci package version; comes from build metadata, not RPC.
+               If no build-time inject is wired, treat as static until we expose it. -->
+    <h2>Apps <span class="daemon-ver-inline" title="luci-app-ccswitch version">v0.2.4</span></h2>
+    <!-- action: client-only; toggle [data-theme] on <body>; persist to localStorage('ccswitch.theme') -->
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+      <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+      <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
+  </div>
+
+  <!--
+    wire:   one card per app in get_runtime_status().apps[]; order preserved as server returns.
+            supported apps are fixed: ['claude','codex','gemini']. "Unconfigured" apps in
+            the mock (OpenClaw, Hermes) do NOT exist in the backend yet — omit until added.
+    action: card click -> openPanel(app); chip click -> openActivityPopover(app)
+    note:   each card mixes three calls:
+              - get_app_runtime_status(app) -> status chip tone, active provider name/url
+              - get_usage_summary(app)      -> tokens / requests / cost
+              - list_providers(app)         -> provider count (providers.length)
+            Fetch in parallel; render skeleton until the slowest resolves.
+    state:  card classes:
+              .app-card              -> configured (has at least one provider)
+              .app-card--empty       -> list_providers(app).providers is empty
+              .app-card--skeleton    -> loading placeholder (aria-hidden)
+            status chip tone map (from get_app_runtime_status):
+              activeProviderHealth.healthy=true  && proxyEnabled=true  -> success "Running"
+              activeProviderHealth.observed=true && !healthy           -> warn    "Degraded"
+              !configured or !activeProviderId                         -> muted   "Idle"
+              service-level outage (alertStrip showing)                -> fail    "Error"
+  -->
+  <div class="apps-grid" id="appsGrid"><!-- populated by JS --></div>
+
+  <!-- ===== DAEMON CARD (moved to bottom — experiment) ===== -->
+  <div class="section-head" style="margin-top: 34px">
+    <!-- wire: "v0.4.2" = get_runtime_status().service.version; fallback "—" while loading -->
+    <h2>Daemon <span class="daemon-ver-inline" title="ccswitch daemon version">v0.4.2</span></h2>
+  </div>
+  <!--
+    NOTE: Everything inside #ccswitch-daemon-island is rendered by a React
+    island (src/openwrt-islands/daemon-card/DaemonCardIsland.tsx). The static
+    markup below is a placeholder — kept so layout doesn't jump before the
+    bundle loads. When editing wiring, edit the React component, not this DOM.
+
+    Island bindings for reference:
+      - getHostConfig()      -> draft/saved state for listenAddr, listenPort,
+                                 httpProxy, httpsProxy, logLevel
+      - getRuntimeStatus()   -> service.running (status dot), service.reachable (health chip)
+      - setHostConfig(draft) -> Save; only enabled when draft != saved
+      - restartService()     -> Restart; re-polls runtime after ~1500ms
+    Health chip tone: running+reachable=success "Healthy"; running+!reachable=warn "Degraded"; !running=muted "Stopped"
+  -->
+  <div id="ccswitch-daemon-island">
+  <section class="daemon-card" aria-label="Daemon control">
+    <div class="daemon-row">
+      <div class="daemon-status"><span class="dot"></span>Running</div>
+      <span class="chip success dot">Healthy</span>
+      <label class="chip-select">
+        <select id="logLevel">
+          <option value="debug">Debug</option>
+          <option value="info" selected>Info</option>
+          <option value="warn">Warn</option>
+          <option value="error">Error</option>
+        </select>
+      </label>
+      <span></span>
+      <button class="pill primary" id="restartBtn">Restart</button>
+      <button class="pill" id="saveConfigBtn" title="Persist current daemon config to /etc/config/ccswitch via UCI">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:-2px"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        Save
+      </button>
+    </div>
+
+    <div class="daemon-divider"></div>
+
+    <!-- Flat 4-column grid — no inner sub-cards -->
+    <div class="daemon-grid">
+      <div class="field">
+        <label class="cell-label" for="listenAddr">Listen address</label>
+        <input class="field-input mono" id="listenAddr" value="0.0.0.0" />
+      </div>
+      <div class="field">
+        <label class="cell-label" for="listenPort">Listen port</label>
+        <input class="field-input mono" id="listenPort" value="15721" />
+      </div>
+      <div class="field">
+        <label class="cell-label" for="httpProxy">HTTP proxy</label>
+        <input class="field-input mono" id="httpProxy" value="http://127.0.0.1:7890" />
+      </div>
+      <div class="field">
+        <label class="cell-label" for="httpsProxy">HTTPS proxy</label>
+        <input class="field-input mono" id="httpsProxy" value="http://127.0.0.1:7890" />
+      </div>
+    </div>
+  </section>
+  </div>
+</div>
+
+<!-- ===== SIDE PANEL ===== -->
+<!-- state: .scrim fades in when .side-panel or .activity-pop opens; click = close top-most overlay -->
+<div class="scrim" id="scrim"></div>
+
+<!--
+  ===== ACTIVITY POPOVER =====
+  wire:   opened by clicking a status chip on an app card; currentApp=<app id>.
+          Fetches get_recent_activity(app).recentActivityJson (string) then JSON.parses
+          into an array of { request_id, provider_name, model, status_code, tokens_in,
+          tokens_out, cost_usd, latency_ms, created_at, error } records. Newest first,
+          cap at 6 rows in the header; keep "Last 20" link for deep view.
+  action: row click -> get_request_detail(app, request_id) — reserved for future detail pane
+  state:  status tone per row: 2xx=success, 4xx=warn (unless 401/403 -> fail), 5xx=fail, timeout=fail
+  note:   latency label: ms>=1000 ? `${(ms/1000).toFixed(1)}s` : `${ms}ms`
+          "Updated just now" footer: relative to last fetch, not last activity
+-->
+<div class="activity-pop" id="activityPop" role="dialog" aria-label="Recent activity" aria-hidden="true">
+  <div class="ap-head">
+    <div class="ap-title">Recent activity</div>
+    <!-- wire: "Last N requests" where N = min(list.length, 6) -->
+    <div class="ap-sub" id="apSub">Last 6 requests</div>
+    <button class="ap-close" id="apClose" aria-label="Close">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <!-- wire: rows rendered from get_recent_activity; each row shows provider icon, name, model, status chip, relative time, tokens, cost, latency -->
+  <div class="ap-list" id="apList"></div>
+  <div class="ap-foot" id="apFoot">
+    <!-- action: "Last 20 requests" -> get_request_logs(app, page=0, page_size=20); consider routing to a drawer view later -->
+    <span>Last 20 requests</span>
+    <!-- wire: time since the last successful get_recent_activity response -->
+    <span>Updated just now</span>
+  </div>
+</div>
+<!--
+  ===== SIDE PANEL: provider management (per app) =====
+  wire:   opened by clicking an app card. Loads in parallel:
+            - list_providers(app).providers[]                 -> rail list
+            - get_active_provider(app)                        -> default-selected row
+            - get_app_runtime_status(app)                     -> header subtitle, failover tab values
+            - get_available_failover_providers(app) (on demand)
+  state:  panel classes:
+            .is-empty           -> list_providers empty (unconfigured app); disable tabs, show empty-state rail
+            [aria-hidden=false] -> open
+          Unsaved-change guard: spCancel / spClose on dirty form -> confirm-discard dialog before closing.
+  note:   `currentProv` in JS refers to an index in the in-memory `currentApp.providers` array;
+          when porting to JSX, track by `providerId` instead so backend mutations don't invalidate indices.
+-->
+<aside class="side-panel" id="sidePanel" aria-hidden="true" role="dialog" aria-label="App providers">
+  <header class="sp-head">
+    <!-- wire: icon key from a static ICONS table; consider serving from daemon later -->
+    <div class="app-icon" id="spAppIcon"><img alt="" id="spAppIconImg" /></div>
+    <div>
+      <!-- wire: app.name ("Claude" | "Codex" | "Gemini") — localized label, not the app id -->
+      <h3 id="spAppName">—</h3>
+      <!-- wire: "${providerCount} providers configured · ${queuePosition} in failover"
+                 from get_app_runtime_status: providerCount, failoverQueueDepth, activeProviderId -->
+      <div class="sp-sub" id="spAppSub">—</div>
+    </div>
+    <button class="sp-close" id="spClose" aria-label="Close">×</button>
+  </header>
+
+  <div class="sp-body">
+    <nav class="sp-rail" aria-label="Providers">
+      <!-- action: client-side filter only (name + baseUrl substring, case-insensitive); no RPC -->
+      <input class="sp-search" id="spSearch" placeholder="Search provider or endpoint" />
+      <!--
+        wire:   rows = list_providers(app).providers[], grouped by status:
+                  active -> pinned top, tone=success
+                  saved  -> tone=muted
+                  preset -> not yet saved (draft hydrated from a preset), tone=info
+                  draft  -> unsaved new provider, tone=warn
+        action: row click -> activate_provider(app, providerId) for activation,
+                or just select-for-edit (does NOT activate) depending on which hit zone is clicked.
+                Drag reorder within the rail -> reorder_failover_queue(app, providerIds[])
+      -->
+      <div class="rail-scroll"><div id="provList"></div></div>
+      <div class="rail-foot">
+        <!-- action: enters "preset browser" mode (#spPreset[hidden=false]); on preset select, hydrates draft
+             fields in General+Credentials tabs. Save -> upsert_provider(app, null, draft). -->
+        <button class="pill" id="spAddProv" type="button">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+          Add provider
+        </button>
+      </div>
+    </nav>
+
+    <section class="sp-detail">
+      <!--
+        PRESET BROWSER (shown when adding a new provider)
+        wire:   PRESETS[app] — static table embedded in the mockup script. Safe to keep client-side;
+                these are UI-level templates, not something the daemon vends.
+        state:  visible only when entering "add" flow via #spAddProv; hides once a preset is chosen
+                (draft is hydrated, detail head + tabs become visible).
+        note:   "Custom draft" card is always first; lets user skip preset and hand-fill everything.
+      -->
+      <div class="sp-preset" id="spPreset" hidden>
+        <div class="preset-eyebrow">Preset browser</div>
+        <div class="preset-intro">Start from an official endpoint, a platform template, or a compatible gateway.</div>
+        <div class="preset-sub">Presets speed up setup but never save automatically.</div>
+        <div id="spPresetGroups"></div>
+      </div>
+
+      <header class="sp-detail-head">
+        <!-- wire: static icon table lookup keyed on provider.name (Claude/OpenAI/Gemini/MiniMax/...); default = app icon -->
+        <div class="app-icon" id="spProvIcon" style="width:40px;height:40px"><img alt="" id="spProvIconImg" style="width:22px;height:22px"/></div>
+        <div class="title-wrap">
+          <!-- wire: provider.name (editable in General tab; mirrors field #f_name) -->
+          <h4 id="spProvName">—</h4>
+          <!-- wire: provider.baseUrl (mirrors field #f_baseurl) -->
+          <div class="endpoint" id="spProvUrl">—</div>
+          <!--
+            wire:   provider.providerId from list_providers/get_active_provider
+            state:  [hidden] when draft is a brand-new unsaved provider (no server-assigned id yet)
+            action: click -> navigator.clipboard.writeText(providerId); show transient "Copied" toast
+          -->
+          <button type="button" class="prov-id-chip" id="spProvId" title="Provider ID · click to copy" hidden>
+            <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+            <span id="spProvIdText">—</span>
+          </button>
+        </div>
+        <!--
+          wire:   derived state of selected provider vs get_app_runtime_status
+          state:  tone/label map:
+                    providerId == activeProviderId && health.healthy -> success "Active"
+                    providerId == activeProviderId && !healthy       -> warn    "Active · Unhealthy"
+                    configured=true, not active                      -> muted   "Saved"
+                    !configured (draft from preset)                  -> info    "Draft"
+        -->
+        <span class="chip success dot" id="spProvStatus">Active</span>
+      </header>
+
+      <!--
+        state:  tabs are buttons; .active = currently shown; clicking toggles .sp-section[data-sec=...] visibility.
+        note:   "Failover" tab is hidden until list_providers(app).providers.length >= 2 (single-provider apps
+                have nothing to fail over to).
+      -->
+      <nav class="seg" id="spSeg" role="tablist">
+        <button class="active" data-sec="general">General</button>
+        <button data-sec="credentials">Credentials</button>
+        <button data-sec="failover" hidden>Failover</button>
+      </nav>
+
+      <!--
+        GENERAL tab
+        wire fields -> provider record (get_provider / list_providers item):
+          #f_name    -> provider.name
+          #f_model   -> provider.model
+          #f_website -> PRESETS[app].items[].website  (client-only; NOT persisted)
+          #f_notes   -> provider.notes
+        action: saved atomically with all other tabs via spSave (see footer).
+      -->
+      <div class="sp-section" data-sec="general">
+        <div class="fields-grid">
+          <div>
+            <div class="label-row">Provider name</div>
+            <input class="field-input" id="f_name" />
+          </div>
+          <div>
+            <div class="label-row">Model</div>
+            <input class="field-input" id="f_model" />
+          </div>
+          <div class="wide">
+            <!-- note: presentation-only — backend does not store website; derived from preset match on baseUrl -->
+            <div class="label-row">Website URL <span class="aux">· presentation only, not saved</span></div>
+            <div class="field-value muted" id="f_website">—</div>
+          </div>
+          <div class="wide">
+            <div class="label-row">Notes</div>
+            <textarea class="field-input" id="f_notes"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!--
+        CREDENTIALS tab
+        wire fields -> provider record:
+          #f_baseurl  -> provider.baseUrl
+          #f_authmode -> provider.authMode ('client_passthrough' | 'api_key' | 'auth_json');
+                         row visible only when app supports multiple modes (currently codex).
+          #f_envmap   -> derived display: `${tokenField} + ${baseUrlEnvField}` read-only
+          #f_envkey   -> provider.tokenField  (e.g. ANTHROPIC_AUTH_TOKEN)
+          #f_apikey   -> NEVER bound to a server value; write-only input. Leave blank
+                         on save => server preserves stored secret (see f_secretpol).
+                         Backend signal: provider.tokenConfigured (boolean) and provider.tokenMasked.
+        state:  authjson mode sub-group hidden unless authMode === 'auth_json' AND app === 'codex'
+        action: Upload/Remove buttons disabled until provider has a server-assigned providerId
+                (must save the shell provider first; backend requires a provider_id for the auth blob).
+      -->
+      <div class="sp-section" data-sec="credentials" hidden>
+        <div class="fields-grid">
+          <div class="wide">
+            <div class="label-row">Base URL</div>
+            <input class="field-input mono" id="f_baseurl" />
+          </div>
+          <!-- state: hidden unless currentApp has multiple supported authModes (codex today) -->
+          <div class="wide" id="f_authmode_row" hidden>
+            <div class="label-row">Authentication mode</div>
+            <select class="field-input" id="f_authmode">
+              <option value="apikey">API key</option>
+              <option value="authjson">Uploaded auth.json</option>
+            </select>
+          </div>
+
+          <!-- API key mode -->
+          <div id="f_mode_apikey" class="contents">
+            <div class="wide">
+              <!-- wire: `${provider.tokenField} + ${defaultBaseUrlEnvFor(app)}` — static per-app formula, not a server field -->
+              <div class="label-row">Primary env mapping</div>
+              <div class="field-value mono" id="f_envmap">—</div>
+            </div>
+            <div>
+              <div class="label-row">Token field</div>
+              <input class="field-input mono" id="f_envkey" />
+            </div>
+            <div>
+              <!--
+                note:   secret is write-only. If provider.tokenConfigured is true, show a masked
+                        preview (provider.tokenMasked) as placeholder; actual input stays empty.
+                state:  when tokenConfigured=true, label appends "(set)" and placeholder shows "•••• last4"
+              -->
+              <div class="label-row" id="f_apikey_label">API token</div>
+              <input class="field-input mono" id="f_apikey" placeholder="Enter the secret for this provider" />
+            </div>
+            <div class="wide">
+              <!-- wire: static UX copy; "blank preserves stored value" is a backend guarantee (upsert_provider) -->
+              <div class="label-row">Secret policy <span class="aux">· blank preserves stored value</span></div>
+              <input class="field-input" id="f_secretpol" value="Blank preserves stored secret" />
+            </div>
+          </div>
+
+          <!-- auth.json mode (Codex only) -->
+          <div id="f_mode_authjson" class="contents" hidden>
+            <div class="wide">
+              <div class="label-row">auth.json</div>
+              <div class="authjson-file">
+                <!-- note: accept JSON only; 64 KiB hard limit enforced by rpcd (upload_codex_auth) -->
+                <input type="file" id="f_authjson_file" accept="application/json,.json" />
+                <span class="authjson-filename" id="f_authjson_filename">No file chosen</span>
+              </div>
+            </div>
+            <div class="wide">
+              <!-- state: hint text flips after save:
+                     before first save: "Save this provider first..."
+                     after save:        "Upload will replace any existing auth.json."  -->
+              <div class="authjson-hint" id="f_authjson_hint">Save this provider first, then upload <code>auth.json</code> for the saved provider ID.</div>
+            </div>
+            <div class="wide">
+              <div class="authjson-actions">
+                <!-- action: upload_codex_auth(app='codex', provider_id, auth_json_text=file.contents) -->
+                <button type="button" class="pill ghost" id="f_authjson_upload" disabled>Upload auth.json</button>
+                <!-- action: remove_codex_auth(app='codex', provider_id); confirm before calling -->
+                <button type="button" class="pill ghost" id="f_authjson_remove" disabled>Remove</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!--
+        FAILOVER tab
+        wire fields -> get_app_runtime_status(app) + get_provider_failover(app, providerId):
+          #f_autofail    -> autoFailoverEnabled                  (true -> "Enabled", false -> "Disabled")
+          #f_retries     -> maxRetries
+          #f_queuepos    -> `${1-based index in failoverQueue} of ${failoverQueueDepth}`
+                            ("—" if this provider is not in the queue)
+          #f_activeprov  -> activeProvider.name (or "—")
+          #f_queueorder  -> failoverQueue.map(p => p.name).join(" → ")
+        action: toggling/editing these values calls:
+          set_auto_failover_enabled(app, enabled)
+          set_max_retries(app, value)
+          add_to_failover_queue / remove_from_failover_queue / reorder_failover_queue
+        state:  Route mode / Health gate are explicit placeholders — no backend field yet. Render
+                as disabled/muted until the daemon exposes provider.failover.{routeMode,healthGate}.
+      -->
+      <div class="sp-section" data-sec="failover" hidden>
+        <div class="fields-grid">
+          <div>
+            <div class="label-row">Auto failover</div>
+            <div class="field-value" id="f_autofail">Enabled</div>
+          </div>
+          <div>
+            <div class="label-row">Max retries</div>
+            <div class="field-value mono" id="f_retries">3</div>
+          </div>
+          <div>
+            <div class="label-row">Queue position</div>
+            <div class="field-value mono" id="f_queuepos">1 of 3</div>
+          </div>
+          <div>
+            <div class="label-row">Active provider</div>
+            <div class="field-value mono" id="f_activeprov">—</div>
+          </div>
+          <div class="wide">
+            <div class="label-row">Queue order</div>
+            <div class="field-value" id="f_queueorder">—</div>
+          </div>
+          <div class="wide">
+            <div class="label-row">Route mode <span class="aux">· placeholder until backend bridge</span></div>
+            <div class="field-placeholder">Placeholder until provider.failover.routeMode arrives</div>
+          </div>
+          <div class="wide">
+            <div class="label-row">Health gate <span class="aux">· placeholder until backend bridge</span></div>
+            <div class="field-placeholder">Placeholder until provider.failover.healthGate arrives</div>
+          </div>
+        </div>
+      </div>
+
+    </section>
+  </div>
+
+  <!--
+    FOOTER — actions apply to the current draft across all three tabs atomically.
+    action: #spDelete -> delete_provider(app, providerId); show native confirm first. Hide for
+                         the currently-active provider (can't delete active; activate another first).
+            #spCancel -> discard draft; confirm-discard modal if form is dirty; close panel.
+            #spSave   -> if no providerId: upsert_provider(app, null, draft) (backend assigns id)
+                        else:             upsert_provider(app, providerId, draft)
+                        If the "set active" affordance is toggled on (future): activate_provider(app, providerId)
+                        after a successful upsert. On ok:false, show error inline in footer, keep panel open.
+  -->
+  <footer class="sp-foot">
+    <!-- wire: "Editing <providerName>" | "Editing new provider" -->
+    <span class="muted" id="spFootMuted">Editing <span id="spFootProv">—</span></span>
+    <div style="display:flex; gap:10px">
+      <button class="pill danger" id="spDelete" hidden>Delete</button>
+      <button class="pill" id="spCancel">Cancel</button>
+      <button class="pill primary" id="spSave">Save</button>
+    </div>
+  </footer>
+</aside>
+
+<!-- Tweaks panel — designer-only UI knob surface; not shipped to users. No RPC bindings. -->
+<div class="tweak-panel" id="tweakPanel"></div>
+
+<script>
+  // ---------- DATA ----------
+  const APPS = [
+    {
+      id: "claude",
+      name: "Claude",
+      subtitle: "Anthropic · Claude Code",
+      iconKey: "claude",
+      status: { tone: "success", label: "Running" },
+      active: {
+        name: "MiniMax en",
+        iconKey: "minimax",
+        url: "https://platform.minimax.io",
+        baseUrl: "https://api.minimax.chat/v1",
+        website: "https://platform.minimax.io",
+        model: "MiniMax-M1",
+        envMap: "ANTHROPIC_AUTH_TOKEN + ANTHROPIC_BASE_URL",
+        envKey: "ANTHROPIC_AUTH_TOKEN",
+        notes: "Dedicated Claude route. Prefers MiniMax en before failover.",
+      },
+      usage: { tokens: "8.42M", requests: "12,307", cost: "157.47", unit: "USD" },
+      activity: [
+        { provider: "MiniMax en",       iconKey: "minimax", model: "MiniMax-M1",                 statusCode: 200, statusTone: "success", ago: "12s ago", tokens: "4.2k tokens",  cost: "$0.021", ms: 842  },
+        { provider: "MiniMax en",       iconKey: "minimax", model: "MiniMax-M1",                 statusCode: 200, statusTone: "success", ago: "31s ago", tokens: "3.8k tokens",  cost: "$0.019", ms: 701  },
+        { provider: "MiniMax en",       iconKey: "minimax", model: "MiniMax-M1",                 statusCode: 200, statusTone: "success", ago: "1m ago",  tokens: "6.1k tokens",  cost: "$0.031", ms: 1124 },
+        { provider: "MiniMax en",       iconKey: "minimax", model: "MiniMax-M1",                 statusCode: 200, statusTone: "success", ago: "1m ago",  tokens: "2.3k tokens",  cost: "$0.012", ms: 512  },
+        { provider: "Claude Official",  iconKey: "claude",  model: "claude-haiku-4-5-20251001",  statusCode: 400, statusTone: "fail",    ago: "2h ago",  tokens: "0 tokens",      cost: "$0.001", ms: 282  },
+        { provider: "MiniMax en",       iconKey: "minimax", model: "MiniMax-M1",                 statusCode: 200, statusTone: "success", ago: "2h ago",  tokens: "5.4k tokens",  cost: "$0.027", ms: 967  },
+        { provider: "MiniMax en",       iconKey: "minimax", model: "MiniMax-M1",                 statusCode: 200, statusTone: "success", ago: "3h ago",  tokens: "7.9k tokens",  cost: "$0.040", ms: 1384 },
+      ],
+      providers: [
+        { name: "MiniMax en",     url: "https://platform.minimax.io",        status: "active", iconKey: "minimax" },
+        { name: "Claude Official", url: "https://api.anthropic.com",          status: "preset",  iconKey: "claude" },
+        { name: "DeepSeek",       url: "https://platform.deepseek.com",       status: "saved",   iconKey: "deepseek" },
+        { name: "Qwen Coder",     url: "https://bailian.console.aliyun.com",  status: "saved",   iconKey: "qwen" },
+        { name: "PackyCode",      url: "https://www.packyapi.com",            status: "draft",   iconKey: "packycode" },
+      ],
+      failover: { autoFailover: true, maxRetries: 3, queuePosition: "1 of 3", activeProvider: "provider.minimax.en", queueOrder: "MiniMax en → Claude Official → DeepSeek" },
+    },
+    {
+      id: "codex",
+      name: "Codex",
+      subtitle: "OpenAI · Codex CLI",
+      iconKey: "openai",
+      status: { tone: "warn", label: "Degraded" },
+      active: {
+        name: "OpenAI Official",
+        iconKey: "openai",
+        url: "https://api.openai.com/v1",
+        baseUrl: "https://api.openai.com/v1",
+        website: "https://chatgpt.com/codex",
+        model: "gpt-5.4",
+        envMap: "OPENAI_API_KEY + OPENAI_BASE_URL",
+        envKey: "OPENAI_API_KEY",
+        notes: "Primary Codex route. Prefers OpenAI Official before failover.",
+      },
+      usage: { tokens: "2.13M", requests: "4,128", cost: "48.91", unit: "USD" },
+      activity: [
+        { provider: "OpenAI Official", iconKey: "openai", model: "gpt-5-codex-20251014",  statusCode: 429, statusTone: "warn", ago: "3m ago",  tokens: "0 tokens", cost: "$0.00", ms: 2841 },
+        { provider: "OpenAI Official", iconKey: "openai", model: "gpt-5-codex-20251014",  statusCode: 429, statusTone: "warn", ago: "4m ago",  tokens: "0 tokens", cost: "$0.00", ms: 2617 },
+        { provider: "OpenAI Official", iconKey: "openai", model: "gpt-5-codex-20251014",  statusCode: 200, statusTone: "success", ago: "11m ago", tokens: "12,408 tokens", cost: "$0.23", ms: 987 },
+        { provider: "OpenAI Official", iconKey: "openai", model: "gpt-5-codex-20251014",  statusCode: 429, statusTone: "warn", ago: "14m ago", tokens: "0 tokens", cost: "$0.00", ms: 3102 },
+        { provider: "OpenAI Official", iconKey: "openai", model: "gpt-5-codex-20251014",  statusCode: 200, statusTone: "success", ago: "22m ago", tokens: "8,217 tokens", cost: "$0.14", ms: 1044 },
+        { provider: "OpenAI Official", iconKey: "openai", model: "gpt-5-codex-20251014",  statusCode: 200, statusTone: "success", ago: "31m ago", tokens: "6,184 tokens", cost: "$0.11", ms: 972  },
+      ],
+      providers: [
+        { name: "OpenAI Official", url: "https://api.openai.com/v1",                    status: "active", iconKey: "openai" },
+        { name: "Azure OpenAI",    url: "https://YOUR.openai.azure.com/openai",         status: "saved",  iconKey: "openai" },
+        { name: "PackyCode",       url: "https://www.packyapi.com/v1",                  status: "saved",  iconKey: "packycode" },
+        { name: "CTok.ai",         url: "https://api.ctok.ai/v1",                       status: "preset", iconKey: "openai" },
+        { name: "OpenRouter",      url: "https://openrouter.ai/api/v1",                 status: "draft",  iconKey: "openai" },
+      ],
+      failover: { autoFailover: true, maxRetries: 2, queuePosition: "1 of 2", activeProvider: "provider.openai.official", queueOrder: "OpenAI Official → Azure OpenAI" },
+    },
+    {
+      id: "gemini",
+      name: "Gemini",
+      subtitle: "Google · Gemini CLI",
+      iconKey: "gemini",
+      status: { tone: "fail", label: "Error" },
+      active: {
+        name: "Google Official",
+        iconKey: "gemini",
+        url: "https://generativelanguage.googleapis.com/v1beta",
+        baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+        website: "https://ai.google.dev/",
+        model: "gemini-3.1-pro",
+        envMap: "GEMINI_API_KEY + GOOGLE_GEMINI_BASE_URL",
+        envKey: "GEMINI_API_KEY",
+        notes: "Primary Gemini route. Prefers Google Official before failover.",
+      },
+      usage: { tokens: "1.07M", requests: "2,044", cost: "22.08", unit: "USD" },
+      activity: [
+        { provider: "Google Official", iconKey: "gemini", model: "gemini-2.5-pro",        statusCode: 400, statusTone: "fail", ago: "2h ago",  tokens: "0 tokens",      cost: "$0.00", ms: 1282 },
+        { provider: "Google Official", iconKey: "gemini", model: "gemini-2.5-pro",        statusCode: 400, statusTone: "fail", ago: "2h ago",  tokens: "0 tokens",      cost: "$0.00", ms: 872  },
+        { provider: "Google Official", iconKey: "gemini", model: "gemini-2.5-pro",        statusCode: 400, statusTone: "fail", ago: "2h ago",  tokens: "0 tokens",      cost: "$0.00", ms: 1208 },
+        { provider: "Google Official", iconKey: "gemini", model: "gemini-2.5-pro",        statusCode: 400, statusTone: "fail", ago: "2h ago",  tokens: "0 tokens",      cost: "$0.00", ms: 1147 },
+        { provider: "Google Official", iconKey: "gemini", model: "gemini-2.5-pro",        statusCode: 400, statusTone: "fail", ago: "2h ago",  tokens: "0 tokens",      cost: "$0.00", ms: 1292 },
+        { provider: "Google Official", iconKey: "gemini", model: "gemini-2.5-pro",        statusCode: 400, statusTone: "fail", ago: "2h ago",  tokens: "0 tokens",      cost: "$0.00", ms: 850  },
+      ],
+      providers: [
+        { name: "Google Official", url: "https://generativelanguage.googleapis.com/v1beta", status: "active", iconKey: "gemini" },
+        { name: "PackyCode",       url: "https://www.packyapi.com",                          status: "saved",  iconKey: "packycode" },
+        { name: "CTok.ai",         url: "https://api.ctok.ai/v1beta",                        status: "saved",  iconKey: "gemini" },
+        { name: "OpenRouter",      url: "https://openrouter.ai/api",                         status: "preset", iconKey: "gemini" },
+      ],
+      failover: { autoFailover: true, maxRetries: 3, queuePosition: "1 of 2", activeProvider: "provider.gemini.google", queueOrder: "Google Official → OpenRouter" },
+    },
+    {
+      id: "openclaw",
+      name: "OpenClaw",
+      subtitle: "Open-source agent runtime",
+      iconKey: "claude",
+      state: "unconfigured",
+    },
+    {
+      id: "hermes",
+      name: "Hermes Agent",
+      subtitle: "Autonomous message router",
+      iconKey: "gemini",
+      state: "unconfigured",
+    },
+  ];
+
+  const ICONS = {
+    claude:    "icons/claude.svg",
+    openai:    "icons/openai.svg",
+    gemini:    "icons/gemini.svg",
+    minimax:   "icons/minimax.svg",
+    deepseek:  "icons/deepseek.svg",
+    qwen:      "icons/qwen.svg",
+    packycode: "icons/packycode.svg",
+  };
+
+  // Provider presets per app. Each app gets a universal "Custom draft" card
+  // plus app-specific "official" vendor endpoints and compatible gateways.
+  // Each app defines its own ordered section list. Sections share the same
+  // card shape but can differ in label, copy, and which presets they contain —
+  // Codex exposes a "Platform templates" section (Azure, etc.) that doesn't
+  // appear for Claude/Gemini, and each app has its own Official description.
+  const PRESETS = {
+    claude: [
+      {
+        key: 'official', label: 'Official',
+        desc: 'Direct Anthropic endpoint. Client credentials forward automatically when no API key is set.',
+        items: [
+          { key: 'claude-official', name: 'Claude Official', iconKey: 'claude',
+            desc: 'Official Anthropic Claude endpoint. API key is optional — client credentials are forwarded automatically.',
+            baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-5', website: 'https://anthropic.com' },
+        ],
+      },
+      {
+        key: 'gateways', label: 'Compatible gateways',
+        desc: 'Third-party Anthropic-compatible endpoints. Fills the draft locally before save.',
+        items: [
+          { key: 'deepseek',  name: 'DeepSeek',  iconKey: 'deepseek',  desc: 'DeepSeek Claude-compatible endpoint.',
+            baseUrl: 'https://api.deepseek.com/anthropic', model: 'DeepSeek-V3.2', website: 'https://platform.deepseek.com' },
+          { key: 'minimax',   name: 'MiniMax',   iconKey: 'minimax',   desc: 'MiniMax Anthropic-compatible gateway.',
+            baseUrl: 'https://api.minimax.chat/v1', model: 'MiniMax-M1', website: 'https://platform.minimax.io' },
+          { key: 'qwen',      name: 'Qwen Coder',iconKey: 'qwen',      desc: 'Alibaba DashScope Anthropic-compatible route.',
+            baseUrl: 'https://dashscope.aliyuncs.com/api/v2/apps/claude', model: 'qwen3-coder-plus', website: 'https://bailian.console.aliyun.com' },
+          { key: 'packycode', name: 'PackyCode', iconKey: 'packycode', desc: 'PackyCode Claude-compatible proxy.',
+            baseUrl: 'https://www.packyapi.com', model: 'claude-sonnet-4-5', website: 'https://www.packyapi.com' },
+        ],
+      },
+    ],
+    codex: [
+      {
+        key: 'official', label: 'Official',
+        desc: 'Direct vendor endpoints with the default auth shape for this app.',
+        items: [
+          { key: 'openai-official', name: 'OpenAI Official', iconKey: 'openai',
+            desc: 'Official OpenAI endpoint. Choose either an API key or an uploaded auth.json for this provider.',
+            baseUrl: 'https://api.openai.com/v1', model: 'gpt-5-codex-20251014', website: 'https://platform.openai.com' },
+        ],
+      },
+      {
+        key: 'platform', label: 'Platform templates',
+        desc: 'Managed cloud templates that usually need account-specific endpoint values.',
+        items: [
+          { key: 'azure', name: 'Azure OpenAI', iconKey: 'openai',
+            desc: 'Azure OpenAI Codex endpoint template. Replace YOUR_RESOURCE_NAME before saving.',
+            baseUrl: 'https://YOUR_RESOURCE_NAME.openai.azure.com/openai', model: 'gpt-5-codex', website: 'https://portal.azure.com' },
+        ],
+      },
+      {
+        key: 'gateways', label: 'Compatible gateways',
+        desc: 'Third-party or proxy-compatible endpoints that fill the draft locally before save.',
+        items: [
+          { key: 'aihubmix',   name: 'AiHubMix',   iconKey: 'openai',    desc: 'AiHubMix OpenAI-compatible multiplex.',
+            baseUrl: 'https://aihubmix.com/v1', model: 'gpt-5-codex', website: 'https://aihubmix.com' },
+          { key: 'openrouter', name: 'OpenRouter', iconKey: 'openai',    desc: 'OpenRouter OpenAI-compatible multiplex.',
+            baseUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-5-codex', website: 'https://openrouter.ai' },
+          { key: 'packycode',  name: 'PackyCode',  iconKey: 'packycode', desc: 'PackyCode OpenAI-compatible proxy.',
+            baseUrl: 'https://www.packyapi.com/v1', model: 'gpt-5-codex', website: 'https://www.packyapi.com' },
+        ],
+      },
+    ],
+    gemini: [
+      {
+        key: 'official', label: 'Official',
+        desc: 'Direct Google Generative Language endpoint with an API key.',
+        items: [
+          { key: 'google-official', name: 'Google Official', iconKey: 'gemini',
+            desc: 'Official Google Gemini API endpoint.',
+            baseUrl: 'https://generativelanguage.googleapis.com/v1beta', model: 'gemini-2.5-pro', website: 'https://ai.google.dev' },
+        ],
+      },
+      {
+        key: 'gateways', label: 'Compatible gateways',
+        desc: 'Third-party or proxy-compatible endpoints that fill the draft locally before save.',
+        items: [
+          { key: 'packycode',  name: 'PackyCode',  iconKey: 'packycode', desc: 'PackyCode Gemini-compatible endpoint.',
+            baseUrl: 'https://www.packyapi.com/gemini', model: 'gemini-2.5-pro', website: 'https://www.packyapi.com' },
+          { key: 'openrouter', name: 'OpenRouter', iconKey: 'openai',    desc: 'OpenRouter Gemini-compatible route.',
+            baseUrl: 'https://openrouter.ai/api/v1', model: 'google/gemini-2.5-pro', website: 'https://openrouter.ai' },
+        ],
+      },
+    ],
+  };
+
+  // ---------- APPS GRID ----------
+  const appsGrid = document.getElementById('appsGrid');
+
+  function cardForApp(app) {
+    // Unconfigured: dashed outline, muted icon, single CTA
+    if (app.state === 'unconfigured') {
+      const card = document.createElement('button');
+      card.className = 'app-card app-card--empty';
+      card.type = 'button';
+      card.innerHTML = `
+        <div class="app-head">
+          <div class="app-icon app-icon--muted"><img src="${ICONS[app.iconKey]}" alt="" /></div>
+          <div>
+            <h3 class="app-name app-name--muted">${app.name}</h3>
+            <div class="app-sub">${app.subtitle}</div>
+          </div>
+          <div class="spacer"></div>
+          <span class="chip dot">Not configured</span>
+        </div>
+        <div class="empty-cta">
+          <span>No provider configured yet</span>
+          <span class="empty-cta-btn">Add a provider →</span>
+        </div>
+      `;
+      card.addEventListener('click', () => openPanel(app.id));
+      return card;
+    }
+    // Configured (running or idle)
+    const card = document.createElement('button');
+    card.className = 'app-card';
+    card.type = 'button';
+    card.innerHTML = `
+      <div class="open-affordance" hidden>Open providers →</div>
+      <div class="app-head">
+        <div class="app-icon"><img src="${ICONS[app.iconKey]}" alt="" /></div>
+        <div>
+          <h3 class="app-name">${app.name} <span class="app-prov-count" title="Open providers">· ${app.providers.length} providers<span class="prov-hover-cta"> →</span></span></h3>
+          <div class="app-sub">${app.subtitle}</div>
+        </div>
+        <div class="spacer"></div>
+        <div class="app-head-right">
+          <button type="button" class="chip ${app.status.tone} dot chip-btn" data-activity-for="${app.id}" title="Show recent requests">${app.status.label}<svg class="chip-caret" viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M3 5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        </div>
+      </div>
+      <div class="app-active">
+        <div class="mini-icon"><img src="${ICONS[app.active.iconKey]}" alt="" /></div>
+        <div class="labels">
+          <div class="label-top">Active provider</div>
+          <div class="label-main">${app.active.name}</div>
+          <div class="endpoint">${app.active.url}</div>
+        </div>
+      </div>
+      <div class="app-usage">
+        <div class="usage-cell"><div class="usage-label">Tokens</div><div class="usage-value">${app.usage.tokens}</div></div>
+        <div class="usage-cell"><div class="usage-label">Requests</div><div class="usage-value">${app.usage.requests}</div></div>
+        <div class="usage-cell"><div class="usage-label">Cost</div><div class="usage-value">${app.usage.cost}<span class="usage-unit">${app.usage.unit}</span></div></div>
+      </div>
+    `;
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.chip-btn')) return; // chip handles its own click
+      openPanel(app.id);
+    });
+    const chipBtn = card.querySelector('.chip-btn');
+    if (chipBtn) {
+      chipBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openActivityPopover(chipBtn, app);
+      });
+    }
+    return card;
+  }
+
+  function groupHeader(label, count) {
+    const el = document.createElement('div');
+    el.className = 'group-head';
+    el.innerHTML = `<span class="group-label">${label}</span>`;
+    return el;
+  }
+
+  function renderApps() {
+    appsGrid.innerHTML = '';
+    const configured   = APPS.filter(a => a.state !== 'unconfigured');
+    const unconfigured = APPS.filter(a => a.state === 'unconfigured');
+
+    if (configured.length) {
+      const grid = document.createElement('div');
+      grid.className = 'group-grid';
+      configured.forEach(a => grid.appendChild(cardForApp(a)));
+      if (configured.length % 2 === 1) grid.appendChild(skeletonCard());
+      appsGrid.appendChild(grid);
+    }
+
+    if (unconfigured.length) {
+      appsGrid.appendChild(groupHeader('Not configured', unconfigured.length));
+      const grid = document.createElement('div');
+      grid.className = 'group-grid';
+      unconfigured.forEach(a => grid.appendChild(cardForApp(a)));
+      if (unconfigured.length % 2 === 1) grid.appendChild(skeletonCard(true));
+      appsGrid.appendChild(grid);
+    }
+  }
+
+  function skeletonCard() {
+    const el = document.createElement('div');
+    el.className = 'app-card app-card--skeleton';
+    el.setAttribute('aria-hidden', 'true');
+    el.innerHTML = `
+      <div class="app-head">
+        <div class="sk-icon"></div>
+        <div style="flex:1; min-width:0">
+          <div class="sk-line sk-line--lg" style="width:42%"></div>
+          <div class="sk-line sk-line--sm" style="width:60%; margin-top:8px"></div>
+        </div>
+        <div class="sk-chip"></div>
+      </div>
+      <div class="sk-active">
+        <div class="sk-mini"></div>
+        <div style="flex:1">
+          <div class="sk-line sk-line--xs" style="width:28%"></div>
+          <div class="sk-line sk-line--sm" style="width:64%; margin-top:6px"></div>
+          <div class="sk-line sk-line--xs" style="width:48%; margin-top:6px"></div>
+        </div>
+      </div>
+      <div class="sk-usage">
+        <div class="sk-usage-cell"><div class="sk-line sk-line--xs" style="width:60%"></div><div class="sk-line sk-line--md" style="width:40%; margin-top:8px"></div></div>
+        <div class="sk-usage-cell"><div class="sk-line sk-line--xs" style="width:60%"></div><div class="sk-line sk-line--md" style="width:40%; margin-top:8px"></div></div>
+        <div class="sk-usage-cell"><div class="sk-line sk-line--xs" style="width:60%"></div><div class="sk-line sk-line--md" style="width:40%; margin-top:8px"></div></div>
+      </div>
+    `;
+    return el;
+  }
+
+  // ---------- SIDE PANEL ----------
+  const panel = document.getElementById('sidePanel');
+  const scrim = document.getElementById('scrim');
+  const spClose = document.getElementById('spClose');
+  const spCancel = document.getElementById('spCancel');
+  const spSearch = document.getElementById('spSearch');
+  const provList = document.getElementById('provList');
+  const spSeg = document.getElementById('spSeg');
+
+  let currentApp = null;
+  let currentProv = 0;
+
+  function openPanel(appId) {
+    currentApp = APPS.find(a => a.id === appId);
+    if (!currentApp) return;
+
+    const isUnconfigured = currentApp.state === 'unconfigured' || !currentApp.providers || !currentApp.providers.length;
+
+    // Header
+    document.getElementById('spAppIconImg').src = ICONS[currentApp.iconKey];
+    document.getElementById('spAppName').textContent = currentApp.name;
+    document.getElementById('spAppSub').textContent = isUnconfigured
+      ? 'Not configured — add a provider to get started'
+      : `${currentApp.providers.length} providers configured · ${currentApp.failover.queuePosition} in failover`;
+
+    // Toggle an "empty" class on the panel for unconfigured apps
+    panel.classList.toggle('is-empty', isUnconfigured);
+
+    if (isUnconfigured) {
+      provList.innerHTML = `
+        <div class="sp-empty">
+          <div class="sp-empty-title">No providers yet</div>
+          <div class="sp-empty-sub">This app is supported but has no provider routes configured yet. Use <strong>+ Add provider</strong> below to create one.</div>
+        </div>
+      `;
+      // Clear detail pane fields to empty/placeholder
+      document.getElementById('spProvIconImg').src = ICONS[currentApp.iconKey];
+      document.getElementById('spProvName').textContent = 'No provider selected';
+      document.getElementById('spProvUrl').textContent = '—';
+      renderProvIdChip(null);
+      const statusChip = document.getElementById('spProvStatus');
+      statusChip.className = 'chip dot';
+      statusChip.textContent = 'Not configured';
+      ['f_name','f_model','f_baseurl','f_envkey','f_apikey'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+      ['f_website','f_envmap','f_autofail','f_retries','f_queuepos','f_activeprov','f_queueorder'].forEach(id => { const el=document.getElementById(id); if(el) el.textContent='—'; });
+      document.getElementById('f_notes').value = '';
+      document.getElementById('spFootProv').textContent = 'new provider';
+    } else {
+      currentProv = currentApp.providers.findIndex(p => p.status === 'active');
+      if (currentProv < 0) currentProv = 0;
+      spSearch.value = '';
+      renderProvList('');
+      renderProvDetail();
+    }
+    setSection('general');
+
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    scrim.classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    scrim.classList.remove('open');
+    document.body.style.overflow = '';
+    const detail = document.querySelector('.sp-detail');
+    if (detail) detail.classList.remove('is-picking');
+    const presetEl = document.getElementById('spPreset');
+    if (presetEl) presetEl.hidden = true;
+    const saveBtn = document.getElementById('spSave');
+    if (saveBtn) saveBtn.hidden = false;
+  }
+
+  scrim.addEventListener('click', closePanel);
+  spClose.addEventListener('click', closePanel);
+  spCancel.addEventListener('click', () => {
+    const detail = document.querySelector('.sp-detail');
+    if (detail && detail.classList.contains('is-picking')) {
+      exitPresetPicker();
+      const hasReal = currentApp && currentApp.providers && currentApp.providers.some(p => !p.isDraft);
+      if (hasReal) {
+        currentProv = currentApp.providers.findIndex(p => !p.isDraft);
+        renderProvList(spSearch.value || '');
+        renderProvDetail();
+      } else {
+        panel.classList.add('is-empty');
+        provList.innerHTML = `
+          <div class="sp-empty">
+            <div class="sp-empty-title">No providers yet</div>
+            <div class="sp-empty-sub">This app is supported but has no provider routes configured yet. Use <strong>+ Add provider</strong> below to create one.</div>
+          </div>
+        `;
+        if (typeof refreshProvFooter === 'function') refreshProvFooter();
+      }
+      return;
+    }
+    closePanel();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      if (activityPop.classList.contains('open')) { closeActivityPopover(); return; }
+      if (panel.classList.contains('open')) closePanel();
+    }
+  });
+
+  // ---------- ACTIVITY POPOVER ----------
+  const activityPop = document.getElementById('activityPop');
+  const apList      = document.getElementById('apList');
+  const apSub       = document.getElementById('apSub');
+  const apClose     = document.getElementById('apClose');
+
+  function openActivityPopover(anchorEl, app) {
+    if (activityPop.dataset.anchor === app.id && activityPop.classList.contains('open')) {
+      closeActivityPopover();
+      return;
+    }
+    activityPop.dataset.anchor = app.id;
+
+    const rows = (app.activity || []).slice(0, 20);
+    apSub.textContent = `${app.name} · last ${rows.length} requests`;
+    apList.innerHTML = rows.map(r => {
+      const toneClass = r.statusTone === 'success' ? 'success' : (r.statusTone === 'fail' ? 'fail' : 'warn');
+      return `
+        <div class="ap-row">
+          <div class="ap-row-l">
+            <div class="ap-row-title">
+              ${r.provider}
+              <span class="ap-status-pill ${toneClass}">HTTP ${r.statusCode}</span>
+            </div>
+            <div class="ap-row-sub">${r.model} · ${r.ago}</div>
+          </div>
+          <div class="ap-row-r">
+            <div class="ap-tokens">${r.tokens}</div>
+            <div>${r.cost}</div>
+            <div class="ap-ms">${r.ms} ms</div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // If foot exists, set totals
+    const foot = document.getElementById('apFoot');
+    if (foot) foot.innerHTML = `<span>Showing ${rows.length} of ${rows.length}</span><span>Updated just now</span>`;
+
+    // Close the providers panel if it's open so they don't stack
+    if (panel.classList.contains('open')) {
+      panel.classList.remove('open');
+      panel.setAttribute('aria-hidden', 'true');
+    }
+
+    activityPop.classList.add('open');
+    activityPop.setAttribute('aria-hidden', 'false');
+    scrim.classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeActivityPopover() {
+    activityPop.classList.remove('open');
+    activityPop.setAttribute('aria-hidden', 'true');
+    activityPop.dataset.anchor = '';
+    if (!panel.classList.contains('open')) {
+      scrim.classList.remove('open');
+      document.body.style.overflow = '';
+    }
+  }
+
+  apClose.addEventListener('click', closeActivityPopover);
+  scrim.addEventListener('click', () => {
+    if (activityPop.classList.contains('open')) closeActivityPopover();
+  });
+
+  function renderProvList(filter) {
+    const f = filter.trim().toLowerCase();
+    provList.innerHTML = '';
+    currentApp.providers.forEach((p, i) => {
+      if (f && !(p.name.toLowerCase().includes(f) || p.url.toLowerCase().includes(f))) return;
+      const row = document.createElement('button');
+      row.className = 'prov-row' + (i === currentProv ? ' active' : '');
+      row.type = 'button';
+      const isActive = p.status === 'active';
+      row.innerHTML = `
+        <div class="prov-icon"><img src="${ICONS[p.iconKey]}" alt="" /></div>
+        <div style="min-width:0">
+          <div class="prov-name">${p.name}</div>
+          <div class="prov-url">${p.url || '—'}</div>
+          ${p.id ? `<div class="prov-id">${p.id}</div>` : ''}
+        </div>
+        ${isActive ? '<span class="prov-badge active">Active</span>' : ''}
+      `;
+      row.addEventListener('click', () => {
+        currentProv = i;
+        renderProvList(spSearch.value);
+        renderProvDetail();
+      });
+      provList.appendChild(row);
+    });
+    if (!provList.children.length) {
+      provList.innerHTML = `<div style="padding: 18px 10px; color: var(--muted); font-size: 13px;">No providers match "${filter}"</div>`;
+    }
+  }
+
+  spSearch.addEventListener('input', (e) => renderProvList(e.target.value));
+  document.getElementById('spAddProv').addEventListener('click', startAddProvider);
+
+  function startAddProvider() {
+    if (!currentApp) return;
+    // Show preset picker first — don't seed a draft yet
+    panel.classList.remove('is-empty');
+    renderPresetPicker();
+    const detail = document.querySelector('.sp-detail');
+    detail.classList.add('is-picking');
+    document.getElementById('spPreset').hidden = false;
+    document.getElementById('spFootMuted').innerHTML = 'Pick a preset to start';
+    document.getElementById('spSave').hidden = true;
+    refreshProvFooter();
+  }
+
+  function exitPresetPicker() {
+    const detail = document.querySelector('.sp-detail');
+    detail.classList.remove('is-picking');
+    document.getElementById('spPreset').hidden = true;
+    document.getElementById('spSave').hidden = false;
+  }
+
+  function renderPresetPicker() {
+    const host = document.getElementById('spPresetGroups');
+    const sections = PRESETS[currentApp.id] || [];
+    const blocks = [];
+    blocks.push(`
+      <div class="preset-group">
+        <div class="preset-group-label">Custom</div>
+        <button class="preset-card" data-kind="custom">
+          <div class="preset-card-title">Custom draft</div>
+          <div class="preset-card-desc">Keep the current fields editable without applying a preset.</div>
+          <div class="preset-card-meta">Manual endpoint and token configuration</div>
+        </button>
+      </div>
+    `);
+    sections.forEach(sec => {
+      if (!sec.items || !sec.items.length) return;
+      blocks.push(`
+        <div class="preset-group">
+          <div class="preset-group-label">${sec.label}</div>
+          ${sec.desc ? `<div class="preset-group-desc">${sec.desc}</div>` : ''}
+          ${sec.items.map(p => presetCard(p)).join('')}
+        </div>
+      `);
+    });
+    host.innerHTML = blocks.join('');
+    const all = sections.flatMap(s => s.items || []);
+    host.querySelectorAll('.preset-card').forEach(el => {
+      el.addEventListener('click', () => {
+        const kind = el.dataset.kind;
+        const key = el.dataset.presetKey;
+        if (kind === 'custom') applyPreset(null);
+        else applyPreset(all.find(p => p.key === key) || null);
+      });
+    });
+  }
+
+  function presetCard(p) {
+    return `
+      <button class="preset-card" data-kind="preset" data-preset-key="${p.key}">
+        <div class="preset-card-title">${p.name}</div>
+        <div class="preset-card-desc">${p.desc}</div>
+        <div class="preset-card-meta">${p.baseUrl}${p.model ? ' · ' + p.model : ''}</div>
+      </button>
+    `;
+  }
+
+  function applyPreset(preset) {
+    const draft = preset ? {
+      id: newProvId(),
+      name: preset.name,
+      iconKey: preset.iconKey || currentApp.iconKey,
+      url: preset.website || preset.baseUrl,
+      status: 'standby',
+      isDraft: true,
+      _seed: {
+        name: preset.name,
+        model: preset.model || '',
+        baseUrl: preset.baseUrl,
+        website: preset.website || '—',
+      },
+    } : {
+      id: newProvId(),
+      name: 'New provider',
+      iconKey: currentApp.iconKey,
+      url: '',
+      status: 'standby',
+      isDraft: true,
+    };
+    if (!Array.isArray(currentApp.providers)) currentApp.providers = [];
+    currentApp.providers.push(draft);
+    currentProv = currentApp.providers.length - 1;
+    spSearch.value = '';
+    renderProvList('');
+    exitPresetPicker();
+    renderProvDetail();
+    setSection('general');
+    document.getElementById('spFootMuted').innerHTML = 'Editing <span id="spFootProv">new provider</span>';
+    setTimeout(() => {
+      const nameInput = document.getElementById('f_name');
+      if (nameInput) { nameInput.focus(); nameInput.select(); }
+    }, 60);
+  }
+
+  function renderProvDetail() {
+    const p = currentApp.providers[currentProv];
+    // Draft provider (just created, not yet saved) — render blank editable form
+    if (p && p.isDraft) {
+      const seed = p._seed || {};
+      document.getElementById('spProvIconImg').src = ICONS[p.iconKey] || ICONS[currentApp.iconKey];
+      document.getElementById('spProvName').textContent = seed.name || 'New provider';
+      document.getElementById('spProvUrl').textContent = seed.baseUrl || 'not saved yet';
+      renderProvIdChip(p.id);
+      const statusChip = document.getElementById('spProvStatus');
+      statusChip.className = 'chip dot warn';
+      statusChip.textContent = 'Draft';
+      document.getElementById('f_name').value = seed.name || '';
+      document.getElementById('f_model').value = seed.model || '';
+      document.getElementById('f_baseurl').value = seed.baseUrl || '';
+      document.getElementById('f_website').textContent = seed.website || '—';
+      document.getElementById('f_notes').value = '';
+      document.getElementById('f_envmap').textContent = '—';
+      document.getElementById('f_envkey').value = '';
+      document.getElementById('f_apikey').value = '';
+      // Codex-only auth mode; default to 'apikey'. Seed may override (e.g. preset says use auth.json).
+      document.getElementById('f_authmode').value = (seed.authMode || 'apikey');
+      refreshAuthModeVisibility();
+      applyAuthMode(document.getElementById('f_authmode').value);
+      refreshAuthJsonButtons();
+      const fo = currentApp.failover || {};
+      document.getElementById('f_autofail').textContent = fo.autoFailover ? 'Enabled' : 'Disabled';
+      document.getElementById('f_retries').textContent = String(fo.maxRetries ?? '—');
+      document.getElementById('f_queuepos').textContent = fo.queuePosition || '—';
+      document.getElementById('f_activeprov').textContent = fo.activeProvider || '—';
+      document.getElementById('f_queueorder').textContent = fo.queueOrder || '—';
+      document.getElementById('spFootProv').textContent = seed.name || 'new provider';
+      return;
+    }
+    // If the selected provider IS the active one, use the full active bundle; otherwise use a lighter synthesized view
+    const isActive = p.status === 'active';
+    const a = isActive ? currentApp.active : {
+      name: p.name, iconKey: p.iconKey, url: p.url, baseUrl: p.url,
+      website: p.url, model: '—', envMap: '—', envKey: '—',
+      notes: `Saved provider for ${currentApp.name}.`,
+    };
+
+    document.getElementById('spProvIconImg').src = ICONS[p.iconKey];
+    document.getElementById('spProvName').textContent = a.name;
+    document.getElementById('spProvUrl').textContent = a.url;
+    renderProvIdChip(p.id);
+    const statusChip = document.getElementById('spProvStatus');
+    statusChip.className = 'chip dot ' + (isActive ? 'success' : '');
+    statusChip.textContent = isActive ? 'Active' : 'Inactive';
+
+    document.getElementById('f_name').value = a.name;
+    document.getElementById('f_model').value = a.model || '';
+    document.getElementById('f_baseurl').value = a.baseUrl || '';
+    document.getElementById('f_website').textContent = a.website || '—';
+    document.getElementById('f_notes').value = a.notes || '';
+
+    document.getElementById('f_envmap').textContent = a.envMap || '—';
+    document.getElementById('f_envkey').value = a.envKey || '';
+    document.getElementById('f_apikey').value = '';
+    // Codex auth mode: stored on the provider (falls back to apikey)
+    document.getElementById('f_authmode').value = p.authMode || 'apikey';
+    refreshAuthModeVisibility();
+    applyAuthMode(document.getElementById('f_authmode').value);
+    refreshAuthJsonButtons();
+
+    // Failover section uses app-level failover state
+    const fo = currentApp.failover;
+    document.getElementById('f_autofail').textContent = fo.autoFailover ? 'Enabled' : 'Disabled';
+    document.getElementById('f_retries').textContent = String(fo.maxRetries);
+    document.getElementById('f_queuepos').textContent = fo.queuePosition;
+    document.getElementById('f_activeprov').textContent = fo.activeProvider;
+    document.getElementById('f_queueorder').textContent = fo.queueOrder;
+
+    document.getElementById('spFootProv').textContent = a.name;
+  }
+
+  function setSection(sec) {
+    spSeg.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.sec === sec));
+    document.querySelectorAll('.sp-section').forEach(el => {
+      el.hidden = el.dataset.sec !== sec;
+    });
+  }
+  spSeg.addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    setSection(b.dataset.sec);
+  });
+
+  // ---------- TWEAKS ----------
+  const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+    "accent": "#4d7cff",
+    "accentDark": "#7f94ff",
+    "cardDensity": "compact",
+    "showUsage": true,
+    "showAppSub": true,
+    "daemonEmphasis": "small",
+    "radius": 16
+  }/*EDITMODE-END*/;
+
+  const TWEAKS = { ...TWEAK_DEFAULTS };
+
+  function applyTweaks() {
+    const root = document.documentElement;
+    // Accent applies in light; accentDark overrides for dark body attr
+    root.style.setProperty('--accent', TWEAKS.accent);
+    // Dark variant — inject a style override
+    let darkStyle = document.getElementById('__tweak_dark_accent');
+    if (!darkStyle) {
+      darkStyle = document.createElement('style');
+      darkStyle.id = '__tweak_dark_accent';
+      document.head.appendChild(darkStyle);
+    }
+    darkStyle.textContent = `body[data-theme="dark"] { --accent: ${TWEAKS.accentDark}; }`;
+
+    // Radius
+    root.style.setProperty('--radius-panel', TWEAKS.radius + 'px');
+    root.style.setProperty('--radius-card', Math.max(10, TWEAKS.radius - 8) + 'px');
+
+    // Density
+    const pad = TWEAKS.cardDensity === 'compact' ? '14px 18px 14px' :
+                TWEAKS.cardDensity === 'spacious' ? '28px 30px 26px' : '22px 24px 20px';
+    let densStyle = document.getElementById('__tweak_density');
+    if (!densStyle) {
+      densStyle = document.createElement('style');
+      densStyle.id = '__tweak_density';
+      document.head.appendChild(densStyle);
+    }
+    densStyle.textContent = `.app-card { padding: ${pad}; }`;
+
+    // Visibility
+    document.querySelectorAll('.app-usage').forEach(el => el.style.display = TWEAKS.showUsage ? '' : 'none');
+    document.querySelectorAll('.app-sub').forEach(el => el.style.display = TWEAKS.showAppSub ? '' : 'none');
+
+    // Daemon status emphasis
+    const dStatus = document.querySelector('.daemon-status');
+    if (dStatus) {
+      dStatus.style.fontSize = TWEAKS.daemonEmphasis === 'small' ? '20px' :
+                               TWEAKS.daemonEmphasis === 'huge' ? '36px' : '28px';
+    }
+  }
+
+  function renderTweakPanel() {
+    const panel = document.getElementById('tweakPanel');
+    panel.innerHTML = `
+      <div class="tw-head">
+        <span class="tw-title">Tweaks</span>
+        <button class="tw-reset" id="twReset" title="Reset all">Reset</button>
+      </div>
+      <div class="tw-body">
+        <div class="tw-row">
+          <label>Accent · light</label>
+          <input type="color" data-key="accent" value="${TWEAKS.accent}" />
+        </div>
+        <div class="tw-row">
+          <label>Accent · dark</label>
+          <input type="color" data-key="accentDark" value="${TWEAKS.accentDark}" />
+        </div>
+        <div class="tw-row">
+          <label>Card density</label>
+          <div class="tw-seg" data-key="cardDensity">
+            ${['compact','comfortable','spacious'].map(v => `<button data-v="${v}" class="${TWEAKS.cardDensity===v?'on':''}">${v[0].toUpperCase()+v.slice(1)}</button>`).join('')}
+          </div>
+        </div>
+        <div class="tw-row">
+          <label>Daemon status size</label>
+          <div class="tw-seg" data-key="daemonEmphasis">
+            ${['small','large','huge'].map(v => `<button data-v="${v}" class="${TWEAKS.daemonEmphasis===v?'on':''}">${v[0].toUpperCase()+v.slice(1)}</button>`).join('')}
+          </div>
+        </div>
+        <div class="tw-row">
+          <label>Panel radius · ${TWEAKS.radius}px</label>
+          <input type="range" data-key="radius" min="8" max="40" step="2" value="${TWEAKS.radius}" />
+        </div>
+        <div class="tw-row tw-check">
+          <label><input type="checkbox" data-key="showUsage" ${TWEAKS.showUsage?'checked':''}/> Show usage stats on app cards</label>
+        </div>
+        <div class="tw-row tw-check">
+          <label><input type="checkbox" data-key="showAppSub" ${TWEAKS.showAppSub?'checked':''}/> Show app subtitles</label>
+        </div>
+      </div>
+    `;
+
+    panel.querySelectorAll('input[type=color], input[type=range], input[type=checkbox]').forEach(el => {
+      el.addEventListener('input', (e) => {
+        const k = e.target.dataset.key;
+        const v = e.target.type === 'checkbox' ? e.target.checked :
+                  e.target.type === 'range' ? Number(e.target.value) : e.target.value;
+        TWEAKS[k] = v;
+        applyTweaks();
+        // Update radius label live
+        if (k === 'radius') {
+          e.target.previousElementSibling.textContent = `Panel radius · ${v}px`;
+        }
+        persistTweaks({ [k]: v });
+      });
+    });
+
+    panel.querySelectorAll('.tw-seg').forEach(seg => {
+      const k = seg.dataset.key;
+      seg.addEventListener('click', (e) => {
+        const b = e.target.closest('button'); if (!b) return;
+        seg.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+        TWEAKS[k] = b.dataset.v;
+        applyTweaks();
+        persistTweaks({ [k]: b.dataset.v });
+      });
+    });
+
+    document.getElementById('twReset').addEventListener('click', () => {
+      Object.assign(TWEAKS, TWEAK_DEFAULTS);
+      renderTweakPanel();
+      applyTweaks();
+      persistTweaks(TWEAK_DEFAULTS);
+    });
+  }
+
+  function persistTweaks(edits) {
+    try { window.parent.postMessage({ type: '__edit_mode_set_keys', edits }, '*'); } catch {}
+  }
+
+  // Host edit-mode protocol — listener FIRST, then announce
+  window.addEventListener('message', (e) => {
+    const msg = e.data;
+    if (!msg || !msg.type) return;
+    if (msg.type === '__activate_edit_mode') {
+      document.getElementById('tweakPanel').classList.add('open');
+    } else if (msg.type === '__deactivate_edit_mode') {
+      document.getElementById('tweakPanel').classList.remove('open');
+    }
+  });
+
+  // ---------- THEME ----------
+  const THEME_KEY = 'ccswitch-theme';
+  const saved = localStorage.getItem(THEME_KEY);
+  if (saved) document.body.dataset.theme = saved;
+  document.getElementById('themeToggle').addEventListener('click', () => {
+    const next = document.body.dataset.theme === 'dark' ? 'light' : 'dark';
+    document.body.dataset.theme = next;
+    localStorage.setItem(THEME_KEY, next);
+  });
+
+  // ---------- BOOT ----------
+  // Stable random-ish IDs for every provider (seed-sorted so UI is reproducible per page load)
+  function newProvId() {
+    return 'prov_' + Math.random().toString(36).slice(2, 10);
+  }
+  APPS.forEach(app => {
+    if (Array.isArray(app.providers)) {
+      app.providers.forEach(p => { if (!p.id) p.id = newProvId(); });
+    }
+  });
+  renderApps();
+  renderTweakPanel();
+  applyTweaks();
+  try { window.parent.postMessage({ type: '__edit_mode_available' }, '*'); } catch {}
+
+  // ---- Provider form dirty tracking + contextual footer ----
+  const provFieldIds = ['f_name', 'f_model', 'f_baseurl', 'f_notes', 'f_envkey', 'f_apikey', 'f_secretpol', 'f_authmode'];
+  let provBaseline = null; // snapshot of the currently-loaded provider's form values
+
+  // Show/hide + set the provider ID chip in the detail header
+  function renderProvIdChip(id) {
+    const chip = document.getElementById('spProvId');
+    const text = document.getElementById('spProvIdText');
+    if (!chip || !text) return;
+    if (id) { chip.hidden = false; text.textContent = id; }
+    else { chip.hidden = true; text.textContent = ''; }
+  }
+  document.getElementById('spProvId').addEventListener('click', async (e) => {
+    const chip = e.currentTarget;
+    const id = document.getElementById('spProvIdText').textContent.trim();
+    if (!id) return;
+    try { await navigator.clipboard.writeText(id); } catch (_) {}
+    chip.classList.add('is-copied');
+    const prev = document.getElementById('spProvIdText').textContent;
+    document.getElementById('spProvIdText').textContent = 'Copied';
+    setTimeout(() => {
+      chip.classList.remove('is-copied');
+      document.getElementById('spProvIdText').textContent = prev;
+    }, 900);
+  });
+
+  function isCodexProvider() {
+    return !!(currentApp && currentApp.id === 'codex');
+  }
+  function applyAuthMode(mode) {
+    // mode: 'apikey' | 'authjson'
+    const apiBlock = document.getElementById('f_mode_apikey');
+    const jsonBlock = document.getElementById('f_mode_authjson');
+    if (!apiBlock || !jsonBlock) return;
+    const useJson = mode === 'authjson';
+    apiBlock.hidden = useJson;
+    jsonBlock.hidden = !useJson;
+    // Sync selector value in case this was called programmatically
+    const sel = document.getElementById('f_authmode');
+    if (sel && sel.value !== mode) sel.value = mode;
+  }
+  function refreshAuthModeVisibility() {
+    const row = document.getElementById('f_authmode_row');
+    if (!row) return;
+    const show = isCodexProvider();
+    row.hidden = !show;
+    if (!show) {
+      // Non-Codex apps always use the API key form
+      applyAuthMode('apikey');
+    }
+  }
+  function refreshAuthJsonButtons() {
+    // Upload/Remove are gated until the provider has been saved at least once.
+    const p = currentApp && currentApp.providers && currentApp.providers[currentProv];
+    const upBtn = document.getElementById('f_authjson_upload');
+    const rmBtn = document.getElementById('f_authjson_remove');
+    const hint = document.getElementById('f_authjson_hint');
+    const nameEl = document.getElementById('f_authjson_filename');
+    if (!upBtn || !rmBtn || !p) return;
+    const saved = !p.isDraft;
+    const hasFile = !!p.authJsonName;
+    upBtn.disabled = !saved;
+    rmBtn.disabled = !hasFile;
+    if (nameEl) nameEl.textContent = hasFile ? p.authJsonName : 'No file chosen';
+    if (hint) {
+      hint.innerHTML = saved
+        ? (hasFile
+            ? `<code>${p.authJsonName}</code> uploaded for <code>${p.id || 'this provider'}</code>.`
+            : `Upload <code>auth.json</code> to complete the Uploaded auth.json credential.`)
+        : 'Save this provider first, then upload <code>auth.json</code> for the saved provider ID.';
+    }
+  }
+  document.getElementById('f_authmode').addEventListener('change', (e) => {
+    applyAuthMode(e.target.value);
+    refreshAuthJsonButtons();
+    refreshProvFooter();
+  });
+  document.getElementById('f_authjson_upload').addEventListener('click', () => {
+    const fi = document.getElementById('f_authjson_file');
+    if (!fi.files || !fi.files[0]) { fi.click(); return; }
+    const p = currentApp.providers[currentProv];
+    p.authJsonName = fi.files[0].name;
+    refreshAuthJsonButtons();
+    refreshProvFooter();
+  });
+  document.getElementById('f_authjson_file').addEventListener('change', () => {
+    const fi = document.getElementById('f_authjson_file');
+    const nameEl = document.getElementById('f_authjson_filename');
+    if (fi.files && fi.files[0]) nameEl.textContent = fi.files[0].name;
+  });
+  document.getElementById('f_authjson_remove').addEventListener('click', () => {
+    const p = currentApp.providers[currentProv];
+    delete p.authJsonName;
+    document.getElementById('f_authjson_file').value = '';
+    refreshAuthJsonButtons();
+    refreshProvFooter();
+  });
+
+  function snapshotProvForm() {
+    const snap = {};
+    provFieldIds.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) snap[id] = el.value;
+    });
+    return snap;
+  }
+  function isProvDirty() {
+    if (!provBaseline) return false;
+    return provFieldIds.some(id => {
+      const el = document.getElementById(id);
+      return el && el.value !== provBaseline[id];
+    });
+  }
+  function refreshProvFooter() {
+    const delBtn = document.getElementById('spDelete');
+    const cancelBtn = document.getElementById('spCancel');
+    const saveBtn = document.getElementById('spSave');
+    const detail = document.querySelector('.sp-detail');
+    const picking = detail && detail.classList.contains('is-picking');
+    const p = currentApp && currentApp.providers && currentApp.providers[currentProv];
+
+    if (picking || !p) {
+      delBtn.hidden = true;
+      cancelBtn.hidden = false;
+      saveBtn.hidden = picking ? true : false;
+      return;
+    }
+    if (p.isDraft) {
+      // New provider: Cancel + Save (primary)
+      delBtn.hidden = true;
+      cancelBtn.hidden = false;
+      saveBtn.hidden = false;
+      saveBtn.textContent = 'Save';
+      saveBtn.classList.add('primary');
+      saveBtn.classList.remove('is-idle');
+      saveBtn.disabled = false;
+      return;
+    }
+    // Saved provider: Delete + Save (idle unless dirty)
+    delBtn.hidden = false;
+    cancelBtn.hidden = true;
+    saveBtn.hidden = false;
+    const dirty = isProvDirty();
+    saveBtn.textContent = 'Save';
+    saveBtn.classList.toggle('primary', dirty);
+    saveBtn.classList.toggle('is-idle', !dirty);
+    saveBtn.disabled = false;
+  }
+
+  // Re-run footer state whenever detail re-renders
+  const _origRenderProvDetail = renderProvDetail;
+  renderProvDetail = function() {
+    _origRenderProvDetail();
+    provBaseline = snapshotProvForm();
+    refreshProvFooter();
+  };
+
+  // Input listeners — recompute dirtiness
+  provFieldIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', refreshProvFooter);
+    el.addEventListener('change', refreshProvFooter);
+  });
+
+  // Delete handler
+  document.getElementById('spDelete').addEventListener('click', () => {
+    if (!currentApp || !currentApp.providers) return;
+    const p = currentApp.providers[currentProv];
+    if (!p) return;
+    const confirmed = window.confirm(`Delete provider "${p.name}"? This removes the route from the daemon.`);
+    if (!confirmed) return;
+    currentApp.providers.splice(currentProv, 1);
+    if (currentApp.providers.length === 0) {
+      // Back to empty state
+      currentProv = 0;
+      panel.classList.add('is-empty');
+      provList.innerHTML = `
+        <div class="sp-empty">
+          <div class="sp-empty-title">No providers yet</div>
+          <div class="sp-empty-sub">This app is supported but has no provider routes configured yet. Use <strong>+ Add provider</strong> below to create one.</div>
+        </div>
+      `;
+      document.getElementById('spProvName').textContent = 'No provider selected';
+      document.getElementById('spProvUrl').textContent = '—';
+      renderProvIdChip(null);
+      const sc = document.getElementById('spProvStatus');
+      sc.className = 'chip dot';
+      sc.textContent = 'Not configured';
+      ['f_name','f_model','f_baseurl','f_envkey','f_apikey'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+      document.getElementById('f_notes').value = '';
+      provBaseline = null;
+      refreshProvFooter();
+      return;
+    }
+    if (currentProv >= currentApp.providers.length) currentProv = currentApp.providers.length - 1;
+    renderProvList(spSearch.value || '');
+    renderProvDetail();
+  });
+
+  // Save feedback (non-destructive — it's a mock)
+  document.getElementById('spSave').addEventListener('click', (e) => {
+    const btn = e.currentTarget;
+    if (btn.classList.contains('is-idle')) return; // nothing to save
+    const p = currentApp && currentApp.providers && currentApp.providers[currentProv];
+    if (!p) return;
+    const nameVal = (document.getElementById('f_name').value || '').trim() || p.name || 'New provider';
+    const baseVal = (document.getElementById('f_baseurl').value || '').trim();
+    if (p.isDraft) {
+      p.name = nameVal;
+      p.url = baseVal || p.url;
+      p.status = 'standby';
+      if (isCodexProvider()) p.authMode = document.getElementById('f_authmode').value;
+      delete p.isDraft;
+      if (p._seed) delete p._seed;
+    } else {
+      // Apply edits to saved provider
+      p.name = nameVal;
+      if (baseVal) p.url = baseVal;
+      if (isCodexProvider()) p.authMode = document.getElementById('f_authmode').value;
+    }
+    renderProvList(spSearch.value || '');
+    // Re-capture baseline so Save returns to idle
+    provBaseline = snapshotProvForm();
+    refreshAuthJsonButtons();
+    const prev = btn.textContent;
+    btn.textContent = 'Saved';
+    btn.disabled = true;
+    btn.classList.remove('primary');
+    setTimeout(() => {
+      btn.textContent = prev;
+      btn.disabled = false;
+      refreshProvFooter();
+    }, 1200);
+  });
+  // ---- Daemon config dirty tracking ----
+  const daemonInputIds = ['listenAddr', 'listenPort', 'httpProxy', 'httpsProxy', 'logLevel'];
+  const daemonOriginals = {};
+  daemonInputIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) daemonOriginals[id] = el.value;
+  });
+  const saveBtn = document.getElementById('saveConfigBtn');
+  const saveBtnSavedIcon = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="margin-right:-2px"><polyline points="20 6 9 17 4 12"/></svg> Saved';
+  const saveBtnIdleHTML = saveBtn.innerHTML;
+  function isDaemonDirty() {
+    return daemonInputIds.some(id => {
+      const el = document.getElementById(id);
+      return el && el.value !== daemonOriginals[id];
+    });
+  }
+  function refreshSaveState() {
+    const dirty = isDaemonDirty();
+    saveBtn.classList.toggle('primary', dirty);
+    saveBtn.classList.toggle('is-idle', !dirty);
+  }
+  daemonInputIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', refreshSaveState);
+    el.addEventListener('change', refreshSaveState);
+  });
+  refreshSaveState();
+
+  saveBtn.addEventListener('click', (e) => {
+    const btn = e.currentTarget;
+    if (!isDaemonDirty()) return; // idle — nothing to save
+    btn.innerHTML = saveBtnSavedIcon;
+    btn.disabled = true;
+    btn.classList.remove('primary');
+    btn.classList.remove('is-idle');
+    // capture new baseline so button returns to idle after the flash
+    daemonInputIds.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) daemonOriginals[id] = el.value;
+    });
+    setTimeout(() => {
+      btn.innerHTML = saveBtnIdleHTML;
+      btn.disabled = false;
+      refreshSaveState();
+    }, 1400);
+  });
+  document.getElementById('restartBtn').addEventListener('click', (e) => {
+    const btn = e.currentTarget;
+    const prev = btn.textContent;
+    btn.textContent = 'Restarting…';
+    btn.disabled = true;
+    setTimeout(() => { btn.textContent = prev; btn.disabled = false; }, 1400);
+  });
+</script>
+<script src="../islands/daemon-card.js"></script>
+</body>
+</html>

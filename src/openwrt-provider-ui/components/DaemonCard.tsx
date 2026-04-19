@@ -29,7 +29,7 @@ export interface DaemonCardProps {
 function getHealthTone(health: OpenWrtHostState["health"]): string {
   switch (health) {
     case "healthy":
-      return "healthy";
+      return "success";
     case "degraded":
       return "warning";
     case "stopped":
@@ -56,63 +56,34 @@ function getStatusLabel(isRunning: boolean): string {
   return isRunning ? "Running" : "Stopped";
 }
 
-function getStatusHint({
-  health,
-  isRunning,
-  restartInFlight,
-  restartPending,
-}: Pick<DaemonCardProps, "isRunning" | "restartInFlight" | "restartPending"> & {
-  health: OpenWrtHostState["health"];
-}): string {
-  if (restartInFlight) {
-    return "Restarting daemon now.";
-  }
-
-  if (restartPending) {
-    return "Restart pending to apply provider changes.";
-  }
-
-  if (!isRunning || health === "stopped") {
-    return "Daemon is stopped. Saved configuration remains available below.";
-  }
-
-  if (health === "healthy") {
-    return "Daemon is accepting traffic on the configured listener.";
-  }
-
-  if (health === "degraded") {
-    return "Daemon is reachable, but health checks report degraded service.";
-  }
-
-  return "Daemon status could not be fully confirmed. Review connection settings.";
-}
-
-function getVersionLabel(version: string): string {
-  const trimmed = version.trim();
-
-  return trimmed ? `Version ${trimmed}` : "Version unavailable";
-}
-
 function getLogLevelOptions(value: string): string[] {
   if (!value.trim() || DEFAULT_LOG_LEVELS.includes(value)) {
     return DEFAULT_LOG_LEVELS;
   }
-
   return [value, ...DEFAULT_LOG_LEVELS];
+}
+
+function capitalize(input: string): string {
+  if (!input) return input;
+  return input.charAt(0).toUpperCase() + input.slice(1);
 }
 
 function DaemonField({
   children,
   label,
+  htmlFor,
 }: {
   children: ReactNode;
   label: string;
+  htmlFor?: string;
 }) {
   return (
-    <label className="owt-daemon-field">
-      <span className="owt-daemon-field__label">{label}</span>
+    <div className="owt-daemon-field">
+      <label className="owt-daemon-cell-label" htmlFor={htmlFor}>
+        {label}
+      </label>
       {children}
-    </label>
+    </div>
   );
 }
 
@@ -123,7 +94,6 @@ export function DaemonCard({
   isDirty,
   saveInFlight,
   restartInFlight,
-  restartPending,
   message,
   messageToneClass,
   onDraftChange,
@@ -133,13 +103,6 @@ export function DaemonCard({
   const statusLabel = getStatusLabel(isRunning);
   const healthLabel = getHealthLabel(host.health);
   const healthTone = getHealthTone(host.health);
-  const versionLabel = getVersionLabel(host.version);
-  const statusHint = getStatusHint({
-    health: host.health,
-    isRunning,
-    restartInFlight,
-    restartPending,
-  });
   const logLevelOptions = getLogLevelOptions(draft.logLevel);
 
   return (
@@ -147,33 +110,42 @@ export function DaemonCard({
       className="owt-daemon-card"
       aria-label={host.serviceLabel || "Daemon control"}
     >
-      <div className="owt-daemon-card__top">
-        <div className="owt-daemon-card__intro">
-          <p className="owt-daemon-card__eyebrow">{host.serviceLabel}</p>
-          <div className="owt-daemon-card__status-row">
-            <span
-              className="owt-daemon-status"
-              data-running={isRunning ? "true" : "false"}
-            >
-              <span className="owt-daemon-status__dot" aria-hidden="true" />
-              {statusLabel}
-            </span>
-            <span className="owt-daemon-health" data-tone={healthTone}>
-              {healthLabel}
-            </span>
-            <span
-              className="owt-daemon-version"
-              title={`Daemon version ${versionLabel}`}
-            >
-              {versionLabel}
-            </span>
-          </div>
-          <p className="owt-daemon-card__hint">{statusHint}</p>
+      {/* Single top row: status · health · log-level select · spacer · Restart · Save */}
+      <div className="owt-daemon-row">
+        <div
+          className="owt-daemon-status"
+          data-running={isRunning ? "true" : "false"}
+        >
+          <span className="owt-daemon-status__dot" aria-hidden="true" />
+          {statusLabel}
         </div>
+
+        <span
+          className="owt-daemon-health owt-chip owt-chip--dot"
+          data-tone={healthTone}
+        >
+          {healthLabel}
+        </span>
+
+        <label className="owt-chip-select">
+          <select
+            value={draft.logLevel}
+            onChange={(event) => onDraftChange("logLevel", event.target.value)}
+            aria-label="Log level"
+          >
+            {logLevelOptions.map((level) => (
+              <option key={level} value={level}>
+                {capitalize(level)}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <span className="owt-daemon-row__spacer" aria-hidden="true" />
 
         <button
           type="button"
-          className="owt-daemon-button"
+          className="owt-pill owt-pill--primary"
           onClick={onRestart}
           disabled={restartInFlight}
         >
@@ -183,6 +155,25 @@ export function DaemonCard({
             <RefreshCcw className="h-4 w-4" />
           )}
           {restartInFlight ? "Restarting…" : "Restart"}
+        </button>
+
+        <button
+          type="button"
+          className={
+            isDirty
+              ? "owt-pill owt-pill--primary"
+              : "owt-pill owt-pill--idle"
+          }
+          onClick={onSave}
+          disabled={!isDirty || saveInFlight}
+          title="Persist current daemon config"
+        >
+          {saveInFlight ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Save className="h-4 w-4" />
+          )}
+          {saveInFlight ? "Saving…" : "Save"}
         </button>
       </div>
 
@@ -194,11 +185,13 @@ export function DaemonCard({
 
       <div className="owt-daemon-divider" />
 
+      {/* Flat 4-column grid — no inner sub-cards */}
       <div className="owt-daemon-grid">
-        <DaemonField label="Listen address">
+        <DaemonField label="Listen address" htmlFor="owt-listenAddr">
           <input
+            id="owt-listenAddr"
             type="text"
-            className="owt-daemon-control owt-daemon-control--mono"
+            className="owt-field-input owt-field-input--mono"
             value={draft.listenAddr}
             onChange={(event) =>
               onDraftChange("listenAddr", event.target.value)
@@ -206,11 +199,12 @@ export function DaemonCard({
           />
         </DaemonField>
 
-        <DaemonField label="Listen port">
+        <DaemonField label="Listen port" htmlFor="owt-listenPort">
           <input
+            id="owt-listenPort"
             type="text"
             inputMode="numeric"
-            className="owt-daemon-control owt-daemon-control--mono"
+            className="owt-field-input owt-field-input--mono"
             value={draft.listenPort}
             onChange={(event) =>
               onDraftChange("listenPort", event.target.value)
@@ -218,55 +212,27 @@ export function DaemonCard({
           />
         </DaemonField>
 
-        <DaemonField label="HTTP proxy">
+        <DaemonField label="HTTP proxy" htmlFor="owt-httpProxy">
           <input
+            id="owt-httpProxy"
             type="text"
-            className="owt-daemon-control owt-daemon-control--mono"
+            className="owt-field-input owt-field-input--mono"
             value={draft.httpProxy}
             onChange={(event) => onDraftChange("httpProxy", event.target.value)}
           />
         </DaemonField>
 
-        <DaemonField label="HTTPS proxy">
+        <DaemonField label="HTTPS proxy" htmlFor="owt-httpsProxy">
           <input
+            id="owt-httpsProxy"
             type="text"
-            className="owt-daemon-control owt-daemon-control--mono"
+            className="owt-field-input owt-field-input--mono"
             value={draft.httpsProxy}
             onChange={(event) =>
               onDraftChange("httpsProxy", event.target.value)
             }
           />
         </DaemonField>
-
-        <DaemonField label="Log level">
-          <select
-            className="owt-daemon-control"
-            value={draft.logLevel}
-            onChange={(event) => onDraftChange("logLevel", event.target.value)}
-          >
-            {logLevelOptions.map((level) => (
-              <option key={level} value={level}>
-                {level}
-              </option>
-            ))}
-          </select>
-        </DaemonField>
-
-        <div className="owt-daemon-actions">
-          <button
-            type="button"
-            className="owt-daemon-button owt-daemon-button--primary"
-            onClick={onSave}
-            disabled={!isDirty || saveInFlight}
-          >
-            {saveInFlight ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="h-4 w-4" />
-            )}
-            {saveInFlight ? "Saving…" : "Save"}
-          </button>
-        </div>
       </div>
     </div>
   );

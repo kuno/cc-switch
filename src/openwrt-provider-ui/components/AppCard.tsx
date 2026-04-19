@@ -1,4 +1,3 @@
-import { ArrowUpRight, Loader2 } from "lucide-react";
 import type {
   SharedProviderAppId,
   SharedProviderState,
@@ -14,139 +13,72 @@ const APP_COPY: Record<
   SharedProviderAppId,
   {
     label: string;
-    initials: string;
     subtitle: string;
   }
 > = {
   claude: {
     label: "Claude",
-    initials: "CL",
-    subtitle: "Anthropic-compatible routing",
+    subtitle: "Anthropic · Claude Code",
   },
   codex: {
     label: "Codex",
-    initials: "CX",
-    subtitle: "Responses-compatible routing",
+    subtitle: "OpenAI · Codex CLI",
   },
   gemini: {
     label: "Gemini",
-    initials: "GM",
-    subtitle: "Google-compatible routing",
+    subtitle: "Google · Gemini CLI",
   },
 };
 
-type StatusTone = "success" | "accent" | "neutral";
+const APP_ICON_BASE_URL =
+  "/luci-static/resources/ccswitch/prototype/icons";
 
-function formatCount(value: number): string {
-  if (!Number.isFinite(value)) {
-    return "—";
+type StatusTone = "success" | "accent" | "neutral" | "fail";
+
+/** Compact formatter: 12307 → "12.3k", 8_420_000 → "8.42M". Mirrors the prototype. */
+function formatCompactCount(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "0";
+  }
+
+  if (value >= 1_000_000) {
+    return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 1 : 2)}M`;
+  }
+
+  if (value >= 10_000) {
+    return `${Math.round(value / 100) / 10}k`;
+  }
+
+  if (value >= 1000) {
+    return new Intl.NumberFormat("en-US").format(value);
   }
 
   return new Intl.NumberFormat("en-US").format(value);
 }
 
-function formatPercent(value: number): string {
-  if (!Number.isFinite(value)) {
-    return "—";
-  }
-
-  return `${value.toFixed(1)}%`;
-}
-
-function formatUsd(value: string | null | undefined): string {
+/** Parses the string-money field and returns a bare numeric string — the unit is rendered separately. */
+function formatCostValue(value: string | null | undefined): string {
   const numeric = Number(value ?? 0);
 
-  if (!Number.isFinite(numeric)) {
-    return value?.trim() || "$0.00";
+  if (!Number.isFinite(numeric) || numeric === 0) {
+    return "0.00";
   }
 
-  const fractionDigits = numeric !== 0 && Math.abs(numeric) < 1 ? 4 : 2;
+  const fractionDigits = Math.abs(numeric) < 1 ? 4 : 2;
 
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: fractionDigits,
-    maximumFractionDigits: fractionDigits,
-  }).format(numeric);
+  return numeric.toFixed(fractionDigits);
 }
 
-function normalizeEpochMs(value: number): number {
-  if (!Number.isFinite(value) || value <= 0) {
+function sumTokenCounts(summary: OpenWrtUsageSummary | null): number {
+  if (!summary) {
     return 0;
   }
 
-  return value > 1_000_000_000_000 ? value : value * 1000;
-}
-
-function formatRelativeTime(value: number): string {
-  const epochMs = normalizeEpochMs(value);
-
-  if (!epochMs) {
-    return "Unknown";
-  }
-
-  const diffMinutes = Math.round((Date.now() - epochMs) / 60000);
-
-  if (diffMinutes <= 1) {
-    return "Just now";
-  }
-
-  if (diffMinutes < 60) {
-    return `${diffMinutes}m ago`;
-  }
-
-  if (diffMinutes < 1440) {
-    return `${Math.round(diffMinutes / 60)}h ago`;
-  }
-
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-  }).format(new Date(epochMs));
-}
-
-function getActivityTone(statusCode: number): StatusTone {
-  if (statusCode >= 200 && statusCode < 300) {
-    return "success";
-  }
-
-  if (statusCode >= 400) {
-    return "accent";
-  }
-
-  return "neutral";
-}
-
-function getLatestStatusValue(entries: OpenWrtRecentActivityItem[]): string {
-  const statusCode = entries[0]?.statusCode ?? 0;
-
-  if (statusCode > 0) {
-    return String(statusCode);
-  }
-
-  return "—";
-}
-
-function getActiveProviderStat(
-  providerState: SharedProviderState | null,
-  providerStats: OpenWrtProviderStat[],
-): OpenWrtProviderStat | null {
-  const activeProvider = providerState?.activeProvider;
-
-  if (!activeProvider?.configured) {
-    return null;
-  }
-
   return (
-    providerStats.find(
-      (stat) => stat.providerId === activeProvider.providerId,
-    ) ??
-    providerStats.find(
-      (stat) =>
-        stat.providerName.trim() &&
-        stat.providerName.trim() === activeProvider.name.trim(),
-    ) ??
-    null
+    (summary.totalInputTokens ?? 0) +
+    (summary.totalOutputTokens ?? 0) +
+    (summary.totalCacheCreationTokens ?? 0) +
+    (summary.totalCacheReadTokens ?? 0)
   );
 }
 
@@ -170,63 +102,40 @@ function getStatus({
   label: string;
   tone: StatusTone;
 } {
-  const activeProviderConfigured = providerState?.activeProvider.configured ?? false;
+  const activeProviderConfigured =
+    providerState?.activeProvider.configured ?? false;
 
   if (loading && !providerState) {
-    return {
-      label: "Loading",
-      tone: "neutral",
-    };
+    return { label: "Loading", tone: "neutral" };
   }
 
   if (!activeProviderConfigured) {
-    return {
-      label: "Not configured",
-      tone: "neutral",
-    };
+    return { label: "Not configured", tone: "neutral" };
   }
 
   if (!serviceRunning || hostState.status === "stopped") {
-    return {
-      label: "Stopped",
-      tone: "neutral",
-    };
+    return { label: "Stopped", tone: "neutral" };
   }
 
   if (appId === hostState.app) {
     if (hostState.health === "healthy") {
-      return {
-        label: "Healthy",
-        tone: "success",
-      };
+      return { label: "Running", tone: "success" };
     }
 
     if (hostState.health === "degraded") {
-      return {
-        label: "Degraded",
-        tone: "accent",
-      };
+      return { label: "Degraded", tone: "accent" };
     }
   }
 
-  if (recentActivity[0]?.statusCode >= 400) {
-    return {
-      label: "Attention",
-      tone: "accent",
-    };
+  if ((recentActivity[0]?.statusCode ?? 0) >= 400) {
+    return { label: "Degraded", tone: "accent" };
   }
 
   if (error) {
-    return {
-      label: "Unavailable",
-      tone: "accent",
-    };
+    return { label: "Unavailable", tone: "fail" };
   }
 
-  return {
-    label: "Ready",
-    tone: "success",
-  };
+  return { label: "Running", tone: "success" };
 }
 
 export interface AppCardProps {
@@ -249,7 +158,6 @@ export function AppCard({
   serviceRunning,
   providerState,
   summary,
-  providerStats,
   recentActivity,
   loading,
   error,
@@ -257,12 +165,10 @@ export function AppCard({
   onOpenProviderPanel,
 }: AppCardProps) {
   const appCopy = APP_COPY[appId];
-  const configuredProviderCount =
-    providerState?.providers.filter((provider) => provider.configured).length ?? 0;
+  const providerCount = providerState?.providers.length ?? 0;
   const activeProvider = providerState?.activeProvider.configured
     ? providerState.activeProvider
     : null;
-  const activeProviderStat = getActiveProviderStat(providerState, providerStats);
   const status = getStatus({
     appId,
     hostState,
@@ -272,132 +178,165 @@ export function AppCard({
     serviceRunning,
     recentActivity,
   });
-  const activityPreview = recentActivity.slice(0, 3);
-  const summaryLine = activeProviderStat
-    ? `${formatPercent(activeProviderStat.successRate)} success rate`
-    : `${configuredProviderCount} provider${configuredProviderCount === 1 ? "" : "s"} saved`;
 
-  return (
-    <article
-      className={`owt-app-card${activeProvider ? "" : " owt-app-card--empty"}`}
-      data-app={appId}
-      data-loading={loading ? "true" : "false"}
-    >
+  const iconUrl = `${APP_ICON_BASE_URL}/${appId}.svg`;
+
+  if (!activeProvider) {
+    return (
       <button
         type="button"
-        className="owt-app-card__main"
+        className="owt-app-card owt-app-card--empty"
+        data-app={appId}
         onClick={() => onOpenProviderPanel(appId)}
-        aria-label={`Open ${appCopy.label} providers`}
+        aria-label={`Add a ${appCopy.label} provider`}
       >
         <div className="owt-app-card__head">
-          <div className="owt-app-card__identity">
-            <div className="owt-app-card__icon" data-app={appId} aria-hidden="true">
-              <span>{appCopy.initials}</span>
-            </div>
-
-            <div className="owt-app-card__titles">
-              <h3 className="owt-app-card__title">{appCopy.label}</h3>
-              <p className="owt-app-card__subtitle">{appCopy.subtitle}</p>
-              <p className="owt-app-card__meta">{summaryLine}</p>
-            </div>
+          <div className="owt-app-card__icon owt-app-card__icon--muted" aria-hidden="true">
+            <img src={iconUrl} alt="" />
           </div>
-
-          <div className="owt-app-card__head-side">
-            <span className="owt-status-pill" data-tone={status.tone}>
-              {status.label}
-            </span>
-            <span className="owt-app-card__affordance">
-              Open providers
-              <ArrowUpRight className="h-3.5 w-3.5" />
-            </span>
+          <div className="owt-app-card__titles">
+            <h3 className="owt-app-card__title owt-app-card__title--muted">
+              {appCopy.label}
+            </h3>
+            <p className="owt-app-card__subtitle">{appCopy.subtitle}</p>
           </div>
+          <span className="owt-app-card__spacer" aria-hidden="true" />
+          <span className="owt-status-pill" data-tone="neutral">
+            Not configured
+          </span>
         </div>
-
-        {activeProvider ? (
-          <>
-            <div className="owt-app-card__provider">
-              <div className="owt-app-card__provider-label">Active provider</div>
-              <div className="owt-app-card__provider-name">
-                {activeProvider.name.trim() || "Unnamed provider"}
-              </div>
-              <div className="owt-app-card__provider-endpoint">
-                {activeProvider.baseUrl.trim() || "Endpoint unavailable"}
-              </div>
-            </div>
-
-            <dl className="owt-app-card__stats">
-              <div className="owt-app-card__stat">
-                <dt>Requests today</dt>
-                <dd>{formatCount(summary?.totalRequests ?? 0)}</dd>
-              </div>
-              <div className="owt-app-card__stat">
-                <dt>Cost today</dt>
-                <dd>{formatUsd(summary?.totalCost)}</dd>
-              </div>
-              <div className="owt-app-card__stat">
-                <dt>Latest HTTP</dt>
-                <dd>{getLatestStatusValue(recentActivity)}</dd>
-              </div>
-            </dl>
-          </>
-        ) : (
-          <div className="owt-app-card__empty-state">
-            <span>No provider configured yet</span>
-            <strong>Add a provider</strong>
-          </div>
-        )}
+        <div className="owt-app-card__empty-cta">
+          <span>No provider configured yet</span>
+          <span className="owt-app-card__empty-cta-btn">Add a provider →</span>
+        </div>
       </button>
+    );
+  }
 
-      <div className="owt-app-card__activity">
-        <div className="owt-app-card__activity-head">
-          <span>Recent activity</span>
-          <button
-            type="button"
-            className="owt-app-card__activity-open"
-            onClick={() => onOpenActivity(appId)}
-          >
-            Open
-          </button>
-        </div>
+  const tokensValue = formatCompactCount(sumTokenCounts(summary));
+  const requestsValue = formatCompactCount(summary?.totalRequests ?? 0);
+  const costValue = formatCostValue(summary?.totalCost);
 
-        {loading && !activityPreview.length ? (
-          <div className="owt-app-card__activity-note">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            <span>Loading activity…</span>
-          </div>
-        ) : activityPreview.length ? (
-          <div className="owt-app-card__activity-row">
-            {activityPreview.map((entry) => (
-              <button
-                key={entry.requestId}
-                type="button"
-                className="owt-activity-pill"
-                data-tone={getActivityTone(entry.statusCode)}
-                onClick={() => onOpenActivity(appId)}
-                aria-label={`Open ${appCopy.label} activity preview`}
-                title={`Open ${appCopy.label} activity`}
-              >
-                <span className="owt-activity-pill__status">
-                  {entry.statusCode > 0 ? entry.statusCode : "—"}
-                </span>
-                <span className="owt-activity-pill__time">
-                  {formatRelativeTime(entry.createdAt)}
-                </span>
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div className="owt-app-card__activity-note">
-            <span>
-              {activeProvider ? "No recent requests yet." : "Configure a provider to start routing requests."}
-            </span>
-          </div>
-        )}
+  const handleCardClick: React.MouseEventHandler<HTMLDivElement> = (event) => {
+    // Status chip handles its own click; don't also open the provider panel.
+    if ((event.target as HTMLElement).closest("[data-owt-chip]")) {
+      return;
+    }
+    onOpenProviderPanel(appId);
+  };
 
-        {error ? (
-          <p className="owt-app-card__telemetry-note">{error}</p>
-        ) : null}
+  const handleCardKey: React.KeyboardEventHandler<HTMLDivElement> = (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      if ((event.target as HTMLElement).closest("[data-owt-chip]")) {
+        return;
+      }
+      event.preventDefault();
+      onOpenProviderPanel(appId);
+    }
+  };
+
+  return (
+    <div
+      className="owt-app-card"
+      data-app={appId}
+      data-loading={loading ? "true" : "false"}
+      role="button"
+      tabIndex={0}
+      onClick={handleCardClick}
+      onKeyDown={handleCardKey}
+      aria-label={`Open ${appCopy.label} providers`}
+    >
+      <div className="owt-app-card__open-affordance" aria-hidden="true">
+        Open providers →
       </div>
-    </article>
+
+      <div className="owt-app-card__head">
+        <div className="owt-app-card__icon" aria-hidden="true">
+          <img src={iconUrl} alt="" />
+        </div>
+        <div className="owt-app-card__titles">
+          <h3 className="owt-app-card__title">
+            {appCopy.label}
+            <span
+              className="owt-app-card__prov-count"
+              title="Open providers"
+            >
+              {" · "}
+              {providerCount} provider{providerCount === 1 ? "" : "s"}
+              <span className="owt-app-card__prov-hover"> →</span>
+            </span>
+          </h3>
+          <p className="owt-app-card__subtitle">{appCopy.subtitle}</p>
+        </div>
+        <span className="owt-app-card__spacer" aria-hidden="true" />
+        <button
+          type="button"
+          className="owt-status-pill owt-status-pill--button"
+          data-owt-chip="true"
+          data-tone={status.tone}
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenActivity(appId);
+          }}
+          title="Show recent requests"
+        >
+          <span className="owt-status-pill__dot" aria-hidden="true" />
+          {status.label}
+          <svg
+            className="owt-status-pill__caret"
+            viewBox="0 0 12 12"
+            width="10"
+            height="10"
+            aria-hidden="true"
+          >
+            <path
+              d="M3 5l3 3 3-3"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      </div>
+
+      <div className="owt-app-card__active">
+        <div className="owt-app-card__mini-icon" aria-hidden="true">
+          <img src={iconUrl} alt="" />
+        </div>
+        <div className="owt-app-card__active-labels">
+          <div className="owt-app-card__active-top">Active provider</div>
+          <div className="owt-app-card__active-main">
+            {activeProvider.name.trim() || "Unnamed provider"}
+          </div>
+          <div className="owt-app-card__active-endpoint">
+            {activeProvider.baseUrl.trim() || "Endpoint unavailable"}
+          </div>
+        </div>
+      </div>
+
+      <div className="owt-app-card__usage">
+        <div className="owt-app-card__usage-cell">
+          <div className="owt-app-card__usage-label">Tokens</div>
+          <div className="owt-app-card__usage-value">{tokensValue}</div>
+        </div>
+        <div className="owt-app-card__usage-cell">
+          <div className="owt-app-card__usage-label">Requests</div>
+          <div className="owt-app-card__usage-value">{requestsValue}</div>
+        </div>
+        <div className="owt-app-card__usage-cell">
+          <div className="owt-app-card__usage-label">Cost</div>
+          <div className="owt-app-card__usage-value">
+            {costValue}
+            <span className="owt-app-card__usage-unit">USD</span>
+          </div>
+        </div>
+      </div>
+
+      {error ? (
+        <p className="owt-app-card__telemetry-note">{error}</p>
+      ) : null}
+    </div>
   );
 }
