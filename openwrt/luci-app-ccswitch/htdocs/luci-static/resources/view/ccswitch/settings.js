@@ -10,6 +10,14 @@ var ALT_TOKEN_FIELD = 'ANTHROPIC_API_KEY';
 var CODEX_TOKEN_FIELD = 'OPENAI_API_KEY';
 var GEMINI_TOKEN_FIELD = 'GEMINI_API_KEY';
 var APP_STORAGE_KEY = 'ccswitch-openwrt-selected-app';
+var SHARED_PROVIDER_UI_GLOBAL_KEY = '__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__';
+var SHARED_PROVIDER_UI_SCRIPT_ID = 'ccswitch-openwrt-shared-provider-ui-bundle';
+var SHARED_PROVIDER_UI_BUNDLE_PATH = '/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js';
+var BANNER_COLORS = {
+	success: '#256f3a',
+	error: '#b91c1c',
+	info: '#1d4ed8'
+};
 
 function createPreset(id, providerName, baseUrl, tokenField, model, options) {
 	var meta = options || {};
@@ -26,7 +34,7 @@ function createPreset(id, providerName, baseUrl, tokenField, model, options) {
 }
 
 /*
- * Mirrors the desktop preset catalog, limited to providers that fit the
+ * Mirrors the shared preset catalog, limited to providers that fit the
  * OpenWrt CRUD payload: { name, baseUrl, tokenField, model }.
  */
 var PRESET_CATALOG = {
@@ -323,18 +331,24 @@ return view.extend({
 
 	getSelectedApp: function () {
 		var saved = localStorage.getItem(APP_STORAGE_KEY);
-		var i;
 
-		for (i = 0; i < APP_OPTIONS.length; i++) {
-			if (APP_OPTIONS[i].id === saved)
-				return saved;
-		}
-
-		return 'claude';
+		return this.isSupportedApp(saved) ? saved : 'claude';
 	},
 
 	saveSelectedApp: function (appId) {
-		localStorage.setItem(APP_STORAGE_KEY, appId);
+		if (this.isSupportedApp(appId))
+			localStorage.setItem(APP_STORAGE_KEY, appId);
+	},
+
+	isSupportedApp: function (appId) {
+		var i;
+
+		for (i = 0; i < APP_OPTIONS.length; i++) {
+			if (APP_OPTIONS[i].id === appId)
+				return true;
+		}
+
+		return false;
 	},
 
 	getAppMeta: function (appId) {
@@ -369,7 +383,7 @@ return view.extend({
 	inferPresetIdFromPayload: function (appId, payload) {
 		var presets = this.getPresetOptions(appId);
 		var normalizedBaseUrl = (payload && payload.baseUrl ? payload.baseUrl : '').trim().replace(/\/+$/, '');
-		var normalizedTokenField = (payload && payload.tokenField ? payload.tokenField : '');
+		var normalizedTokenField = payload && payload.tokenField ? payload.tokenField : '';
 		var i;
 
 		for (i = 0; i < presets.length; i++) {
@@ -740,17 +754,36 @@ return view.extend({
 		return this.emptyProviderView(uiState.selectedApp);
 	},
 
-	createUiState: function (isRunning, providerState, selectedApp) {
-		var activeProvider = providerState.activeProvider;
+	getBundleAssetPath: function () {
+		return SHARED_PROVIDER_UI_BUNDLE_PATH;
+	},
+
+	createUiState: function (isRunning, providerStateOrSelectedApp, selectedApp) {
+		var resolvedSelectedApp = selectedApp;
+		var providerState = providerStateOrSelectedApp;
+		var activeProvider;
+
+		if (arguments.length < 3 || !providerState || typeof providerState !== 'object' ||
+			!Array.isArray(providerState.providers)) {
+			resolvedSelectedApp = this.isSupportedApp(providerStateOrSelectedApp) ? providerStateOrSelectedApp : this.getSelectedApp();
+			providerState = this.buildLegacyProviderState(this.emptyProviderView(resolvedSelectedApp), resolvedSelectedApp);
+		}
+
+		resolvedSelectedApp = this.isSupportedApp(resolvedSelectedApp) ? resolvedSelectedApp : this.getSelectedApp();
+		activeProvider = providerState.activeProvider || this.emptyProviderView(resolvedSelectedApp);
 
 		return {
-			isRunning: isRunning,
-			selectedApp: selectedApp,
+			isRunning: !!isRunning,
+			selectedApp: resolvedSelectedApp,
 			providerState: providerState,
 			editorMode: providerState.phase2Available ? 'new' : (activeProvider.configured ? 'legacy' : 'new'),
 			editProviderId: providerState.phase2Available ? null : providerState.activeProviderId,
 			busy: false,
-			message: null
+			message: null,
+			bundleStatus: 'idle',
+			bundleError: null,
+			mountHandle: null,
+			mountRequestId: 0
 		};
 	},
 
@@ -772,13 +805,12 @@ return view.extend({
 		uiState.editProviderId = providerId || uiState.providerState.activeProviderId;
 	},
 
-	renderMessageBanner: function (message) {
-		var colors = {
-			success: '#256f3a',
-			error: '#b91c1c',
-			info: '#1d4ed8'
-		};
+	setBundleStatus: function (uiState, status, error) {
+		uiState.bundleStatus = status;
+		uiState.bundleError = error || null;
+	},
 
+	renderMessageBanner: function (message) {
 		if (!message || !message.text)
 			return E('div', { 'style': 'display:none' });
 
@@ -786,83 +818,11 @@ return view.extend({
 			'style': [
 				'margin-bottom:1rem',
 				'padding:0.75rem 1rem',
-				'border-left:4px solid ' + (colors[message.kind] || colors.info),
+				'border-left:4px solid ' + (BANNER_COLORS[message.kind] || BANNER_COLORS.info),
 				'background:#f8fafc',
-				'color:' + (colors[message.kind] || colors.info)
+				'color:' + (BANNER_COLORS[message.kind] || BANNER_COLORS.info)
 			].join(';')
 		}, [message.text]);
-	},
-
-	createStatusPanel: function (uiState) {
-		var appMeta = this.getAppMeta(uiState.selectedApp);
-		var serviceValue = E('strong');
-		var providerValue = E('strong');
-		var savedCountValue = E('strong');
-		var summaryValue = E('span', { 'style': 'color:#4b5563' });
-		var providerTitle = E('label', { 'class': 'cbi-value-title' }, [appMeta.activeProviderLabel]);
-		var root = E('div', { 'class': 'cbi-section' }, [
-			E('h3', {}, _('Status')),
-			E('div', { 'class': 'cbi-value' }, [
-				E('label', { 'class': 'cbi-value-title' }, _('Service')),
-				E('div', { 'class': 'cbi-value-field' }, [serviceValue])
-			]),
-			E('div', { 'class': 'cbi-value' }, [
-				providerTitle,
-				E('div', { 'class': 'cbi-value-field' }, [providerValue])
-			]),
-			E('div', { 'class': 'cbi-value' }, [
-				E('label', { 'class': 'cbi-value-title' }, _('Saved Providers')),
-				E('div', { 'class': 'cbi-value-field' }, [savedCountValue])
-			]),
-			E('div', { 'class': 'cbi-value' }, [
-				E('label', { 'class': 'cbi-value-title' }, _('Routing Summary')),
-				E('div', { 'class': 'cbi-value-field' }, [summaryValue])
-			])
-		]);
-
-		this.updateStatusPanel({
-			providerTitle: providerTitle,
-			serviceValue: serviceValue,
-			providerValue: providerValue,
-			savedCountValue: savedCountValue,
-			summaryValue: summaryValue
-		}, uiState);
-
-		return {
-			root: root,
-			providerTitle: providerTitle,
-			serviceValue: serviceValue,
-			providerValue: providerValue,
-			savedCountValue: savedCountValue,
-			summaryValue: summaryValue
-		};
-	},
-
-	updateStatusPanel: function (nodes, uiState) {
-		var appMeta = this.getAppMeta(uiState.selectedApp);
-		var providerState = uiState.providerState;
-		var activeProvider = providerState.activeProvider;
-		var summaryText;
-
-		nodes.serviceValue.textContent = uiState.isRunning ? _('Running') : _('Stopped');
-		nodes.serviceValue.style.color = uiState.isRunning ? '#256f3a' : '#b91c1c';
-		nodes.providerTitle.textContent = appMeta.activeProviderLabel;
-		nodes.providerValue.textContent = activeProvider.configured ? activeProvider.name : _('Not configured');
-		nodes.savedCountValue.textContent = String(providerState.providers.length);
-
-		if (!providerState.phase2Available) {
-			summaryText = activeProvider.configured
-				? _('This build is using the Phase 1 active-provider bridge. Multi-provider actions will appear after the backend Phase 2 RPCs land.')
-				: _('Save the first provider below, then start or restart the service.');
-		} else if (activeProvider.configured) {
-			summaryText = appMeta.summaryRunning;
-		} else if (providerState.providers.length) {
-			summaryText = _('Saved providers are available, but none is active yet. Activate one below when you are ready to switch routing.');
-		} else {
-			summaryText = appMeta.summaryInactive;
-		}
-
-		nodes.summaryValue.textContent = summaryText;
 	},
 
 	renderValue: function (title, control, description) {
@@ -874,9 +834,202 @@ return view.extend({
 			fieldChildren.push(description);
 
 		return E('div', { 'class': 'cbi-value' }, [
-			E('label', { 'class': 'cbi-value-title' }, title),
+			E('label', { 'class': 'cbi-value-title' }, [title]),
 			E('div', { 'class': 'cbi-value-field' }, fieldChildren)
 		]);
+	},
+
+	createStatusPanel: function (uiState) {
+		var appMeta = this.getAppMeta(uiState.selectedApp);
+		var serviceValue = E('strong');
+		var appValue = E('strong');
+		var bundleValue = E('strong');
+		var providerTitle = E('label', { 'class': 'cbi-value-title' }, [appMeta.activeProviderLabel]);
+		var providerValue = E('strong');
+		var savedCountValue = E('strong');
+		var summaryValue = E('span', { 'style': 'color:#4b5563' });
+		var root = E('div', { 'class': 'cbi-section' }, [
+			E('h3', {}, [_('Status')]),
+			E('div', { 'class': 'cbi-value' }, [
+				E('label', { 'class': 'cbi-value-title' }, [_('Service')]),
+				E('div', { 'class': 'cbi-value-field' }, [serviceValue])
+			]),
+			E('div', { 'class': 'cbi-value' }, [
+				E('label', { 'class': 'cbi-value-title' }, [_('Selected Application')]),
+				E('div', { 'class': 'cbi-value-field' }, [appValue])
+			]),
+			E('div', { 'class': 'cbi-value' }, [
+				E('label', { 'class': 'cbi-value-title' }, [_('Shared Provider UI')]),
+				E('div', { 'class': 'cbi-value-field' }, [bundleValue])
+			]),
+			E('div', { 'class': 'cbi-value' }, [
+				providerTitle,
+				E('div', { 'class': 'cbi-value-field' }, [providerValue])
+			]),
+			E('div', { 'class': 'cbi-value' }, [
+				E('label', { 'class': 'cbi-value-title' }, [_('Saved Providers')]),
+				E('div', { 'class': 'cbi-value-field' }, [savedCountValue])
+			]),
+			E('div', { 'class': 'cbi-value' }, [
+				E('label', { 'class': 'cbi-value-title' }, [_('Routing Summary')]),
+				E('div', { 'class': 'cbi-value-field' }, [summaryValue])
+			])
+		]);
+		var nodes = {
+				root: root,
+				serviceValue: serviceValue,
+				appValue: appValue,
+				bundleValue: bundleValue,
+				providerTitle: providerTitle,
+				providerValue: providerValue,
+				savedCountValue: savedCountValue,
+				summaryValue: summaryValue
+			};
+
+		this.updateStatusPanel(nodes, uiState);
+
+		return nodes;
+	},
+
+	updateStatusPanel: function (nodes, uiState) {
+		var appMeta = this.getAppMeta(uiState.selectedApp);
+		var providerState = uiState.providerState || this.buildLegacyProviderState(this.emptyProviderView(uiState.selectedApp), uiState.selectedApp);
+		var activeProvider = providerState.activeProvider || this.emptyProviderView(uiState.selectedApp);
+		var bundleText;
+		var summaryText;
+
+		nodes.serviceValue.textContent = uiState.isRunning ? _('Running') : _('Stopped');
+		nodes.serviceValue.style.color = uiState.isRunning ? '#256f3a' : '#b91c1c';
+		nodes.appValue.textContent = appMeta.label;
+		nodes.providerTitle.textContent = appMeta.activeProviderLabel;
+
+		if (uiState.bundleStatus === 'ready') {
+			bundleText = _('Ready');
+			nodes.bundleValue.style.color = '#256f3a';
+		} else if (uiState.bundleStatus === 'fallback') {
+			bundleText = _('Fallback');
+			nodes.bundleValue.style.color = '#d97706';
+		} else if (uiState.bundleStatus === 'loading') {
+			bundleText = _('Loading');
+			nodes.bundleValue.style.color = '#1d4ed8';
+		} else if (uiState.bundleStatus === 'error') {
+			bundleText = _('Unavailable');
+			nodes.bundleValue.style.color = '#b91c1c';
+		} else {
+			bundleText = _('Pending');
+			nodes.bundleValue.style.color = '#6b7280';
+		}
+
+		nodes.bundleValue.textContent = bundleText;
+		if (uiState.bundleStatus === 'ready') {
+			nodes.providerValue.textContent = _('Managed by shared UI');
+			nodes.savedCountValue.textContent = '\u2014';
+		} else {
+			nodes.providerValue.textContent = activeProvider.configured ? activeProvider.name : _('Not configured');
+			nodes.savedCountValue.textContent = String(providerState.providers.length);
+		}
+
+		if (uiState.bundleStatus === 'error')
+			summaryText = _('The shared provider manager could not be loaded, so the LuCI fallback provider manager is active below.');
+		else if (uiState.bundleStatus === 'fallback')
+			summaryText = _('The shared bundle is present but does not yet expose the provider manager, so the LuCI fallback provider manager is active below.');
+		else if (uiState.bundleStatus === 'ready')
+			summaryText = uiState.isRunning
+				? _('Provider changes may require a service restart while the router proxy is running.')
+				: _('Provider changes will take effect when the router proxy starts.');
+		else if (!providerState.phase2Available)
+			summaryText = activeProvider.configured
+				? _('This build is using the Phase 1 active-provider bridge. Multi-provider actions will appear after the backend Phase 2 RPCs land.')
+				: _('Save the first provider below, then start or restart the service.');
+		else if (activeProvider.configured)
+			summaryText = appMeta.summaryRunning;
+		else if (providerState.providers.length)
+			summaryText = _('Saved providers are available, but none is active yet. Activate one below when you are ready to switch routing.');
+		else
+			summaryText = appMeta.summaryInactive;
+
+		nodes.summaryValue.textContent = summaryText;
+	},
+
+	createProviderShell: function (uiState, statusNodes) {
+		var self = this;
+		var messageRoot = E('div', { 'style': 'display:none;margin-bottom:1rem' });
+		var messageText = E('div');
+			var restartButton = E('button', {
+				'class': 'btn cbi-button cbi-button-action',
+				'type': 'button',
+				'click': ui.createHandlerFn(this, async function (ev) {
+					ev.preventDefault();
+					await self.restartServiceFromShellBridge(uiState, statusNodes, shellNodes);
+				})
+			}, [_('Restart Service')]);
+		var sharedChromeRoot = E('div');
+		var mountRoot = E('div', {
+			'id': 'ccswitch-shared-provider-ui-root',
+			'style': 'margin-top:1rem'
+		});
+		var shellNodes = {
+			sharedChromeRoot: sharedChromeRoot,
+			messageRoot: messageRoot,
+			messageText: messageText,
+			restartButton: restartButton,
+			mountRoot: mountRoot,
+			root: null
+		};
+		var root = E('div', { 'class': 'cbi-section' }, [
+			E('h3', {}, [_('Provider Manager')]),
+			E('p', { 'style': 'margin-bottom:1rem;color:#4b5563' }, [
+				_('The provider manager below mounts the shared OpenWrt browser bundle when available. Until the shared slice is ready, this LuCI shell keeps a compatible built-in fallback provider manager.')
+			]),
+			sharedChromeRoot,
+			E('div', { 'class': 'cbi-value-description' }, [
+				_('Service settings and outbound proxy controls remain above in the LuCI shell. Provider management mounts below after this page renders.')
+			]),
+			mountRoot
+		]);
+
+		shellNodes.root = root;
+		sharedChromeRoot.appendChild(messageRoot);
+		sharedChromeRoot.appendChild(E('div', { 'class': 'cbi-page-actions', 'style': 'margin-bottom:1rem' }, [
+			restartButton
+		]));
+		messageRoot.appendChild(messageText);
+		this.setProviderShellMode(shellNodes, 'shared');
+		this.updateProviderShell(shellNodes, uiState);
+
+		return shellNodes;
+	},
+
+	setProviderShellMode: function (shellNodes, mode) {
+		shellNodes.sharedChromeRoot.style.display = mode === 'fallback' ? 'none' : '';
+	},
+
+	updateMessageBanner: function (messageRoot, messageText, message) {
+		if (!message || !message.text) {
+			messageRoot.style.display = 'none';
+			messageRoot.style.borderLeft = '';
+			messageRoot.style.background = '';
+			messageRoot.style.color = '';
+			messageText.textContent = '';
+			return;
+		}
+
+		messageRoot.style.display = '';
+		messageRoot.style.padding = '0.75rem 1rem';
+		messageRoot.style.borderLeft = '4px solid ' + (BANNER_COLORS[message.kind] || BANNER_COLORS.info);
+		messageRoot.style.background = '#f8fafc';
+		messageRoot.style.color = BANNER_COLORS[message.kind] || BANNER_COLORS.info;
+		messageText.textContent = message.text;
+	},
+
+	updateProviderShell: function (shellNodes, uiState) {
+		shellNodes.restartButton.disabled = !!uiState.busy;
+		this.updateMessageBanner(shellNodes.messageRoot, shellNodes.messageText, uiState.message);
+	},
+
+	updateShellChrome: function (uiState, statusNodes, shellNodes) {
+		this.updateStatusPanel(statusNodes, uiState);
+		this.updateProviderShell(shellNodes, uiState);
 	},
 
 	renderAppSelector: function (uiState, root, statusNodes) {
@@ -1219,7 +1372,8 @@ return view.extend({
 
 	renderProviderManagerContent: function (root, uiState, statusNodes) {
 		var appMeta = this.getAppMeta(uiState.selectedApp);
-		var children = [
+
+		return E('div', {}, [
 			E('div', { 'class': 'cbi-section' }, [
 				E('h3', {}, [appMeta.providerLabel]),
 				E('p', { 'style': 'margin-bottom:1rem;color:#4b5563' }, [
@@ -1232,9 +1386,7 @@ return view.extend({
 				this.renderProviderList(uiState, root, statusNodes),
 				this.renderEditorSection(uiState, root, statusNodes)
 			])
-		];
-
-		return E('div', {}, children);
+		]);
 	},
 
 	rerenderManager: function (root, uiState, statusNodes) {
@@ -1272,6 +1424,12 @@ return view.extend({
 			return _('Unsupported token field.');
 
 		return null;
+	},
+
+	refreshServiceState: function () {
+		return L.resolveDefault(callServiceList('ccswitch'), {}).then(L.bind(function (serviceStatus) {
+			return this.parseServiceState(serviceStatus);
+		}, this));
 	},
 
 	isRpcSuccess: function (result) {
@@ -1603,14 +1761,316 @@ return view.extend({
 		}
 	},
 
-	render: function (data) {
-		var selectedApp = this.getSelectedApp();
-		var isRunning = this.parseServiceState(data[1]);
-		var providerState = data[2];
-		var uiState = this.createUiState(isRunning, providerState, selectedApp);
-		var m = new form.Map('ccswitch', _('Open CC Switch'),
-			_('Configure the OpenWrt service, outbound proxy settings, and provider routing for the router proxy.')
-		);
+	createProviderTransport: function () {
+		return {
+			listProviders: function (appId) {
+				return L.resolveDefault(callListProviders(appId), null);
+			},
+			listSavedProviders: function (appId) {
+				return L.resolveDefault(callListSavedProviders(appId), null);
+			},
+			getActiveProvider: function (appId) {
+				return L.resolveDefault(callGetActiveProvider(appId), { ok: false });
+			},
+			upsertProvider: function (appId, provider) {
+				return L.resolveDefault(callUpsertProvider(appId, provider), { ok: false });
+			},
+			saveProvider: function (appId, provider) {
+				return L.resolveDefault(callSaveProvider(appId, provider), { ok: false });
+			},
+			upsertProviderByProviderId: function (appId, providerId, provider) {
+				return L.resolveDefault(callUpsertProviderByProviderId(appId, providerId, provider), { ok: false });
+			},
+			upsertProviderById: function (appId, providerId, provider) {
+				return L.resolveDefault(callUpsertProviderById(appId, providerId, provider), { ok: false });
+			},
+			upsertActiveProvider: function (appId, provider) {
+				return L.resolveDefault(callUpsertActiveProvider(appId, provider), { ok: false });
+			},
+			deleteProviderByProviderId: function (appId, providerId) {
+				return L.resolveDefault(callDeleteProviderByProviderId(appId, providerId), { ok: false });
+			},
+			deleteProviderById: function (appId, providerId) {
+				return L.resolveDefault(callDeleteProviderById(appId, providerId), { ok: false });
+			},
+			activateProviderByProviderId: function (appId, providerId) {
+				return L.resolveDefault(callActivateProviderByProviderId(appId, providerId), { ok: false });
+			},
+			activateProviderById: function (appId, providerId) {
+				return L.resolveDefault(callActivateProviderById(appId, providerId), { ok: false });
+			},
+			switchProviderByProviderId: function (appId, providerId) {
+				return L.resolveDefault(callSwitchProviderByProviderId(appId, providerId), { ok: false });
+			},
+			switchProviderById: function (appId, providerId) {
+				return L.resolveDefault(callSwitchProviderById(appId, providerId), { ok: false });
+			},
+			restartService: function () {
+				return L.resolveDefault(callRestartService(), { ok: false });
+			}
+		};
+	},
+
+		createShellBridge: function (uiState, statusNodes, shellNodes) {
+			var self = this;
+
+		return {
+			getSelectedApp: function () {
+				return uiState.selectedApp;
+			},
+			setSelectedApp: function (appId) {
+				if (!self.isSupportedApp(appId))
+					return uiState.selectedApp;
+
+				uiState.selectedApp = appId;
+				self.saveSelectedApp(appId);
+				self.updateShellChrome(uiState, statusNodes, shellNodes);
+
+				return uiState.selectedApp;
+			},
+			getServiceStatus: function () {
+				return {
+					isRunning: uiState.isRunning
+				};
+			},
+			refreshServiceStatus: async function () {
+				uiState.isRunning = await self.refreshServiceState();
+				self.updateShellChrome(uiState, statusNodes, shellNodes);
+
+				return {
+					isRunning: uiState.isRunning
+				};
+			},
+			showMessage: function (kind, text) {
+				self.setMessage(uiState, kind, text);
+				self.updateShellChrome(uiState, statusNodes, shellNodes);
+			},
+				clearMessage: function () {
+					self.clearMessage(uiState);
+					self.updateShellChrome(uiState, statusNodes, shellNodes);
+				},
+				restartService: async function () {
+					return self.restartServiceFromShellBridge(uiState, statusNodes, shellNodes);
+				}
+			};
+		},
+
+	createSharedProviderMountOptions: function (uiState, statusNodes, shellNodes) {
+		return {
+			target: shellNodes.mountRoot,
+			appId: uiState.selectedApp,
+			serviceStatus: {
+				isRunning: uiState.isRunning
+			},
+			transport: this.createProviderTransport(),
+			shell: this.createShellBridge(uiState, statusNodes, shellNodes)
+		};
+	},
+
+	normalizeMountHandle: function (handle) {
+		if (typeof handle === 'function')
+			return handle;
+
+		if (handle && typeof handle.unmount === 'function')
+			return function () { handle.unmount(); };
+
+		return function () {};
+	},
+
+	teardownSharedProviderUi: function (uiState) {
+		if (!uiState.mountHandle)
+			return;
+
+		try {
+			uiState.mountHandle();
+		} catch (e) {
+			/* no-op */
+		}
+
+		uiState.mountHandle = null;
+	},
+
+	showBundleFallback: function (mountRoot, message) {
+		while (mountRoot.firstChild)
+			mountRoot.removeChild(mountRoot.firstChild);
+
+		mountRoot.appendChild(E('div', {
+			'style': 'padding:1rem;border:1px solid #fecaca;background:#fff7f7;color:#991b1b;border-radius:4px'
+		}, [
+			E('strong', {}, [_('Shared Provider UI unavailable')]),
+			E('div', { 'style': 'margin-top:0.5rem' }, [
+				message || _('The shared provider manager bundle is missing or failed to initialize.')
+			]),
+			E('div', { 'style': 'margin-top:0.5rem;color:#7f1d1d' }, [
+				_('The OpenWrt-native service settings, proxy controls, and restart actions above still remain functional.')
+			])
+		]));
+	},
+
+	showBundleLoading: function (mountRoot) {
+		while (mountRoot.firstChild)
+			mountRoot.removeChild(mountRoot.firstChild);
+
+		mountRoot.appendChild(E('div', {
+			'style': 'padding:1rem;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;border-radius:4px'
+		}, [_('Loading the shared provider manager...')]));
+	},
+
+		loadSharedProviderBundle: function () {
+		var self = this;
+		var existingApi = window[SHARED_PROVIDER_UI_GLOBAL_KEY];
+		var existingScript;
+
+		if (existingApi && typeof existingApi.mount === 'function')
+			return Promise.resolve(existingApi);
+
+		if (this._sharedProviderBundlePromise)
+			return this._sharedProviderBundlePromise;
+
+		existingScript = document.getElementById(SHARED_PROVIDER_UI_SCRIPT_ID);
+		this._sharedProviderBundlePromise = new Promise(function (resolve, reject) {
+			var script = existingScript || document.createElement('script');
+			var finish = function () {
+				var api = window[SHARED_PROVIDER_UI_GLOBAL_KEY];
+
+				if (api && typeof api.mount === 'function')
+					resolve(api);
+				else
+					reject(new Error(_('The shared provider bundle did not register a mount API.')));
+			};
+
+			if (!existingScript) {
+				script.id = SHARED_PROVIDER_UI_SCRIPT_ID;
+				script.src = self.getBundleAssetPath();
+				script.async = true;
+				document.head.appendChild(script);
+			}
+
+			script.addEventListener('load', finish, { once: true });
+			script.addEventListener('error', function () {
+				reject(new Error(_('The shared provider bundle could not be loaded from ') + self.getBundleAssetPath()));
+			}, { once: true });
+
+			if (existingScript && existingScript.getAttribute('data-ccswitch-loaded') === '1')
+				finish();
+		}).then(function (api) {
+			var loadedScript = document.getElementById(SHARED_PROVIDER_UI_SCRIPT_ID);
+
+			if (loadedScript)
+				loadedScript.setAttribute('data-ccswitch-loaded', '1');
+
+			return api;
+		}).catch(function (err) {
+			self._sharedProviderBundlePromise = null;
+			throw err;
+		});
+
+			return this._sharedProviderBundlePromise;
+		},
+
+		restartServiceFromShellBridge: async function (uiState, statusNodes, shellNodes) {
+			var result;
+
+			uiState.busy = true;
+			this.setMessage(uiState, 'info', _('Restarting service...'));
+			this.updateShellChrome(uiState, statusNodes, shellNodes);
+
+		try {
+			result = await L.resolveDefault(callRestartService(), { ok: false });
+			if (!this.isRpcSuccess(result))
+				throw new Error(this.rpcFailureMessage(result) || _('Failed to restart service.'));
+
+			uiState.isRunning = await this.refreshServiceState();
+			this.setMessage(uiState, 'success', _('Service restarted.'));
+		} catch (err) {
+			this.setMessage(uiState, 'error', this.rpcFailureMessage(err) || _('Failed to restart service.'));
+		} finally {
+			uiState.busy = false;
+			this.updateShellChrome(uiState, statusNodes, shellNodes);
+		}
+
+			return {
+				isRunning: uiState.isRunning
+			};
+		},
+
+		bundleProvidesProviderManager: function (api) {
+			return !(api && api.capabilities && api.capabilities.providerManager === false);
+		},
+
+		renderFallbackProviderManager: function (uiState, statusNodes, shellNodes, kind, text, bundleStatus) {
+			this.teardownSharedProviderUi(uiState);
+			this.setProviderShellMode(shellNodes, 'fallback');
+			this.setBundleStatus(uiState, bundleStatus || 'fallback', text || null);
+
+			if (kind && text)
+				this.setMessage(uiState, kind, text);
+			else if (!kind)
+				this.clearMessage(uiState);
+
+			this.updateShellChrome(uiState, statusNodes, shellNodes);
+			this.rerenderManager(shellNodes.mountRoot, uiState, statusNodes);
+		},
+
+		mountSharedProviderUi: async function (uiState, statusNodes, shellNodes) {
+			var requestId;
+			var mountOptions;
+			var api;
+		var handle;
+
+			uiState.mountRequestId += 1;
+			requestId = uiState.mountRequestId;
+			this.teardownSharedProviderUi(uiState);
+			this.setProviderShellMode(shellNodes, 'shared');
+			this.setBundleStatus(uiState, 'loading', null);
+			this.updateShellChrome(uiState, statusNodes, shellNodes);
+			this.showBundleLoading(shellNodes.mountRoot);
+
+			try {
+				api = await this.loadSharedProviderBundle();
+				if (requestId !== uiState.mountRequestId)
+					return;
+
+				if (!this.bundleProvidesProviderManager(api)) {
+					this.renderFallbackProviderManager(
+						uiState,
+						statusNodes,
+						shellNodes,
+						'info',
+						_('The shared provider bundle loaded, but this lane still uses the LuCI fallback provider manager until the shared slice is published.'),
+						'fallback'
+					);
+					return;
+				}
+
+				mountOptions = this.createSharedProviderMountOptions(uiState, statusNodes, shellNodes);
+				handle = await Promise.resolve(api.mount(mountOptions));
+				uiState.mountHandle = this.normalizeMountHandle(handle);
+				this.setBundleStatus(uiState, 'ready', null);
+			this.updateShellChrome(uiState, statusNodes, shellNodes);
+			} catch (err) {
+				if (requestId !== uiState.mountRequestId)
+					return;
+
+				this.renderFallbackProviderManager(
+					uiState,
+					statusNodes,
+					shellNodes,
+					'error',
+					this.rpcFailureMessage(err) || _('The shared provider manager is unavailable.'),
+					'error'
+				);
+			}
+		},
+
+		render: function (data) {
+			var selectedApp = this.getSelectedApp();
+			var isRunning = this.parseServiceState(data[1]);
+			var providerState = data[2];
+			var uiState = this.createUiState(isRunning, providerState, selectedApp);
+			var m = new form.Map('ccswitch', _('Open CC Switch'),
+				_('Configure the OpenWrt service, outbound proxy settings, and provider routing for the router proxy.')
+			);
 		var s, o;
 		var self = this;
 
@@ -1660,14 +2120,14 @@ return view.extend({
 
 		return m.render().then(function (mapEl) {
 			var statusNodes = self.createStatusPanel(uiState);
-			var providerManagerRoot = E('div');
+			var shellNodes = self.createProviderShell(uiState, statusNodes);
 
-			self.rerenderManager(providerManagerRoot, uiState, statusNodes);
+			void self.mountSharedProviderUi(uiState, statusNodes, shellNodes);
 
 			return E('div', {}, [
 				statusNodes.root,
 				mapEl,
-				providerManagerRoot
+				shellNodes.root
 			]);
 		});
 	}
