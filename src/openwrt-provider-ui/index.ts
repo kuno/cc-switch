@@ -110,6 +110,10 @@ const APP_LABELS: Record<SharedProviderAppId, string> = {
   codex: "Codex",
   gemini: "Gemini",
 };
+const OPENWRT_NATIVE_PAGE_HOST_CLASS = "ccswitch-openwrt-native-page-host";
+const OPENWRT_NATIVE_PAGE_SECTION_CLASS =
+  "ccswitch-openwrt-native-page-section";
+const OPENWRT_NATIVE_PAGE_MAP_CLASS = "ccswitch-openwrt-native-page-map";
 const OPENWRT_SHARED_PROVIDER_UI_THEME_CLASS =
   "ccswitch-openwrt-provider-ui-theme";
 let activeThemeLeaseCount = 0;
@@ -118,6 +122,21 @@ function clearTarget(target: HTMLElement) {
   while (target.firstChild) {
     target.removeChild(target.firstChild);
   }
+}
+
+function decorateNativePageHost(target: HTMLElement): () => void {
+  const section = target.closest(".cbi-section");
+  const map = target.closest(".cbi-map");
+
+  target.classList.add(OPENWRT_NATIVE_PAGE_HOST_CLASS);
+  section?.classList.add(OPENWRT_NATIVE_PAGE_SECTION_CLASS);
+  map?.classList.add(OPENWRT_NATIVE_PAGE_MAP_CLASS);
+
+  return () => {
+    target.classList.remove(OPENWRT_NATIVE_PAGE_HOST_CLASS);
+    section?.classList.remove(OPENWRT_NATIVE_PAGE_SECTION_CLASS);
+    map?.classList.remove(OPENWRT_NATIVE_PAGE_MAP_CLASS);
+  };
 }
 
 function acquireThemeLease(): () => void {
@@ -399,6 +418,7 @@ function mountOpenWrtSharedRuntimeSurface(
 
 function mountOpenWrtPageShell(options: OpenWrtSharedPageMountOptions) {
   return withThemeLease((releaseThemeLease) => {
+    const releaseHostDecoration = decorateNativePageHost(options.target);
     const root = createRoot(options.target);
 
     clearTarget(options.target);
@@ -412,6 +432,7 @@ function mountOpenWrtPageShell(options: OpenWrtSharedPageMountOptions) {
       unmount() {
         root.unmount();
         clearTarget(options.target);
+        releaseHostDecoration();
         releaseThemeLease();
         options.shell.clearMessage();
       },
