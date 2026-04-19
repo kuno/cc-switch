@@ -19,6 +19,9 @@ pub mod skill;
 #[path = "../../../src-tauri/src/services/stream_check.rs"]
 pub mod stream_check;
 
+#[path = "../../../src-tauri/src/services/subscription.rs"]
+pub mod subscription;
+
 #[path = "../../../src-tauri/src/services/usage_stats.rs"]
 pub mod usage_stats;
 
