@@ -83,6 +83,8 @@ use tokio::sync::RwLock;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    install_rustls_crypto_provider();
+
     let args: Vec<String> = std::env::args().skip(1).collect();
 
     if !args.is_empty() {
@@ -92,6 +94,12 @@ async fn main() -> anyhow::Result<()> {
 
     init_logger("info");
     run_daemon().await
+}
+
+fn install_rustls_crypto_provider() {
+    if rustls::crypto::CryptoProvider::get_default().is_none() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    }
 }
 
 fn init_logger(default_filter: &str) {

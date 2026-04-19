@@ -9,46 +9,55 @@ CONFIG=ccswitch
 DATA_DIR=/etc/cc-switch
 LOG_DIR=/var/log/cc-switch
 LOG_FILE="$LOG_DIR/cc-switch.log"
-MAX_LOG_SIZE=1048576  # 1MB
+MAX_LOG_SIZE=1048576
+
+rotate_log() {
+	[ -f "$LOG_FILE" ] || return 0
+
+	local size
+	size="$(wc -c < "$LOG_FILE" 2>/dev/null)"
+	[ -n "$size" ] || size=0
+	[ "$size" -le "$MAX_LOG_SIZE" ] && return 0
+
+	rm -f "$LOG_FILE.2"
+	[ -f "$LOG_FILE.1" ] && mv "$LOG_FILE.1" "$LOG_FILE.2"
+	mv "$LOG_FILE" "$LOG_FILE.1"
+}
 
 start_service() {
 	config_load "$CONFIG"
 
 	local enabled listen_addr listen_port http_proxy https_proxy log_level
-	config_get enabled main enabled '0'
+	config_get_bool enabled main enabled 0
 	config_get listen_addr main listen_addr '0.0.0.0'
 	config_get listen_port main listen_port '15721'
 	config_get http_proxy main http_proxy ''
 	config_get https_proxy main https_proxy ''
 	config_get log_level main log_level 'info'
 
-	[ "$enabled" = "1" ] || return 0
+	[ "$enabled" -eq 1 ] || return 0
 
-	# Ensure log directory exists
-	mkdir -p "$LOG_DIR"
-	mkdir -p "$DATA_DIR"
-
-	# Rotate log if it exceeds max size
-	if [ -f "$LOG_FILE" ] && [ "$(wc -c < "$LOG_FILE")" -gt "$MAX_LOG_SIZE" ]; then
-		mv "$LOG_FILE.1" "$LOG_FILE.2" 2>/dev/null
-		mv "$LOG_FILE" "$LOG_FILE.1"
+	if [ ! -x "$PROG" ]; then
+		logger -t ccswitch "binary not found: $PROG"
+		return 1
 	fi
+
+	mkdir -p "$LOG_DIR" "$DATA_DIR"
+	rotate_log
 
 	procd_open_instance
 	procd_set_param command /bin/sh -c "exec $PROG >> $LOG_FILE 2>&1"
-
-	# cc-switch reads these env vars
 	procd_set_param env \
 		CC_SWITCH_DATA_DIR="$DATA_DIR" \
 		PROXY_LISTEN_ADDR="$listen_addr" \
 		PROXY_LISTEN_PORT="$listen_port" \
 		RUST_LOG="$log_level"
 
-	# Outbound proxy (to Clash or other proxy)
 	[ -n "$http_proxy" ] && procd_append_param env http_proxy="$http_proxy"
 	[ -n "$https_proxy" ] && procd_append_param env https_proxy="$https_proxy"
 
 	procd_set_param respawn 3600 5 5
+	procd_set_param term_timeout 15
 	procd_set_param file /etc/config/ccswitch
 	procd_close_instance
 }
@@ -58,6 +67,8 @@ service_triggers() {
 }
 
 reload_service() {
+	# The daemon reads listen/proxy/log settings from the environment at
+	# process start, so config reload requires a full restart.
 	stop
 	start
 }
