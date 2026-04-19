@@ -82,6 +82,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+const OPENWRT_COMMAND_HELP: &str = "unsupported command. expected one of: `cc-switch openwrt get-runtime-status`, `cc-switch openwrt [claude|codex|gemini] get-runtime-status`, `cc-switch openwrt [claude|codex|gemini] get-active-provider`, `cc-switch openwrt [claude|codex|gemini] upsert-active-provider`, `cc-switch openwrt [claude|codex|gemini] list-providers`, `cc-switch openwrt [claude|codex|gemini] get-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] upsert-provider [provider-id]`, `cc-switch openwrt [claude|codex|gemini] delete-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] activate-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] get-available-failover-providers`, `cc-switch openwrt [claude|codex|gemini] add-to-failover-queue <provider-id>`, `cc-switch openwrt [claude|codex|gemini] remove-from-failover-queue <provider-id>`, `cc-switch openwrt [claude|codex|gemini] set-auto-failover-enabled <true|false>`";
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     install_rustls_crypto_provider();
@@ -124,9 +126,7 @@ async fn run_cli(args: Vec<String>) -> anyhow::Result<()> {
             Err(_) => (crate::app_config::AppType::Claude, 1usize),
         },
         None => {
-            return Err(anyhow::anyhow!(
-                "unsupported command. expected one of: `cc-switch openwrt get-runtime-status`, `cc-switch openwrt [claude|codex|gemini] get-runtime-status`, `cc-switch openwrt [claude|codex|gemini] get-active-provider`, `cc-switch openwrt [claude|codex|gemini] upsert-active-provider`, `cc-switch openwrt [claude|codex|gemini] list-providers`, `cc-switch openwrt [claude|codex|gemini] get-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] upsert-provider [provider-id]`, `cc-switch openwrt [claude|codex|gemini] delete-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] activate-provider <provider-id>`"
-            ));
+            return Err(anyhow::anyhow!(OPENWRT_COMMAND_HELP));
         }
     };
 
@@ -163,19 +163,66 @@ async fn run_cli(args: Vec<String>) -> anyhow::Result<()> {
             Ok(())
         }
         (Some("upsert-provider"), [provider_id]) => {
-            print_json(&openwrt_admin::upsert_provider(&db, &app_type, Some(provider_id))?)?;
+            print_json(&openwrt_admin::upsert_provider(
+                &db,
+                &app_type,
+                Some(provider_id),
+            )?)?;
             Ok(())
         }
         (Some("delete-provider"), [provider_id]) => {
-            print_json(&openwrt_admin::delete_provider(&db, &app_type, provider_id)?)?;
+            print_json(&openwrt_admin::delete_provider(
+                &db,
+                &app_type,
+                provider_id,
+            )?)?;
             Ok(())
         }
         (Some("activate-provider"), [provider_id]) => {
-            print_json(&openwrt_admin::activate_provider(&db, &app_type, provider_id)?)?;
+            print_json(&openwrt_admin::activate_provider(
+                &db,
+                &app_type,
+                provider_id,
+            )?)?;
             Ok(())
         }
+        (Some("get-available-failover-providers"), []) => {
+            print_json(&openwrt_admin::get_available_failover_providers(
+                &db, &app_type,
+            )?)?;
+            Ok(())
+        }
+        (Some("get-available-providers-for-failover"), []) => {
+            print_json(&openwrt_admin::get_available_failover_providers(
+                &db, &app_type,
+            )?)?;
+            Ok(())
+        }
+        (Some("add-to-failover-queue"), [provider_id]) => {
+            print_json(&openwrt_admin::add_to_failover_queue(&db, &app_type, provider_id).await?)?;
+            Ok(())
+        }
+        (Some("remove-from-failover-queue"), [provider_id]) => {
+            print_json(
+                &openwrt_admin::remove_from_failover_queue(&db, &app_type, provider_id).await?,
+            )?;
+            Ok(())
+        }
+        (Some("set-auto-failover-enabled"), [enabled]) => {
+            let enabled = parse_bool_flag(enabled)?;
+            print_json(&openwrt_admin::set_auto_failover_enabled(&db, &app_type, enabled).await?)?;
+            Ok(())
+        }
+        _ => Err(anyhow::anyhow!(OPENWRT_COMMAND_HELP)),
+    }
+}
+
+fn parse_bool_flag(value: &str) -> anyhow::Result<bool> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => Ok(true),
+        "0" | "false" | "no" | "off" => Ok(false),
         _ => Err(anyhow::anyhow!(
-            "unsupported command. expected one of: `cc-switch openwrt get-runtime-status`, `cc-switch openwrt [claude|codex|gemini] get-runtime-status`, `cc-switch openwrt [claude|codex|gemini] get-active-provider`, `cc-switch openwrt [claude|codex|gemini] upsert-active-provider`, `cc-switch openwrt [claude|codex|gemini] list-providers`, `cc-switch openwrt [claude|codex|gemini] get-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] upsert-provider [provider-id]`, `cc-switch openwrt [claude|codex|gemini] delete-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] activate-provider <provider-id>`"
+            "invalid boolean flag `{value}`; expected one of: true, false, 1, 0, yes, no, on, off"
         )),
     }
 }
