@@ -98,6 +98,12 @@ fn set_windows_app_user_model_id(app: &tauri::AppHandle) {
     }
 }
 
+fn install_rustls_crypto_provider() {
+    if rustls::crypto::CryptoProvider::get_default().is_none() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    }
+}
+
 pub(crate) struct RedactedUrl<'a> {
     url: &'a str,
     known_secrets: &'a [String],
@@ -326,6 +332,8 @@ fn macos_tray_icon() -> Option<Image<'static>> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    install_rustls_crypto_provider();
+
     // 设置 panic hook，在应用崩溃时记录日志到 <app_config_dir>/crash.log（默认 ~/.cc-switch/crash.log）
     panic_hook::setup_panic_hook();
 
