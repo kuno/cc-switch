@@ -13,13 +13,34 @@ use crate::config::{delete_file, get_claude_settings_path, read_json_file, write
 use crate::database::Database;
 use crate::error::AppError;
 use crate::provider::Provider;
-use crate::services::mcp::McpService;
 use crate::store::AppState;
 
 use super::gemini_auth::{
     detect_gemini_auth_type, ensure_google_oauth_security_flag, GeminiAuthType,
 };
 use super::normalize_claude_models_in_value;
+
+#[cfg(feature = "tauri-desktop")]
+fn sync_enabled_mcp(state: &AppState) -> Result<(), AppError> {
+    crate::services::mcp::McpService::sync_all_enabled(state)
+}
+
+#[cfg(not(feature = "tauri-desktop"))]
+fn sync_enabled_mcp(_state: &AppState) -> Result<(), AppError> {
+    Ok(())
+}
+
+#[cfg(feature = "tauri-desktop")]
+fn sync_enabled_skills(state: &AppState) {
+    for app_type in AppType::all() {
+        if let Err(e) = crate::services::skill::SkillService::sync_to_app(&state.db, &app_type) {
+            log::warn!("同步 Skill 到 {app_type:?} 失败: {e}");
+        }
+    }
+}
+
+#[cfg(not(feature = "tauri-desktop"))]
+fn sync_enabled_skills(_state: &AppState) {}
 
 pub(crate) fn sanitize_claude_settings_for_live(settings: &Value) -> Value {
     let mut v = settings.clone();
@@ -846,7 +867,7 @@ pub(crate) fn sync_current_provider_for_app_to_live(
         }
     }
 
-    McpService::sync_all_enabled(state)?;
+    sync_enabled_mcp(state)?;
 
     Ok(())
 }
@@ -881,16 +902,8 @@ pub fn sync_current_to_live(state: &AppState) -> Result<(), AppError> {
         }
     }
 
-    // MCP sync
-    McpService::sync_all_enabled(state)?;
-
-    // Skill sync
-    for app_type in AppType::all() {
-        if let Err(e) = crate::services::skill::SkillService::sync_to_app(&state.db, &app_type) {
-            log::warn!("同步 Skill 到 {app_type:?} 失败: {e}");
-            // Continue syncing other apps, don't abort
-        }
-    }
+    sync_enabled_mcp(state)?;
+    sync_enabled_skills(state);
 
     Ok(())
 }

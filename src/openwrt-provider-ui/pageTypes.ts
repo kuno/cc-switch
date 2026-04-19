@@ -36,6 +36,7 @@ export interface OpenWrtHostState {
   health: "healthy" | "degraded" | "stopped" | "unknown";
   listenAddr: string;
   listenPort: string;
+  version: string;
   serviceLabel: string;
   httpProxy: string;
   httpsProxy: string;
@@ -88,11 +89,54 @@ export interface OpenWrtRecentActivityItem {
   createdAt: number;
 }
 
+export interface OpenWrtRequestLog {
+  requestId: string;
+  providerId: string;
+  providerName?: string;
+  appType: string;
+  model: string;
+  requestModel?: string | null;
+  costMultiplier: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  inputCostUsd: string;
+  outputCostUsd: string;
+  cacheReadCostUsd: string;
+  cacheCreationCostUsd: string;
+  totalCostUsd: string;
+  isStreaming: boolean;
+  latencyMs: number;
+  firstTokenMs?: number | null;
+  durationMs?: number | null;
+  statusCode: number;
+  errorMessage?: string | null;
+  createdAt: number;
+  dataSource?: string | null;
+}
+
+export interface OpenWrtPaginatedRequestLogs {
+  data: OpenWrtRequestLog[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 export interface OpenWrtSharedPageShellApi
   extends OpenWrtSharedProviderShellApi {
   getHostState(): OpenWrtHostState;
   getMessage(): OpenWrtPageMessage | null;
   getProviderStats(appId: SharedProviderAppId): Promise<OpenWrtProviderStat[]>;
+  getRequestDetail(
+    appId: SharedProviderAppId,
+    requestId: string,
+  ): Promise<OpenWrtRequestLog | null>;
+  getRequestLogs(
+    appId: SharedProviderAppId,
+    page?: number,
+    pageSize?: number,
+  ): Promise<OpenWrtPaginatedRequestLogs>;
   getRecentActivity(
     appId: SharedProviderAppId,
   ): Promise<OpenWrtRecentActivityItem[]>;
