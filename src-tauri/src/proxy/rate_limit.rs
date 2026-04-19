@@ -48,11 +48,7 @@ fn quota_reset_iso_to_unix_ts(value: &str) -> Option<i64> {
 }
 
 fn quota_utilization_to_ratio(value: f64) -> f64 {
-    if value > 1.0 {
-        (value / 100.0).clamp(0.0, 1.0)
-    } else {
-        value.clamp(0.0, 1.0)
-    }
+    (value / 100.0).clamp(0.0, 1.0)
 }
 
 pub fn snapshot_from_subscription_quota(
@@ -413,6 +409,15 @@ mod tests {
         assert_eq!(snapshot.windows[1].name, "seven_day");
         assert_eq!(snapshot.windows[1].utilization, Some(0.75));
         assert_eq!(snapshot.windows[1].reset, None);
+    }
+
+    #[test]
+    fn quota_utilization_to_ratio_converts_small_percentages() {
+        assert_eq!(quota_utilization_to_ratio(1.0), 0.01);
+        assert_eq!(quota_utilization_to_ratio(0.5), 0.005);
+        assert_eq!(quota_utilization_to_ratio(0.0), 0.0);
+        assert_eq!(quota_utilization_to_ratio(100.0), 1.0);
+        assert_eq!(quota_utilization_to_ratio(150.0), 1.0);
     }
 
     #[test]
