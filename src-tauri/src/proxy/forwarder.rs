@@ -68,6 +68,8 @@ pub struct RequestForwarder {
     copilot_optimizer_config: CopilotOptimizerConfig,
     /// 非流式请求超时（秒）
     non_streaming_timeout: std::time::Duration,
+    /// Per-provider rate limit snapshots
+    rate_limits: super::rate_limit::RateLimitStore,
     /// AppHandle for failover UI updates (desktop only)
     #[cfg(feature = "tauri-desktop")]
     app_handle: Option<tauri::AppHandle>,
@@ -118,6 +120,7 @@ impl RequestForwarder {
         rectifier_config: RectifierConfig,
         optimizer_config: OptimizerConfig,
         copilot_optimizer_config: CopilotOptimizerConfig,
+        rate_limits: super::rate_limit::RateLimitStore,
         #[cfg(feature = "tauri-desktop")] app_handle: Option<tauri::AppHandle>,
     ) -> Self {
         Self {
@@ -135,6 +138,7 @@ impl RequestForwarder {
             optimizer_config,
             copilot_optimizer_config,
             non_streaming_timeout: std::time::Duration::from_secs(non_streaming_timeout),
+            rate_limits,
             #[cfg(feature = "tauri-desktop")]
             app_handle,
         }
@@ -228,6 +232,7 @@ impl RequestForwarder {
             match self
                 .forward(
                     provider,
+                    app_type_str,
                     endpoint,
                     &provider_body,
                     &headers,
@@ -367,6 +372,7 @@ impl RequestForwarder {
                                 match self
                                     .forward(
                                         provider,
+                                        app_type_str,
                                         endpoint,
                                         &provider_body,
                                         &headers,
@@ -573,6 +579,7 @@ impl RequestForwarder {
                             match self
                                 .forward(
                                     provider,
+                                    app_type_str,
                                     endpoint,
                                     &provider_body,
                                     &headers,
@@ -819,6 +826,7 @@ impl RequestForwarder {
     async fn forward(
         &self,
         provider: &Provider,
+        app_type_str: &str,
         endpoint: &str,
         body: &Value,
         headers: &axum::http::HeaderMap,
@@ -1516,6 +1524,18 @@ impl RequestForwarder {
         if status.is_success() {
             Ok((response, resolved_claude_api_format))
         } else {
+            // Capture rate limit headers from error responses (e.g. 429)
+            {
+                let rl_store = self.rate_limits.clone();
+                let resp_headers = response.headers().clone();
+                let app = app_type_str.to_string();
+                let pid = provider.id.clone();
+                let pname = provider.name.clone();
+                tokio::spawn(async move {
+                    super::rate_limit::capture_rate_limits(&rl_store, &resp_headers, &app, &pid, &pname).await;
+                });
+            }
+
             let status_code = status.as_u16();
             let body_text = String::from_utf8(response.bytes().await?.to_vec()).ok();
 
