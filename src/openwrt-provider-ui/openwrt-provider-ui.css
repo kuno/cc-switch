@@ -357,7 +357,7 @@
  * ===================================================================== */
 .owt-app-card {
   position: relative;
-  padding: 22px 24px 20px;
+  padding: 8px 24px;
   border-radius: var(--radius-panel);
   background: var(--panel);
   box-shadow: 0 24px 60px -34px rgba(50, 72, 103, 0.28);
@@ -386,7 +386,7 @@
   border-color: var(--line);
   background: transparent;
   box-shadow: none;
-  min-height: 196px;
+  min-height: auto;
 }
 
 .owt-app-card--empty:hover {
@@ -398,7 +398,7 @@
   display: flex;
   align-items: center;
   gap: 14px;
-  margin-bottom: 22px;
+  margin-bottom: 10px;
 }
 
 .owt-app-card__icon {
@@ -583,8 +583,8 @@
 }
 
 .owt-app-card__empty-cta {
-  margin-top: 18px;
-  padding: 16px 14px;
+  margin-top: 0;
+  padding: 8px 14px;
   border-radius: var(--radius-control);
   border: 1px dashed var(--line-strong);
   background: var(--panel-soft);
@@ -594,10 +594,6 @@
   gap: 12px;
   color: var(--muted);
   font-size: 13px;
-}
-
-.owt-app-card--empty .owt-app-card__empty-cta {
-  flex: 1 1 auto;
 }
 
 .owt-app-card__empty-cta-btn {
@@ -2588,6 +2584,9 @@ select.owt-provider-panel__input {
   gap: 20px;
   align-items: stretch;
 }
+.owt-group-grid--unconfigured {
+  align-items: start;
+}
 @media (max-width: 960px) {
   .owt-group-grid {
     grid-template-columns: 1fr;
@@ -2615,6 +2614,15 @@ select.owt-provider-panel__input {
   background: transparent;
 }
 
+.owt-app-card--empty-skeleton {
+  min-height: auto;
+  border-color: var(--line-strong);
+}
+
+.owt-app-card--empty-skeleton:hover {
+  border-color: var(--line-strong);
+}
+
 .sk-icon,
 .sk-chip,
 .sk-mini,
@@ -2629,6 +2637,11 @@ select.owt-provider-panel__input {
   height: 48px;
   border-radius: var(--radius-icon);
   flex: 0 0 auto;
+}
+
+.owt-app-card--empty-skeleton .sk-icon {
+  background: transparent;
+  border: 1px dashed var(--line-strong);
 }
 
 .sk-chip {
@@ -2674,6 +2687,26 @@ select.owt-provider-panel__input {
 
 .owt-app-card--skeleton-compact .sk-active {
   margin-bottom: 0;
+}
+
+.sk-empty-cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 12px 14px;
+}
+
+.owt-app-card--empty-skeleton .sk-empty-cta {
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-control);
+  background: var(--panel-soft);
+}
+
+.owt-app-card--empty-skeleton .sk-empty-cta .sk-line:first-child {
+  flex: 1;
+  max-width: 220px;
 }
 
 .sk-usage {

@@ -102,7 +102,9 @@ function SkeletonCard({ showStats = true }: { showStats?: boolean }) {
   return (
     <div
       className={`owt-app-card owt-app-card--skeleton${
-        showStats ? "" : " owt-app-card--skeleton-compact"
+        showStats
+          ? ""
+          : " owt-app-card--skeleton-compact owt-app-card--empty-skeleton"
       }`}
       aria-hidden="true"
     >
@@ -119,20 +121,27 @@ function SkeletonCard({ showStats = true }: { showStats?: boolean }) {
         <div className="sk-chip" />
       </div>
 
-      <div className="sk-active">
-        <div className="sk-mini" />
-        <div className="owt-app-card__active-labels">
-          <div className="sk-line sk-line--xs" style={{ width: "5rem" }} />
-          <div
-            className="sk-line sk-line--md"
-            style={{ width: "8.5rem", marginTop: "8px" }}
-          />
-          <div
-            className="sk-line sk-line--sm"
-            style={{ width: "6.5rem", marginTop: "6px" }}
-          />
+      {showStats ? (
+        <div className="sk-active">
+          <div className="sk-mini" />
+          <div className="owt-app-card__active-labels">
+            <div className="sk-line sk-line--xs" style={{ width: "5rem" }} />
+            <div
+              className="sk-line sk-line--md"
+              style={{ width: "8.5rem", marginTop: "8px" }}
+            />
+            <div
+              className="sk-line sk-line--sm"
+              style={{ width: "6.5rem", marginTop: "6px" }}
+            />
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="sk-empty-cta">
+          <div className="sk-line sk-line--sm" />
+          <div className="sk-line sk-line--sm" style={{ width: "7rem" }} />
+        </div>
+      )}
 
       {showStats ? (
         <div className="sk-usage">
@@ -239,7 +248,7 @@ export function AppsGrid({
       {unconfigured.length > 0 && (
         <>
           <GroupHeader label="Not configured" />
-          <div className="owt-group-grid">
+          <div className="owt-group-grid owt-group-grid--unconfigured">
             {unconfigured.map(renderCard)}
             {unconfigured.length % 2 === 1 && <SkeletonCard showStats={false} />}
           </div>
