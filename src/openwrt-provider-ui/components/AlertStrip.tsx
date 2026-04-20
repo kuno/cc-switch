@@ -1,4 +1,4 @@
-import { AlertTriangle, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { OpenWrtHostState, OpenWrtPageMessage } from "../pageTypes";
 
@@ -150,7 +150,7 @@ export function AlertStrip({
         {variant === "restarting" ? (
           <Loader2 className="h-4 w-4 animate-spin" />
         ) : (
-          <AlertTriangle className="h-4 w-4" />
+          <span className="owt-alert-strip__dot" />
         )}
       </div>
 
