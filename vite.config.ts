@@ -1,4 +1,5 @@
 import path from "node:path";
+import { execSync } from "node:child_process";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { codeInspectorPlugin } from "code-inspector-plugin";
@@ -20,18 +21,38 @@ const openWrtVisualHarnessOutDir = path.resolve(
   "tests/openwrt/visual/harness-dist",
 );
 
+function resolveOpenWrtLuciAppVersion(): string {
+  const override = process.env.OPENWRT_LUCI_APP_VERSION?.trim();
+  if (override) {
+    return override;
+  }
+
+  try {
+    return execSync("git describe --tags --always --long --dirty", {
+      encoding: "utf8",
+    }).trim();
+  } catch {
+    return process.env.npm_package_version?.trim() || "unknown";
+  }
+}
+
 export default defineConfig(({ command }) => {
   const buildTarget = process.env.CCSWITCH_BUILD_TARGET;
   const isOpenWrtProviderUiBuild = buildTarget === "openwrt-provider-ui";
   const isOpenWrtVisualHarnessBuild = buildTarget === "openwrt-visual-harness";
-  const define = isOpenWrtProviderUiBuild
-    ? {
+  const define = {
+    __OPENWRT_LUCI_APP_VERSION__: JSON.stringify(
+      resolveOpenWrtLuciAppVersion(),
+    ),
+    ...(isOpenWrtProviderUiBuild
+      ? {
         "process.env.NODE_ENV": JSON.stringify("production"),
         "process.env.CCSWITCH_USE_SHADOW_DOM": JSON.stringify(
           process.env.CCSWITCH_USE_SHADOW_DOM ?? "",
         ),
       }
-    : undefined;
+      : {}),
+  };
 
   return {
     root: isOpenWrtProviderUiBuild

@@ -29,14 +29,11 @@ import type {
 const OPENWRT_PAGE_THEME_STORAGE_KEY = "ccswitch-openwrt-native-page-theme";
 
 /**
- * Versions surfaced in the section-head chips. These are display-only —
- * the real daemon version lives on `host.version` and is shown on the Daemon
- * chip when present; the Apps chip is the luci-app package version.
- *
- * Keep in sync with the Makefile / package metadata. If the shell
- * eventually exposes a `packageVersion`, swap these constants out.
+ * Versions surfaced in the section-head chips. These are display-only:
+ * the daemon chip prefers `host.version`, while the Apps chip is injected
+ * at bundle build time from the luci-app package version source.
  */
-const LUCI_APP_VERSION = "v0.2.4";
+const LUCI_APP_VERSION = formatVersion(__OPENWRT_LUCI_APP_VERSION__, "unknown");
 const DAEMON_FALLBACK_VERSION = "v0.4.2";
 
 type HostDraft = OpenWrtHostConfigPayload;
