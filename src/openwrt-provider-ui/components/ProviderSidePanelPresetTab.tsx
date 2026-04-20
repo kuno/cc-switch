@@ -9,7 +9,7 @@ export type ProviderSidePanelPresetGroup = {
 
 interface ProviderSidePanelPresetTabProps {
   groups: ProviderSidePanelPresetGroup[];
-  selectedPresetId: string;
+  selectedPresetId: string | null;
   onPresetSelect: (presetId: string) => void;
 }
 

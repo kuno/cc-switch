@@ -1557,12 +1557,21 @@
 
 .owt-provider-panel__tabs {
   display: inline-grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 4px;
   padding: 4px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: color-mix(in srgb, var(--panel-soft) 88%, transparent);
+}
+
+.owt-provider-panel__detail[data-panel-mode="preset-picker"] {
+  gap: 18px;
+}
+
+.owt-provider-panel__picker-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .owt-provider-panel__tab {
