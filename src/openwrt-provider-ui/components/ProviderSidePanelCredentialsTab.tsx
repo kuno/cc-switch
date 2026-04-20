@@ -139,6 +139,29 @@ export function ProviderSidePanelCredentialsTab({
     (showClaudeAuthModeSelector && claudeAuthMode === "claude_oauth");
   const canManageSavedAuth = Boolean(provider?.providerId);
   const secretPolicyText = getSecretPolicyText(provider, draft.authMode);
+  const authModeOptions = isCodex
+    ? [
+        { value: "api_key" as const, label: "API key" },
+        { value: "codex_oauth" as const, label: "auth.json" },
+      ]
+    : showClaudeAuthModeSelector
+      ? [
+          {
+            value: "client_passthrough" as const,
+            label: "Client passthrough",
+          },
+          { value: "claude_oauth" as const, label: "auth.json" },
+        ]
+      : [];
+  const authModeValue = isCodex ? codexAuthMode : claudeAuthMode;
+  const primaryEnvMapping =
+    tokenFieldOptions.find((option) => option.value === draft.tokenField)
+      ?.label ?? draft.tokenField;
+  const hasStoredAuth = Boolean(
+    isCodex ? provider?.codexAuth : provider?.claudeAuth,
+  );
+  const handleUploadAuth = isCodex ? onUploadCodexAuth : onUploadClaudeAuth;
+  const handleRemoveAuth = isCodex ? onRemoveCodexAuth : onRemoveClaudeAuth;
 
   return (
     <div className="owt-provider-panel__fields">
@@ -157,97 +180,43 @@ export function ProviderSidePanelCredentialsTab({
         />
       </label>
 
-      {isCodex ? (
-        <div className="owt-provider-panel__field owt-provider-panel__field--wide">
+      {authModeOptions.length ? (
+        <label className="owt-provider-panel__field owt-provider-panel__field--wide">
           <span className="owt-provider-panel__label">
             Authentication mode
           </span>
-          <div className="owt-provider-panel__segment">
-            <button
-              type="button"
-              className="owt-provider-panel__segment-button"
-              data-active={codexAuthMode === "api_key"}
-              onClick={() =>
-                onDraftChange({
-                  ...draft,
-                  authMode: "api_key",
-                })
-              }
-            >
-              API key
-            </button>
-            <button
-              type="button"
-              className="owt-provider-panel__segment-button"
-              data-active={codexAuthMode === "codex_oauth"}
-              onClick={() =>
-                onDraftChange({
-                  ...draft,
-                  authMode: "codex_oauth",
-                })
-              }
-            >
-              auth.json
-            </button>
-          </div>
-        </div>
-      ) : showClaudeAuthModeSelector ? (
-        <div className="owt-provider-panel__field owt-provider-panel__field--wide">
-          <span className="owt-provider-panel__label">
-            Authentication mode
-          </span>
-          <div className="owt-provider-panel__segment">
-            <button
-              type="button"
-              className="owt-provider-panel__segment-button"
-              data-active={claudeAuthMode === "client_passthrough"}
-              onClick={() =>
-                onDraftChange({
-                  ...draft,
-                  authMode: "client_passthrough",
-                })
-              }
-            >
-              Client passthrough
-            </button>
-            <button
-              type="button"
-              className="owt-provider-panel__segment-button"
-              data-active={claudeAuthMode === "claude_oauth"}
-              onClick={() =>
-                onDraftChange({
-                  ...draft,
-                  authMode: "claude_oauth",
-                })
-              }
-            >
-              auth.json
-            </button>
-          </div>
-        </div>
+          <select
+            className="owt-provider-panel__input"
+            value={authModeValue}
+            onChange={(event) =>
+              onDraftChange({
+                ...draft,
+                authMode: event.target.value,
+              })
+            }
+          >
+            {authModeOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
       ) : null}
 
       {!showAuthJsonFields ? (
         <>
-          <label className="owt-provider-panel__field">
-            <span className="owt-provider-panel__label">Env key</span>
-            <select
-              className="owt-provider-panel__input owt-provider-panel__input--mono"
-              value={draft.tokenField}
-              onChange={(event) =>
-                onDraftChange({
-                  ...draft,
-                  tokenField: event.target.value as SharedProviderTokenField,
-                })
-              }
+          <div className="owt-provider-panel__field owt-provider-panel__field--wide">
+            <span className="owt-provider-panel__label">
+              Primary env mapping
+            </span>
+            <div
+              className="owt-provider-panel__kv owt-provider-panel__kv--mono"
+              data-empty={primaryEnvMapping ? "false" : "true"}
             >
-              {tokenFieldOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
+              {primaryEnvMapping || "Not available"}
+            </div>
+          </div>
 
           <label className="owt-provider-panel__field">
             <span className="owt-provider-panel__label">API key</span>
@@ -319,9 +288,9 @@ export function ProviderSidePanelCredentialsTab({
                 type="button"
                 className="owt-provider-panel__button owt-provider-panel__button--ghost"
                 disabled={!canManageSavedAuth || authPending || !selectedFileName}
-                onClick={isCodex ? onUploadCodexAuth : onUploadClaudeAuth}
+                onClick={handleUploadAuth}
               >
-                Upload auth.json
+                Upload
               </button>
               <button
                 type="button"
@@ -329,9 +298,9 @@ export function ProviderSidePanelCredentialsTab({
                 disabled={
                   !canManageSavedAuth ||
                   authPending ||
-                  !(isCodex ? provider?.codexAuth : provider?.claudeAuth)
+                  !hasStoredAuth
                 }
-                onClick={isCodex ? onRemoveCodexAuth : onRemoveClaudeAuth}
+                onClick={handleRemoveAuth}
               >
                 Remove
               </button>
