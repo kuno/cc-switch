@@ -17,6 +17,7 @@
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -138,13 +139,13 @@ struct DevicePollSuccess {
 
 /// OAuth Token 响应
 #[derive(Debug, Clone, Deserialize)]
-struct OAuthTokenResponse {
-    access_token: String,
-    refresh_token: Option<String>,
+pub(crate) struct OAuthTokenResponse {
+    pub(crate) access_token: String,
+    pub(crate) refresh_token: Option<String>,
     #[serde(default)]
-    id_token: Option<String>,
+    pub(crate) id_token: Option<String>,
     #[serde(default)]
-    expires_in: Option<i64>,
+    pub(crate) expires_in: Option<i64>,
 }
 
 /// 解析后的 JWT claims（仅关心 chatgpt_account_id 等字段）
@@ -701,46 +702,8 @@ impl CodexOAuthManager {
         &self,
         refresh_token: &str,
     ) -> Result<OAuthTokenResponse, CodexOAuthError> {
-        let response = crate::proxy::http_client::get()
-            .post(OAUTH_TOKEN_URL)
-            .timeout(OAUTH_HTTP_TIMEOUT)
-            .header("Content-Type", "application/x-www-form-urlencoded")
-            .header("User-Agent", CODEX_USER_AGENT)
-            .form(&[
-                ("grant_type", "refresh_token"),
-                ("refresh_token", refresh_token),
-                ("client_id", CODEX_CLIENT_ID),
-                ("scope", "openid profile email"),
-            ])
-            .send()
-            .await?;
-
-        let status = response.status();
-        if !status.is_success() {
-            let text = response.text().await.unwrap_or_default();
-            let refresh_error_code = extract_refresh_error_code(&text);
-            if status == reqwest::StatusCode::UNAUTHORIZED
-                || status == reqwest::StatusCode::FORBIDDEN
-                || matches!(
-                    refresh_error_code.as_deref(),
-                    Some(
-                        "refresh_token_expired"
-                            | "refresh_token_reused"
-                            | "refresh_token_invalidated"
-                    )
-                )
-            {
-                return Err(CodexOAuthError::RefreshTokenInvalid);
-            }
-            return Err(CodexOAuthError::TokenFetchFailed(format!(
-                "Refresh 失败: {status} - {text}"
-            )));
-        }
-
-        response
-            .json()
-            .await
-            .map_err(|e| CodexOAuthError::ParseError(e.to_string()))
+        let http_client = crate::proxy::http_client::get();
+        refresh_codex_tokens_with_client(&http_client, refresh_token).await
     }
 
     // ==================== Token 获取（含自动刷新） ====================
@@ -2053,6 +2016,13 @@ pub(crate) fn parse_jwt_exp_from_jwt(token: &str) -> Option<i64> {
 fn extract_account_metadata_from_tokens(
     tokens: &OAuthTokenResponse,
 ) -> (Option<String>, Option<String>) {
+    extract_identity_from_tokens(tokens)
+}
+
+/// 从 token 响应中提取 (account_id, email)
+pub(crate) fn extract_identity_from_tokens(
+    tokens: &OAuthTokenResponse,
+) -> (Option<String>, Option<String>) {
     let mut account_id: Option<String> = None;
     let mut email: Option<String> = None;
 
@@ -2083,6 +2053,60 @@ fn extract_account_metadata_from_tokens(
     }
 
     (account_id, email)
+}
+
+pub(crate) async fn refresh_codex_tokens_with_client(
+    http_client: &Client,
+    refresh_token: &str,
+) -> Result<OAuthTokenResponse, CodexOAuthError> {
+    refresh_codex_tokens_with_client_at_url(http_client, refresh_token, OAUTH_TOKEN_URL).await
+}
+
+pub(crate) async fn refresh_codex_tokens_with_client_at_url(
+    http_client: &Client,
+    refresh_token: &str,
+    token_url: &str,
+) -> Result<OAuthTokenResponse, CodexOAuthError> {
+    let response = http_client
+        .post(token_url)
+        .timeout(OAUTH_HTTP_TIMEOUT)
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .header("User-Agent", CODEX_USER_AGENT)
+        .form(&[
+            ("grant_type", "refresh_token"),
+            ("refresh_token", refresh_token),
+            ("client_id", CODEX_CLIENT_ID),
+            ("scope", "openid profile email"),
+        ])
+        .send()
+        .await?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let text = response.text().await.unwrap_or_default();
+        let refresh_error_code = extract_refresh_error_code(&text);
+        if status == reqwest::StatusCode::UNAUTHORIZED
+            || status == reqwest::StatusCode::FORBIDDEN
+            || matches!(
+                refresh_error_code.as_deref(),
+                Some(
+                    "refresh_token_expired"
+                        | "refresh_token_reused"
+                        | "refresh_token_invalidated"
+                )
+            )
+        {
+            return Err(CodexOAuthError::RefreshTokenInvalid);
+        }
+        return Err(CodexOAuthError::TokenFetchFailed(format!(
+            "Refresh 失败: {status} - {text}"
+        )));
+    }
+
+    response
+        .json()
+        .await
+        .map_err(|e| CodexOAuthError::ParseError(e.to_string()))
 }
 
 #[cfg(test)]

@@ -7,6 +7,7 @@ pub mod env_manager;
 pub mod mcp;
 pub mod model_fetch;
 pub mod model_pricing;
+pub mod oauth_refresh;
 pub mod omo;
 pub mod pi_prompt_files;
 pub(crate) mod pi_state;
