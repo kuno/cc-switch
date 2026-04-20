@@ -584,7 +584,7 @@
 
 .owt-app-card__empty-cta {
   margin-top: 0;
-  padding: 12px 14px;
+  padding: 8px 14px;
   border-radius: var(--radius-control);
   border: 1px dashed var(--line-strong);
   background: var(--panel-soft);
