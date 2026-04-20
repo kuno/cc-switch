@@ -4,6 +4,9 @@
 #[path = "../../../src-tauri/src/services/omo.rs"]
 pub mod omo;
 
+#[path = "../../../src-tauri/src/services/oauth_refresh/mod.rs"]
+pub mod oauth_refresh;
+
 #[path = "../../../src-tauri/src/services/provider/mod.rs"]
 pub mod provider;
 

@@ -1,17 +1,11 @@
-use crate::config::get_app_config_dir;
+use crate::services::oauth_refresh::storage::{
+    persist_auth_bytes, provider_auth_dir, provider_auth_path, CLAUDE_AUTH_DIR,
+};
 use anyhow::{anyhow, Context};
 use serde::{Deserialize, Serialize};
 use std::fs;
-#[cfg(unix)]
-use std::fs::File;
-use std::io::Write;
-#[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
-use super::codex_oauth_store::validate_provider_id;
-
-const CLAUDE_AUTH_DIR: &str = "claude_auth";
 const CLAUDE_AUTH_UPLOAD_LIMIT_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -47,17 +41,11 @@ struct ClaudeAuthEntry {
 }
 
 fn claude_auth_dir() -> PathBuf {
-    std::env::var("CC_SWITCH_DATA_DIR")
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(get_app_config_dir)
-        .join(CLAUDE_AUTH_DIR)
+    provider_auth_dir(CLAUDE_AUTH_DIR)
 }
 
 fn claude_auth_path(provider_id: &str) -> anyhow::Result<PathBuf> {
-    validate_provider_id(provider_id)?;
-    Ok(claude_auth_dir().join(format!("{provider_id}.json")))
+    provider_auth_path(CLAUDE_AUTH_DIR, provider_id)
 }
 
 fn parse_claude_auth(raw_bytes: &[u8]) -> anyhow::Result<(TmpClaudeAuth, ClaudeSavedAuthSummary)> {
@@ -126,73 +114,13 @@ pub(crate) fn claude_auth_upload_limit_bytes() -> usize {
     CLAUDE_AUTH_UPLOAD_LIMIT_BYTES
 }
 
-#[cfg(unix)]
-fn best_effort_fsync_parent_dir(path: &std::path::Path) {
-    let Some(parent) = path.parent() else {
-        return;
-    };
-
-    match File::open(parent).and_then(|file| file.sync_all()) {
-        Ok(()) => {}
-        Err(error) => {
-            log::warn!(
-                "[Claude] failed to fsync parent directory {} after auth save: {}",
-                parent.display(),
-                error
-            );
-        }
-    }
-}
-
-#[cfg(not(unix))]
-fn best_effort_fsync_parent_dir(_path: &std::path::Path) {}
-
 pub(crate) fn save_claude_auth_for_provider(
     provider_id: &str,
     raw_bytes: &[u8],
 ) -> anyhow::Result<ClaudeSavedAuthSummary> {
     let target_path = claude_auth_path(provider_id)?;
     let (_, summary) = parse_claude_auth(raw_bytes)?;
-    let parent = target_path
-        .parent()
-        .ok_or_else(|| anyhow!("invalid claude auth path"))?;
-
-    fs::create_dir_all(parent).with_context(|| format!("failed to create {}", parent.display()))?;
-
-    let mut temp_file = tempfile::NamedTempFile::new_in(parent)
-        .with_context(|| format!("failed to create temp file in {}", parent.display()))?;
-    #[cfg(unix)]
-    {
-        fs::set_permissions(temp_file.path(), fs::Permissions::from_mode(0o600)).with_context(
-            || {
-                format!(
-                    "failed to set permissions on {}",
-                    temp_file.path().display()
-                )
-            },
-        )?;
-    }
-    temp_file
-        .write_all(raw_bytes)
-        .with_context(|| format!("failed to write {}", target_path.display()))?;
-    temp_file
-        .as_file()
-        .sync_all()
-        .with_context(|| format!("failed to sync {}", temp_file.path().display()))?;
-    temp_file
-        .flush()
-        .with_context(|| format!("failed to flush {}", target_path.display()))?;
-    temp_file
-        .persist(&target_path)
-        .map_err(|error| anyhow!(error.error))
-        .with_context(|| format!("failed to persist {}", target_path.display()))?;
-    best_effort_fsync_parent_dir(&target_path);
-
-    #[cfg(unix)]
-    {
-        fs::set_permissions(&target_path, fs::Permissions::from_mode(0o600))
-            .with_context(|| format!("failed to set permissions on {}", target_path.display()))?;
-    }
+    persist_auth_bytes(&target_path, raw_bytes)?;
 
     Ok(summary)
 }
@@ -257,6 +185,8 @@ pub(crate) fn delete_claude_auth_for_provider(provider_id: &str) -> anyhow::Resu
 mod tests {
     use super::*;
     use serial_test::serial;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
     use std::sync::{Mutex, OnceLock};
     use tempfile::TempDir;
 

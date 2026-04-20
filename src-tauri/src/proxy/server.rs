@@ -20,6 +20,7 @@ use super::{
 use crate::database::Database;
 use crate::proxy::providers::codex_oauth_auth::CodexOAuthManager;
 use crate::proxy::providers::copilot_auth::CopilotAuthManager;
+use crate::services::oauth_refresh::OAuthRefreshLockManager;
 use axum::{
     extract::DefaultBodyLimit,
     routing::{any, get, post},
@@ -103,6 +104,8 @@ pub struct ProxyState {
     pub rate_limits: super::rate_limit::RateLimitStore,
     /// In-memory TTL cache for live subscription quota snapshots
     pub quota_snapshot_cache: super::quota_cache::RateLimitSnapshotCache,
+    /// Single-flight locks for reactive OAuth token refresh
+    pub oauth_refresh_locks: OAuthRefreshLockManager,
 }
 
 /// 代理HTTP服务器
@@ -165,6 +168,7 @@ impl ProxyServer {
             failover_manager,
             rate_limits,
             quota_snapshot_cache: super::quota_cache::RateLimitSnapshotCache::new(),
+            oauth_refresh_locks: OAuthRefreshLockManager::new(),
         };
 
         Self {
