@@ -1,17 +1,13 @@
-use crate::config::get_app_config_dir;
+use crate::services::oauth_refresh::storage::{
+    persist_auth_bytes, provider_auth_dir, provider_auth_path, CODEX_AUTH_DIR,
+};
 use anyhow::{anyhow, Context};
 use serde::{Deserialize, Serialize};
 use std::fs;
-#[cfg(unix)]
-use std::fs::File;
-use std::io::Write;
-#[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Component, PathBuf};
+use std::path::PathBuf;
 
 use super::codex_oauth_auth::{parse_chatgpt_account_id_from_jwt, parse_jwt_exp_from_jwt};
 
-const CODEX_AUTH_DIR: &str = "codex_auth";
 const CODEX_AUTH_UPLOAD_LIMIT_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -45,38 +41,11 @@ struct CodexAuthTokens {
 }
 
 fn codex_auth_dir() -> PathBuf {
-    std::env::var("CC_SWITCH_DATA_DIR")
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(get_app_config_dir)
-        .join(CODEX_AUTH_DIR)
-}
-
-pub(crate) fn validate_provider_id(provider_id: &str) -> anyhow::Result<()> {
-    let trimmed = provider_id.trim();
-    if trimmed.is_empty() {
-        return Err(anyhow!("provider id is required"));
-    }
-
-    let path = PathBuf::from(trimmed);
-    if path.is_absolute() {
-        return Err(anyhow!("provider id must be relative"));
-    }
-
-    if path
-        .components()
-        .any(|component| !matches!(component, Component::Normal(_)))
-    {
-        return Err(anyhow!("provider id contains invalid path components"));
-    }
-
-    Ok(())
+    provider_auth_dir(CODEX_AUTH_DIR)
 }
 
 fn codex_auth_path(provider_id: &str) -> anyhow::Result<PathBuf> {
-    validate_provider_id(provider_id)?;
-    Ok(codex_auth_dir().join(format!("{provider_id}.json")))
+    provider_auth_path(CODEX_AUTH_DIR, provider_id)
 }
 
 fn parse_codex_auth(raw_bytes: &[u8]) -> anyhow::Result<(TmpCodexAuth, SavedAuthSummary)> {
@@ -120,73 +89,13 @@ pub(crate) fn codex_auth_upload_limit_bytes() -> usize {
     CODEX_AUTH_UPLOAD_LIMIT_BYTES
 }
 
-#[cfg(unix)]
-fn best_effort_fsync_parent_dir(path: &std::path::Path) {
-    let Some(parent) = path.parent() else {
-        return;
-    };
-
-    match File::open(parent).and_then(|file| file.sync_all()) {
-        Ok(()) => {}
-        Err(error) => {
-            log::warn!(
-                "[Codex] failed to fsync parent directory {} after auth save: {}",
-                parent.display(),
-                error
-            );
-        }
-    }
-}
-
-#[cfg(not(unix))]
-fn best_effort_fsync_parent_dir(_path: &std::path::Path) {}
-
 pub(crate) fn save_codex_auth_for_provider(
     provider_id: &str,
     raw_bytes: &[u8],
 ) -> anyhow::Result<SavedAuthSummary> {
     let (_, summary) = parse_codex_auth(raw_bytes)?;
     let target_path = codex_auth_path(provider_id)?;
-    let parent = target_path
-        .parent()
-        .ok_or_else(|| anyhow!("invalid codex auth path"))?;
-
-    fs::create_dir_all(parent).with_context(|| format!("failed to create {}", parent.display()))?;
-
-    let mut temp_file = tempfile::NamedTempFile::new_in(parent)
-        .with_context(|| format!("failed to create temp file in {}", parent.display()))?;
-    #[cfg(unix)]
-    {
-        fs::set_permissions(temp_file.path(), fs::Permissions::from_mode(0o600)).with_context(
-            || {
-                format!(
-                    "failed to set permissions on {}",
-                    temp_file.path().display()
-                )
-            },
-        )?;
-    }
-    temp_file
-        .write_all(raw_bytes)
-        .with_context(|| format!("failed to write {}", target_path.display()))?;
-    temp_file
-        .as_file()
-        .sync_all()
-        .with_context(|| format!("failed to sync {}", temp_file.path().display()))?;
-    temp_file
-        .flush()
-        .with_context(|| format!("failed to flush {}", target_path.display()))?;
-    temp_file
-        .persist(&target_path)
-        .map_err(|error| anyhow!(error.error))
-        .with_context(|| format!("failed to persist {}", target_path.display()))?;
-    best_effort_fsync_parent_dir(&target_path);
-
-    #[cfg(unix)]
-    {
-        fs::set_permissions(&target_path, fs::Permissions::from_mode(0o600))
-            .with_context(|| format!("failed to set permissions on {}", target_path.display()))?;
-    }
+    persist_auth_bytes(&target_path, raw_bytes)?;
 
     Ok(summary)
 }
@@ -246,6 +155,8 @@ mod tests {
     use super::*;
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
     use serial_test::serial;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
     use std::sync::{Mutex, OnceLock};
     use tempfile::TempDir;
 
