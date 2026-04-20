@@ -27,7 +27,6 @@ import type {
 } from "./pageTypes";
 
 const OPENWRT_PAGE_THEME_STORAGE_KEY = "ccswitch-openwrt-native-page-theme";
-const OPENWRT_PAGE_THEME_DARK_CLASS = "ccswitch-openwrt-provider-ui-theme-dark";
 
 /**
  * Versions surfaced in the section-head chips. These are display-only —
@@ -101,27 +100,14 @@ function getInitialTheme(): OpenWrtPageTheme {
   return "light";
 }
 
-function clearLegacyGlobalDarkThemeLeak() {
-  if (typeof document === "undefined") return;
-  document.documentElement.classList.remove("dark");
-  document.body.classList.remove("dark");
+function applyTheme(target: HTMLElement, theme: OpenWrtPageTheme) {
+  target.classList.toggle("dark", theme === "dark");
+  target.dataset.ccswitchTheme = theme;
 }
 
-function applyTheme(theme: OpenWrtPageTheme) {
-  if (typeof document === "undefined") return;
-  clearLegacyGlobalDarkThemeLeak();
-  document.body.classList.toggle(
-    OPENWRT_PAGE_THEME_DARK_CLASS,
-    theme === "dark",
-  );
-  document.body.dataset.ccswitchTheme = theme;
-}
-
-function clearTheme() {
-  if (typeof document === "undefined") return;
-  clearLegacyGlobalDarkThemeLeak();
-  document.body.classList.remove(OPENWRT_PAGE_THEME_DARK_CLASS);
-  delete document.body.dataset.ccswitchTheme;
+function clearTheme(target: HTMLElement) {
+  target.classList.remove("dark");
+  delete target.dataset.ccswitchTheme;
 }
 
 function getMessageToneClass(message: OpenWrtPageMessage | null): string {
@@ -224,14 +210,14 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
   const providerPanelRef = useRef<ProviderSidePanelHandle | null>(null);
 
   useEffect(() => {
-    applyTheme(theme);
+    applyTheme(options.target, theme);
     if (typeof window !== "undefined") {
       window.localStorage.setItem(OPENWRT_PAGE_THEME_STORAGE_KEY, theme);
     }
     return () => {
-      clearTheme();
+      clearTheme(options.target);
     };
-  }, [theme]);
+  }, [options.target, theme]);
 
   useEffect(() => {
     const nextSnapshot = getHostSnapshot(options);
