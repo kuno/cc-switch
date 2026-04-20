@@ -11,7 +11,9 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   useEffect,
   useRef,
+  useState,
 } from "react";
+import { copyText } from "@/lib/clipboard";
 import type {
   SharedProviderAppId,
   SharedProviderEditorPayload,
@@ -85,6 +87,12 @@ const APP_LABELS: Record<SharedProviderAppId, string> = {
   gemini: "Gemini",
 };
 
+const APP_SUBTITLES: Record<SharedProviderAppId, string> = {
+  claude: "Anthropic · Claude Code",
+  codex: "OpenAI · Codex CLI",
+  gemini: "Google · Gemini CLI",
+};
+
 const APP_ICON_BASE_URL = "/luci-static/resources/ccswitch/provider-ui/icons";
 
 const APP_ICON_FILENAMES: Partial<Record<SharedProviderAppId, string>> = {
@@ -109,14 +117,8 @@ const FOCUSABLE_SELECTOR = [
 
 function getPanelSubtitle(
   appId: SharedProviderAppId,
-  mode: "new" | "edit",
-  provider: SharedProviderView | null,
 ): string {
-  if (mode === "new") {
-    return `New ${APP_LABELS[appId]} provider`;
-  }
-
-  return provider?.providerId || `Saved ${APP_LABELS[appId]} provider`;
+  return APP_SUBTITLES[appId];
 }
 
 function getStatusLabel(
@@ -128,6 +130,17 @@ function getStatusLabel(
   }
 
   return provider?.active ? "Active" : "Saved";
+}
+
+function getStatusTone(
+  mode: "new" | "edit",
+  provider: SharedProviderView | null,
+): "accent" | "neutral" | "success" {
+  if (mode === "new") {
+    return "accent";
+  }
+
+  return provider?.active ? "success" : "neutral";
 }
 
 function getFocusableElements(container: HTMLElement | null): HTMLElement[] {
@@ -197,10 +210,13 @@ export function ProviderSidePanel({
     (mode === "new"
       ? draft.name.trim() || "New provider"
       : selectedProvider?.name.trim()) || "Provider";
+  const detailProviderId = selectedProvider?.providerId ?? null;
   const panelRef = useRef<HTMLElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const copyFeedbackTimeoutRef = useRef<number | null>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
   const wasOpenRef = useRef(open);
+  const [copiedProviderId, setCopiedProviderId] = useState<string | null>(null);
 
   useEffect(() => {
     if (open && !wasOpenRef.current) {
@@ -235,6 +251,23 @@ export function ProviderSidePanel({
 
     return undefined;
   }, [open]);
+
+  useEffect(() => {
+    setCopiedProviderId(null);
+    if (copyFeedbackTimeoutRef.current !== null) {
+      window.clearTimeout(copyFeedbackTimeoutRef.current);
+      copyFeedbackTimeoutRef.current = null;
+    }
+  }, [detailProviderId]);
+
+  useEffect(
+    () => () => {
+      if (copyFeedbackTimeoutRef.current !== null) {
+        window.clearTimeout(copyFeedbackTimeoutRef.current);
+      }
+    },
+    [],
+  );
 
   function handleTrapFocus(event: ReactKeyboardEvent<HTMLElement>) {
     if (!open || event.key !== "Tab") {
@@ -272,6 +305,26 @@ export function ProviderSidePanel({
     }
   }
 
+  async function handleCopyProviderId(providerId: string) {
+    try {
+      await copyText(providerId);
+      setCopiedProviderId(providerId);
+
+      if (copyFeedbackTimeoutRef.current !== null) {
+        window.clearTimeout(copyFeedbackTimeoutRef.current);
+      }
+
+      copyFeedbackTimeoutRef.current = window.setTimeout(() => {
+        setCopiedProviderId((currentProviderId) =>
+          currentProviderId === providerId ? null : currentProviderId,
+        );
+        copyFeedbackTimeoutRef.current = null;
+      }, 1600);
+    } catch {
+      // Copy failures should leave the current chip label untouched.
+    }
+  }
+
   return (
     <div className="owt-provider-panel-shell" data-open={open}>
       <button
@@ -305,7 +358,7 @@ export function ProviderSidePanel({
             <div className="owt-provider-panel__header-copy">
               <h3 className="owt-provider-panel__title">{APP_LABELS[appId]}</h3>
               <div className="owt-provider-panel__subtitle">
-                {providerName} · {getPanelSubtitle(appId, mode, selectedProvider)}
+                {getPanelSubtitle(appId)}
               </div>
             </div>
             <button
@@ -377,16 +430,24 @@ export function ProviderSidePanel({
                       <div className="owt-provider-panel__provider-name">
                         {provider.name || provider.providerId || "Provider"}
                       </div>
-                      <div className="owt-provider-panel__provider-url">
+                      <div className="owt-provider-panel__rail-url">
                         {provider.baseUrl || "No base URL saved"}
                       </div>
+                      {provider.providerId ? (
+                        <div className="owt-provider-panel__rail-id">
+                          {provider.providerId}
+                        </div>
+                      ) : null}
                     </div>
-                    <span
-                      className="owt-provider-panel__provider-chip"
-                      data-tone={provider.active ? "active" : "idle"}
-                    >
-                      {provider.active ? "Active" : "Saved"}
-                    </span>
+                    {provider.active ? (
+                      <span className="owt-status-pill" data-tone="success">
+                        <span
+                          className="owt-status-pill__dot"
+                          aria-hidden="true"
+                        />
+                        Active
+                      </span>
+                    ) : null}
                   </button>
                 ))
               )}
@@ -411,48 +472,53 @@ export function ProviderSidePanel({
             {resolvedPanelMode === "detail" ? (
               <>
                 <div className="owt-provider-panel__detail-head">
-                  <div>
-                    <div className="owt-provider-panel__detail-title">
-                      {providerName}
+                  <div className="owt-provider-panel__detail-identity">
+                    <div
+                      className="owt-provider-panel__provider-mark owt-provider-panel__provider-mark--detail"
+                      data-app={appId}
+                    >
+                      {appIconUrl(appId) ? (
+                        <img src={appIconUrl(appId)!} alt="" />
+                      ) : (
+                        providerName.slice(0, 1).toUpperCase()
+                      )}
                     </div>
-                    <div className="owt-provider-panel__detail-url">
-                      {draft.baseUrl || "Not saved yet"}
+                    <div className="owt-provider-panel__detail-copy">
+                      <div className="owt-provider-panel__detail-title">
+                        {providerName}
+                      </div>
+                      <div className="owt-provider-panel__detail-url">
+                        {draft.baseUrl || "Not saved yet"}
+                      </div>
                     </div>
                   </div>
 
                   <div className="owt-provider-panel__detail-meta">
-                    {selectedProvider?.providerId ? (
-                      <span className="owt-provider-panel__id-chip">
-                        {selectedProvider.providerId}
-                      </span>
-                    ) : null}
-                    <span
-                      className="owt-provider-panel__status-chip"
-                      data-tone={
-                        mode === "new"
-                          ? "draft"
-                          : selectedProvider?.active
-                            ? "active"
-                            : "idle"
-                      }
-                    >
-                      {getStatusLabel(mode, selectedProvider)}
-                    </span>
-                    {canActivate ? (
+                    {detailProviderId ? (
                       <button
                         type="button"
-                        className="owt-provider-panel__button owt-provider-panel__button--ghost"
-                        disabled={activatePending}
-                        onClick={onActivate}
+                        className="owt-provider-panel__id-chip"
+                        data-copied={copiedProviderId === detailProviderId}
+                        aria-label={`Copy provider ID ${detailProviderId}`}
+                        title={
+                          copiedProviderId === detailProviderId
+                            ? "Copied"
+                            : `Copy provider ID ${detailProviderId}`
+                        }
+                        onClick={() => void handleCopyProviderId(detailProviderId)}
                       >
-                        {activatePending ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Zap className="h-4 w-4" />
-                        )}
-                        Set active
+                        {copiedProviderId === detailProviderId
+                          ? "Copied"
+                          : detailProviderId}
                       </button>
                     ) : null}
+                    <span
+                      className="owt-status-pill"
+                      data-tone={getStatusTone(mode, selectedProvider)}
+                    >
+                      <span className="owt-status-pill__dot" aria-hidden="true" />
+                      {getStatusLabel(mode, selectedProvider)}
+                    </span>
                   </div>
                 </div>
 
@@ -546,6 +612,21 @@ export function ProviderSidePanel({
                     <Trash2 className="h-4 w-4" />
                   )}
                   Delete
+                </button>
+              ) : null}
+              {canActivate ? (
+                <button
+                  type="button"
+                  className="owt-provider-panel__button owt-provider-panel__button--ghost"
+                  disabled={activatePending}
+                  onClick={onActivate}
+                >
+                  {activatePending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Zap className="h-4 w-4" />
+                  )}
+                  Set active
                 </button>
               ) : null}
               <button

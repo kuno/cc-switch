@@ -1,9 +1,23 @@
 import { useState } from "react";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProviderSidePanel, type ProviderSidePanelTab } from "@/openwrt-provider-ui/components/ProviderSidePanel";
 import { createProviderSidePanelProps, createProviderView } from "../provider-panel-fixtures";
+
+const { copyTextMock } = vi.hoisted(() => ({
+  copyTextMock: vi.fn(),
+}));
+
+vi.mock("@/lib/clipboard", () => ({
+  copyText: copyTextMock,
+}));
 
 function StatefulProviderSidePanel({
   initialTab = "general",
@@ -25,6 +39,15 @@ function StatefulProviderSidePanel({
 }
 
 describe("ProviderSidePanel", () => {
+  beforeEach(() => {
+    copyTextMock.mockReset();
+    copyTextMock.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("renders the shell, header, footer, and exactly three supported tabs", () => {
     const onClose = vi.fn();
     const onTabChange = vi.fn();
@@ -64,6 +87,9 @@ describe("ProviderSidePanel", () => {
     ).toHaveAttribute("data-active", "true");
     expect(
       within(dialog).getByRole("button", { name: "Close provider panel" }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("Anthropic · Claude Code"),
     ).toBeInTheDocument();
     expect(
       within(dialog).getByRole("button", { name: "Save" }),
@@ -131,5 +157,92 @@ describe("ProviderSidePanel", () => {
     expect(
       screen.getByText("Failed to load provider workspace."),
     ).toBeInTheDocument();
+  });
+
+  it("renders rail metadata parity and keeps activate action in the footer", async () => {
+    vi.useFakeTimers();
+    const activeProvider = createProviderView("claude", {
+      active: true,
+      baseUrl: "https://api.anthropic.com",
+      name: "Claude Primary",
+      providerId: "claude-primary",
+    });
+    const selectedProvider = createProviderView("claude", {
+      active: false,
+      baseUrl: "https://api.deepseek.com/anthropic",
+      name: "Claude Backup",
+      providerId: "claude-backup",
+    });
+    const { container } = render(
+      <ProviderSidePanel
+        {...createProviderSidePanelProps({
+          providers: [activeProvider, selectedProvider],
+          selectedProvider,
+          selectedProviderId: selectedProvider.providerId,
+          canActivate: true,
+        })}
+      />,
+    );
+
+    const rows = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(
+        ".owt-provider-panel__provider-row",
+      ),
+    );
+    const activeRow = rows.find((row) =>
+      within(row).queryByText("Claude Primary"),
+    );
+    const selectedRow = rows.find((row) =>
+      within(row).queryByText("Claude Backup"),
+    );
+    const detailHead = container.querySelector<HTMLElement>(
+      ".owt-provider-panel__detail-head",
+    );
+    const footerActions = container.querySelector<HTMLElement>(
+      ".owt-provider-panel__footer-actions",
+    );
+
+    expect(activeRow).not.toBeNull();
+    expect(selectedRow).not.toBeNull();
+    expect(detailHead).not.toBeNull();
+    expect(footerActions).not.toBeNull();
+
+    expect(within(activeRow!).getByText("https://api.anthropic.com")).toHaveClass(
+      "owt-provider-panel__rail-url",
+    );
+    expect(within(activeRow!).getByText("claude-primary")).toHaveClass(
+      "owt-provider-panel__rail-id",
+    );
+    expect(within(activeRow!).getByText("Active")).toHaveClass(
+      "owt-status-pill",
+    );
+    expect(within(selectedRow!).getByText("claude-backup")).toHaveClass(
+      "owt-provider-panel__rail-id",
+    );
+    expect(within(selectedRow!).queryByText("Saved")).toBeNull();
+    expect(
+      within(detailHead!).queryByRole("button", { name: "Set active" }),
+    ).toBeNull();
+    expect(
+      within(footerActions!).getByRole("button", { name: "Set active" }),
+    ).toBeInTheDocument();
+
+    const copyChip = screen.getByRole("button", {
+      name: "Copy provider ID claude-backup",
+    });
+
+    await act(async () => {
+      fireEvent.click(copyChip);
+      await Promise.resolve();
+    });
+
+    expect(copyTextMock).toHaveBeenCalledWith("claude-backup");
+    expect(copyChip).toHaveTextContent("Copied");
+
+    await act(async () => {
+      vi.advanceTimersByTime(1600);
+      await Promise.resolve();
+    });
+    expect(copyChip).toHaveTextContent("claude-backup");
   });
 });
