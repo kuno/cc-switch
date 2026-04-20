@@ -23,11 +23,13 @@ const openWrtVisualHarnessOutDir = path.resolve(
 export default defineConfig(({ command }) => {
   const buildTarget = process.env.CCSWITCH_BUILD_TARGET;
   const isOpenWrtProviderUiBuild = buildTarget === "openwrt-provider-ui";
-  const isOpenWrtVisualHarnessBuild =
-    buildTarget === "openwrt-visual-harness";
+  const isOpenWrtVisualHarnessBuild = buildTarget === "openwrt-visual-harness";
   const define = isOpenWrtProviderUiBuild
     ? {
         "process.env.NODE_ENV": JSON.stringify("production"),
+        "process.env.CCSWITCH_USE_SHADOW_DOM": JSON.stringify(
+          process.env.CCSWITCH_USE_SHADOW_DOM ?? "",
+        ),
       }
     : undefined;
 
@@ -57,7 +59,7 @@ export default defineConfig(({ command }) => {
             formats: ["iife"],
             name: "CCSwitchOpenWrtProviderUi",
             fileName: () => "ccswitch-provider-ui.js",
-            cssFileName: "ccswitch-provider-ui",
+            cssFileName: "openwrt-luci-host",
           },
           rollupOptions: {
             output: {
@@ -70,10 +72,10 @@ export default defineConfig(({ command }) => {
             outDir: openWrtVisualHarnessOutDir,
             emptyOutDir: true,
           }
-      : {
-          outDir: "../dist",
-          emptyOutDir: true,
-        },
+        : {
+            outDir: "../dist",
+            emptyOutDir: true,
+          },
     server: {
       port: 3000,
       strictPort: true,

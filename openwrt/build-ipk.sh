@@ -15,9 +15,9 @@ DAEMON_SRC="$SCRIPT_DIR/proxy-daemon/files"
 LUCI_SRC="$SCRIPT_DIR/luci-app-ccswitch"
 STAGED_OPENWRT_PROVIDER_UI_DIR="$SCRIPT_DIR/provider-ui-dist"
 STAGED_OPENWRT_PROVIDER_UI_BUNDLE="$STAGED_OPENWRT_PROVIDER_UI_DIR/ccswitch-provider-ui.js"
-STAGED_OPENWRT_PROVIDER_UI_STYLESHEET="$STAGED_OPENWRT_PROVIDER_UI_DIR/ccswitch-provider-ui.css"
+STAGED_OPENWRT_PROVIDER_UI_HOST_STYLESHEET="$STAGED_OPENWRT_PROVIDER_UI_DIR/openwrt-luci-host.css"
 OPENWRT_PROVIDER_UI_ASSET="$LUCI_SRC/htdocs/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js"
-OPENWRT_PROVIDER_UI_STYLESHEET="$LUCI_SRC/htdocs/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.css"
+OPENWRT_PROVIDER_UI_HOST_STYLESHEET="$LUCI_SRC/htdocs/luci-static/resources/ccswitch/provider-ui/openwrt-luci-host.css"
 PREPARE_PROVIDER_UI_BUNDLE="$SCRIPT_DIR/prepare-provider-ui-bundle.sh"
 OPENWRT_PROVIDER_UI_ICONS_SRC_DIR="$PROJECT_DIR/src/openwrt-provider-ui/icons"
 
@@ -103,7 +103,7 @@ rebuild_openwrt_provider_ui_bundle() {
 	fi
 
 	[ -f "$STAGED_OPENWRT_PROVIDER_UI_BUNDLE" ] || die "pnpm reported success but did not produce: $STAGED_OPENWRT_PROVIDER_UI_BUNDLE"
-	[ -f "$STAGED_OPENWRT_PROVIDER_UI_STYLESHEET" ] || die "pnpm reported success but did not produce: $STAGED_OPENWRT_PROVIDER_UI_STYLESHEET"
+	[ -f "$STAGED_OPENWRT_PROVIDER_UI_HOST_STYLESHEET" ] || die "pnpm reported success but did not produce: $STAGED_OPENWRT_PROVIDER_UI_HOST_STYLESHEET"
 }
 
 ensure_openwrt_provider_ui_asset() {
@@ -114,14 +114,14 @@ ensure_openwrt_provider_ui_asset() {
 	elif [ "${CCSWITCH_IPK_SKIP_UI_REBUILD:-}" = "1" ]; then
 		echo "Skipping OpenWrt provider UI rebuild because CCSWITCH_IPK_SKIP_UI_REBUILD=1"
 		[ -f "$STAGED_OPENWRT_PROVIDER_UI_BUNDLE" ] || die "CCSWITCH_IPK_SKIP_UI_REBUILD=1 was set but the staged provider UI bundle is missing: $STAGED_OPENWRT_PROVIDER_UI_BUNDLE"
-		[ -f "$STAGED_OPENWRT_PROVIDER_UI_STYLESHEET" ] || die "CCSWITCH_IPK_SKIP_UI_REBUILD=1 was set but the staged provider UI stylesheet is missing: $STAGED_OPENWRT_PROVIDER_UI_STYLESHEET"
+		[ -f "$STAGED_OPENWRT_PROVIDER_UI_HOST_STYLESHEET" ] || die "CCSWITCH_IPK_SKIP_UI_REBUILD=1 was set but the staged provider UI host stylesheet is missing: $STAGED_OPENWRT_PROVIDER_UI_HOST_STYLESHEET"
 	else
 		rebuild_openwrt_provider_ui_bundle
 	fi
 
 	"$PREPARE_PROVIDER_UI_BUNDLE" --output-dir "$(dirname "$OPENWRT_PROVIDER_UI_ASSET")"
 	[ -f "$OPENWRT_PROVIDER_UI_ASSET" ] || die "expected OpenWrt provider UI bundle was not produced: $OPENWRT_PROVIDER_UI_ASSET"
-	[ -f "$OPENWRT_PROVIDER_UI_STYLESHEET" ] || die "expected OpenWrt provider UI stylesheet was not produced: $OPENWRT_PROVIDER_UI_STYLESHEET"
+	[ -f "$OPENWRT_PROVIDER_UI_HOST_STYLESHEET" ] || die "expected OpenWrt provider UI host stylesheet was not produced: $OPENWRT_PROVIDER_UI_HOST_STYLESHEET"
 }
 
 parse_args() {
@@ -252,7 +252,7 @@ Build it first with:
 	[ -f "$LUCI_SRC/root/usr/share/luci/menu.d/luci-app-ccswitch.json" ] || die "missing LuCI menu file"
 	[ -f "$LUCI_SRC/htdocs/luci-static/resources/view/ccswitch/settings.js" ] || die "missing LuCI settings view"
 	[ -f "$OPENWRT_PROVIDER_UI_ASSET" ] || die "missing OpenWrt provider UI bundle"
-	[ -f "$OPENWRT_PROVIDER_UI_STYLESHEET" ] || die "missing OpenWrt provider UI stylesheet"
+	[ -f "$OPENWRT_PROVIDER_UI_HOST_STYLESHEET" ] || die "missing OpenWrt provider UI host stylesheet"
 }
 
 build_daemon_binary() {
@@ -556,8 +556,8 @@ build_luci_package() {
 		"$OPENWRT_PROVIDER_UI_ASSET" \
 		"$data_dir/www/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js"
 	install -m 0644 \
-		"$OPENWRT_PROVIDER_UI_STYLESHEET" \
-		"$data_dir/www/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.css"
+		"$OPENWRT_PROVIDER_UI_HOST_STYLESHEET" \
+		"$data_dir/www/luci-static/resources/ccswitch/provider-ui/openwrt-luci-host.css"
 	for icon_name in "${provider_ui_icon_filenames[@]}"; do
 		install -m 0644 \
 			"$OPENWRT_PROVIDER_UI_ICONS_SRC_DIR/$icon_name" \
