@@ -2689,13 +2689,16 @@ select.owt-provider-panel__input {
   margin-bottom: 0;
 }
 
-.owt-app-card--empty-skeleton .sk-empty-cta {
+.sk-empty-cta {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 18px;
-  padding: 16px 14px;
+  margin-top: 12px;
+  padding: 12px 14px;
+}
+
+.owt-app-card--empty-skeleton .sk-empty-cta {
   border: 1px dashed var(--line-strong);
   border-radius: var(--radius-control);
   background: var(--panel-soft);
