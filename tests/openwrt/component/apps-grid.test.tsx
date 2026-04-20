@@ -42,7 +42,7 @@ describe("AppsGrid", () => {
     const mainButtons = await screen.findAllByRole("button", {
       name: /Open (Claude|Codex|Gemini) providers/,
     });
-    const openButtons = screen.getAllByRole("button", { name: "Open" });
+    const openButtons = screen.getAllByTitle("Show recent requests");
 
     await user.tab();
     expect(mainButtons[0]).toHaveFocus();
@@ -103,9 +103,9 @@ describe("AppsGrid", () => {
       OPENWRT_APP_IDS,
     );
     expect(
-      Array.from(container.querySelectorAll(".owt-app-card")).map((card) =>
-        card.getAttribute("data-app"),
-      ),
+      Array.from(
+        container.querySelectorAll<HTMLElement>(".owt-app-card[data-app]"),
+      ).map((card) => card.dataset.app),
     ).toEqual(OPENWRT_APP_IDS);
   });
 });
