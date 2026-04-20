@@ -103,11 +103,25 @@ function getInitialTheme(): OpenWrtPageTheme {
 function applyTheme(target: HTMLElement, theme: OpenWrtPageTheme) {
   target.classList.toggle("dark", theme === "dark");
   target.dataset.ccswitchTheme = theme;
+  const inner = target.shadowRoot?.querySelector<HTMLElement>(
+    ".ccswitch-openwrt-provider-ui-host",
+  );
+  if (inner) {
+    inner.classList.toggle("dark", theme === "dark");
+    inner.dataset.ccswitchTheme = theme;
+  }
 }
 
 function clearTheme(target: HTMLElement) {
   target.classList.remove("dark");
   delete target.dataset.ccswitchTheme;
+  const inner = target.shadowRoot?.querySelector<HTMLElement>(
+    ".ccswitch-openwrt-provider-ui-host",
+  );
+  if (inner) {
+    inner.classList.remove("dark");
+    delete inner.dataset.ccswitchTheme;
+  }
 }
 
 function getMessageToneClass(message: OpenWrtPageMessage | null): string {
@@ -285,7 +299,7 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
       }
     >
       <main className="owt-main">
-        <section className="owt-slot owt-slot-alert" data-slot="alert-strip">
+        <section data-slot="alert-strip">
           <AlertStrip
             host={snapshot.host}
             isRunning={snapshot.isRunning}
@@ -311,7 +325,7 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
           }
         />
 
-        <section className="owt-slot owt-slot-apps" data-slot="apps-grid">
+        <section data-slot="apps-grid">
           <AppsGrid
             options={options}
             onOpenActivity={handleOpenActivity}
@@ -326,7 +340,7 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
           style={{ marginTop: 34 }}
         />
 
-        <section className="owt-slot owt-slot-daemon" data-slot="daemon-card">
+        <section data-slot="daemon-card">
           <DaemonCard
             host={snapshot.host}
             draft={hostDraft}
