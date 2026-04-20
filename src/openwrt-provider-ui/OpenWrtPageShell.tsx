@@ -103,11 +103,25 @@ function getInitialTheme(): OpenWrtPageTheme {
 function applyTheme(target: HTMLElement, theme: OpenWrtPageTheme) {
   target.classList.toggle("dark", theme === "dark");
   target.dataset.ccswitchTheme = theme;
+  const inner = target.shadowRoot?.querySelector<HTMLElement>(
+    ".ccswitch-openwrt-provider-ui-host",
+  );
+  if (inner) {
+    inner.classList.toggle("dark", theme === "dark");
+    inner.dataset.ccswitchTheme = theme;
+  }
 }
 
 function clearTheme(target: HTMLElement) {
   target.classList.remove("dark");
   delete target.dataset.ccswitchTheme;
+  const inner = target.shadowRoot?.querySelector<HTMLElement>(
+    ".ccswitch-openwrt-provider-ui-host",
+  );
+  if (inner) {
+    inner.classList.remove("dark");
+    delete inner.dataset.ccswitchTheme;
+  }
 }
 
 function getMessageToneClass(message: OpenWrtPageMessage | null): string {
