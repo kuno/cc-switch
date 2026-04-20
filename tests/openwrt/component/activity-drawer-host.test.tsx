@@ -112,22 +112,31 @@ describe("ActivityDrawerHost", () => {
     const closeButton = await screen.findByRole("button", {
       name: "Close recent activity",
     });
+    const refreshButton = screen.getByRole("button", {
+      name: "Refresh recent activity",
+    });
     const allAppsButton = await screen.findByRole("button", {
       name: "All apps",
     });
     const activeAppButton = screen.getByRole("button", {
       name: "Claude",
     });
-    const refreshButton = screen.getByRole("button", {
-      name: "Refresh",
+    const previousPageButton = screen.getByRole("button", {
+      name: "Previous request log page",
     });
-    const requestRow = await screen.findByRole("button", {
-      name: "Open Anthropic Direct request req-claude-001",
+    const nextPageButton = screen.getByRole("button", {
+      name: "Next request log page",
     });
+
+    expect(previousPageButton).toBeDisabled();
+    expect(nextPageButton).toBeDisabled();
 
     await waitFor(() => {
       expect(closeButton).toHaveFocus();
     });
+
+    await user.tab();
+    expect(refreshButton).toHaveFocus();
 
     await user.tab();
     expect(allAppsButton).toHaveFocus();
@@ -136,16 +145,10 @@ describe("ActivityDrawerHost", () => {
     expect(activeAppButton).toHaveFocus();
 
     await user.tab();
-    expect(refreshButton).toHaveFocus();
-
-    await user.tab();
-    expect(requestRow).toHaveFocus();
-
-    await user.tab();
     expect(closeButton).toHaveFocus();
 
     await user.tab({ shift: true });
-    expect(requestRow).toHaveFocus();
+    expect(activeAppButton).toHaveFocus();
 
     await user.keyboard("{Escape}");
 
