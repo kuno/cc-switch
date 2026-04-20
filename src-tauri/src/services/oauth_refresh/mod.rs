@@ -16,7 +16,12 @@ const MIN_PLAUSIBLE_EXPIRES_AT_MS: i64 = 1_000_000_000_000;
 const MAX_PLAUSIBLE_EXPIRES_AT_MS: i64 = 9_999_999_999_999;
 const MIN_REFRESHED_LIFETIME_MS: i64 = 30_000;
 
-const CLAUDE_CLIENT_ID: &str = "https://claude.ai/oauth/claude-code-client-metadata";
+/// Claude Code CLI OAuth client ID.
+/// Source: @anthropic-ai/claude-code@1.0.119 cli.js (function NjA).
+/// Last verified against live endpoint: 2026-04-20.
+/// If Anthropic rotates this, tokens will fail with invalid_client.
+/// Recovery: extract from latest claude-code npm tarball and update.
+const CLAUDE_CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 const CLAUDE_OAUTH_TOKEN_URL: &str = "https://platform.claude.com/v1/oauth/token";
 const CLAUDE_OAUTH_USER_AGENT: &str = "cc-switch-claude-oauth";
 
@@ -38,6 +43,8 @@ pub struct RefreshedCredentials {
 pub enum OAuthRefreshError {
     #[error("refresh token invalid")]
     RefreshTokenInvalid,
+    #[error("oauth client id invalid")]
+    ClientIdInvalid,
     #[error("network error: {0}")]
     NetworkError(String),
     #[error("provider error: {0}")]
@@ -48,6 +55,7 @@ impl OAuthRefreshError {
     pub fn kind(&self) -> &'static str {
         match self {
             Self::RefreshTokenInvalid => "refresh_token_invalid",
+            Self::ClientIdInvalid => "client_id_invalid",
             Self::NetworkError(_) => "network_error",
             Self::ProviderError(_) => "provider_error",
         }
@@ -146,6 +154,12 @@ where
 
     let refreshed = match refresher.refresh(refresh_token).await {
         Ok(refreshed) => refreshed,
+        Err(OAuthRefreshError::ClientIdInvalid) => {
+            log::error!(
+                "[Quota] failed to refresh expired {provider_label} auth for {provider_id}; error_kind=client_id_invalid; client_id may have been rotated by upstream"
+            );
+            return None;
+        }
         Err(error) => {
             log::warn!(
                 "[Quota] failed to refresh expired {provider_label} auth for {provider_id}; error_kind={}",
@@ -289,10 +303,15 @@ impl OAuthTokenRefresher for ClaudeTokenRefresher {
             .await
             .map_err(|error| OAuthRefreshError::NetworkError(error.to_string()))?;
 
-        if status == reqwest::StatusCode::UNAUTHORIZED
-            || status == reqwest::StatusCode::FORBIDDEN
-            || body_indicates_invalid_refresh_token(&body)
-        {
+        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+            return Err(OAuthRefreshError::RefreshTokenInvalid);
+        }
+
+        if oauth_error_type(&body).as_deref() == Some("invalid_client") {
+            return Err(OAuthRefreshError::ClientIdInvalid);
+        }
+
+        if body_indicates_invalid_refresh_token(&body) {
             return Err(OAuthRefreshError::RefreshTokenInvalid);
         }
 
@@ -375,18 +394,24 @@ fn map_codex_refresh_error(error: CodexOAuthError) -> OAuthRefreshError {
 }
 
 fn body_indicates_invalid_refresh_token(body: &[u8]) -> bool {
+    matches!(
+        oauth_error_type(body).as_deref(),
+        Some("invalid_grant" | "refresh_token_expired")
+    )
+}
+
+fn oauth_error_type(body: &[u8]) -> Option<String> {
     let Ok(parsed) = serde_json::from_slice::<Value>(body) else {
-        return false;
+        return None;
     };
 
-    let error_type = parsed
+    parsed
         .get("error")
         .and_then(Value::as_object)
         .and_then(|value| value.get("type"))
         .and_then(Value::as_str)
-        .or_else(|| parsed.get("error").and_then(Value::as_str));
-
-    matches!(error_type, Some("invalid_grant" | "refresh_token_expired"))
+        .or_else(|| parsed.get("error").and_then(Value::as_str))
+        .map(ToString::to_string)
 }
 
 fn normalize_claude_extra(response: ClaudeTokenResponse) -> Map<String, Value> {
@@ -646,8 +671,7 @@ mod tests {
             .cloned()
             .expect("request body");
         assert!(body.contains("grant_type=refresh_token"));
-        assert!(body
-            .contains("client_id=https%3A%2F%2Fclaude.ai%2Foauth%2Fclaude-code-client-metadata"));
+        assert!(body.contains("client_id=9d1c250a-e61b-44d9-88ed-5944d1962f5e"));
         assert!(body.contains("refresh_token=refresh-token"));
         assert_eq!(refreshed.access_token, "refreshed-access");
         assert_eq!(refreshed.refresh_token.as_deref(), Some("refreshed-rt"));
@@ -666,6 +690,54 @@ mod tests {
             refreshed.extra.get("scopes"),
             Some(&json!(["user:profile", "user:inference"]))
         );
+    }
+
+    #[tokio::test]
+    async fn claude_refresher_maps_invalid_client_distinctly() {
+        #[derive(Clone)]
+        struct TestState;
+
+        async fn refresh_handler(
+            State(_state): State<TestState>,
+        ) -> (axum::http::StatusCode, Json<Value>) {
+            (
+                axum::http::StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "error": {
+                        "type": "invalid_client",
+                        "message": "bad client"
+                    }
+                })),
+            )
+        }
+
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind test listener");
+        let port = listener.local_addr().expect("listener addr").port();
+        let app = Router::new()
+            .route("/v1/oauth/token", post(refresh_handler))
+            .with_state(TestState);
+
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app)
+                .await
+                .expect("serve test refresher");
+        });
+
+        let refresher = ClaudeTokenRefresher::with_client_and_url(
+            Client::new(),
+            format!("http://127.0.0.1:{port}/v1/oauth/token"),
+        );
+
+        let error = refresher
+            .refresh("refresh-token")
+            .await
+            .expect_err("invalid_client should fail");
+
+        server.abort();
+
+        assert_eq!(error, OAuthRefreshError::ClientIdInvalid);
     }
 
     #[tokio::test]
