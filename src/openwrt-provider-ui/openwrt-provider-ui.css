@@ -144,6 +144,28 @@ body.ccswitch-openwrt-provider-ui-theme .cbi-map {
   display: revert;
 }
 
+/* Neutralize LuCI Argon's !important pseudo-element injections
+ * (e.g., header::after dark-mode black bar from dark.css).
+ * !important required because Argon's rules are !important.
+ */
+.ccswitch-openwrt-provider-ui-shell header::before,
+.ccswitch-openwrt-provider-ui-shell header::after,
+.ccswitch-openwrt-provider-ui-shell nav::before,
+.ccswitch-openwrt-provider-ui-shell nav::after,
+.ccswitch-openwrt-provider-ui-shell aside::before,
+.ccswitch-openwrt-provider-ui-shell aside::after,
+.ccswitch-openwrt-provider-ui-shell section::before,
+.ccswitch-openwrt-provider-ui-shell section::after,
+.ccswitch-openwrt-provider-ui-shell footer::before,
+.ccswitch-openwrt-provider-ui-shell footer::after {
+  content: none !important;
+  background: none !important;
+  display: none !important;
+  height: 0 !important;
+  width: 0 !important;
+  position: static !important;
+}
+
 .ccswitch-openwrt-provider-ui-shell p,
 .ccswitch-openwrt-provider-ui-shell pre,
 .ccswitch-openwrt-provider-ui-shell dl,
