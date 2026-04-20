@@ -1810,11 +1810,13 @@
 }
 
 select.owt-provider-panel__input {
+  appearance: none;
   padding-right: 38px;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path fill='none' stroke='%23708198' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' d='M3 5l3 3 3-3'/></svg>");
   background-repeat: no-repeat;
   background-position: right 14px center;
   background-size: 12px 12px;
+  cursor: pointer;
 }
 
 :host([data-ccswitch-theme="dark"]) select.owt-provider-panel__input,
@@ -1827,7 +1829,6 @@ select.owt-provider-panel__input {
   min-height: 116px;
   resize: vertical;
 }
-
 .owt-provider-panel__kv {
   min-height: 44px;
   display: flex;
@@ -1847,7 +1848,6 @@ select.owt-provider-panel__input {
 .owt-provider-panel__kv[data-empty="true"] {
   color: var(--muted);
 }
-
 .owt-provider-panel__segment {
   display: inline-grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
