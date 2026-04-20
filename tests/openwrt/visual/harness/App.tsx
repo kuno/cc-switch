@@ -10,23 +10,35 @@ import {
   listHarnessComponents,
   resolveHarnessScenario,
 } from "./entries";
-import "./styles.css";
 
 const OPENWRT_PAGE_THEME_DARK_CLASS = "ccswitch-openwrt-provider-ui-theme-dark";
+const HARNESS_HOST_ID = "root";
+
+function getThemeTargets(): HTMLElement[] {
+  const targets: HTMLElement[] = [document.body];
+  const harnessHost = document.getElementById(HARNESS_HOST_ID);
+
+  if (harnessHost instanceof HTMLElement) {
+    targets.push(harnessHost);
+  }
+
+  return targets;
+}
 
 function applyTheme(theme: OpenWrtPageTheme) {
-  document.body.classList.add(OPENWRT_PROVIDER_UI_THEME_CLASS);
-  document.body.dataset.ccswitchTheme = theme;
-  document.body.classList.toggle(
-    OPENWRT_PAGE_THEME_DARK_CLASS,
-    theme === "dark",
-  );
+  for (const target of getThemeTargets()) {
+    target.classList.add(OPENWRT_PROVIDER_UI_THEME_CLASS);
+    target.dataset.ccswitchTheme = theme;
+    target.classList.toggle(OPENWRT_PAGE_THEME_DARK_CLASS, theme === "dark");
+  }
 }
 
 function clearTheme() {
-  document.body.classList.remove(OPENWRT_PROVIDER_UI_THEME_CLASS);
-  document.body.classList.remove(OPENWRT_PAGE_THEME_DARK_CLASS);
-  delete document.body.dataset.ccswitchTheme;
+  for (const target of getThemeTargets()) {
+    target.classList.remove(OPENWRT_PROVIDER_UI_THEME_CLASS);
+    target.classList.remove(OPENWRT_PAGE_THEME_DARK_CLASS);
+    delete target.dataset.ccswitchTheme;
+  }
 }
 
 export function HarnessApp() {
@@ -58,9 +70,7 @@ export function HarnessApp() {
 
     return (
       <main
-        className={`ccswitch-openwrt-provider-ui-shell owt-visual-harness${
-          shellCanvas ? " owt-visual-harness--fullscreen" : ""
-        }`}
+        className={`owt-visual-harness${shellCanvas ? " owt-visual-harness--fullscreen" : ""}`}
       >
         {shellCanvas ? null : (
           <section className="owt-visual-harness__meta">
@@ -90,7 +100,7 @@ export function HarnessApp() {
       error instanceof Error ? error.message : "Unknown harness error.";
 
     return (
-      <main className="ccswitch-openwrt-provider-ui-shell owt-visual-harness">
+      <main className="owt-visual-harness">
         <section className="owt-visual-harness__meta">
           <p className="owt-visual-harness__eyebrow">OpenWrt visual harness</p>
           <h1 className="owt-visual-harness__title">Invalid scenario</h1>
