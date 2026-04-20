@@ -38,7 +38,9 @@
 					"set_host_config",
 					"restart_service",
 					"upload_codex_auth",
-					"remove_codex_auth"
+					"upload_claude_auth",
+					"remove_codex_auth",
+					"remove_claude_auth"
 				]
 			}
 		}
