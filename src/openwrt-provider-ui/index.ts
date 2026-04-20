@@ -17,6 +17,7 @@ import {
   type SharedProviderManagerProps,
   type SharedProviderShellState,
 } from "@/shared/providers";
+import { PortalContainerContext } from "@/shared/contexts/PortalContainerContext";
 import {
   mountSharedRuntimeSurface,
   type MountedSharedRuntimeSurface,
@@ -119,6 +120,8 @@ const OPENWRT_PROVIDER_UI_HOST_CLASS = "ccswitch-openwrt-provider-ui-host";
 const OPENWRT_PROVIDER_UI_MOUNT_ATTRIBUTE = "data-ccswitch-provider-ui-mount";
 const OPENWRT_PROVIDER_UI_LIGHT_DOM_STYLE_ID =
   "ccswitch-openwrt-provider-ui-inline-styles";
+const OPENWRT_PROVIDER_UI_PORTAL_ROOT_CLASS =
+  "ccswitch-openwrt-provider-ui-portal-root";
 
 type OpenWrtProviderUiMountKind =
   | "page-shell"
@@ -216,7 +219,11 @@ function decorateProviderUiHost(
 function attachShadowHost(
   target: HTMLElement,
   mountKind: OpenWrtProviderUiMountKind,
-): { reactMount: HTMLElement; dispose: () => void } {
+): {
+  portalTarget: HTMLElement;
+  reactMount: HTMLElement;
+  dispose: () => void;
+} {
   clearTarget(target);
   target.dataset.ccswitchProviderUiMount = mountKind;
 
@@ -243,7 +250,12 @@ function attachShadowHost(
   reactMount.dataset.ccswitchProviderUiMount = mountKind;
   shadow.appendChild(reactMount);
 
+  const portalTarget = doc.createElement("div");
+  portalTarget.className = OPENWRT_PROVIDER_UI_PORTAL_ROOT_CLASS;
+  shadow.appendChild(portalTarget);
+
   return {
+    portalTarget,
     reactMount,
     dispose() {
       while (shadow.firstChild) {
@@ -510,6 +522,7 @@ function mountOpenWrtSharedProviderManager(
     state.mounted = mountSharedProviderManager(
       shadowMount?.reactMount ?? options.target,
       createManagerProps(),
+      shadowMount?.portalTarget ?? null,
     );
     unsubscribe = options.shell.subscribe?.(() => {
       if (state.disposed) {
@@ -561,6 +574,7 @@ function mountOpenWrtSharedRuntimeSurface(
       {
         adapter: createOpenWrtRuntimeAdapter(options.transport),
       },
+      shadowMount?.portalTarget ?? null,
     );
 
     return {
@@ -597,9 +611,15 @@ function mountOpenWrtPageShell(options: OpenWrtSharedPageMountOptions) {
       clearTarget(options.target);
     }
     root.render(
-      createElement(OpenWrtPageShell, {
-        options,
-      }),
+      createElement(
+        PortalContainerContext.Provider,
+        {
+          value: shadowMount?.portalTarget ?? null,
+        },
+        createElement(OpenWrtPageShell, {
+          options,
+        }),
+      ),
     );
 
     return {

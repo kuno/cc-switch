@@ -1,4 +1,5 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { type ReactElement } from "react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ActivitySidePanel } from "@/openwrt-provider-ui/components/ActivitySidePanel";
@@ -45,6 +46,27 @@ function renderActivitySidePanel({
   return {
     onClose,
     shell,
+  };
+}
+
+function renderInShadowRoot(ui: ReactElement) {
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const shadowRoot = host.attachShadow({ mode: "open" });
+  const container = document.createElement("div");
+  shadowRoot.appendChild(container);
+  const view = render(ui, {
+    baseElement: container,
+    container,
+  });
+
+  return {
+    ...view,
+    shadowRoot,
+    cleanup() {
+      view.unmount();
+      host.remove();
+    },
   };
 }
 
@@ -214,5 +236,46 @@ describe("ActivitySidePanel", () => {
     );
 
     await screen.findByText("Request detail feed unavailable.");
+  });
+
+  it("advances focus within the drawer when mounted in a shadow root", async () => {
+    const user = userEvent.setup();
+    const shell = createBridgeFixture({
+      requestLogs: {
+        claude: createRequestLogsPage([]),
+      },
+    });
+    const view = renderInShadowRoot(
+      <ActivitySidePanel
+        open
+        appId="claude"
+        onClose={() => {}}
+        shell={shell}
+      />,
+    );
+
+    try {
+      await view.findByText("No recent requests for this filter.");
+
+      const dialog = view.getByRole("dialog");
+      const closeButton = within(dialog).getByRole("button", {
+        name: "Close recent activity",
+      });
+
+      await waitFor(() =>
+        expect(view.shadowRoot.activeElement).toBe(closeButton),
+      );
+
+      const tabEvent = new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        key: "Tab",
+      });
+      closeButton.dispatchEvent(tabEvent);
+
+      expect(tabEvent.defaultPrevented).toBe(false);
+    } finally {
+      view.cleanup();
+    }
   });
 });

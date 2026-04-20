@@ -26,6 +26,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { usePortalContainer } from "@/shared/contexts/PortalContainerContext";
 import { cn } from "@/lib/utils";
 import {
   emptySharedProviderEditorPayload,
@@ -130,7 +131,10 @@ function failoverQueryKey(appId: SharedProviderAppId, providerId: string) {
   return ["shared-provider-manager", "failover", appId, providerId] as const;
 }
 
-function createSelectedProviderState(): Record<SharedProviderAppId, string | null> {
+function createSelectedProviderState(): Record<
+  SharedProviderAppId,
+  string | null
+> {
   return {
     claude: null,
     codex: null,
@@ -521,6 +525,7 @@ export function SharedProviderManager({
   const deleteCancelButtonRef = useRef<HTMLButtonElement | null>(null);
   const editorRestoreFocusRef = useRef<HTMLElement | null>(null);
   const deleteRestoreFocusRef = useRef<HTMLElement | null>(null);
+  const portalContainer = usePortalContainer();
   const queryClient = useQueryClient();
   const currentApp = selectedApp ?? internalApp;
   const currentAppRef = useRef(currentApp);
@@ -686,9 +691,9 @@ export function SharedProviderManager({
   const editorProvider =
     editingProvider?.providerId == null
       ? editingProvider
-      : state?.providers.find(
-            (provider) => provider.providerId === editingProvider.providerId,
-          ) ?? editingProvider;
+      : (state?.providers.find(
+          (provider) => provider.providerId === editingProvider.providerId,
+        ) ?? editingProvider);
   const selectedProvider =
     (state &&
       filteredProviders.find(
@@ -723,23 +728,29 @@ export function SharedProviderManager({
     }) => adapter.addToFailoverQueue!(variables.appId, variables.providerId),
     onSuccess: async (_, variables) => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: stateQueryKey(variables.appId) }),
+        queryClient.invalidateQueries({
+          queryKey: stateQueryKey(variables.appId),
+        }),
         queryClient.invalidateQueries({
           queryKey: failoverQueryKey(variables.appId, variables.providerId),
         }),
       ]);
     },
-    onError: (error) => setNotice(buildErrorNotice("Add to failover queue", error)),
+    onError: (error) =>
+      setNotice(buildErrorNotice("Add to failover queue", error)),
   });
 
   const removeFromFailoverQueueMutation = useMutation({
     mutationFn: async (variables: {
       appId: SharedProviderAppId;
       providerId: string;
-    }) => adapter.removeFromFailoverQueue!(variables.appId, variables.providerId),
+    }) =>
+      adapter.removeFromFailoverQueue!(variables.appId, variables.providerId),
     onSuccess: async (_, variables) => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: stateQueryKey(variables.appId) }),
+        queryClient.invalidateQueries({
+          queryKey: stateQueryKey(variables.appId),
+        }),
         queryClient.invalidateQueries({
           queryKey: failoverQueryKey(variables.appId, variables.providerId),
         }),
@@ -757,7 +768,9 @@ export function SharedProviderManager({
     }) => adapter.setAutoFailoverEnabled!(variables.appId, variables.enabled),
     onSuccess: async (_, variables) => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: stateQueryKey(variables.appId) }),
+        queryClient.invalidateQueries({
+          queryKey: stateQueryKey(variables.appId),
+        }),
         queryClient.invalidateQueries({
           queryKey: failoverQueryKey(variables.appId, variables.providerId),
         }),
@@ -775,7 +788,9 @@ export function SharedProviderManager({
     }) => adapter.reorderFailoverQueue!(variables.appId, variables.providerIds),
     onSuccess: async (_, variables) => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: stateQueryKey(variables.appId) }),
+        queryClient.invalidateQueries({
+          queryKey: stateQueryKey(variables.appId),
+        }),
         queryClient.invalidateQueries({
           queryKey: failoverQueryKey(variables.appId, variables.providerId),
         }),
@@ -793,13 +808,16 @@ export function SharedProviderManager({
     }) => adapter.setMaxRetries!(variables.appId, variables.value),
     onSuccess: async (_, variables) => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: stateQueryKey(variables.appId) }),
+        queryClient.invalidateQueries({
+          queryKey: stateQueryKey(variables.appId),
+        }),
         queryClient.invalidateQueries({
           queryKey: failoverQueryKey(variables.appId, variables.providerId),
         }),
       ]);
     },
-    onError: (error) => setNotice(buildErrorNotice("Update max retries", error)),
+    onError: (error) =>
+      setNotice(buildErrorNotice("Update max retries", error)),
   });
 
   const uploadCodexAuthMutation = useMutation({
@@ -807,7 +825,12 @@ export function SharedProviderManager({
       appId: SharedProviderAppId;
       providerId: string;
       authJsonText: string;
-    }) => adapter.uploadCodexAuth!(variables.appId, variables.providerId, variables.authJsonText),
+    }) =>
+      adapter.uploadCodexAuth!(
+        variables.appId,
+        variables.providerId,
+        variables.authJsonText,
+      ),
     onSuccess: async (_, variables) => {
       await queryClient.invalidateQueries({
         queryKey: stateQueryKey(variables.appId),
@@ -1463,7 +1486,9 @@ export function SharedProviderManager({
                       supportsFailoverControls={supportsFailoverControls}
                       failoverState={
                         detailTabByApp[currentApp] === "failover"
-                          ? (failoverQuery.data as SharedProviderFailoverState | undefined)
+                          ? (failoverQuery.data as
+                              | SharedProviderFailoverState
+                              | undefined)
                           : undefined
                       }
                       failoverLoading={failoverQuery.isLoading}
@@ -1490,7 +1515,9 @@ export function SharedProviderManager({
                           [currentApp]: tab,
                         }))
                       }
-                      onToggleFailoverQueue={handleToggleSelectedProviderFailover}
+                      onToggleFailoverQueue={
+                        handleToggleSelectedProviderFailover
+                      }
                       onAutoFailoverEnabledChange={handleAutoFailoverChange}
                       onReorderFailoverQueue={handleFailoverQueueReorder}
                       onSetMaxRetries={handleMaxRetriesSave}
@@ -1582,6 +1609,7 @@ export function SharedProviderManager({
       >
         <DialogContent
           className="ccswitch-openwrt-provider-ui-dialog ccswitch-openwrt-provider-ui-dialog--compact ccswitch-openwrt-dialog-shell max-w-sm overflow-hidden p-0"
+          container={portalContainer ?? undefined}
           overlayClassName="ccswitch-openwrt-provider-ui-overlay"
           zIndex="alert"
           onOpenAutoFocus={(event) => {

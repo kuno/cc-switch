@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRoot } from "react-dom/client";
+import { PortalContainerContext } from "@/shared/contexts/PortalContainerContext";
 import { SharedProviderManager } from "./SharedProviderManager";
 import type { SharedProviderManagerProps } from "./managerTypes";
 
@@ -25,15 +26,18 @@ export function createSharedProviderManagerQueryClient(): QueryClient {
 export function mountSharedProviderManager(
   container: Element | DocumentFragment,
   props: SharedProviderManagerProps,
+  portalContainer: HTMLElement | null = null,
 ): MountedSharedProviderManager {
   const root = createRoot(container);
   const queryClient = createSharedProviderManagerQueryClient();
 
   function render(nextProps: SharedProviderManagerProps) {
     root.render(
-      <QueryClientProvider client={queryClient}>
-        <SharedProviderManager {...nextProps} />
-      </QueryClientProvider>,
+      <PortalContainerContext.Provider value={portalContainer}>
+        <QueryClientProvider client={queryClient}>
+          <SharedProviderManager {...nextProps} />
+        </QueryClientProvider>
+      </PortalContainerContext.Provider>,
     );
   }
 

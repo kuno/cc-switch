@@ -7,23 +7,24 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef } from "react";
+import {
+  type KeyboardEvent as ReactKeyboardEvent,
+  useEffect,
+  useRef,
+} from "react";
 import type {
   SharedProviderAppId,
   SharedProviderEditorPayload,
   SharedProviderTokenField,
   SharedProviderView,
 } from "@/shared/providers/domain";
-import {
-  ProviderSidePanelCredentialsTab,
-} from "./ProviderSidePanelCredentialsTab";
-import {
-  ProviderSidePanelGeneralTab,
-} from "./ProviderSidePanelGeneralTab";
+import { ProviderSidePanelCredentialsTab } from "./ProviderSidePanelCredentialsTab";
+import { ProviderSidePanelGeneralTab } from "./ProviderSidePanelGeneralTab";
 import {
   ProviderSidePanelPresetTab,
   type ProviderSidePanelPresetGroup,
 } from "./ProviderSidePanelPresetTab";
+import { getActiveElementInTree } from "./focusTree";
 
 export type ProviderSidePanelTab = "preset" | "general" | "credentials";
 
@@ -96,11 +97,11 @@ function appIconUrl(appId: SharedProviderAppId): string | null {
 }
 
 const FOCUSABLE_SELECTOR = [
-  'a[href]',
-  'button:not([disabled])',
-  'input:not([disabled])',
-  'select:not([disabled])',
-  'textarea:not([disabled])',
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
   '[tabindex]:not([tabindex="-1"])',
 ].join(", ");
 
@@ -197,9 +198,11 @@ export function ProviderSidePanel({
 
   useEffect(() => {
     if (open && !wasOpenRef.current) {
+      const previousActiveElement = getActiveElementInTree(panelRef.current);
+
       previouslyFocusedRef.current =
-        document.activeElement instanceof HTMLElement
-          ? document.activeElement
+        previousActiveElement instanceof HTMLElement
+          ? previousActiveElement
           : null;
 
       const animationFrameId = window.requestAnimationFrame(() => {
@@ -242,10 +245,9 @@ export function ProviderSidePanel({
 
     const firstElement = focusableElements[0];
     const lastElement = focusableElements[focusableElements.length - 1];
+    const activeElementInTree = getActiveElementInTree(panelRef.current);
     const activeElement =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
+      activeElementInTree instanceof HTMLElement ? activeElementInTree : null;
     const focusInsidePanel = Boolean(
       activeElement && panelRef.current?.contains(activeElement),
     );
@@ -310,7 +312,10 @@ export function ProviderSidePanel({
         </header>
 
         <div className="owt-provider-panel__body">
-          <nav className="owt-provider-panel__rail" aria-label="Saved providers">
+          <nav
+            className="owt-provider-panel__rail"
+            aria-label="Saved providers"
+          >
             <label className="owt-provider-panel__search">
               <Search className="h-4 w-4" />
               <input
@@ -350,7 +355,11 @@ export function ProviderSidePanel({
                       {appIconUrl(appId) ? (
                         <img src={appIconUrl(appId)!} alt="" />
                       ) : (
-                        (provider.name || provider.providerId || APP_LABELS[appId])
+                        (
+                          provider.name ||
+                          provider.providerId ||
+                          APP_LABELS[appId]
+                        )
                           .slice(0, 1)
                           .toUpperCase()
                       )}
@@ -405,7 +414,13 @@ export function ProviderSidePanel({
                 ) : null}
                 <span
                   className="owt-provider-panel__status-chip"
-                  data-tone={mode === "new" ? "draft" : selectedProvider?.active ? "active" : "idle"}
+                  data-tone={
+                    mode === "new"
+                      ? "draft"
+                      : selectedProvider?.active
+                        ? "active"
+                        : "idle"
+                  }
                 >
                   {getStatusLabel(mode, selectedProvider)}
                 </span>

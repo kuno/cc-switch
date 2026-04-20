@@ -13,6 +13,7 @@ import type {
   OpenWrtRequestLog,
   OpenWrtSharedPageShellApi,
 } from "../pageTypes";
+import { getActiveElementInTree } from "./focusTree";
 
 const ACTIVITY_DRAWER_PAGE_SIZE = 6;
 const SUPPORTED_APP_IDS = [
@@ -480,9 +481,12 @@ export function ActivitySidePanel({
       return;
     }
 
+    const previousActiveElementInTree = getActiveElementInTree(
+      panelRef.current,
+    );
     const previousActiveElement =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
+      previousActiveElementInTree instanceof HTMLElement
+        ? previousActiveElementInTree
         : null;
     const previousOverflow = document.body.style.overflow;
     const focusTimer = window.requestAnimationFrame(() => {
@@ -516,10 +520,9 @@ export function ActivitySidePanel({
 
       const firstElement = focusableElements[0];
       const lastElement = focusableElements[focusableElements.length - 1];
+      const activeElementInTree = getActiveElementInTree(panelRef.current);
       const activeElement =
-        document.activeElement instanceof HTMLElement
-          ? document.activeElement
-          : null;
+        activeElementInTree instanceof HTMLElement ? activeElementInTree : null;
       const isInsidePanel = activeElement
         ? panelRef.current.contains(activeElement)
         : false;
