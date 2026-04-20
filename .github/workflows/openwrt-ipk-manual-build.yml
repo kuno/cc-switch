@@ -75,6 +75,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Fetch upstream tags
+        run: |
+          git remote add upstream https://github.com/farion1231/cc-switch.git
+          git fetch upstream --tags
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
