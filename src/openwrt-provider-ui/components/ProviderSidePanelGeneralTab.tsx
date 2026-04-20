@@ -11,7 +11,7 @@ export function ProviderSidePanelGeneralTab({
   draft,
   website,
   onDraftChange,
-  onWebsiteChange,
+  onWebsiteChange: _onWebsiteChange,
 }: ProviderSidePanelGeneralTabProps) {
   return (
     <div className="owt-provider-panel__fields">
@@ -45,21 +45,20 @@ export function ProviderSidePanelGeneralTab({
         />
       </label>
 
-      <label className="owt-provider-panel__field owt-provider-panel__field--wide">
+      <div className="owt-provider-panel__field owt-provider-panel__field--wide">
         <span className="owt-provider-panel__label">
           Website URL
           <span className="owt-provider-panel__label-note">
             Presentation only
           </span>
         </span>
-        <input
-          className="owt-provider-panel__input owt-provider-panel__input--mono"
-          type="url"
-          value={website}
-          onChange={(event) => onWebsiteChange(event.target.value)}
-          placeholder="https://example.com"
-        />
-      </label>
+        <div
+          className="owt-provider-panel__kv owt-provider-panel__kv--mono"
+          data-empty={website ? "false" : "true"}
+        >
+          {website || "Not available"}
+        </div>
+      </div>
 
       <label className="owt-provider-panel__field owt-provider-panel__field--wide">
         <span className="owt-provider-panel__label">Notes</span>
