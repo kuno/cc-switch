@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRoot } from "react-dom/client";
+import { PortalContainerContext } from "@/shared/contexts/PortalContainerContext";
 import {
   SharedRuntimeSurface,
   type SharedRuntimeSurfaceProps,
@@ -24,15 +25,18 @@ export function createSharedRuntimeSurfaceQueryClient(): QueryClient {
 export function mountSharedRuntimeSurface(
   container: Element | DocumentFragment,
   props: SharedRuntimeSurfaceProps,
+  portalContainer: HTMLElement | null = null,
 ): MountedSharedRuntimeSurface {
   const root = createRoot(container);
   const queryClient = createSharedRuntimeSurfaceQueryClient();
 
   function render(nextProps: SharedRuntimeSurfaceProps) {
     root.render(
-      <QueryClientProvider client={queryClient}>
-        <SharedRuntimeSurface {...nextProps} />
-      </QueryClientProvider>,
+      <PortalContainerContext.Provider value={portalContainer}>
+        <QueryClientProvider client={queryClient}>
+          <SharedRuntimeSurface {...nextProps} />
+        </QueryClientProvider>
+      </PortalContainerContext.Provider>,
     );
   }
 
