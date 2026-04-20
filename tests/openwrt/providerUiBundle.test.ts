@@ -826,6 +826,27 @@ describe("OpenWrt provider UI bundle", () => {
     section.appendChild(target);
     map.appendChild(section);
     document.body.appendChild(map);
+    let topOffset = 96;
+    const getBoundingClientRectSpy = vi
+      .spyOn(target, "getBoundingClientRect")
+      .mockImplementation(
+        () =>
+          ({
+            bottom: topOffset,
+            height: 0,
+            left: 0,
+            right: 0,
+            top: topOffset,
+            width: 0,
+            x: 0,
+            y: topOffset,
+            toJSON() {
+              return {};
+            },
+          }) as DOMRect,
+      );
+    const addEventListenerSpy = vi.spyOn(window, "addEventListener");
+    const removeEventListenerSpy = vi.spyOn(window, "removeEventListener");
     let selectedApp: SharedProviderAppId = "claude";
     let hostState: OpenWrtHostState = {
       app: "claude",
@@ -1088,6 +1109,31 @@ describe("OpenWrt provider UI bundle", () => {
       ).toBeInTheDocument(),
     );
 
+    expect(target.style.minHeight).toBe("calc(100vh - 96px)");
+    const resizeListener = addEventListenerSpy.mock.calls.find(
+      ([eventName]) => eventName === "resize",
+    )?.[1];
+
+    expect(resizeListener).toEqual(expect.any(Function));
+
+    topOffset = Number.NaN;
+    await act(async () => {
+      window.dispatchEvent(new Event("resize"));
+    });
+    expect(target.style.minHeight).toBe("calc(100vh - 0px)");
+
+    topOffset = -24;
+    await act(async () => {
+      window.dispatchEvent(new Event("resize"));
+    });
+    expect(target.style.minHeight).toBe("calc(100vh - 0px)");
+
+    topOffset = 48;
+    await act(async () => {
+      window.dispatchEvent(new Event("resize"));
+    });
+    expect(target.style.minHeight).toBe("calc(100vh - 48px)");
+
     expect(target).toHaveTextContent("Router daemon");
     expect(target).toHaveTextContent("Running");
     expect(target).toHaveTextContent("Healthy");
@@ -1205,10 +1251,18 @@ describe("OpenWrt provider UI bundle", () => {
       }
     });
 
+    expect(removeEventListenerSpy).toHaveBeenCalledWith(
+      "resize",
+      resizeListener,
+    );
+    expect(target.style.minHeight).toBe("");
     expect(target.textContent).toBe("");
     expect(target).not.toHaveClass("ccswitch-openwrt-native-page-host");
     expect(section).not.toHaveClass("ccswitch-openwrt-native-page-section");
     expect(map).not.toHaveClass("ccswitch-openwrt-native-page-map");
+    addEventListenerSpy.mockRestore();
+    getBoundingClientRectSpy.mockRestore();
+    removeEventListenerSpy.mockRestore();
     map.remove();
   });
 
