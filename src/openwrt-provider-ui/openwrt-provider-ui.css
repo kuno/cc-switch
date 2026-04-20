@@ -1591,13 +1591,10 @@
 }
 
 .owt-provider-panel__tabs {
-  display: inline-grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--panel-soft) 88%, transparent);
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  border-bottom: 1px solid var(--line);
 }
 
 .owt-provider-panel__detail[data-panel-mode="preset-picker"] {
@@ -1610,24 +1607,47 @@
 }
 
 .owt-provider-panel__tab {
+  position: relative;
   min-height: 40px;
-  padding: 0 12px;
+  padding: 0 14px 10px;
   border: 0 solid transparent;
-  border-radius: 999px;
   background: transparent;
   color: var(--muted);
   font: inherit;
   font-size: 13px;
   font-weight: 700;
   transition:
-    background-color 160ms ease-out,
+    opacity 160ms ease-out,
     color 160ms ease-out;
 }
 
-.owt-provider-panel__tab[data-active="true"] {
-  background: color-mix(in srgb, var(--panel-strong) 92%, transparent);
+.owt-provider-panel__tab::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--accent);
+  opacity: 0;
+  transform: scaleX(0.92);
+  transition:
+    opacity 160ms ease-out,
+    transform 160ms ease-out;
+}
+
+.owt-provider-panel__tab:hover {
   color: var(--text);
-  box-shadow: 0 16px 34px -30px rgba(23, 33, 51, 0.38);
+}
+
+.owt-provider-panel__tab[data-active="true"] {
+  color: var(--text);
+}
+
+.owt-provider-panel__tab[data-active="true"]::after {
+  opacity: 1;
+  transform: scaleX(1);
 }
 
 .owt-provider-panel__content {
@@ -1776,8 +1796,9 @@
 }
 
 .owt-provider-panel__input--mono,
-.owt-provider-panel__file-name {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+.owt-provider-panel__file-name,
+.owt-provider-panel__kv--mono {
+  font-family: var(--owt-mono);
   font-size: 12.5px;
 }
 
@@ -1805,6 +1826,26 @@ select.owt-provider-panel__input {
 .owt-provider-panel__textarea {
   min-height: 116px;
   resize: vertical;
+}
+
+.owt-provider-panel__kv {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  padding: 11px 14px;
+  border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--panel-soft) 84%, transparent);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.owt-provider-panel__kv[data-empty="true"] {
+  color: var(--muted);
 }
 
 .owt-provider-panel__segment {
