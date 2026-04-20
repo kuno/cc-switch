@@ -98,16 +98,56 @@ async function loadCardData(
 }
 
 /** Placeholder that fills the odd slot when a group has an uneven card count. */
-function SkeletonCard({ dashed = false }: { dashed?: boolean }) {
+function SkeletonCard({ showStats = true }: { showStats?: boolean }) {
   return (
     <div
-      className={
-        dashed
-          ? "owt-app-card owt-app-card--skeleton owt-app-card--skeleton-dashed"
-          : "owt-app-card owt-app-card--skeleton"
-      }
+      className={`owt-app-card owt-app-card--skeleton${
+        showStats ? "" : " owt-app-card--skeleton-compact"
+      }`}
       aria-hidden="true"
-    />
+    >
+      <div className="owt-app-card__head">
+        <div className="sk-icon" />
+        <div className="owt-app-card__titles">
+          <div className="sk-line sk-line--lg" style={{ width: "8rem" }} />
+          <div
+            className="sk-line sk-line--sm"
+            style={{ width: "5.5rem", marginTop: "8px" }}
+          />
+        </div>
+        <span className="owt-app-card__spacer" aria-hidden="true" />
+        <div className="sk-chip" />
+      </div>
+
+      <div className="sk-active">
+        <div className="sk-mini" />
+        <div className="owt-app-card__active-labels">
+          <div className="sk-line sk-line--xs" style={{ width: "5rem" }} />
+          <div
+            className="sk-line sk-line--md"
+            style={{ width: "8.5rem", marginTop: "8px" }}
+          />
+          <div
+            className="sk-line sk-line--sm"
+            style={{ width: "6.5rem", marginTop: "6px" }}
+          />
+        </div>
+      </div>
+
+      {showStats ? (
+        <div className="sk-usage">
+          {Array.from({ length: 3 }, (_, index) => (
+            <div className="sk-usage-cell" key={index}>
+              <div className="sk-line sk-line--xs" style={{ width: "3rem" }} />
+              <div
+                className="sk-line sk-line--md"
+                style={{ width: "4rem", marginTop: "8px" }}
+              />
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -201,7 +241,7 @@ export function AppsGrid({
           <GroupHeader label="Not configured" />
           <div className="owt-group-grid">
             {unconfigured.map(renderCard)}
-            {unconfigured.length % 2 === 1 && <SkeletonCard dashed />}
+            {unconfigured.length % 2 === 1 && <SkeletonCard showStats={false} />}
           </div>
         </>
       )}
