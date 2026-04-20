@@ -33,6 +33,7 @@ import {
 import type { ProviderSidePanelPresetGroup } from "./ProviderSidePanelPresetTab";
 
 type ProviderSidePanelMode = "new" | "edit";
+type ProviderSidePanelViewMode = "detail" | "preset-picker";
 
 type ProviderSidePanelHostProps = {
   shell: OpenWrtSharedPageShellApi;
@@ -292,8 +293,13 @@ export const ProviderSidePanelHost = forwardRef<
     useState<SharedProviderEditorPayload | null>(null);
   const [website, setWebsite] = useState("");
   const [tab, setTab] = useState<ProviderSidePanelTab>("general");
+  const [panelMode, setPanelMode] =
+    useState<ProviderSidePanelViewMode>("detail");
   const [search, setSearch] = useState("");
   const [selectedAuthFile, setSelectedAuthFile] = useState<File | null>(null);
+  const [pickerSelectedPresetId, setPickerSelectedPresetId] = useState<
+    string | null
+  >(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savePending, setSavePending] = useState(false);
@@ -308,7 +314,7 @@ export const ProviderSidePanelHost = forwardRef<
     () => filterProviders(providerState?.providers ?? [], deferredSearch),
     [deferredSearch, providerState?.providers],
   );
-  const selectedPresetId = useMemo(() => {
+  const draftPresetId = useMemo(() => {
     if (!draft.baseUrl.trim()) {
       return "custom";
     }
@@ -373,6 +379,8 @@ export const ProviderSidePanelHost = forwardRef<
         setBaselineDraft(nextDraft);
         setWebsite(deriveWebsite(provider.baseUrl));
         setSelectedAuthFile(null);
+        setPanelMode("detail");
+        setPickerSelectedPresetId(null);
         setTab("general");
         return;
       }
@@ -386,7 +394,9 @@ export const ProviderSidePanelHost = forwardRef<
     setBaselineDraft(null);
     setWebsite("");
     setSelectedAuthFile(null);
-    setTab("preset");
+    setPanelMode("preset-picker");
+    setPickerSelectedPresetId(null);
+    setTab("general");
   }
 
   async function loadWorkspace(
@@ -435,11 +445,15 @@ export const ProviderSidePanelHost = forwardRef<
     setOpen(false);
     setSelectedAuthFile(null);
     setSearch("");
+    setPanelMode("detail");
+    setPickerSelectedPresetId(null);
   }
 
   function openForApp(nextAppId: SharedProviderAppId, providerId?: string) {
     setOpen(true);
     setSearch("");
+    setPanelMode("detail");
+    setPickerSelectedPresetId(null);
     void loadWorkspace(nextAppId, providerId ?? null, providerId ? "edit" : null);
   }
 
@@ -479,13 +493,11 @@ export const ProviderSidePanelHost = forwardRef<
   }, [open]);
 
   function handleAddProvider() {
-    setMode("new");
-    setSelectedProviderId(null);
-    setDraft(createNewDraft(appId));
-    setBaselineDraft(null);
-    setWebsite("");
-    setSelectedAuthFile(null);
-    setTab("preset");
+    setPickerSelectedPresetId(
+      mode === "new" && !selectedProviderId ? draftPresetId : null,
+    );
+    setPanelMode("preset-picker");
+    setTab("general");
   }
 
   function handleSelectProvider(providerId: string) {
@@ -498,20 +510,23 @@ export const ProviderSidePanelHost = forwardRef<
 
   function handlePresetSelect(presetId: string) {
     const preset = getSharedProviderPresetById(appId, presetId);
+    const nextDraftBase = createNewDraft(appId);
 
     if (!preset) {
-      if (mode === "new") {
-        const nextDraft = createNewDraft(appId);
-        setSelectedProviderId(null);
-        setDraft(nextDraft);
-        setBaselineDraft(null);
-        setWebsite("");
-      }
+      setMode("new");
+      setSelectedProviderId(null);
+      setDraft(nextDraftBase);
+      setBaselineDraft(null);
+      setWebsite("");
+      setSelectedAuthFile(null);
+      setPanelMode("detail");
+      setPickerSelectedPresetId(null);
+      setTab("general");
       return;
     }
 
     const nextDraft: SharedProviderEditorPayload = {
-      ...draft,
+      ...nextDraftBase,
       name: preset.providerName,
       baseUrl: preset.baseUrl,
       tokenField: preset.tokenField,
@@ -520,11 +535,21 @@ export const ProviderSidePanelHost = forwardRef<
       token: "",
     };
 
+    setMode("new");
+    setSelectedProviderId(null);
     setDraft(nextDraft);
+    setBaselineDraft(null);
     setWebsite(deriveWebsite(preset.baseUrl));
-    if (mode === "new") {
-      setBaselineDraft(null);
-    }
+    setSelectedAuthFile(null);
+    setPanelMode("detail");
+    setPickerSelectedPresetId(null);
+    setTab("general");
+  }
+
+  function handlePresetCancel() {
+    setPanelMode("detail");
+    setPickerSelectedPresetId(null);
+    setTab("general");
   }
 
   async function refreshSelectionAfterMutation(
@@ -775,6 +800,7 @@ export const ProviderSidePanelHost = forwardRef<
       loading={loading}
       error={error}
       mode={mode}
+      panelMode={panelMode}
       providers={providerState?.providers ?? []}
       filteredProviders={filteredProviders}
       selectedProviderId={selectedProviderId}
@@ -783,7 +809,7 @@ export const ProviderSidePanelHost = forwardRef<
       website={website}
       tab={tab}
       search={search}
-      selectedPresetId={selectedPresetId}
+      selectedPresetId={pickerSelectedPresetId}
       presetGroups={presetGroups}
       tokenFieldOptions={[...SHARED_PROVIDER_TOKEN_FIELD_OPTIONS[appId]]}
       selectedFileName={selectedAuthFile?.name ?? ""}
@@ -802,6 +828,7 @@ export const ProviderSidePanelHost = forwardRef<
       onAddProvider={handleAddProvider}
       onTabChange={setTab}
       onPresetSelect={handlePresetSelect}
+      onPresetCancel={handlePresetCancel}
       onDraftChange={setDraft}
       onWebsiteChange={setWebsite}
       onFileSelect={setSelectedAuthFile}
