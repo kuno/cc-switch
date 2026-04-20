@@ -101,6 +101,8 @@ pub struct ProxyState {
     pub failover_manager: Arc<FailoverSwitchManager>,
     /// Per-provider rate limit snapshots from upstream response headers
     pub rate_limits: super::rate_limit::RateLimitStore,
+    /// In-memory TTL cache for live subscription quota snapshots
+    pub quota_snapshot_cache: super::quota_cache::RateLimitSnapshotCache,
 }
 
 /// 代理HTTP服务器
@@ -162,6 +164,7 @@ impl ProxyServer {
             app_handle,
             failover_manager,
             rate_limits,
+            quota_snapshot_cache: super::quota_cache::RateLimitSnapshotCache::new(),
         };
 
         Self {
