@@ -182,38 +182,6 @@
   gap: 12px;
 }
 
-.owt-theme-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 44px;
-  padding: 0 18px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--panel-strong) 78%, transparent);
-  color: var(--text);
-  font: inherit;
-  font-size: 14px;
-  font-weight: 700;
-  box-shadow: 0 20px 48px -36px rgba(23, 33, 51, 0.28);
-  backdrop-filter: blur(18px);
-  transition:
-    border-color 180ms ease-out,
-    background-color 180ms ease-out,
-    transform 180ms ease-out;
-}
-
-.owt-theme-toggle:hover {
-  border-color: var(--line-strong);
-  background: var(--panel-strong);
-  transform: translateY(-1px);
-}
-
-.owt-theme-toggle:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent) 56%, transparent);
-  outline-offset: 2px;
-}
-
 .owt-main {
   display: grid;
   gap: 24px;
@@ -1402,39 +1370,46 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
   flex-shrink: 0;
   border-radius: var(--radius-icon);
   border: 1px solid color-mix(in srgb, var(--line-strong) 92%, transparent);
-  font-size: 14px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
   background: color-mix(in srgb, var(--panel-strong) 88%, transparent);
 }
 
-.owt-provider-panel__app-badge[data-app="claude"],
+.owt-provider-panel__app-badge {
+  width: 40px;
+  height: 40px;
+}
+
+.owt-provider-panel__app-badge img {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+}
+
+.owt-provider-panel__provider-mark {
+  width: 34px;
+  height: 34px;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
 .owt-provider-panel__provider-mark[data-app="claude"] {
   color: #b85d2f;
   background: color-mix(in srgb, #ffddb7 56%, var(--panel-strong));
 }
 
-.owt-provider-panel__app-badge[data-app="codex"],
 .owt-provider-panel__provider-mark[data-app="codex"] {
   color: #1d7a60;
   background: color-mix(in srgb, #c7f1e1 58%, var(--panel-strong));
 }
 
-.owt-provider-panel__app-badge[data-app="gemini"],
 .owt-provider-panel__provider-mark[data-app="gemini"] {
   color: #3262c5;
   background: color-mix(in srgb, #d7e7ff 56%, var(--panel-strong));
 }
 
-:host([data-ccswitch-theme="dark"])
-  .owt-provider-panel__app-badge[data-app="claude"],
-.ccswitch-openwrt-provider-ui-host[data-ccswitch-theme="dark"]
-  .owt-provider-panel__app-badge[data-app="claude"],
 :host([data-ccswitch-theme="dark"])
   .owt-provider-panel__provider-mark[data-app="claude"],
 .ccswitch-openwrt-provider-ui-host[data-ccswitch-theme="dark"]
@@ -1444,10 +1419,6 @@
 }
 
 :host([data-ccswitch-theme="dark"])
-  .owt-provider-panel__app-badge[data-app="codex"],
-.ccswitch-openwrt-provider-ui-host[data-ccswitch-theme="dark"]
-  .owt-provider-panel__app-badge[data-app="codex"],
-:host([data-ccswitch-theme="dark"])
   .owt-provider-panel__provider-mark[data-app="codex"],
 .ccswitch-openwrt-provider-ui-host[data-ccswitch-theme="dark"]
   .owt-provider-panel__provider-mark[data-app="codex"] {
@@ -1455,10 +1426,6 @@
   color: #c6ffeb;
 }
 
-:host([data-ccswitch-theme="dark"])
-  .owt-provider-panel__app-badge[data-app="gemini"],
-.ccswitch-openwrt-provider-ui-host[data-ccswitch-theme="dark"]
-  .owt-provider-panel__app-badge[data-app="gemini"],
 :host([data-ccswitch-theme="dark"])
   .owt-provider-panel__provider-mark[data-app="gemini"],
 .ccswitch-openwrt-provider-ui-host[data-ccswitch-theme="dark"]
@@ -1490,8 +1457,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   flex-shrink: 0;
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -2459,18 +2426,14 @@ select.owt-provider-panel__input {
 
 /* Alert strip — Task F */
 .owt-alert-strip {
-  --owt-alert-bg: color-mix(
+  --owt-alert-bg: var(--fail-soft, var(--owt-fail-soft));
+  --owt-alert-border: var(--fail-line, var(--owt-fail-line));
+  --owt-alert-text: color-mix(
     in srgb,
-    var(--panel-strong) 70%,
-    var(--accent-soft) 30%
+    var(--fail, var(--owt-fail)) 72%,
+    var(--text) 28%
   );
-  --owt-alert-border: color-mix(
-    in srgb,
-    var(--line-strong) 48%,
-    var(--accent) 52%
-  );
-  --owt-alert-text: color-mix(in srgb, var(--text) 70%, var(--accent-text) 30%);
-  --owt-alert-strong: var(--accent-text);
+  --owt-alert-strong: var(--fail, var(--owt-fail));
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
@@ -2487,29 +2450,37 @@ select.owt-provider-panel__input {
 .owt-alert-strip--restarting {
   --owt-alert-bg: color-mix(
     in srgb,
-    var(--panel-strong) 68%,
-    var(--accent-soft) 32%
+    var(--fail-soft, var(--owt-fail-soft)) 92%,
+    var(--panel-strong) 8%
   );
   --owt-alert-border: color-mix(
     in srgb,
-    var(--line-strong) 40%,
-    var(--accent) 60%
+    var(--fail-line, var(--owt-fail-line)) 88%,
+    var(--line-strong) 12%
   );
-  --owt-alert-text: color-mix(in srgb, var(--text) 66%, var(--accent-text) 34%);
+  --owt-alert-text: color-mix(
+    in srgb,
+    var(--fail, var(--owt-fail)) 74%,
+    var(--text) 26%
+  );
 }
 
 .owt-alert-strip--restart-failed {
   --owt-alert-bg: color-mix(
     in srgb,
-    var(--panel-strong) 62%,
-    var(--accent-soft) 38%
+    var(--fail-soft, var(--owt-fail-soft)) 84%,
+    var(--panel-strong) 16%
   );
   --owt-alert-border: color-mix(
     in srgb,
-    var(--line-strong) 30%,
-    var(--accent) 70%
+    var(--fail-line, var(--owt-fail-line)) 92%,
+    var(--line-strong) 8%
   );
-  --owt-alert-text: color-mix(in srgb, var(--text) 56%, var(--accent-text) 44%);
+  --owt-alert-text: color-mix(
+    in srgb,
+    var(--fail, var(--owt-fail)) 80%,
+    var(--text) 20%
+  );
 }
 
 .owt-alert-strip__icon {
@@ -2517,9 +2488,16 @@ select.owt-provider-panel__input {
   place-items: center;
   width: 18px;
   height: 18px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--owt-alert-border) 14%, transparent);
   color: var(--owt-alert-strong);
+}
+
+.owt-alert-strip__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--fail, var(--owt-fail));
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--fail, var(--owt-fail)) 20%, transparent);
+  animation: pulse 2s ease-in-out infinite;
 }
 
 .owt-alert-strip__copy {
@@ -2546,10 +2524,10 @@ select.owt-provider-panel__input {
 .owt-alert-strip__action {
   min-height: 30px;
   padding: 0 12px;
-  border: 1px solid color-mix(in srgb, var(--owt-alert-border) 72%, white 28%);
+  border: 1px solid transparent;
   border-radius: calc(var(--radius-control) - 4px);
-  background: color-mix(in srgb, var(--panel-strong) 84%, transparent);
-  color: var(--owt-alert-strong);
+  background: var(--fail, var(--owt-fail));
+  color: #fff;
   font: inherit;
   font-size: 12px;
   font-weight: 700;
@@ -2561,8 +2539,12 @@ select.owt-provider-panel__input {
 }
 
 .owt-alert-strip__action:hover:not(:disabled) {
-  border-color: var(--owt-alert-border);
-  background: var(--panel-strong);
+  border-color: transparent;
+  background: color-mix(
+    in srgb,
+    var(--fail, var(--owt-fail)) 88%,
+    #000 12%
+  );
   transform: translateY(-1px);
 }
 
@@ -2573,8 +2555,31 @@ select.owt-provider-panel__input {
 }
 
 .owt-alert-strip__action:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent) 58%, transparent);
+  outline: 2px solid color-mix(
+    in srgb,
+    var(--fail, var(--owt-fail)) 58%,
+    transparent
+  );
   outline-offset: 2px;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 4px color-mix(
+      in srgb,
+      var(--fail, var(--owt-fail)) 20%,
+      transparent
+    );
+  }
+
+  50% {
+    box-shadow: 0 0 0 8px color-mix(
+      in srgb,
+      var(--fail, var(--owt-fail)) 10%,
+      transparent
+    );
+  }
 }
 
 @media (min-width: 720px) {
@@ -3059,6 +3064,7 @@ select.owt-provider-panel__input {
   height: 36px;
   box-sizing: border-box;
   min-height: 0;
+  min-width: 0;
   padding: 0;
   border-radius: 999px;
   border: 1px solid var(--line);
@@ -3066,7 +3072,6 @@ select.owt-provider-panel__input {
   color: inherit;
   display: inline-grid;
   place-items: center;
-  gap: 0;
   box-shadow: none;
   backdrop-filter: none;
   cursor: pointer;
@@ -3078,6 +3083,10 @@ select.owt-provider-panel__input {
 .owt-theme-toggle:hover {
   border-color: var(--line-strong);
   background-color: var(--panel-strong);
+}
+.owt-theme-toggle:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 56%, transparent);
+  outline-offset: 2px;
 }
 .owt-theme-toggle svg {
   width: 18px;
