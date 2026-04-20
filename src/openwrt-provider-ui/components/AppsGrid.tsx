@@ -248,7 +248,7 @@ export function AppsGrid({
       {unconfigured.length > 0 && (
         <>
           <GroupHeader label="Not configured" />
-          <div className="owt-group-grid">
+          <div className="owt-group-grid owt-group-grid--unconfigured">
             {unconfigured.map(renderCard)}
             {unconfigured.length % 2 === 1 && <SkeletonCard showStats={false} />}
           </div>
