@@ -97,8 +97,7 @@ const RESTART_FAILED_MESSAGE: OpenWrtPageMessage = {
 
 const LONG_RESTART_FAILED_MESSAGE: OpenWrtPageMessage = {
   kind: "error",
-  text:
-    "Restart failed: The daemon timed out while reloading the provider routes for Claude, Codex, and Gemini after the restart request. Verify the upstream bridge, proxy listeners, and provider credentials before trying again.",
+  text: "Restart failed: The daemon timed out while reloading the provider routes for Claude, Codex, and Gemini after the restart request. Verify the upstream bridge, proxy listeners, and provider credentials before trying again.",
 };
 
 const EMPTY_REQUEST_LOGS = createRequestLogsPage([]);
@@ -401,9 +400,11 @@ function ActivitySidePanelHarness({
         return;
       }
 
-      const row = document.querySelector<HTMLButtonElement>(
-        ".owt-activity-drawer__row",
-      );
+      const row = document
+        .getElementById("root")
+        ?.shadowRoot?.querySelector<HTMLButtonElement>(
+          ".owt-activity-drawer__row",
+        );
 
       if (row) {
         detailOpenedRef.current = true;
