@@ -6,7 +6,6 @@ import { ActivitySidePanel } from "@/openwrt-provider-ui/components/ActivitySide
 import type { OpenWrtPaginatedRequestLogs } from "@/openwrt-provider-ui/pageTypes";
 import {
   ACTIVITY_DRAWER_APP_LOGS,
-  ACTIVITY_DRAWER_REQUEST_DETAILS,
   CLAUDE_REQUEST_LOG,
   CLAUDE_REQUEST_LOG_SECONDARY,
   FIXED_ACTIVITY_NOW,
@@ -125,11 +124,10 @@ describe("ActivitySidePanel", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("renders all-app request logs and opens detail for the selected entry", async () => {
+  it("renders all-app request logs in compact rows without loading detail", async () => {
     const user = userEvent.setup();
     const shell = createBridgeFixture({
       requestLogs: ACTIVITY_DRAWER_APP_LOGS,
-      requestDetails: ACTIVITY_DRAWER_REQUEST_DETAILS,
     });
 
     renderActivitySidePanel({ shell });
@@ -142,25 +140,14 @@ describe("ActivitySidePanel", () => {
     );
 
     await screen.findByText("OpenAI Router");
-    await user.click(
-      screen.getByRole("button", {
-        name: "Open OpenAI Router request req-codex-101",
-      }),
-    );
-
-    await screen.findByRole("heading", {
-      name: "Request detail",
-    });
+    await screen.findByText("Google Gateway");
 
     expect(shell.getRequestLogs).toHaveBeenCalledWith("claude", 0, 6);
     expect(shell.getRequestLogs).toHaveBeenCalledWith("codex", 0, 6);
     expect(shell.getRequestLogs).toHaveBeenCalledWith("gemini", 0, 6);
-    expect(shell.getRequestDetail).toHaveBeenCalledWith(
-      "codex",
-      "req-codex-101",
-    );
-    expect(screen.getAllByText("gpt-5.4")).toHaveLength(2);
-    expect(screen.getByText("Upstream gateway timeout")).toBeInTheDocument();
+    expect(shell.getRequestDetail).not.toHaveBeenCalled();
+    expect(screen.getByText("gpt-5.4 · Codex · 14m ago")).toBeInTheDocument();
+    expect(screen.getByText("1.2K tok")).toBeInTheDocument();
   });
 
   it("shows a loading state while refresh is in flight", async () => {
@@ -181,7 +168,7 @@ describe("ActivitySidePanel", () => {
     await screen.findByText("Anthropic Direct");
 
     const refreshButton = screen.getByRole("button", {
-      name: "Refresh",
+      name: "Refresh recent activity",
     });
 
     await user.click(refreshButton);
@@ -213,8 +200,7 @@ describe("ActivitySidePanel", () => {
     await screen.findByText("Request log feed unavailable.");
   });
 
-  it("renders request detail errors", async () => {
-    const user = userEvent.setup();
+  it("does not request detail payloads in compact-list mode", async () => {
     const shell = createBridgeFixture({
       requestLogs: {
         claude: createRequestLogsPage([CLAUDE_REQUEST_LOG]),
@@ -229,13 +215,10 @@ describe("ActivitySidePanel", () => {
     renderActivitySidePanel({ shell });
 
     await screen.findByText("Anthropic Direct");
-    await user.click(
-      screen.getByRole("button", {
-        name: "Open Anthropic Direct request req-claude-001",
-      }),
-    );
-
-    await screen.findByText("Request detail feed unavailable.");
+    expect(shell.getRequestDetail).not.toHaveBeenCalled();
+    expect(
+      screen.queryByText("Request detail feed unavailable."),
+    ).not.toBeInTheDocument();
   });
 
   it("advances focus within the drawer when mounted in a shadow root", async () => {

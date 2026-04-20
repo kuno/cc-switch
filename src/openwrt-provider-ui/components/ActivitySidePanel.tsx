@@ -1,5 +1,4 @@
 import {
-  ArrowLeft,
   ChevronLeft,
   ChevronRight,
   Loader2,
@@ -30,12 +29,6 @@ type ActivityRequestLog = OpenWrtRequestLog & {
 
 type ActivityRequestLogsState = Omit<OpenWrtPaginatedRequestLogs, "data"> & {
   data: ActivityRequestLog[];
-  loading: boolean;
-  error: string | null;
-};
-
-type ActivityRequestDetailState = {
-  detail: OpenWrtRequestLog | null;
   loading: boolean;
   error: string | null;
 };
@@ -104,26 +97,17 @@ function formatRelativeTime(value: number): string {
   }).format(new Date(epochMs));
 }
 
-function formatAbsoluteTime(value: number): string {
-  const epochMs = normalizeEpochMs(value);
-
-  if (!epochMs) {
-    return "Unknown time";
-  }
-
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(new Date(epochMs));
-}
-
 function formatCount(value: number): string {
   return new Intl.NumberFormat("en-US").format(
     Number.isFinite(value) ? value : 0,
   );
+}
+
+function formatCompactCount(value: number): string {
+  return new Intl.NumberFormat("en-US", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(Number.isFinite(value) ? value : 0);
 }
 
 function formatLatency(value: number | null | undefined): string {
@@ -132,23 +116,6 @@ function formatLatency(value: number | null | undefined): string {
   }
 
   return `${Math.round(value)} ms`;
-}
-
-function formatUsd(value: string): string {
-  const numeric = Number(value);
-
-  if (!Number.isFinite(numeric)) {
-    return value || "$0.00";
-  }
-
-  const fractionDigits = numeric !== 0 && Math.abs(numeric) < 1 ? 4 : 2;
-
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: fractionDigits,
-    maximumFractionDigits: fractionDigits,
-  }).format(numeric);
 }
 
 function getRequestTokenCount(entry: OpenWrtRequestLog | null): number {
@@ -167,20 +134,16 @@ function getRequestTokenCount(entry: OpenWrtRequestLog | null): number {
 function getStatusTone(
   statusCode: number,
   hasError: boolean,
-): "success" | "warning" | "error" | "neutral" {
+): "success" | "warn" | "fail" {
   if (statusCode >= 200 && statusCode < 300) {
     return "success";
   }
 
   if (statusCode >= 500 || hasError) {
-    return "error";
+    return "fail";
   }
 
-  if (statusCode >= 300) {
-    return "warning";
-  }
-
-  return "neutral";
+  return "warn";
 }
 
 function getStatusLabel(entry: OpenWrtRequestLog): string {
@@ -218,11 +181,11 @@ async function loadAllAppRequestLogs(
 > {
   const mergedPageSize = Math.max(pageSize, (page + 1) * pageSize);
   const results = await Promise.all(
-    SUPPORTED_APP_IDS.map(async (appId) => {
-      const response = await shell.getRequestLogs(appId, 0, mergedPageSize);
+    SUPPORTED_APP_IDS.map(async (nextAppId) => {
+      const response = await shell.getRequestLogs(nextAppId, 0, mergedPageSize);
 
       return {
-        appId,
+        appId: nextAppId,
         response,
       };
     }),
@@ -230,10 +193,10 @@ async function loadAllAppRequestLogs(
 
   const total = results.reduce((sum, result) => sum + result.response.total, 0);
   const mergedEntries = results
-    .flatMap(({ appId, response }) =>
+    .flatMap(({ appId: nextAppId, response }) =>
       response.data.map((entry) => ({
         ...entry,
-        resolvedAppId: resolveAppId(entry.appType, appId),
+        resolvedAppId: resolveAppId(entry.appType, nextAppId),
       })),
     )
     .sort(sortByRecent);
@@ -288,6 +251,19 @@ function getFocusableElements(container: HTMLElement): HTMLElement[] {
   });
 }
 
+function getRowSubtitle(
+  entry: ActivityRequestLog,
+  filterMode: ActivityDrawerFilterMode,
+): string {
+  const parts = [
+    entry.model || "Default model",
+    filterMode === "all" ? APP_LABELS[entry.resolvedAppId] : null,
+    formatRelativeTime(entry.createdAt),
+  ].filter(Boolean);
+
+  return parts.join(" · ");
+}
+
 export function ActivitySidePanel({
   open,
   appId,
@@ -297,15 +273,9 @@ export function ActivitySidePanel({
   const titleId = useId();
   const descriptionId = useId();
   const panelRef = useRef<HTMLDivElement | null>(null);
-  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const activeAppId = resolveAppId(appId, shell.getSelectedApp());
   const [filterMode, setFilterMode] = useState<ActivityDrawerFilterMode>("app");
   const [page, setPage] = useState(0);
-  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(
-    null,
-  );
-  const [selectedRequestAppId, setSelectedRequestAppId] =
-    useState<SharedProviderAppId | null>(null);
   const [refreshCounter, setRefreshCounter] = useState(0);
   const [lastLoadedAt, setLastLoadedAt] = useState<number | null>(null);
   const [requestLogsState, setRequestLogsState] =
@@ -317,12 +287,6 @@ export function ActivitySidePanel({
       loading: false,
       error: null,
     });
-  const [detailState, setDetailState] = useState<ActivityRequestDetailState>({
-    detail: null,
-    loading: false,
-    error: null,
-  });
-  const detailViewOpen = Boolean(selectedRequestId);
   const totalPages = Math.max(
     1,
     Math.ceil(
@@ -341,16 +305,22 @@ export function ActivitySidePanel({
     : 0;
   const activeFilterLabel =
     filterMode === "all" ? "All apps" : APP_LABELS[activeAppId];
-  const subtitle = detailViewOpen
-    ? `${activeFilterLabel} · ${selectedRequestId ?? "Request detail"}`
-    : requestLogsState.loading
-      ? `${activeFilterLabel} · loading recent requests`
-      : requestLogsState.total
-        ? `${activeFilterLabel} · ${windowStart}-${windowEnd} of ${formatCount(requestLogsState.total)}`
-        : `${activeFilterLabel} · no requests yet`;
+  const subtitle = requestLogsState.loading
+    ? `${activeFilterLabel} · loading recent requests`
+    : requestLogsState.total
+      ? `${activeFilterLabel} · ${windowStart}-${windowEnd} of ${formatCount(requestLogsState.total)}`
+      : `${activeFilterLabel} · no requests yet`;
   const updatedLabel = lastLoadedAt
     ? `Updated ${formatRelativeTime(lastLoadedAt)}`
     : "Waiting for data";
+  const filterSummary =
+    filterMode === "all"
+      ? "Showing all apps"
+      : `Showing ${APP_LABELS[activeAppId]}`;
+  const requestSummary =
+    windowStart && windowEnd
+      ? `${windowStart}-${windowEnd} of ${formatCount(requestLogsState.total)} requests`
+      : "0 requests";
 
   useEffect(() => {
     if (!open) {
@@ -359,13 +329,6 @@ export function ActivitySidePanel({
 
     setFilterMode("app");
     setPage(0);
-    setSelectedRequestId(null);
-    setSelectedRequestAppId(null);
-    setDetailState({
-      detail: null,
-      loading: false,
-      error: null,
-    });
   }, [activeAppId, open]);
 
   useEffect(() => {
@@ -426,55 +389,6 @@ export function ActivitySidePanel({
       cancelled = true;
     };
   }, [activeAppId, filterMode, open, page, refreshCounter, shell]);
-
-  useEffect(() => {
-    if (!open || !selectedRequestId || !selectedRequestAppId) {
-      setDetailState({
-        detail: null,
-        loading: false,
-        error: null,
-      });
-      return;
-    }
-
-    let cancelled = false;
-
-    setDetailState((current) => ({
-      detail:
-        current.detail?.requestId === selectedRequestId ? current.detail : null,
-      loading: true,
-      error: null,
-    }));
-
-    void shell
-      .getRequestDetail(selectedRequestAppId, selectedRequestId)
-      .then((detail) => {
-        if (cancelled) {
-          return;
-        }
-
-        setDetailState({
-          detail,
-          loading: false,
-          error: detail ? null : "Request detail unavailable.",
-        });
-      })
-      .catch((error) => {
-        if (cancelled) {
-          return;
-        }
-
-        setDetailState({
-          detail: null,
-          loading: false,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [open, refreshCounter, selectedRequestAppId, selectedRequestId, shell]);
 
   useEffect(() => {
     if (!open) {
@@ -554,29 +468,6 @@ export function ActivitySidePanel({
   function handleFilterChange(nextFilterMode: ActivityDrawerFilterMode) {
     setFilterMode(nextFilterMode);
     setPage(0);
-    setSelectedRequestId(null);
-    setSelectedRequestAppId(null);
-    setDetailState({
-      detail: null,
-      loading: false,
-      error: null,
-    });
-  }
-
-  function handleOpenDetail(entry: ActivityRequestLog) {
-    setSelectedRequestId(entry.requestId);
-    setSelectedRequestAppId(entry.resolvedAppId);
-  }
-
-  function handleBackToList() {
-    setSelectedRequestId(null);
-    setSelectedRequestAppId(null);
-    setDetailState({
-      detail: null,
-      loading: false,
-      error: null,
-    });
-    closeButtonRef.current?.focus();
   }
 
   function handleRefresh() {
@@ -609,7 +500,7 @@ export function ActivitySidePanel({
         <div className="owt-activity-drawer__head">
           <div className="owt-activity-drawer__title-wrap">
             <h2 id={titleId} className="owt-activity-drawer__title">
-              {detailViewOpen ? "Request detail" : "Recent activity"}
+              Recent activity
             </h2>
             <p id={descriptionId} className="owt-activity-drawer__subtitle">
               {subtitle}
@@ -617,7 +508,6 @@ export function ActivitySidePanel({
           </div>
 
           <button
-            ref={closeButtonRef}
             type="button"
             className="owt-activity-drawer__icon-button"
             onClick={onClose}
@@ -627,17 +517,84 @@ export function ActivitySidePanel({
           </button>
         </div>
 
-        <div className="owt-activity-drawer__toolbar">
-          {detailViewOpen ? (
+        <div className="owt-activity-drawer__list">
+          {requestLogsState.error ? (
+            <div className="owt-activity-drawer__state">
+              <p>{requestLogsState.error}</p>
+            </div>
+          ) : requestLogsState.loading ? (
+            <div className="owt-activity-drawer__state">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <p>Loading recent requests…</p>
+            </div>
+          ) : requestLogsState.data.length ? (
+            requestLogsState.data.map((entry) => (
+              <div
+                key={`${entry.resolvedAppId}-${entry.requestId}`}
+                className="owt-activity-drawer__row"
+              >
+                <div className="owt-activity-drawer__row-left">
+                  <div className="owt-activity-drawer__row-title">
+                    <span className="owt-activity-drawer__row-provider">
+                      {entry.providerName || entry.providerId || "Provider"}
+                    </span>
+                    <span
+                      className="owt-activity-drawer__status-pill"
+                      data-tone={getStatusTone(
+                        entry.statusCode,
+                        Boolean(entry.errorMessage),
+                      )}
+                    >
+                      {getStatusLabel(entry)}
+                    </span>
+                  </div>
+                  <div className="owt-activity-drawer__row-subtitle">
+                    {getRowSubtitle(entry, filterMode)}
+                  </div>
+                </div>
+
+                <div className="owt-activity-drawer__row-right">
+                  <span className="owt-activity-drawer__tokens">
+                    {formatCompactCount(getRequestTokenCount(entry))} tok
+                  </span>
+                  <span className="owt-activity-drawer__ms">
+                    {formatLatency(entry.latencyMs)}
+                  </span>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="owt-activity-drawer__state">
+              <p>No recent requests for this filter.</p>
+            </div>
+          )}
+        </div>
+
+        <div className="owt-activity-drawer__foot">
+          <div className="owt-activity-drawer__foot-meta">
+            <div className="owt-activity-drawer__foot-copy">
+              <span>{filterSummary}</span>
+              <span>
+                {requestSummary} · {updatedLabel}
+              </span>
+            </div>
+
             <button
               type="button"
-              className="owt-activity-drawer__secondary-button"
-              onClick={handleBackToList}
+              className="owt-activity-drawer__icon-button"
+              onClick={handleRefresh}
+              disabled={requestLogsState.loading}
+              aria-label="Refresh recent activity"
             >
-              <ArrowLeft className="h-4 w-4" />
-              Back to list
+              {requestLogsState.loading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCcw className="h-4 w-4" />
+              )}
             </button>
-          ) : (
+          </div>
+
+          <div className="owt-activity-drawer__foot-actions">
             <div
               className="owt-activity-drawer__filter"
               role="group"
@@ -664,322 +621,43 @@ export function ActivitySidePanel({
                 {APP_LABELS[activeAppId]}
               </button>
             </div>
-          )}
 
-          <button
-            type="button"
-            className="owt-activity-drawer__secondary-button"
-            onClick={handleRefresh}
-            disabled={requestLogsState.loading || detailState.loading}
-          >
-            {requestLogsState.loading || detailState.loading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCcw className="h-4 w-4" />
-            )}
-            Refresh
-          </button>
-        </div>
-
-        {detailViewOpen ? (
-          <div className="owt-activity-drawer__detail">
-            {detailState.error ? (
-              <div className="owt-activity-drawer__state">
-                <p>{detailState.error}</p>
-              </div>
-            ) : detailState.loading ? (
-              <div className="owt-activity-drawer__state">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <p>Loading request detail…</p>
-              </div>
-            ) : detailState.detail ? (
-              <>
-                <div className="owt-activity-drawer__detail-summary">
-                  <div className="owt-activity-drawer__detail-card">
-                    <span className="owt-activity-drawer__detail-label">
-                      Request ID
-                    </span>
-                    <strong className="owt-activity-drawer__detail-value owt-activity-drawer__detail-value--mono">
-                      {detailState.detail.requestId}
-                    </strong>
-                  </div>
-                  <div className="owt-activity-drawer__detail-card">
-                    <span className="owt-activity-drawer__detail-label">
-                      App
-                    </span>
-                    <strong className="owt-activity-drawer__detail-value">
-                      {
-                        APP_LABELS[
-                          resolveAppId(
-                            detailState.detail.appType,
-                            selectedRequestAppId ?? activeAppId,
-                          )
-                        ]
-                      }
-                    </strong>
-                  </div>
-                  <div className="owt-activity-drawer__detail-card">
-                    <span className="owt-activity-drawer__detail-label">
-                      Status
-                    </span>
-                    <span
-                      className="owt-activity-drawer__status-pill"
-                      data-tone={getStatusTone(
-                        detailState.detail.statusCode,
-                        Boolean(detailState.detail.errorMessage),
-                      )}
-                    >
-                      {getStatusLabel(detailState.detail)}
-                    </span>
-                  </div>
-                  <div className="owt-activity-drawer__detail-card">
-                    <span className="owt-activity-drawer__detail-label">
-                      Created
-                    </span>
-                    <strong className="owt-activity-drawer__detail-value">
-                      {formatAbsoluteTime(detailState.detail.createdAt)}
-                    </strong>
-                  </div>
-                </div>
-
-                <section className="owt-activity-drawer__detail-section">
-                  <h3>Request</h3>
-                  <dl className="owt-activity-drawer__detail-grid">
-                    <div>
-                      <dt>Provider</dt>
-                      <dd>
-                        {detailState.detail.providerName ||
-                          detailState.detail.providerId}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Model</dt>
-                      <dd>{detailState.detail.model || "Default model"}</dd>
-                    </div>
-                    <div>
-                      <dt>Request model</dt>
-                      <dd>
-                        {detailState.detail.requestModel || "Unavailable"}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Data source</dt>
-                      <dd>{detailState.detail.dataSource || "Unavailable"}</dd>
-                    </div>
-                    <div>
-                      <dt>Streaming</dt>
-                      <dd>{detailState.detail.isStreaming ? "Yes" : "No"}</dd>
-                    </div>
-                    <div>
-                      <dt>Cost multiplier</dt>
-                      <dd>{detailState.detail.costMultiplier || "1"}</dd>
-                    </div>
-                  </dl>
-                </section>
-
-                <section className="owt-activity-drawer__detail-section">
-                  <h3>Performance</h3>
-                  <dl className="owt-activity-drawer__detail-grid">
-                    <div>
-                      <dt>Latency</dt>
-                      <dd>{formatLatency(detailState.detail.latencyMs)}</dd>
-                    </div>
-                    <div>
-                      <dt>First token</dt>
-                      <dd>{formatLatency(detailState.detail.firstTokenMs)}</dd>
-                    </div>
-                    <div>
-                      <dt>Duration</dt>
-                      <dd>{formatLatency(detailState.detail.durationMs)}</dd>
-                    </div>
-                    <div>
-                      <dt>Total tokens</dt>
-                      <dd>
-                        {formatCount(getRequestTokenCount(detailState.detail))}
-                      </dd>
-                    </div>
-                  </dl>
-                </section>
-
-                <section className="owt-activity-drawer__detail-section">
-                  <h3>Token breakdown</h3>
-                  <dl className="owt-activity-drawer__detail-grid">
-                    <div>
-                      <dt>Input</dt>
-                      <dd>{formatCount(detailState.detail.inputTokens)}</dd>
-                    </div>
-                    <div>
-                      <dt>Output</dt>
-                      <dd>{formatCount(detailState.detail.outputTokens)}</dd>
-                    </div>
-                    <div>
-                      <dt>Cache read</dt>
-                      <dd>{formatCount(detailState.detail.cacheReadTokens)}</dd>
-                    </div>
-                    <div>
-                      <dt>Cache create</dt>
-                      <dd>
-                        {formatCount(detailState.detail.cacheCreationTokens)}
-                      </dd>
-                    </div>
-                  </dl>
-                </section>
-
-                <section className="owt-activity-drawer__detail-section">
-                  <h3>Cost breakdown</h3>
-                  <dl className="owt-activity-drawer__detail-grid">
-                    <div>
-                      <dt>Input</dt>
-                      <dd>{formatUsd(detailState.detail.inputCostUsd)}</dd>
-                    </div>
-                    <div>
-                      <dt>Output</dt>
-                      <dd>{formatUsd(detailState.detail.outputCostUsd)}</dd>
-                    </div>
-                    <div>
-                      <dt>Cache read</dt>
-                      <dd>{formatUsd(detailState.detail.cacheReadCostUsd)}</dd>
-                    </div>
-                    <div>
-                      <dt>Cache create</dt>
-                      <dd>
-                        {formatUsd(detailState.detail.cacheCreationCostUsd)}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Total</dt>
-                      <dd>{formatUsd(detailState.detail.totalCostUsd)}</dd>
-                    </div>
-                  </dl>
-                </section>
-
-                {detailState.detail.errorMessage ? (
-                  <section className="owt-activity-drawer__detail-section">
-                    <h3>Response</h3>
-                    <pre className="owt-activity-drawer__detail-block">
-                      {detailState.detail.errorMessage}
-                    </pre>
-                  </section>
-                ) : null}
-              </>
-            ) : (
-              <div className="owt-activity-drawer__state">
-                <p>Request detail unavailable.</p>
-              </div>
-            )}
-          </div>
-        ) : (
-          <>
-            <div className="owt-activity-drawer__list">
-              {requestLogsState.error ? (
-                <div className="owt-activity-drawer__state">
-                  <p>{requestLogsState.error}</p>
-                </div>
-              ) : requestLogsState.loading ? (
-                <div className="owt-activity-drawer__state">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <p>Loading recent requests…</p>
-                </div>
-              ) : requestLogsState.data.length ? (
-                requestLogsState.data.map((entry) => (
-                  <button
-                    key={`${entry.resolvedAppId}-${entry.requestId}`}
-                    type="button"
-                    className="owt-activity-drawer__row"
-                    onClick={() => {
-                      handleOpenDetail(entry);
-                    }}
-                    aria-label={`Open ${entry.providerName || entry.providerId} request ${entry.requestId}`}
-                  >
-                    <div className="owt-activity-drawer__row-main">
-                      <div className="owt-activity-drawer__row-title">
-                        <span className="owt-activity-drawer__row-provider">
-                          {entry.providerName || entry.providerId || "Provider"}
-                        </span>
-                        <span
-                          className="owt-activity-drawer__status-pill"
-                          data-tone={getStatusTone(
-                            entry.statusCode,
-                            Boolean(entry.errorMessage),
-                          )}
-                        >
-                          {getStatusLabel(entry)}
-                        </span>
-                      </div>
-                      <div className="owt-activity-drawer__row-subtitle">
-                        <span>{entry.model || "Default model"}</span>
-                        <span>{APP_LABELS[entry.resolvedAppId]}</span>
-                        <span>{formatRelativeTime(entry.createdAt)}</span>
-                      </div>
-                    </div>
-
-                    <div className="owt-activity-drawer__row-metrics">
-                      <span className="owt-activity-drawer__row-metric owt-activity-drawer__row-metric--strong">
-                        {formatCount(getRequestTokenCount(entry))} tokens
-                      </span>
-                      <span className="owt-activity-drawer__row-metric">
-                        {formatUsd(entry.totalCostUsd)}
-                      </span>
-                      <span className="owt-activity-drawer__row-metric">
-                        {formatLatency(entry.latencyMs)}
-                      </span>
-                    </div>
-                  </button>
-                ))
-              ) : (
-                <div className="owt-activity-drawer__state">
-                  <p>No recent requests for this filter.</p>
-                </div>
-              )}
-            </div>
-
-            <div className="owt-activity-drawer__foot">
-              <div className="owt-activity-drawer__foot-copy">
-                <span>
-                  {windowStart && windowEnd
-                    ? `${windowStart}-${windowEnd} of ${formatCount(requestLogsState.total)}`
-                    : "0 requests"}
-                </span>
-                <span>{updatedLabel}</span>
-              </div>
-
-              <div
-                className="owt-activity-drawer__pagination"
-                role="group"
-                aria-label="Request log pages"
+            <div
+              className="owt-activity-drawer__pagination"
+              role="group"
+              aria-label="Request log pages"
+            >
+              <button
+                type="button"
+                className="owt-activity-drawer__icon-button"
+                onClick={() => {
+                  setPage((current) => Math.max(0, current - 1));
+                }}
+                disabled={requestLogsState.loading || page <= 0}
+                aria-label="Previous request log page"
               >
-                <button
-                  type="button"
-                  className="owt-activity-drawer__icon-button"
-                  onClick={() => {
-                    setPage((current) => Math.max(0, current - 1));
-                  }}
-                  disabled={requestLogsState.loading || page <= 0}
-                  aria-label="Previous request log page"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <span className="owt-activity-drawer__page-label">
-                  Page {page + 1} of {totalPages}
-                </span>
-                <button
-                  type="button"
-                  className="owt-activity-drawer__icon-button"
-                  onClick={() => {
-                    setPage((current) => Math.min(totalPages - 1, current + 1));
-                  }}
-                  disabled={
-                    requestLogsState.loading ||
-                    page >= Math.max(0, totalPages - 1)
-                  }
-                  aria-label="Next request log page"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <span className="owt-activity-drawer__page-label">
+                Page {page + 1} of {totalPages}
+              </span>
+              <button
+                type="button"
+                className="owt-activity-drawer__icon-button"
+                onClick={() => {
+                  setPage((current) => Math.min(totalPages - 1, current + 1));
+                }}
+                disabled={
+                  requestLogsState.loading ||
+                  page >= Math.max(0, totalPages - 1)
+                }
+                aria-label="Next request log page"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
             </div>
-          </>
-        )}
+          </div>
+        </div>
       </div>
     </div>
   );
