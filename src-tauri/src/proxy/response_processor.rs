@@ -1001,6 +1001,7 @@ mod tests {
             app_handle: None,
             failover_manager: Arc::new(FailoverSwitchManager::new(db, current_providers)),
             rate_limits: crate::proxy::rate_limit::new_rate_limit_store(),
+            quota_snapshot_cache: crate::proxy::quota_cache::RateLimitSnapshotCache::new(),
         }
     }
 
