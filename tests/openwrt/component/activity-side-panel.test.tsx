@@ -239,7 +239,6 @@ describe("ActivitySidePanel", () => {
   });
 
   it("advances focus within the drawer when mounted in a shadow root", async () => {
-    const user = userEvent.setup();
     const shell = createBridgeFixture({
       requestLogs: {
         claude: createRequestLogsPage([]),
