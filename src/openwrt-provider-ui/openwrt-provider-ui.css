@@ -2151,112 +2151,30 @@ select.owt-provider-panel__input {
   gap: 16px;
 }
 
-.owt-daemon-card__top {
+[class~="owt-daemon-status"] {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 20px;
-}
-
-.owt-daemon-card__intro {
-  display: grid;
-  min-width: 0;
+  align-items: baseline;
   gap: 10px;
-}
-
-.owt-daemon-card__eyebrow {
-  margin: 0;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.owt-daemon-card__status-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.owt-daemon-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 40px;
-  padding: 0 16px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--panel-strong);
   color: var(--text);
-  font-size: 1.5rem;
+  font-size: 28px;
   font-weight: 720;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.025em;
 }
 
-.owt-daemon-status[data-running="true"] {
-  border-color: var(--success-line);
-  background: var(--success-soft);
-}
-
-.owt-daemon-status__dot {
+[class~="owt-daemon-status__dot"] {
   width: 10px;
   height: 10px;
   flex: 0 0 auto;
   border-radius: 999px;
-  background: var(--soft);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--soft) 18%, transparent);
-}
-
-.owt-daemon-status[data-running="true"] .owt-daemon-status__dot {
   background: var(--success);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--success) 18%, transparent);
+  transform: translateY(-3px);
 }
 
-.owt-daemon-health,
-.owt-daemon-version {
-  display: inline-flex;
-  align-items: center;
-  min-height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--panel-strong) 82%, transparent);
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.owt-daemon-health[data-tone="healthy"] {
-  border-color: var(--success-line);
-  background: var(--success-soft);
-  color: var(--success);
-}
-
-.owt-daemon-health[data-tone="warning"] {
-  border-color: color-mix(in srgb, var(--accent) 22%, var(--line));
-  background: color-mix(in srgb, var(--accent-soft) 72%, var(--panel-strong));
-  color: var(--accent-text);
-}
-
-.owt-daemon-version {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 12px;
-  letter-spacing: 0.03em;
-  text-transform: none;
-  color: var(--text);
-}
-
-.owt-daemon-card__hint {
-  margin: 0;
-  max-width: 48rem;
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.5;
+[class~="owt-daemon-status"][data-running="false"]
+  [class~="owt-daemon-status__dot"] {
+  background: var(--owt-fail);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--owt-fail) 18%, transparent);
 }
 
 .owt-daemon-divider {
@@ -2264,53 +2182,61 @@ select.owt-provider-panel__input {
   background: var(--line);
 }
 
+.owt-daemon-row {
+  display: grid;
+  grid-template-columns: auto auto auto 1fr auto auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.owt-daemon-row__spacer {
+  display: block;
+}
+
 .owt-daemon-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr)) auto;
-  gap: 16px 18px;
-  align-items: end;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px 24px;
 }
 
 .owt-daemon-field {
-  display: grid;
-  min-width: 0;
+  display: flex;
+  flex-direction: column;
   gap: 6px;
 }
 
-.owt-daemon-field__label {
+.owt-daemon-cell-label {
+  color: var(--muted);
   font-size: 11px;
   font-weight: 800;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.11em;
   text-transform: uppercase;
-  color: var(--muted);
 }
 
-.owt-daemon-control {
-  width: 100%;
-  min-width: 0;
-  min-height: 48px;
-  padding: 12px 14px;
+.owt-field-input {
+  background-color: var(--panel-strong);
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
-  background: var(--panel-strong);
-  color: var(--text);
-  font: inherit;
+  padding: 12px 14px;
   font-size: 14px;
   font-weight: 600;
+  color: var(--text);
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
   transition:
-    border-color 160ms ease-out,
-    box-shadow 160ms ease-out,
-    background-color 160ms ease-out;
+    border-color 140ms,
+    box-shadow 140ms,
+    background 140ms;
 }
 
-.owt-daemon-control:focus {
+.owt-field-input:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
-.owt-daemon-control--mono {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+.owt-field-input--mono {
+  font-family: var(--owt-mono);
   font-size: 13.5px;
 }
 
@@ -2396,6 +2322,13 @@ select.owt-provider-panel__input {
   .owt-daemon-button {
     width: 100%;
   }
+}
+
+@media (max-width: 960px) {
+  .owt-daemon-row {
+    grid-template-columns: 1fr auto;
+    grid-auto-flow: row;
+  }
 
   .owt-daemon-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2405,22 +2338,6 @@ select.owt-provider-panel__input {
 @media (max-width: 560px) {
   [data-slot="daemon-card"] {
     padding: 20px;
-  }
-
-  .owt-daemon-status {
-    width: 100%;
-    justify-content: flex-start;
-    font-size: 1.25rem;
-  }
-
-  .owt-daemon-health,
-  .owt-daemon-version {
-    width: 100%;
-    justify-content: center;
-  }
-
-  .owt-daemon-grid {
-    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -2612,8 +2529,7 @@ select.owt-provider-panel__input {
  *   - <DaemonCard> field grid  (owt-daemon-grid, owt-daemon-field, owt-field-input)
  *   - <ThemeToggle>            (owt-theme-toggle + sun/moon swap)
  *
- * Existing rules in openwrt-provider-ui.css (e.g. .owt-app-card, .owt-daemon-card,
- * .owt-daemon-status, .owt-daemon-health, .owt-daemon-divider) are NOT touched
+ * Existing rules in openwrt-provider-ui.css (e.g. .owt-app-card) are NOT touched
  * and keep working as-is.
  *
  * Any tokens not present in the existing file fall back to a sensible default
@@ -2827,109 +2743,6 @@ select.owt-provider-panel__input {
 .owt-app-card--skeleton .sk-line,
 .owt-app-card--skeleton .sk-active {
   animation: owt-sk-shimmer 2.4s ease-in-out infinite;
-}
-
-/* =====================================================================
- * DAEMON CARD — single-row top bar
- * (.owt-daemon-card, .owt-daemon-status, .owt-daemon-health, .owt-daemon-divider
- *  are already defined in openwrt-provider-ui.css — this section adds the
- *  grid/row/pill/chip-select pieces the revised layout needs.)
- * ===================================================================== */
-.owt-daemon-row {
-  display: grid;
-  grid-template-columns: auto auto auto 1fr auto auto;
-  gap: 12px;
-  align-items: center;
-}
-.owt-daemon-row__spacer {
-  display: block;
-}
-
-@media (max-width: 960px) {
-  .owt-daemon-row {
-    grid-template-columns: 1fr auto;
-    grid-auto-flow: row;
-  }
-}
-
-/* Override the existing .owt-daemon-status block presentation for the row:
- * the revised design uses a big typographic status, not a pill. */
-.owt-daemon-row .owt-daemon-status {
-  border: 0;
-  background: transparent;
-  padding: 0;
-  font-size: 28px;
-  font-weight: 720;
-  letter-spacing: -0.025em;
-  color: var(--text);
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-}
-.owt-daemon-row .owt-daemon-status__dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  background: var(--success);
-  display: inline-block;
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--success) 18%, transparent);
-  transform: translateY(-3px);
-}
-.owt-daemon-row
-  .owt-daemon-status[data-running="false"]
-  .owt-daemon-status__dot {
-  background: var(--owt-fail);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--owt-fail) 18%, transparent);
-}
-
-/* Daemon grid — flat 4-col, no sub-cards */
-.owt-daemon-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 18px 24px;
-}
-@media (max-width: 960px) {
-  .owt-daemon-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-.owt-daemon-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.owt-daemon-cell-label {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
-}
-
-.owt-field-input {
-  background-color: var(--panel-strong);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  padding: 12px 14px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
-  font-family: inherit;
-  font-variant-numeric: tabular-nums;
-  transition:
-    border-color 140ms,
-    box-shadow 140ms,
-    background 140ms;
-}
-.owt-field-input:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
-}
-.owt-field-input--mono {
-  font-family: var(--owt-mono);
-  font-size: 13.5px;
 }
 
 /* =====================================================================
