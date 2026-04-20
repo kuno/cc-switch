@@ -450,8 +450,9 @@
 }
 
 .owt-app-card--empty {
-  border-style: dashed;
-  border-color: var(--line-strong);
+  align-self: start;
+  border-style: solid;
+  border-color: var(--line);
   background: transparent;
   box-shadow: none;
 }
@@ -647,24 +648,6 @@
   font-size: 12px;
   font-weight: 600;
   margin-left: 3px;
-}
-
-.owt-app-card__open-affordance {
-  position: absolute;
-  top: 22px;
-  right: 22px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
-  opacity: 0;
-  transition: opacity 160ms;
-}
-
-.owt-app-card:hover .owt-app-card__open-affordance {
-  opacity: 1;
 }
 
 .owt-app-card__empty-cta {
