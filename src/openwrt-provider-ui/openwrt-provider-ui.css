@@ -56,8 +56,16 @@ body.ccswitch-openwrt-provider-ui-theme .cbi-map {
 .ccswitch-openwrt-provider-ui-shell {
   min-height: 100vh;
   background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 12%, transparent), transparent 30%),
-    linear-gradient(180deg, color-mix(in srgb, var(--panel-strong) 35%, transparent), transparent 24%),
+    radial-gradient(
+      circle at top left,
+      color-mix(in srgb, var(--accent) 12%, transparent),
+      transparent 30%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--panel-strong) 35%, transparent),
+      transparent 24%
+    ),
     var(--bg);
   color: var(--text);
 }
@@ -187,7 +195,6 @@ body.ccswitch-openwrt-provider-ui-theme .cbi-map {
   color: var(--text);
 }
 
-
 /* legacy plumbing — keep until Tasks C/D/G own dialogs */
 body.ccswitch-openwrt-provider-ui-theme .cbi-value {
   display: grid;
@@ -314,7 +321,8 @@ body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-overlay {
   backdrop-filter: blur(14px) saturate(1.05);
 }
 
-body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-positioner {
+body.ccswitch-openwrt-provider-ui-theme
+  .ccswitch-openwrt-provider-ui-positioner {
   align-items: flex-start;
   padding: max(env(safe-area-inset-top), 0.75rem)
     max(env(safe-area-inset-right), 0.75rem)
@@ -337,11 +345,14 @@ body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog {
   box-shadow: 0 34px 92px -48px rgba(23, 33, 51, 0.42);
 }
 
-body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog--compact {
+body.ccswitch-openwrt-provider-ui-theme
+  .ccswitch-openwrt-provider-ui-dialog--compact {
   width: min(28rem, 100%);
 }
 
-body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog > form {
+body.ccswitch-openwrt-provider-ui-theme
+  .ccswitch-openwrt-provider-ui-dialog
+  > form {
   display: flex;
   min-height: 0;
   flex: 1 1 auto;
@@ -367,7 +378,8 @@ body.ccswitch-openwrt-provider-ui-theme
   box-sizing: border-box;
 }
 
-body.ccswitch-openwrt-provider-ui-theme .cbi-map.ccswitch-openwrt-native-page-map,
+body.ccswitch-openwrt-provider-ui-theme
+  .cbi-map.ccswitch-openwrt-native-page-map,
 body.ccswitch-openwrt-provider-ui-theme
   .cbi-section.ccswitch-openwrt-native-page-section {
   background: transparent;
@@ -387,8 +399,16 @@ body.ccswitch-openwrt-provider-ui-theme
   padding: clamp(0.9rem, 0.75rem + 0.45vw, 1.3rem);
   border-radius: calc(var(--radius-panel) + 0.2rem);
   background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 10%, transparent), transparent 30%),
-    linear-gradient(180deg, color-mix(in srgb, var(--panel-strong) 35%, transparent), transparent 24%),
+    radial-gradient(
+      circle at top left,
+      color-mix(in srgb, var(--accent) 10%, transparent),
+      transparent 30%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--panel-strong) 35%, transparent),
+      transparent 24%
+    ),
     var(--bg);
 }
 
@@ -411,18 +431,28 @@ body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-overlay {
 #ccswitch-shared-runtime-surface-root *:after,
 body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog,
 body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog *,
-body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog *:before,
-body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog *:after,
+body.ccswitch-openwrt-provider-ui-theme
+  .ccswitch-openwrt-provider-ui-dialog
+  *:before,
+body.ccswitch-openwrt-provider-ui-theme
+  .ccswitch-openwrt-provider-ui-dialog
+  *:after,
 body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-overlay,
 body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-overlay *,
-body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-overlay *:before,
-body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-overlay *:after {
+body.ccswitch-openwrt-provider-ui-theme
+  .ccswitch-openwrt-provider-ui-overlay
+  *:before,
+body.ccswitch-openwrt-provider-ui-theme
+  .ccswitch-openwrt-provider-ui-overlay
+  *:after {
   box-sizing: border-box;
 }
 
 #ccswitch-shared-provider-ui-root :focus-visible,
 #ccswitch-shared-runtime-surface-root :focus-visible,
-body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog :focus-visible {
+body.ccswitch-openwrt-provider-ui-theme
+  .ccswitch-openwrt-provider-ui-dialog
+  :focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent) 72%, white 28%);
   outline-offset: 2px;
 }
@@ -461,7 +491,8 @@ body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog :fo
 }
 
 @media (max-width: 719px) {
-  body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-positioner {
+  body.ccswitch-openwrt-provider-ui-theme
+    .ccswitch-openwrt-provider-ui-positioner {
     padding: max(env(safe-area-inset-top), 0.5rem)
       max(env(safe-area-inset-right), 0.5rem)
       max(env(safe-area-inset-bottom), 0.5rem)
@@ -482,7 +513,8 @@ body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog :fo
 }
 
 @media (min-height: 720px) {
-  body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-positioner {
+  body.ccswitch-openwrt-provider-ui-theme
+    .ccswitch-openwrt-provider-ui-positioner {
     align-items: center;
   }
 }
@@ -1444,7 +1476,11 @@ body.ccswitch-openwrt-provider-ui-theme .ccswitch-openwrt-provider-ui-dialog :fo
       color-mix(in srgb, var(--panel-strong) 88%, transparent),
       color-mix(in srgb, var(--panel) 96%, transparent)
     ),
-    radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 12%, transparent), transparent 28%);
+    radial-gradient(
+      circle at top left,
+      color-mix(in srgb, var(--accent) 12%, transparent),
+      transparent 28%
+    );
   box-shadow: -28px 0 84px -54px rgba(15, 20, 27, 0.66);
   transform: translateX(104%);
   transition: transform 200ms ease-out;
@@ -2506,8 +2542,16 @@ body.ccswitch-openwrt-provider-ui-theme.ccswitch-openwrt-provider-ui-theme-dark
 
 /* Alert strip — Task F */
 .owt-alert-strip {
-  --owt-alert-bg: color-mix(in srgb, var(--panel-strong) 70%, var(--accent-soft) 30%);
-  --owt-alert-border: color-mix(in srgb, var(--line-strong) 48%, var(--accent) 52%);
+  --owt-alert-bg: color-mix(
+    in srgb,
+    var(--panel-strong) 70%,
+    var(--accent-soft) 30%
+  );
+  --owt-alert-border: color-mix(
+    in srgb,
+    var(--line-strong) 48%,
+    var(--accent) 52%
+  );
   --owt-alert-text: color-mix(in srgb, var(--text) 70%, var(--accent-text) 30%);
   --owt-alert-strong: var(--accent-text);
   display: grid;
@@ -2524,14 +2568,30 @@ body.ccswitch-openwrt-provider-ui-theme.ccswitch-openwrt-provider-ui-theme-dark
 
 .owt-alert-strip--unreachable,
 .owt-alert-strip--restarting {
-  --owt-alert-bg: color-mix(in srgb, var(--panel-strong) 68%, var(--accent-soft) 32%);
-  --owt-alert-border: color-mix(in srgb, var(--line-strong) 40%, var(--accent) 60%);
+  --owt-alert-bg: color-mix(
+    in srgb,
+    var(--panel-strong) 68%,
+    var(--accent-soft) 32%
+  );
+  --owt-alert-border: color-mix(
+    in srgb,
+    var(--line-strong) 40%,
+    var(--accent) 60%
+  );
   --owt-alert-text: color-mix(in srgb, var(--text) 66%, var(--accent-text) 34%);
 }
 
 .owt-alert-strip--restart-failed {
-  --owt-alert-bg: color-mix(in srgb, var(--panel-strong) 62%, var(--accent-soft) 38%);
-  --owt-alert-border: color-mix(in srgb, var(--line-strong) 30%, var(--accent) 70%);
+  --owt-alert-bg: color-mix(
+    in srgb,
+    var(--panel-strong) 62%,
+    var(--accent-soft) 38%
+  );
+  --owt-alert-border: color-mix(
+    in srgb,
+    var(--line-strong) 30%,
+    var(--accent) 70%
+  );
   --owt-alert-text: color-mix(in srgb, var(--text) 56%, var(--accent-text) 44%);
 }
 
@@ -2615,5 +2675,759 @@ body.ccswitch-openwrt-provider-ui-theme.ccswitch-openwrt-provider-ui-theme-dark
   .owt-alert-strip__action {
     grid-column: 1 / -1;
     justify-self: flex-start;
+  }
+}
+
+/* =====================================================================
+ * CC Switch OpenWrt — revised layout additions
+ *
+ * APPEND this file to openwrt-provider-ui.css (or @import it after it).
+ * Everything below is new, additive styling that powers:
+ *   - <SectionHead>            (owt-section-head + owt-section-head__version)
+ *   - <AppsGrid> grouping      (owt-group-grid, owt-group-head/label)
+ *   - <AppsGrid> skeletons     (owt-app-card--skeleton, owt-app-card--skeleton-dashed)
+ *   - <DaemonCard> top row     (owt-daemon-row + owt-chip + owt-chip-select + owt-pill)
+ *   - <DaemonCard> field grid  (owt-daemon-grid, owt-daemon-field, owt-field-input)
+ *   - <ThemeToggle>            (owt-theme-toggle + sun/moon swap)
+ *
+ * Existing rules in openwrt-provider-ui.css (e.g. .owt-app-card, .owt-daemon-card,
+ * .owt-daemon-status, .owt-daemon-health, .owt-daemon-divider) are NOT touched
+ * and keep working as-is.
+ *
+ * Any tokens not present in the existing file fall back to a sensible default
+ * so this patch is safe to drop in before we do a full token audit.
+ * ===================================================================== */
+
+/* ---- Fallback tokens (no-op when the real vars are already defined) ---- */
+.ccswitch-openwrt-page-shell {
+  --owt-panel-softer: var(
+    --panel-softer,
+    color-mix(in srgb, var(--panel-strong) 70%, var(--panel-soft) 30%)
+  );
+  --owt-button: var(--button, var(--panel-soft));
+  --owt-mono: var(--mono, ui-monospace, "SF Mono", Menlo, monospace);
+  --owt-soft-text: var(--soft, var(--muted));
+  --owt-fail: var(--fail, #c74a57);
+  --owt-fail-soft: var(
+    --fail-soft,
+    color-mix(in srgb, #c74a57 12%, var(--panel-strong) 88%)
+  );
+  --owt-fail-line: var(
+    --fail-line,
+    color-mix(in srgb, #c74a57 32%, var(--line))
+  );
+}
+
+/* =====================================================================
+ * SECTION HEAD  — "Apps", "Daemon"
+ * ===================================================================== */
+.owt-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 8px 4px 16px;
+}
+.owt-section-head h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 720;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+.owt-section-head__version {
+  font-family: var(--owt-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+  margin-left: 10px;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  vertical-align: 3px;
+  background: var(--owt-panel-softer);
+}
+
+/* =====================================================================
+ * APPS GRID — group header + 2-col grid
+ * (.owt-apps-grid already exists; we just add children + the group-grid.)
+ * ===================================================================== */
+.owt-apps-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 2px 4px 20px;
+}
+.owt-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 4px 2px;
+}
+.owt-group-label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.owt-group-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+@media (max-width: 960px) {
+  .owt-group-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Skeleton filler card (fills the odd slot when a group has 1 or 3 apps) */
+.owt-app-card--skeleton {
+  cursor: default;
+  border-style: dashed;
+  border-color: var(--line);
+  background: transparent;
+  box-shadow: none;
+  min-height: 248px;
+  animation: none;
+}
+.owt-app-card--skeleton-dashed {
+  border-color: var(--line-strong);
+}
+.owt-app-card--skeleton:hover {
+  transform: none;
+  border-color: var(--line);
+  background: transparent;
+}
+
+/* =====================================================================
+ * DAEMON CARD — single-row top bar
+ * (.owt-daemon-card, .owt-daemon-status, .owt-daemon-health, .owt-daemon-divider
+ *  are already defined in openwrt-provider-ui.css — this section adds the
+ *  grid/row/pill/chip-select pieces the revised layout needs.)
+ * ===================================================================== */
+.owt-daemon-row {
+  display: grid;
+  grid-template-columns: auto auto auto 1fr auto auto;
+  gap: 12px;
+  align-items: center;
+}
+.owt-daemon-row__spacer {
+  display: block;
+}
+
+@media (max-width: 960px) {
+  .owt-daemon-row {
+    grid-template-columns: 1fr auto;
+    grid-auto-flow: row;
+  }
+}
+
+/* Override the existing .owt-daemon-status block presentation for the row:
+ * the revised design uses a big typographic status, not a pill. */
+.owt-daemon-row .owt-daemon-status {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-size: 28px;
+  font-weight: 720;
+  letter-spacing: -0.025em;
+  color: var(--text);
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.owt-daemon-row .owt-daemon-status__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--success);
+  display: inline-block;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--success) 18%, transparent);
+  transform: translateY(-3px);
+}
+.owt-daemon-row
+  .owt-daemon-status[data-running="false"]
+  .owt-daemon-status__dot {
+  background: var(--owt-fail);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--owt-fail) 18%, transparent);
+}
+
+/* Daemon grid — flat 4-col, no sub-cards */
+.owt-daemon-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px 24px;
+}
+@media (max-width: 960px) {
+  .owt-daemon-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.owt-daemon-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.owt-daemon-cell-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.owt-field-input {
+  background: var(--panel-strong);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  padding: 12px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+  transition:
+    border-color 140ms,
+    box-shadow 140ms,
+    background 140ms;
+}
+.owt-field-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.owt-field-input--mono {
+  font-family: var(--owt-mono);
+  font-size: 13.5px;
+}
+
+/* =====================================================================
+ * PILLS + CHIPS + CHIP-SELECT — shared primitives
+ * ===================================================================== */
+.owt-pill {
+  height: 34px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--owt-button);
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  transition:
+    background 160ms,
+    border-color 160ms,
+    color 160ms;
+}
+.owt-pill:hover:not(:disabled) {
+  border-color: var(--line-strong);
+}
+.owt-pill:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.owt-pill--primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: transparent;
+}
+.owt-pill--primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 88%, #fff 12%);
+}
+
+/* Idle Save button — nothing to save yet */
+.owt-pill--idle {
+  color: var(--owt-soft-text);
+  background: var(--owt-button);
+  border-color: var(--line);
+  cursor: default;
+}
+.owt-pill--idle:hover {
+  border-color: var(--line);
+}
+.owt-pill--idle svg {
+  opacity: 0.55;
+}
+
+.owt-chip {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--owt-button);
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  font-family: inherit;
+}
+.owt-chip--dot::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+  display: inline-block;
+  opacity: 0.85;
+}
+
+/* Chip-style select (log level) */
+.owt-chip-select {
+  height: 28px;
+  padding: 0 4px 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--owt-button);
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  font-family: inherit;
+  transition: border-color 160ms;
+}
+.owt-chip-select:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.owt-chip-select select {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0 18px 0 0;
+  height: 100%;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path fill='none' stroke='%23708198' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' d='M3 5l3 3 3-3'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 2px center;
+  background-size: 12px 12px;
+}
+.ccswitch-openwrt-provider-ui-theme-dark .owt-chip-select select {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path fill='none' stroke='%23dfe5ff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' d='M3 5l3 3 3-3'/></svg>");
+}
+.owt-chip-select select:focus {
+  outline: none;
+}
+
+/* =====================================================================
+ * THEME TOGGLE — icon-based, sits in the Apps section head
+ * ===================================================================== */
+.owt-theme-toggle {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--owt-button);
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-family: inherit;
+  transition:
+    border-color 160ms,
+    background 160ms;
+}
+.owt-theme-toggle:hover {
+  border-color: var(--line-strong);
+  background: var(--panel-strong);
+}
+.owt-theme-toggle svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+.owt-theme-toggle .owt-theme-toggle__moon {
+  display: none;
+}
+.owt-theme-toggle[data-theme="dark"] .owt-theme-toggle__sun {
+  display: none;
+}
+.owt-theme-toggle[data-theme="dark"] .owt-theme-toggle__moon {
+  display: block;
+}
+
+/* =====================================================================
+ * ENTRANCE ANIMATION — echoes the revised prototype's subtle rise
+ * ===================================================================== */
+@keyframes owt-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.owt-section-head,
+.owt-apps-grid > .owt-group-grid > .owt-app-card,
+.owt-daemon-card {
+  animation: owt-rise 220ms ease-out both;
+}
+.owt-group-grid > .owt-app-card:nth-child(2) {
+  animation-delay: 40ms;
+}
+.owt-group-grid > .owt-app-card:nth-child(3) {
+  animation-delay: 80ms;
+}
+.owt-group-grid > .owt-app-card:nth-child(4) {
+  animation-delay: 120ms;
+}
+
+/* =====================================================================
+ * APP CARD backfill for the revised render
+ *
+ * The README assumes these rules already landed earlier. This branch does
+ * not have them yet, so we port the matching selectors from revised/index.html
+ * here to keep the AppCard replacement pixel-aligned without touching wiring.
+ * ===================================================================== */
+.owt-app-card {
+  position: relative;
+  padding: 22px 24px 20px;
+  border-radius: var(--radius-panel);
+  background: var(--panel);
+  box-shadow: 0 24px 60px -34px rgba(50, 72, 103, 0.28);
+  backdrop-filter: blur(16px);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.owt-app-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--line-strong);
+}
+
+.owt-app-card:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow:
+    0 24px 60px -34px rgba(50, 72, 103, 0.28),
+    0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.owt-app-card--empty {
+  border-style: dashed;
+  border-color: var(--line-strong);
+  background: transparent;
+  box-shadow: none;
+}
+
+.owt-app-card--empty:hover {
+  background: var(--panel-soft);
+  border-color: var(--accent);
+}
+
+.owt-app-card__head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
+.owt-app-card__icon {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-icon);
+  background: var(--owt-panel-softer);
+  border: 1px solid var(--line);
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+
+.owt-app-card__icon img {
+  width: 26px;
+  height: 26px;
+  display: block;
+}
+
+.owt-app-card__icon--muted {
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--line-strong);
+}
+
+.owt-app-card__icon--muted img {
+  filter: grayscale(1);
+  opacity: 0.55;
+}
+
+.owt-app-card__titles {
+  min-width: 0;
+}
+
+.owt-app-card__title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 720;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.owt-app-card__title--muted {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.owt-app-card__subtitle {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.owt-app-card__spacer {
+  flex: 1;
+}
+
+.owt-app-card__prov-count {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0;
+  margin-left: 4px;
+  transition: color 140ms;
+}
+
+.owt-app-card__prov-count:hover {
+  color: var(--accent-text);
+}
+
+.owt-app-card__prov-hover {
+  opacity: 0;
+  margin-left: 2px;
+  color: var(--accent-text);
+  font-weight: 700;
+  transition: opacity 140ms;
+}
+
+.owt-app-card__prov-count:hover .owt-app-card__prov-hover {
+  opacity: 1;
+}
+
+.owt-app-card__active {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-control);
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  margin-bottom: 18px;
+}
+
+.owt-app-card__mini-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: var(--panel-strong);
+  border: 1px solid var(--line);
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+
+.owt-app-card__mini-icon img {
+  width: 18px;
+  height: 18px;
+}
+
+.owt-app-card__active-labels {
+  min-width: 0;
+  flex: 1;
+}
+
+.owt-app-card__active-top {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.owt-app-card__active-main {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.owt-app-card__active-endpoint {
+  font-family: var(--owt-mono);
+  color: var(--accent-text);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.owt-app-card__usage {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  margin-top: 4px;
+}
+
+.owt-app-card__usage-cell {
+  padding: 2px 14px;
+  border-left: 1px solid var(--line);
+}
+
+.owt-app-card__usage-cell:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.owt-app-card__usage-label {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.owt-app-card__usage-value {
+  margin-top: 4px;
+  font-size: 20px;
+  font-weight: 720;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.owt-app-card__usage-unit {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  margin-left: 3px;
+}
+
+.owt-app-card__open-affordance {
+  position: absolute;
+  top: 22px;
+  right: 22px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0;
+  transition: opacity 160ms;
+}
+
+.owt-app-card:hover .owt-app-card__open-affordance {
+  opacity: 1;
+}
+
+.owt-app-card__empty-cta {
+  margin-top: 18px;
+  padding: 16px 14px;
+  border-radius: var(--radius-control);
+  border: 1px dashed var(--line-strong);
+  background: var(--panel-soft);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.owt-app-card__empty-cta-btn {
+  color: var(--accent-text);
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.owt-app-card--empty:hover .owt-app-card__empty-cta-btn {
+  text-decoration: underline;
+}
+
+.owt-status-pill[data-tone="fail"] {
+  background: var(--owt-fail-soft);
+  color: var(--owt-fail);
+  border-color: var(--owt-fail-line);
+}
+
+.owt-status-pill--button {
+  cursor: pointer;
+  font-family: inherit;
+  gap: 6px;
+}
+
+.owt-status-pill--button:hover {
+  filter: brightness(0.97);
+}
+
+body.ccswitch-openwrt-provider-ui-theme[data-ccswitch-theme="dark"]
+  .owt-status-pill--button:hover,
+body.ccswitch-openwrt-provider-ui-theme.ccswitch-openwrt-provider-ui-theme-dark
+  .owt-status-pill--button:hover {
+  filter: brightness(1.12);
+}
+
+.owt-status-pill__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+  display: inline-block;
+  opacity: 0.85;
+}
+
+.owt-status-pill__caret {
+  opacity: 0.75;
+  margin-left: -2px;
+}
+
+.owt-app-card__telemetry-note {
+  margin-top: 16px;
+}
+
+@media (max-width: 719px) {
+  .owt-app-card {
+    padding: 20px;
+  }
+
+  .owt-app-card__head {
+    align-items: flex-start;
+  }
+
+  .owt-app-card__usage {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .owt-app-card__usage-cell {
+    padding: 0;
+    border-left: 0;
+  }
+
+  .owt-app-card__empty-cta {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
