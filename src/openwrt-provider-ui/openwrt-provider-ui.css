@@ -9,20 +9,36 @@
 :host,
 .ccswitch-openwrt-provider-ui-host {
   --bg: #eef3f8;
+  --bg-glow: rgba(77, 124, 255, 0.08);
+  --bg-sheen: rgba(255, 255, 255, 0.05);
   --panel: rgba(255, 255, 255, 0.86);
   --panel-strong: #ffffff;
   --panel-soft: #f8fbff;
+  --panel-softer: #f2f6fb;
   --line: #d8e2ef;
   --line-strong: #ccd7e6;
   --text: #172133;
   --muted: #708198;
   --soft: #90a0b4;
+  --soft-text: #90a0b4;
   --accent: #4d7cff;
   --accent-soft: #ebf2ff;
   --accent-text: #2752c9;
   --success: #2d8a5a;
   --success-soft: #edf8f1;
   --success-line: #bfe4cd;
+  --warn: #b96a1a;
+  --warn-soft: #fbf0e2;
+  --warn-line: #ecd1ab;
+  --fail: #b03a3a;
+  --fail-soft: #fbeaea;
+  --fail-line: #ecbcbc;
+  --row-active: #edf4ff;
+  --row: #ffffff;
+  --button: #f5f8fd;
+  --shadow: 0 24px 60px -34px rgba(50, 72, 103, 0.28);
+  --shadow-soft: 0 16px 34px -28px rgba(50, 72, 103, 0.18);
+  --shadow-panel: 0 40px 100px -56px rgba(50, 72, 103, 0.48);
   --radius-panel: 28px;
   --radius-card: 20px;
   --radius-control: 16px;
@@ -34,17 +50,33 @@
 :host([data-ccswitch-theme="dark"]),
 .ccswitch-openwrt-provider-ui-host[data-ccswitch-theme="dark"] {
   --bg: #0f141b;
+  --bg-glow: rgba(127, 148, 255, 0.08);
+  --bg-sheen: transparent;
   --panel: rgba(20, 28, 38, 0.92);
   --panel-strong: #151d27;
   --panel-soft: #121923;
+  --panel-softer: #121923;
   --line: #263241;
   --line-strong: #314258;
   --text: #eef4fb;
   --muted: #93a2b8;
   --soft: #6e7d92;
+  --soft-text: #7b8aa0;
   --accent: #7f94ff;
   --accent-soft: #212d48;
   --accent-text: #dfe5ff;
+  --warn: #d69252;
+  --warn-soft: #2e2216;
+  --warn-line: #553d22;
+  --fail: #e07878;
+  --fail-soft: #2e1717;
+  --fail-line: #5a2a2a;
+  --row-active: #1e2c46;
+  --row: #1a232f;
+  --button: #1d2835;
+  --shadow: 0 24px 60px -34px rgba(0, 0, 0, 0.6);
+  --shadow-soft: 0 16px 34px -28px rgba(0, 0, 0, 0.5);
+  --shadow-panel: 0 40px 100px -40px rgba(0, 0, 0, 0.7);
 }
 
 :host([data-ccswitch-provider-ui-mount="page-shell"]),
@@ -52,16 +84,8 @@
   display: block;
   min-height: 100vh;
   background:
-    radial-gradient(
-      circle at top left,
-      color-mix(in srgb, var(--accent) 12%, transparent),
-      transparent 30%
-    ),
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--panel-strong) 35%, transparent),
-      transparent 24%
-    ),
+    radial-gradient(circle at top left, var(--bg-glow), transparent 28%),
+    linear-gradient(180deg, var(--bg-sheen), transparent 24%),
     var(--bg);
 }
 
@@ -197,55 +221,6 @@
   padding-bottom: 28px;
 }
 
-.owt-slot {
-  position: relative;
-  min-height: 168px;
-  border: 1px dashed var(--line-strong);
-  border-radius: var(--radius-panel);
-  background: var(--panel);
-  box-shadow: 0 30px 70px -52px rgba(23, 33, 51, 0.32);
-  backdrop-filter: blur(22px);
-  animation: owt-panel-enter 180ms ease-out;
-}
-
-.owt-slot-alert {
-  min-height: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  backdrop-filter: none;
-}
-
-.owt-slot-alert:empty {
-  display: none;
-}
-
-.owt-slot-placeholder {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 10px;
-  min-height: inherit;
-  padding: 24px;
-}
-
-.owt-slot-placeholder__task {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--accent-text);
-}
-
-.owt-slot-placeholder__title {
-  font-size: clamp(1.2rem, 1.5vw, 1.6rem);
-  line-height: 1.15;
-  letter-spacing: -0.025em;
-  color: var(--text);
-}
-
 /* Shared provider/runtime surfaces mounted inside the provider-ui host. */
 .ccswitch-openwrt-provider-ui-host [data-ccswitch-layout="embedded-stack"] {
   display: flex;
@@ -368,10 +343,6 @@
   .owt-header-actions {
     justify-content: flex-start;
   }
-
-  .owt-slot-placeholder {
-    padding: 20px;
-  }
 }
 
 @media (min-width: 720px) {
@@ -386,13 +357,6 @@
   .ccswitch-openwrt-provider-ui-host [data-ccswitch-layout="stack-to-split"] {
     grid-template-columns: minmax(0, 1.05fr) minmax(18rem, 0.7fr);
   }
-}
-
-/* Apps grid — Task B */
-.owt-slot-apps {
-  min-height: 0;
-  padding: 24px;
-  border-style: solid;
 }
 
 .owt-apps-grid {
@@ -1059,17 +1023,7 @@
   line-height: 1.5;
 }
 
-@media (max-width: 900px) {
-  .owt-slot-apps {
-    padding: 20px;
-  }
-}
-
 @media (max-width: 719px) {
-  .owt-slot-apps {
-    padding: 18px;
-  }
-
   .owt-apps-grid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -2463,12 +2417,16 @@ select.owt-provider-panel__input {
   }
 }
 
-/* Daemon card — Task E */
-.owt-slot-daemon {
-  min-height: 0;
+[data-slot="daemon-card"] {
   padding: 24px 28px;
-  border-style: solid;
-  border-color: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(16px);
+  transition:
+    background 220ms ease,
+    border-color 220ms ease;
 }
 
 .owt-daemon-card {
@@ -2696,7 +2654,7 @@ select.owt-provider-panel__input {
   color: var(--accent-text);
 }
 
-.owt-slot-daemon .ccswitch-openwrt-page-note {
+[data-slot="daemon-card"] .ccswitch-openwrt-page-note {
   margin: 0;
 }
 
@@ -2711,7 +2669,7 @@ select.owt-provider-panel__input {
 }
 
 @media (max-width: 860px) {
-  .owt-slot-daemon {
+  [data-slot="daemon-card"] {
     padding: 22px;
   }
 
@@ -2729,7 +2687,7 @@ select.owt-provider-panel__input {
 }
 
 @media (max-width: 560px) {
-  .owt-slot-daemon {
+  [data-slot="daemon-card"] {
     padding: 20px;
   }
 
@@ -2916,7 +2874,7 @@ select.owt-provider-panel__input {
   );
   --owt-button: var(--button, var(--panel-soft));
   --owt-mono: var(--mono, ui-monospace, "SF Mono", Menlo, monospace);
-  --owt-soft-text: var(--soft, var(--muted));
+  --owt-soft-text: var(--soft-text, var(--soft, var(--muted)));
   --owt-fail: var(--fail, #c74a57);
   --owt-fail-soft: var(
     --fail-soft,
