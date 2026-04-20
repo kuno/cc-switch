@@ -644,6 +644,7 @@ mod tests {
         failover_switch::FailoverSwitchManager,
         provider_router::ProviderRouter,
         providers::gemini_shadow::GeminiShadowStore,
+        quota_cache::RateLimitSnapshotCache,
         rate_limit::new_rate_limit_store,
         types::{ProxyConfig, ProxyStatus},
     };
@@ -667,6 +668,7 @@ mod tests {
             codex_oauth_auth: None,
             failover_manager: Arc::new(FailoverSwitchManager::new(db, current_providers)),
             rate_limits: new_rate_limit_store(),
+            quota_snapshot_cache: RateLimitSnapshotCache::new(),
             #[cfg(feature = "tauri-desktop")]
             app_handle: None,
         }
