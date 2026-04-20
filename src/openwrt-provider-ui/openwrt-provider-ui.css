@@ -386,7 +386,7 @@
   border-color: var(--line);
   background: transparent;
   box-shadow: none;
-  min-height: 196px;
+  min-height: auto;
 }
 
 .owt-app-card--empty:hover {
