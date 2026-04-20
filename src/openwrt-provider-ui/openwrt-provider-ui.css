@@ -357,7 +357,7 @@
  * ===================================================================== */
 .owt-app-card {
   position: relative;
-  padding: 22px 24px 20px;
+  padding: 8px 24px;
   border-radius: var(--radius-panel);
   background: var(--panel);
   box-shadow: 0 24px 60px -34px rgba(50, 72, 103, 0.28);
