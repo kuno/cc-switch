@@ -1,4 +1,5 @@
-import "./openwrt-provider-ui.css";
+import "./openwrt-luci-host.css";
+import providerUiCss from "./openwrt-provider-ui.css?inline";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -114,14 +115,142 @@ const OPENWRT_NATIVE_PAGE_HOST_CLASS = "ccswitch-openwrt-native-page-host";
 const OPENWRT_NATIVE_PAGE_SECTION_CLASS =
   "ccswitch-openwrt-native-page-section";
 const OPENWRT_NATIVE_PAGE_MAP_CLASS = "ccswitch-openwrt-native-page-map";
-const OPENWRT_SHARED_PROVIDER_UI_THEME_CLASS =
-  "ccswitch-openwrt-provider-ui-theme";
-let activeThemeLeaseCount = 0;
+const OPENWRT_PROVIDER_UI_HOST_CLASS = "ccswitch-openwrt-provider-ui-host";
+const OPENWRT_PROVIDER_UI_MOUNT_ATTRIBUTE = "data-ccswitch-provider-ui-mount";
+const OPENWRT_PROVIDER_UI_LIGHT_DOM_STYLE_ID =
+  "ccswitch-openwrt-provider-ui-inline-styles";
+
+type OpenWrtProviderUiMountKind =
+  | "page-shell"
+  | "provider-manager"
+  | "runtime-surface";
+
+const SHADOW_STYLESHEET_CACHE = new WeakMap<Document, CSSStyleSheet>();
 
 function clearTarget(target: HTMLElement) {
   while (target.firstChild) {
     target.removeChild(target.firstChild);
   }
+}
+
+function getDefaultThemeForTarget(target: HTMLElement): "light" | "dark" {
+  const existingTheme = target.dataset.ccswitchTheme;
+  if (existingTheme === "dark" || existingTheme === "light") {
+    return existingTheme;
+  }
+
+  const doc = target.ownerDocument;
+  if (
+    doc.documentElement.classList.contains("dark") ||
+    doc.body.classList.contains("dark")
+  ) {
+    return "dark";
+  }
+
+  return "light";
+}
+
+function getAdoptedStylesheet(doc: Document): CSSStyleSheet {
+  let sheet = SHADOW_STYLESHEET_CACHE.get(doc);
+  if (!sheet) {
+    sheet = new CSSStyleSheet();
+    sheet.replaceSync(providerUiCss);
+    SHADOW_STYLESHEET_CACHE.set(doc, sheet);
+  }
+  return sheet;
+}
+
+function ensureLightDomStyles(doc: Document) {
+  if (doc.getElementById(OPENWRT_PROVIDER_UI_LIGHT_DOM_STYLE_ID)) {
+    return;
+  }
+
+  const style = doc.createElement("style");
+  style.id = OPENWRT_PROVIDER_UI_LIGHT_DOM_STYLE_ID;
+  style.textContent = providerUiCss;
+  doc.head.appendChild(style);
+}
+
+function decorateProviderUiHost(
+  target: HTMLElement,
+  mountKind: OpenWrtProviderUiMountKind,
+): () => void {
+  const hadHostClass = target.classList.contains(
+    OPENWRT_PROVIDER_UI_HOST_CLASS,
+  );
+  const hadDarkClass = target.classList.contains("dark");
+  const previousMountKind = target.getAttribute(
+    OPENWRT_PROVIDER_UI_MOUNT_ATTRIBUTE,
+  );
+  const previousTheme = target.getAttribute("data-ccswitch-theme");
+  const nextTheme = previousTheme ?? getDefaultThemeForTarget(target);
+
+  target.classList.add(OPENWRT_PROVIDER_UI_HOST_CLASS);
+  target.classList.toggle("dark", nextTheme === "dark");
+  target.setAttribute(OPENWRT_PROVIDER_UI_MOUNT_ATTRIBUTE, mountKind);
+  target.dataset.ccswitchTheme = nextTheme;
+
+  return () => {
+    if (!hadHostClass) {
+      target.classList.remove(OPENWRT_PROVIDER_UI_HOST_CLASS);
+    }
+    target.classList.toggle("dark", hadDarkClass);
+
+    if (previousMountKind === null) {
+      target.removeAttribute(OPENWRT_PROVIDER_UI_MOUNT_ATTRIBUTE);
+    } else {
+      target.setAttribute(
+        OPENWRT_PROVIDER_UI_MOUNT_ATTRIBUTE,
+        previousMountKind,
+      );
+    }
+
+    if (previousTheme === null) {
+      delete target.dataset.ccswitchTheme;
+    } else {
+      target.setAttribute("data-ccswitch-theme", previousTheme);
+    }
+  };
+}
+
+function attachShadowHost(
+  target: HTMLElement,
+  mountKind: OpenWrtProviderUiMountKind,
+): { reactMount: HTMLElement; dispose: () => void } {
+  clearTarget(target);
+  target.dataset.ccswitchProviderUiMount = mountKind;
+
+  const doc = target.ownerDocument;
+  const shadow = target.shadowRoot ?? target.attachShadow({ mode: "open" });
+  while (shadow.firstChild) {
+    shadow.removeChild(shadow.firstChild);
+  }
+
+  if (
+    typeof CSSStyleSheet === "undefined" ||
+    !("adoptedStyleSheets" in shadow)
+  ) {
+    const style = doc.createElement("style");
+    style.textContent = providerUiCss;
+    shadow.appendChild(style);
+  } else {
+    shadow.adoptedStyleSheets = [getAdoptedStylesheet(doc)];
+  }
+
+  const reactMount = doc.createElement("div");
+  reactMount.className = OPENWRT_PROVIDER_UI_HOST_CLASS;
+  reactMount.classList.toggle("dark", target.classList.contains("dark"));
+  reactMount.dataset.ccswitchProviderUiMount = mountKind;
+  shadow.appendChild(reactMount);
+
+  return {
+    reactMount,
+    dispose() {
+      while (shadow.firstChild) {
+        shadow.removeChild(shadow.firstChild);
+      }
+    },
+  };
 }
 
 function decorateNativePageHost(target: HTMLElement): () => void {
@@ -140,26 +269,7 @@ function decorateNativePageHost(target: HTMLElement): () => void {
 }
 
 function acquireThemeLease(): () => void {
-  if (typeof document === "undefined") {
-    return () => {};
-  }
-
-  if (activeThemeLeaseCount === 0) {
-    document.body.classList.add(OPENWRT_SHARED_PROVIDER_UI_THEME_CLASS);
-  }
-
-  activeThemeLeaseCount += 1;
-
-  return () => {
-    if (typeof document === "undefined") {
-      return;
-    }
-
-    activeThemeLeaseCount = Math.max(0, activeThemeLeaseCount - 1);
-    if (activeThemeLeaseCount === 0) {
-      document.body.classList.remove(OPENWRT_SHARED_PROVIDER_UI_THEME_CLASS);
-    }
-  };
+  return () => {};
 }
 
 function withThemeLease<T>(callback: (release: () => void) => T): T {
@@ -175,6 +285,24 @@ function withThemeLease<T>(callback: (release: () => void) => T): T {
       releaseThemeLease();
     }
   }
+}
+
+function shouldUseShadowDom(): boolean {
+  if (
+    typeof process !== "undefined" &&
+    typeof process.env !== "undefined" &&
+    process.env.CCSWITCH_USE_SHADOW_DOM === "0"
+  ) {
+    return false;
+  }
+
+  const runtimeFlag = (
+    globalThis as typeof globalThis & {
+      CCSWITCH_USE_SHADOW_DOM?: boolean | number | string;
+    }
+  ).CCSWITCH_USE_SHADOW_DOM;
+
+  return !(runtimeFlag === false || runtimeFlag === 0 || runtimeFlag === "0");
 }
 
 function getServiceStatusLabel(isRunning: boolean): string {
@@ -319,6 +447,10 @@ function mountOpenWrtSharedProviderManager(
   options: OpenWrtSharedProviderMountOptions,
 ) {
   return withThemeLease((releaseThemeLease) => {
+    const releaseProviderUiHost = decorateProviderUiHost(
+      options.target,
+      "provider-manager",
+    );
     const initialRestartState = getShellRestartState(options.shell);
     const state: OpenWrtProviderManagerMountState = {
       mounted: null,
@@ -339,6 +471,10 @@ function mountOpenWrtSharedProviderManager(
         handleProviderMutationEvent(state, options.shell, rerender, event);
       },
     });
+    const useShadowDom = shouldUseShadowDom();
+    const shadowMount = useShadowDom
+      ? attachShadowHost(options.target, "provider-manager")
+      : null;
 
     function createManagerProps(): SharedProviderManagerProps {
       syncStateFromShell(state, options.shell);
@@ -367,9 +503,12 @@ function mountOpenWrtSharedProviderManager(
       state.mounted.update(createManagerProps());
     }
 
-    clearTarget(options.target);
+    if (!useShadowDom) {
+      ensureLightDomStyles(options.target.ownerDocument);
+      clearTarget(options.target);
+    }
     state.mounted = mountSharedProviderManager(
-      options.target,
+      shadowMount?.reactMount ?? options.target,
       createManagerProps(),
     );
     unsubscribe = options.shell.subscribe?.(() => {
@@ -386,7 +525,12 @@ function mountOpenWrtSharedProviderManager(
         state.disposed = true;
         unsubscribe?.();
         state.mounted?.unmount();
-        clearTarget(options.target);
+        if (shadowMount) {
+          shadowMount.dispose();
+        } else {
+          clearTarget(options.target);
+        }
+        releaseProviderUiHost();
         releaseThemeLease();
         options.shell.clearMessage();
       },
@@ -398,18 +542,37 @@ function mountOpenWrtSharedRuntimeSurface(
   options: OpenWrtSharedRuntimeMountOptions,
 ) {
   return withThemeLease((releaseThemeLease) => {
+    const releaseProviderUiHost = decorateProviderUiHost(
+      options.target,
+      "runtime-surface",
+    );
     let mounted: MountedSharedRuntimeSurface | null = null;
+    const useShadowDom = shouldUseShadowDom();
+    const shadowMount = useShadowDom
+      ? attachShadowHost(options.target, "runtime-surface")
+      : null;
 
-    clearTarget(options.target);
-    mounted = mountSharedRuntimeSurface(options.target, {
-      adapter: createOpenWrtRuntimeAdapter(options.transport),
-    });
+    if (!useShadowDom) {
+      ensureLightDomStyles(options.target.ownerDocument);
+      clearTarget(options.target);
+    }
+    mounted = mountSharedRuntimeSurface(
+      shadowMount?.reactMount ?? options.target,
+      {
+        adapter: createOpenWrtRuntimeAdapter(options.transport),
+      },
+    );
 
     return {
       unmount() {
         mounted?.unmount();
         mounted = null;
-        clearTarget(options.target);
+        if (shadowMount) {
+          shadowMount.dispose();
+        } else {
+          clearTarget(options.target);
+        }
+        releaseProviderUiHost();
         releaseThemeLease();
       },
     };
@@ -419,9 +582,20 @@ function mountOpenWrtSharedRuntimeSurface(
 function mountOpenWrtPageShell(options: OpenWrtSharedPageMountOptions) {
   return withThemeLease((releaseThemeLease) => {
     const releaseHostDecoration = decorateNativePageHost(options.target);
-    const root = createRoot(options.target);
+    const releaseProviderUiHost = decorateProviderUiHost(
+      options.target,
+      "page-shell",
+    );
+    const useShadowDom = shouldUseShadowDom();
+    const shadowMount = useShadowDom
+      ? attachShadowHost(options.target, "page-shell")
+      : null;
+    const root = createRoot(shadowMount?.reactMount ?? options.target);
 
-    clearTarget(options.target);
+    if (!useShadowDom) {
+      ensureLightDomStyles(options.target.ownerDocument);
+      clearTarget(options.target);
+    }
     root.render(
       createElement(OpenWrtPageShell, {
         options,
@@ -431,7 +605,12 @@ function mountOpenWrtPageShell(options: OpenWrtSharedPageMountOptions) {
     return {
       unmount() {
         root.unmount();
-        clearTarget(options.target);
+        if (shadowMount) {
+          shadowMount.dispose();
+        } else {
+          clearTarget(options.target);
+        }
+        releaseProviderUiHost();
         releaseHostDecoration();
         releaseThemeLease();
         options.shell.clearMessage();
