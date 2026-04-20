@@ -82,6 +82,19 @@ const APP_LABELS: Record<SharedProviderAppId, string> = {
   gemini: "Gemini",
 };
 
+const APP_ICON_BASE_URL = "/luci-static/resources/ccswitch/provider-ui/icons";
+
+const APP_ICON_FILENAMES: Partial<Record<SharedProviderAppId, string>> = {
+  claude: "claude.svg",
+  codex: "openai.svg",
+  gemini: "gemini.svg",
+};
+
+function appIconUrl(appId: SharedProviderAppId): string | null {
+  const filename = APP_ICON_FILENAMES[appId];
+  return filename ? `${APP_ICON_BASE_URL}/${filename}` : null;
+}
+
 const FOCUSABLE_SELECTOR = [
   'a[href]',
   'button:not([disabled])',
@@ -273,7 +286,11 @@ export function ProviderSidePanel({
       >
         <header className="owt-provider-panel__header">
           <div className="owt-provider-panel__app-badge" data-app={appId}>
-            {APP_LABELS[appId].slice(0, 1)}
+            {appIconUrl(appId) ? (
+              <img src={appIconUrl(appId)!} alt="" />
+            ) : (
+              APP_LABELS[appId].slice(0, 1)
+            )}
           </div>
           <div className="owt-provider-panel__header-copy">
             <h3 className="owt-provider-panel__title">{APP_LABELS[appId]}</h3>
@@ -330,9 +347,13 @@ export function ProviderSidePanel({
                       className="owt-provider-panel__provider-mark"
                       data-app={appId}
                     >
-                      {(provider.name || provider.providerId || APP_LABELS[appId])
-                        .slice(0, 1)
-                        .toUpperCase()}
+                      {appIconUrl(appId) ? (
+                        <img src={appIconUrl(appId)!} alt="" />
+                      ) : (
+                        (provider.name || provider.providerId || APP_LABELS[appId])
+                          .slice(0, 1)
+                          .toUpperCase()
+                      )}
                     </div>
                     <div className="owt-provider-panel__provider-copy">
                       <div className="owt-provider-panel__provider-name">
