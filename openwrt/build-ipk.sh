@@ -19,6 +19,7 @@ STAGED_OPENWRT_PROVIDER_UI_STYLESHEET="$STAGED_OPENWRT_PROVIDER_UI_DIR/ccswitch-
 OPENWRT_PROVIDER_UI_ASSET="$LUCI_SRC/htdocs/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js"
 OPENWRT_PROVIDER_UI_STYLESHEET="$LUCI_SRC/htdocs/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.css"
 PREPARE_PROVIDER_UI_BUNDLE="$SCRIPT_DIR/prepare-provider-ui-bundle.sh"
+OPENWRT_PROVIDER_UI_ICONS_SRC_DIR="$PROJECT_DIR/src/openwrt-provider-ui/icons"
 
 read_make_var() {
 	local file="$1"
@@ -504,6 +505,16 @@ build_luci_package() {
 	local control_dir="$WORK_DIR/luci-control"
 	local data_dir="$WORK_DIR/luci-data"
 	local output="$DIST_DIR/luci-app-cc-switch_${VERSION}-${PKG_RELEASE}_all.ipk"
+	local provider_ui_icon_filenames=(
+		claude.svg
+		deepseek.svg
+		gemini.svg
+		minimax.svg
+		openai.svg
+		packycode.svg
+		qwen.svg
+	)
+	local icon_name
 
 	rm -rf "$control_dir" "$data_dir"
 	mkdir -p \
@@ -512,7 +523,8 @@ build_luci_package() {
 		"$data_dir/usr/share/rpcd/ucode" \
 		"$data_dir/usr/share/luci/menu.d" \
 		"$data_dir/www/luci-static/resources/view/ccswitch" \
-		"$data_dir/www/luci-static/resources/ccswitch/provider-ui"
+		"$data_dir/www/luci-static/resources/ccswitch/provider-ui" \
+		"$data_dir/www/luci-static/resources/ccswitch/provider-ui/icons"
 
 	emit_control_file \
 		"$control_dir/control" \
@@ -546,6 +558,11 @@ build_luci_package() {
 	install -m 0644 \
 		"$OPENWRT_PROVIDER_UI_STYLESHEET" \
 		"$data_dir/www/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.css"
+	for icon_name in "${provider_ui_icon_filenames[@]}"; do
+		install -m 0644 \
+			"$OPENWRT_PROVIDER_UI_ICONS_SRC_DIR/$icon_name" \
+			"$data_dir/www/luci-static/resources/ccswitch/provider-ui/icons/$icon_name"
+	done
 
 	rm -f "$output"
 	build_ipk "$control_dir" "$data_dir" "$output"
