@@ -280,6 +280,37 @@ function decorateNativePageHost(target: HTMLElement): () => void {
   };
 }
 
+function applyPageShellViewportMinHeight(host: HTMLElement): () => void {
+  const previousMinHeight = host.style.minHeight;
+  const view = host.ownerDocument.defaultView;
+
+  const recompute = () => {
+    const rawTopOffset = host.getBoundingClientRect().top;
+    const topOffset =
+      Number.isFinite(rawTopOffset) && rawTopOffset >= 0 ? rawTopOffset : 0;
+
+    host.style.minHeight = `calc(100vh - ${topOffset}px)`;
+  };
+
+  recompute();
+
+  if (view) {
+    view.addEventListener("resize", recompute);
+  }
+
+  return () => {
+    if (view) {
+      view.removeEventListener("resize", recompute);
+    }
+
+    if (previousMinHeight) {
+      host.style.minHeight = previousMinHeight;
+    } else {
+      host.style.removeProperty("min-height");
+    }
+  };
+}
+
 function acquireThemeLease(): () => void {
   return () => {};
 }
@@ -604,6 +635,9 @@ function mountOpenWrtPageShell(options: OpenWrtSharedPageMountOptions) {
     const shadowMount = useShadowDom
       ? attachShadowHost(options.target, "page-shell")
       : null;
+    const releaseViewportMinHeight = applyPageShellViewportMinHeight(
+      options.target,
+    );
     const root = createRoot(shadowMount?.reactMount ?? options.target);
 
     if (!useShadowDom) {
@@ -625,6 +659,7 @@ function mountOpenWrtPageShell(options: OpenWrtSharedPageMountOptions) {
     return {
       unmount() {
         root.unmount();
+        releaseViewportMinHeight();
         if (shadowMount) {
           shadowMount.dispose();
         } else {
