@@ -211,6 +211,7 @@ export function AppCard({
           </div>
           <span className="owt-app-card__spacer" aria-hidden="true" />
           <span className="owt-status-pill" data-tone="neutral">
+            <span className="owt-status-pill__dot" aria-hidden="true" />
             Not configured
           </span>
         </div>
@@ -254,10 +255,6 @@ export function AppCard({
       onKeyDown={handleCardKey}
       aria-label={`Open ${appCopy.label} providers`}
     >
-      <div className="owt-app-card__open-affordance" aria-hidden="true">
-        Open providers →
-      </div>
-
       <div className="owt-app-card__head">
         <div className="owt-app-card__icon" aria-hidden="true">
           <img src={iconUrl} alt="" />
@@ -265,7 +262,7 @@ export function AppCard({
         <div className="owt-app-card__titles">
           <h3 className="owt-app-card__title">
             {appCopy.label}
-            <span className="owt-app-card__prov-count" title="Open providers">
+            <span className="owt-app-card__prov-count">
               {" · "}
               {providerCount} provider{providerCount === 1 ? "" : "s"}
               <span className="owt-app-card__prov-hover"> →</span>
