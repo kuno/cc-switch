@@ -6,6 +6,7 @@ pub mod env_checker;
 pub mod env_manager;
 pub mod mcp;
 pub mod model_fetch;
+pub mod oauth_refresh;
 pub mod omo;
 pub mod prompt;
 pub mod provider;

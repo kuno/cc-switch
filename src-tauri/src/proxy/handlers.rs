@@ -35,9 +35,13 @@ use super::{
     ProxyError,
 };
 use crate::app_config::AppType;
-use crate::proxy::providers::{
-    claude_oauth_store::load_claude_auth_for_provider,
-    codex_oauth_store::load_codex_auth_for_provider,
+use crate::services::oauth_refresh::storage::{
+    load_claude_refresh_auth_for_provider, load_codex_refresh_auth_for_provider,
+    save_refreshed_claude_auth_for_provider, save_refreshed_codex_auth_for_provider,
+};
+use crate::services::oauth_refresh::{
+    load_or_refresh_oauth_credentials, ClaudeTokenRefresher, CodexTokenRefresher,
+    OAuthTokenRefresher,
 };
 use crate::services::subscription::{query_claude_quota, query_codex_quota, SubscriptionQuota};
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
@@ -158,7 +162,15 @@ where
     }
 }
 
-async fn refresh_codex_quota_snapshots(state: &ProxyState) {
+async fn refresh_codex_quota_snapshots_with_query_and_refresher<F, Fut, R>(
+    state: &ProxyState,
+    query_quota: F,
+    refresher: &R,
+) where
+    F: Fn(String, Option<String>) -> Fut + Clone,
+    Fut: Future<Output = SubscriptionQuota>,
+    R: OAuthTokenRefresher,
+{
     let providers = match state.db.get_all_providers("codex") {
         Ok(providers) => providers,
         Err(error) => {
@@ -171,9 +183,24 @@ async fn refresh_codex_quota_snapshots(state: &ProxyState) {
     let mut live_fetches = Vec::new();
 
     for provider in providers.into_values().filter(is_codex_oauth_provider) {
-        let Some(auth) = load_codex_auth_for_provider(&provider.id) else {
+        let auth_provider_id = provider.id.clone();
+        let provider_key = format!("codex:{auth_provider_id}");
+        let Some(auth) = load_or_refresh_oauth_credentials(
+            "Codex",
+            &auth_provider_id,
+            &provider_key,
+            refresher,
+            &state.oauth_refresh_locks,
+            || load_codex_refresh_auth_for_provider(&auth_provider_id),
+            |stored, refreshed| {
+                save_refreshed_codex_auth_for_provider(&auth_provider_id, stored, refreshed)
+            },
+        )
+        .await
+        else {
             continue;
         };
+        let query_quota = query_quota.clone();
         let provider_id = provider.id.clone();
         let provider_name = provider.name.clone();
 
@@ -184,13 +211,7 @@ async fn refresh_codex_quota_snapshots(state: &ProxyState) {
             provider_id.clone(),
             provider_name.clone(),
             move || async move {
-                let quota = query_codex_quota(
-                    &auth.access_token,
-                    auth.account_id.as_deref(),
-                    "codex_oauth",
-                    "Codex OAuth access token expired or rejected. Please re-login via cc-switch.",
-                )
-                .await;
+                let quota = query_quota(auth.access_token.clone(), auth.account_id.clone()).await;
 
                 build_subscription_quota_snapshot(
                     state,
@@ -224,6 +245,24 @@ async fn refresh_codex_quota_snapshots(state: &ProxyState) {
     }
 }
 
+async fn refresh_codex_quota_snapshots(state: &ProxyState) {
+    let refresher = CodexTokenRefresher::new();
+    refresh_codex_quota_snapshots_with_query_and_refresher(
+        state,
+        |access_token: String, account_id: Option<String>| async move {
+            query_codex_quota(
+                &access_token,
+                account_id.as_deref(),
+                "codex_oauth",
+                "Codex OAuth access token expired or rejected. Please re-login via cc-switch.",
+            )
+            .await
+        },
+        &refresher,
+    )
+    .await;
+}
+
 /// Reconcile stored Claude rate-limit snapshots before serving `/api/quota`.
 ///
 /// Retain rules:
@@ -232,10 +271,14 @@ async fn refresh_codex_quota_snapshots(state: &ProxyState) {
 /// - keep header-captured Claude snapshots (`source != "subscription_quota"`);
 /// - evict `subscription_quota` snapshots for providers that will not be
 ///   refreshed in this cycle.
-async fn refresh_claude_quota_snapshots_with_query<F, Fut>(state: &ProxyState, query_quota: F)
-where
+async fn refresh_claude_quota_snapshots_with_query_and_refresher<F, Fut, R>(
+    state: &ProxyState,
+    query_quota: F,
+    refresher: &R,
+) where
     F: Fn(String) -> Fut + Clone,
     Fut: Future<Output = SubscriptionQuota>,
+    R: OAuthTokenRefresher,
 {
     let providers = match state.db.get_all_providers("claude") {
         Ok(providers) => providers,
@@ -250,24 +293,25 @@ where
     let live_claude_provider_ids: HashSet<String> = providers.keys().cloned().collect();
     let mut live_refresh_provider_ids = HashSet::new();
     let mut live_fetches = Vec::new();
-    let now_ms = chrono::Utc::now().timestamp_millis();
 
     for provider in providers.into_values().filter(is_claude_oauth_provider) {
-        let Some(auth) = load_claude_auth_for_provider(&provider.id) else {
+        let auth_provider_id = provider.id.clone();
+        let provider_key = format!("claude:{auth_provider_id}");
+        let Some(auth) = load_or_refresh_oauth_credentials(
+            "Claude",
+            &auth_provider_id,
+            &provider_key,
+            refresher,
+            &state.oauth_refresh_locks,
+            || load_claude_refresh_auth_for_provider(&auth_provider_id),
+            |stored, refreshed| {
+                save_refreshed_claude_auth_for_provider(&auth_provider_id, stored, refreshed)
+            },
+        )
+        .await
+        else {
             continue;
         };
-
-        if auth
-            .expires_at_ms
-            .is_some_and(|expires_at_ms| expires_at_ms < now_ms)
-        {
-            log::warn!(
-                "[Quota] stored Claude auth for {} is expired at {}; skipping live quota refresh",
-                provider.id,
-                auth.expires_at_ms.unwrap_or_default()
-            );
-            continue;
-        }
 
         let query_quota = query_quota.clone();
         let provider_id = provider.id.clone();
@@ -320,6 +364,15 @@ where
     for snapshot in refreshed.into_iter().flatten() {
         store.insert(snapshot.provider_id.clone(), snapshot);
     }
+}
+
+async fn refresh_claude_quota_snapshots_with_query<F, Fut>(state: &ProxyState, query_quota: F)
+where
+    F: Fn(String) -> Fut + Clone,
+    Fut: Future<Output = SubscriptionQuota>,
+{
+    let refresher = ClaudeTokenRefresher::new();
+    refresh_claude_quota_snapshots_with_query_and_refresher(state, query_quota, &refresher).await;
 }
 
 async fn refresh_claude_quota_snapshots(state: &ProxyState) {
@@ -1713,6 +1766,8 @@ mod tests {
         is_claude_oauth_provider, is_codex_oauth_provider,
         refresh_claude_quota_snapshots_with_query, responses_sse_to_response_value,
         should_use_claude_transform_streaming,
+        refresh_claude_quota_snapshots_with_query_and_refresher,
+        refresh_codex_quota_snapshots_with_query_and_refresher,
     };
     use crate::database::Database;
     use crate::provider::Provider;
@@ -1727,7 +1782,14 @@ mod tests {
         types::{ProxyConfig, ProxyStatus},
         ProxyError,
     };
+    use crate::services::oauth_refresh::storage::{
+        load_claude_refresh_auth_for_provider, load_codex_refresh_auth_for_provider,
+    };
+    use crate::services::oauth_refresh::{
+        OAuthRefreshError, OAuthRefreshLockManager, OAuthTokenRefresher, RefreshedCredentials,
+    };
     use crate::services::subscription::{CredentialStatus, QuotaTier, SubscriptionQuota};
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
     use serde_json::json;
     use serial_test::serial;
     use std::collections::HashMap;
@@ -1994,6 +2056,7 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
             failover_manager: Arc::new(FailoverSwitchManager::new(db, current_providers)),
             rate_limits: new_rate_limit_store(),
             quota_snapshot_cache: crate::proxy::quota_cache::RateLimitSnapshotCache::new(),
+            oauth_refresh_locks: OAuthRefreshLockManager::new(),
             #[cfg(feature = "tauri-desktop")]
             app_handle: None,
         }
@@ -2013,6 +2076,26 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
         )
     }
 
+    fn codex_provider(provider_id: &str, auth_mode: &str, name: &str) -> Provider {
+        Provider::with_id(
+            provider_id.to_string(),
+            name.to_string(),
+            json!({
+                "auth_mode": auth_mode,
+                "env": {}
+            }),
+            None,
+        )
+    }
+
+    fn make_jwt(payload: serde_json::Value) -> String {
+        format!(
+            "{}.{}.",
+            URL_SAFE_NO_PAD.encode(br#"{"alg":"none"}"#),
+            URL_SAFE_NO_PAD.encode(payload.to_string())
+        )
+    }
+
     fn sample_claude_auth_json(expires_at_ms: i64) -> Vec<u8> {
         serde_json::json!({
             "claudeAiOauth": {
@@ -2027,9 +2110,26 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
         .into_bytes()
     }
 
-    fn sample_quota(tier_name: &str, utilization: f64) -> SubscriptionQuota {
+    fn sample_codex_auth_json(exp_secs: i64) -> Vec<u8> {
+        serde_json::json!({
+            "tokens": {
+                "access_token": make_jwt(json!({
+                    "exp": exp_secs,
+                    "https://api.openai.com/auth": {
+                        "chatgpt_account_id": "acc-123"
+                    }
+                })),
+                "refresh_token": "refresh-token",
+                "account_id": "acc-123"
+            }
+        })
+        .to_string()
+        .into_bytes()
+    }
+
+    fn sample_quota(tool: &str, tier_name: &str, utilization: f64) -> SubscriptionQuota {
         SubscriptionQuota {
-            tool: "claude".to_string(),
+            tool: tool.to_string(),
             credential_status: CredentialStatus::Valid,
             credential_message: None,
             success: true,
@@ -2041,6 +2141,23 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
             extra_usage: None,
             error: None,
             queried_at: Some(chrono::Utc::now().timestamp_millis()),
+        }
+    }
+
+    #[derive(Clone)]
+    struct FakeRefresher {
+        calls: Arc<Mutex<usize>>,
+        result: Result<RefreshedCredentials, OAuthRefreshError>,
+    }
+
+    #[async_trait::async_trait]
+    impl OAuthTokenRefresher for FakeRefresher {
+        async fn refresh(
+            &self,
+            _refresh_token: &str,
+        ) -> Result<RefreshedCredentials, OAuthRefreshError> {
+            *self.calls.lock().expect("lock refresh calls") += 1;
+            self.result.clone()
         }
     }
 
@@ -2147,7 +2264,7 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
                         .lock()
                         .expect("lock seen tokens")
                         .push(access_token);
-                    sample_quota("seven_day_claude_design", 42.0)
+                    sample_quota("claude", "seven_day_claude_design", 42.0)
                 }
             }
         })
@@ -2176,7 +2293,87 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
 
     #[tokio::test]
     #[serial]
-    async fn refresh_claude_quota_snapshots_skips_expired_uploaded_auth() {
+    async fn refresh_claude_quota_snapshots_refreshes_expired_uploaded_auth() {
+        let _env = TestEnv::new();
+        let db = Arc::new(Database::memory().expect("db"));
+        db.save_provider(
+            "claude",
+            &claude_provider("claude-oauth", "claude_oauth", "Claude OAuth"),
+        )
+        .expect("save oauth provider");
+        save_claude_auth_for_provider(
+            "claude-oauth",
+            &sample_claude_auth_json(chrono::Utc::now().timestamp_millis() - 60_000),
+        )
+        .expect("save expired auth");
+
+        let state = test_proxy_state(db);
+
+        let calls = Arc::new(Mutex::new(0usize));
+        let refresher = FakeRefresher {
+            calls: calls.clone(),
+            result: Ok(RefreshedCredentials {
+                access_token: "sk-ant-oat01-refreshed".to_string(),
+                expires_at_ms: chrono::Utc::now().timestamp_millis() + 3_600_000,
+                refresh_token: Some("rotated-refresh".to_string()),
+                extra: json!({
+                    "scopes": ["user:profile", "user:inference"],
+                    "subscriptionType": "max",
+                    "rateLimitTier": "priority"
+                }),
+            }),
+        };
+        let seen_tokens = Arc::new(Mutex::new(Vec::new()));
+        refresh_claude_quota_snapshots_with_query_and_refresher(
+            &state,
+            {
+                let seen_tokens = seen_tokens.clone();
+                move |_access_token: String| {
+                    let seen_tokens = seen_tokens.clone();
+                    async move {
+                        seen_tokens
+                            .lock()
+                            .expect("lock seen tokens")
+                            .push(_access_token);
+                        sample_quota("claude", "seven_day_claude_design", 42.0)
+                    }
+                }
+            },
+            &refresher,
+        )
+        .await;
+
+        assert_eq!(*calls.lock().expect("lock calls"), 1);
+        assert_eq!(
+            seen_tokens.lock().expect("lock seen tokens").as_slice(),
+            ["sk-ant-oat01-refreshed"]
+        );
+
+        let refreshed_auth = load_claude_refresh_auth_for_provider("claude-oauth")
+            .expect("load refreshed auth")
+            .expect("refreshed auth");
+        assert_eq!(refreshed_auth.access_token, "sk-ant-oat01-refreshed");
+        assert_eq!(
+            refreshed_auth.refresh_token.as_deref(),
+            Some("rotated-refresh")
+        );
+        assert_eq!(refreshed_auth.subscription_type.as_deref(), Some("max"));
+        assert_eq!(refreshed_auth.rate_limit_tier.as_deref(), Some("priority"));
+
+        let snapshot = state
+            .rate_limits
+            .read()
+            .await
+            .get("claude-oauth")
+            .cloned()
+            .expect("claude quota snapshot");
+        assert_eq!(snapshot.source.as_deref(), Some("subscription_quota"));
+        assert_eq!(snapshot.windows[0].name, "seven_day_claude_design");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn refresh_claude_quota_snapshots_skips_live_fetch_when_refresh_fails() {
         let _env = TestEnv::new();
         let db = Arc::new(Database::memory().expect("db"));
         db.save_provider(
@@ -2215,19 +2412,106 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
         }
 
         let calls = Arc::new(Mutex::new(0usize));
-        refresh_claude_quota_snapshots_with_query(&state, {
-            let calls = calls.clone();
-            move |_access_token: String| {
-                let calls = calls.clone();
-                async move {
-                    *calls.lock().expect("lock calls") += 1;
-                    sample_quota("seven_day_claude_design", 42.0)
+        let refresher = FakeRefresher {
+            calls: calls.clone(),
+            result: Err(OAuthRefreshError::RefreshTokenInvalid),
+        };
+        let query_calls = Arc::new(Mutex::new(0usize));
+        refresh_claude_quota_snapshots_with_query_and_refresher(
+            &state,
+            {
+                let query_calls = query_calls.clone();
+                move |_access_token: String| {
+                    let query_calls = query_calls.clone();
+                    async move {
+                        *query_calls.lock().expect("lock query calls") += 1;
+                        sample_quota("claude", "seven_day_claude_design", 42.0)
+                    }
                 }
-            }
-        })
+            },
+            &refresher,
+        )
         .await;
 
-        assert_eq!(*calls.lock().expect("lock calls"), 0);
+        assert_eq!(*calls.lock().expect("lock refresh calls"), 1);
+        assert_eq!(*query_calls.lock().expect("lock query calls"), 0);
         assert!(state.rate_limits.read().await.get("claude-oauth").is_none());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn refresh_codex_quota_snapshots_refreshes_expired_uploaded_auth() {
+        let _env = TestEnv::new();
+        let db = Arc::new(Database::memory().expect("db"));
+        db.save_provider(
+            "codex",
+            &codex_provider("codex-oauth", "codex_oauth", "Codex OAuth"),
+        )
+        .expect("save oauth provider");
+        let expired_secs = (chrono::Utc::now().timestamp_millis() / 1000) - 60;
+        crate::proxy::providers::codex_oauth_store::save_codex_auth_for_provider(
+            "codex-oauth",
+            &sample_codex_auth_json(expired_secs),
+        )
+        .expect("save expired codex auth");
+
+        let state = test_proxy_state(db);
+        let calls = Arc::new(Mutex::new(0usize));
+        let refreshed_access = make_jwt(json!({
+            "exp": 4_102_444_800i64,
+            "https://api.openai.com/auth": {
+                "chatgpt_account_id": "acc-999"
+            }
+        }));
+        let refreshed_id_token = make_jwt(json!({
+            "chatgpt_account_id": "acc-999",
+            "exp": 4_102_444_800i64
+        }));
+        let refresher = FakeRefresher {
+            calls: calls.clone(),
+            result: Ok(RefreshedCredentials {
+                access_token: refreshed_access.clone(),
+                expires_at_ms: chrono::Utc::now().timestamp_millis() + 3_600_000,
+                refresh_token: Some("rotated-refresh".to_string()),
+                extra: json!({
+                    "id_token": refreshed_id_token,
+                    "account_id": "acc-999"
+                }),
+            }),
+        };
+        let seen_requests = Arc::new(Mutex::new(Vec::new()));
+        refresh_codex_quota_snapshots_with_query_and_refresher(
+            &state,
+            {
+                let seen_requests = seen_requests.clone();
+                move |access_token: String, account_id: Option<String>| {
+                    let seen_requests = seen_requests.clone();
+                    async move {
+                        seen_requests
+                            .lock()
+                            .expect("lock codex requests")
+                            .push((access_token, account_id));
+                        sample_quota("codex", "five_hour", 12.0)
+                    }
+                }
+            },
+            &refresher,
+        )
+        .await;
+
+        assert_eq!(*calls.lock().expect("lock refresh calls"), 1);
+        assert_eq!(
+            seen_requests
+                .lock()
+                .expect("lock codex requests")
+                .as_slice(),
+            &[(refreshed_access.clone(), Some("acc-999".to_string()))]
+        );
+
+        let refreshed_auth = load_codex_refresh_auth_for_provider("codex-oauth")
+            .expect("load refreshed codex auth")
+            .expect("refreshed auth");
+        assert_eq!(refreshed_auth.refresh_token, "rotated-refresh");
+        assert_eq!(refreshed_auth.account_id.as_deref(), Some("acc-999"));
     }
 }
