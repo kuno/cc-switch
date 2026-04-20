@@ -346,32 +346,30 @@ export function ProviderSidePanel({
         tabIndex={-1}
         onKeyDown={handleTrapFocus}
       >
-        {resolvedPanelMode === "detail" ? (
-          <header className="owt-provider-panel__header">
-            <div className="owt-provider-panel__app-badge" data-app={appId}>
-              {appIconUrl(appId) ? (
-                <img src={appIconUrl(appId)!} alt="" />
-              ) : (
-                APP_LABELS[appId].slice(0, 1)
-              )}
+        <header className="owt-provider-panel__header">
+          <div className="owt-provider-panel__app-badge" data-app={appId}>
+            {appIconUrl(appId) ? (
+              <img src={appIconUrl(appId)!} alt="" />
+            ) : (
+              APP_LABELS[appId].slice(0, 1)
+            )}
+          </div>
+          <div className="owt-provider-panel__header-copy">
+            <h3 className="owt-provider-panel__title">{APP_LABELS[appId]}</h3>
+            <div className="owt-provider-panel__subtitle">
+              {getPanelSubtitle(appId)}
             </div>
-            <div className="owt-provider-panel__header-copy">
-              <h3 className="owt-provider-panel__title">{APP_LABELS[appId]}</h3>
-              <div className="owt-provider-panel__subtitle">
-                {getPanelSubtitle(appId)}
-              </div>
-            </div>
-            <button
-              type="button"
-              className="owt-provider-panel__close"
-              onClick={onClose}
-              aria-label="Close provider panel"
-              ref={closeButtonRef}
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </header>
-        ) : null}
+          </div>
+          <button
+            type="button"
+            className="owt-provider-panel__close"
+            onClick={onClose}
+            aria-label="Close provider panel"
+            ref={closeButtonRef}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </header>
 
         <div className="owt-provider-panel__body">
           <nav
