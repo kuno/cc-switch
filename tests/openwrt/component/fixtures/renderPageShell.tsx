@@ -90,6 +90,7 @@ export function renderOpenWrtPageShell({
     window.localStorage.setItem(OPENWRT_PAGE_THEME_STORAGE_KEY, initialTheme);
   }
 
+  const target = document.createElement("div");
   const bridge = createBridgeFixture(
     createRealisticBridgeOptions(bridgeOptions),
   );
@@ -98,7 +99,7 @@ export function renderOpenWrtPageShell({
     <OpenWrtPageShell
       options={{
         shell: bridge,
-        target: document.createElement("div"),
+        target,
         transport,
       }}
     />,
@@ -107,6 +108,7 @@ export function renderOpenWrtPageShell({
   return {
     ...view,
     bridge,
+    target,
     transport,
   };
 }

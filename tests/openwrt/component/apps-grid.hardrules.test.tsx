@@ -106,7 +106,7 @@ describe("AppsGrid hard rules", () => {
       '.owt-app-card[data-app="claude"]',
     ) as HTMLElement;
 
-    await user.click(within(claudeCard).getByRole("button", { name: "Open" }));
+    await user.click(within(claudeCard).getByTitle("Show recent requests"));
     await screen.findByRole("dialog", { name: "Recent activity" });
     expectForbiddenSurfaces(container);
   });

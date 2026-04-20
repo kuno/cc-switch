@@ -11,7 +11,7 @@ PROJECT_DIR=$(
 EMITTED_DIR="$SCRIPT_DIR/luci-app-ccswitch/htdocs/luci-static/resources/ccswitch/provider-ui"
 STAGED_DIR="$SCRIPT_DIR/provider-ui-dist"
 STAGED_BUNDLE="$STAGED_DIR/ccswitch-provider-ui.js"
-STAGED_STYLESHEET="$STAGED_DIR/ccswitch-provider-ui.css"
+STAGED_HOST_STYLESHEET="$STAGED_DIR/openwrt-luci-host.css"
 OUTPUT_DIR=""
 EXPLICIT_BUNDLE="${CCSWITCH_OPENWRT_PROVIDER_UI_BUNDLE:-}"
 
@@ -35,10 +35,10 @@ copy_bundle() {
 	cp "$src" "$dest"
 }
 
-copy_optional_stylesheet() {
+copy_optional_host_stylesheet() {
 	src="$1"
 	dest_dir="$2"
-	dest="$dest_dir/ccswitch-provider-ui.css"
+	dest="$dest_dir/openwrt-luci-host.css"
 
 	[ -f "$src" ] || return 0
 	mkdir -p "$dest_dir"
@@ -48,6 +48,11 @@ copy_optional_stylesheet() {
 	fi
 
 	cp "$src" "$dest"
+}
+
+remove_legacy_stylesheet() {
+	dest_dir="$1"
+	rm -f "$dest_dir/ccswitch-provider-ui.css"
 }
 
 usage() {
@@ -63,8 +68,8 @@ Resolution order:
 Note:
   An explicit CCSWITCH_OPENWRT_PROVIDER_UI_BUNDLE is copied only to the
   requested output directory. It does not overwrite the canonical staged
-  bundle under openwrt/provider-ui-dist/. If a sibling .css file exists,
-  it is copied alongside the JavaScript bundle.
+  bundle under openwrt/provider-ui-dist/. If openwrt-luci-host.css exists in
+  the same directory, it is copied alongside the JavaScript bundle.
 EOF
 }
 
@@ -92,13 +97,17 @@ fi
 
 if [ -n "$EXPLICIT_BUNDLE" ]; then
 	copy_bundle "$EXPLICIT_BUNDLE" "$OUTPUT_DIR"
-	copy_optional_stylesheet "${EXPLICIT_BUNDLE%.js}.css" "$OUTPUT_DIR"
+	remove_legacy_stylesheet "$OUTPUT_DIR"
+	copy_optional_host_stylesheet \
+		"$(dirname "$EXPLICIT_BUNDLE")/openwrt-luci-host.css" \
+		"$OUTPUT_DIR"
 	exit 0
 fi
 
 if [ -f "$STAGED_BUNDLE" ]; then
 	copy_bundle "$STAGED_BUNDLE" "$OUTPUT_DIR"
-	copy_optional_stylesheet "$STAGED_STYLESHEET" "$OUTPUT_DIR"
+	remove_legacy_stylesheet "$OUTPUT_DIR"
+	copy_optional_host_stylesheet "$STAGED_HOST_STYLESHEET" "$OUTPUT_DIR"
 	exit 0
 fi
 
@@ -110,7 +119,8 @@ if command -v pnpm >/dev/null 2>&1; then
 
 	[ -f "$STAGED_BUNDLE" ] || die "pnpm reported success but did not produce: $STAGED_BUNDLE"
 	copy_bundle "$STAGED_BUNDLE" "$OUTPUT_DIR"
-	copy_optional_stylesheet "$STAGED_STYLESHEET" "$OUTPUT_DIR"
+	remove_legacy_stylesheet "$OUTPUT_DIR"
+	copy_optional_host_stylesheet "$STAGED_HOST_STYLESHEET" "$OUTPUT_DIR"
 	exit 0
 fi
 

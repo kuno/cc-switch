@@ -76,7 +76,11 @@ function renderDaemonCard(
   const bridge = createBridgeFixture(options);
   const props = buildDaemonCardProps(bridge, overrides);
   const view = render(<DaemonCard {...props} />);
-  const card = screen.getByLabelText(props.host.serviceLabel);
+  const card = view.container.querySelector<HTMLElement>(".owt-daemon-card");
+
+  if (!card) {
+    throw new Error("Expected daemon card to render");
+  }
 
   return {
     ...view,
@@ -90,7 +94,6 @@ function getCardElements(card: HTMLElement) {
   return {
     statusChip: card.querySelector(".owt-daemon-status"),
     healthChip: card.querySelector(".owt-daemon-health"),
-    hint: card.querySelector(".owt-daemon-card__hint"),
     message: card.querySelector(".ccswitch-openwrt-page-note"),
     restartButton: within(card).getByRole("button", { name: /Restart/ }),
   };
@@ -200,7 +203,6 @@ describe("DaemonCard", () => {
       expected: {
         status: "Running",
         health: "Healthy",
-        hint: "Daemon is accepting traffic on the configured listener.",
       },
     },
     {
@@ -217,7 +219,6 @@ describe("DaemonCard", () => {
       expected: {
         status: "Stopped",
         health: "Stopped",
-        hint: "Daemon is stopped. Saved configuration remains available below.",
       },
     },
     {
@@ -238,7 +239,6 @@ describe("DaemonCard", () => {
       expected: {
         status: "Running",
         health: "Healthy",
-        hint: "Restart pending to apply provider changes.",
       },
     },
     {
@@ -259,7 +259,6 @@ describe("DaemonCard", () => {
       expected: {
         status: "Running",
         health: "Healthy",
-        hint: "Restarting daemon now.",
       },
     },
     {
@@ -280,7 +279,6 @@ describe("DaemonCard", () => {
       expected: {
         status: "Running",
         health: "Unknown",
-        hint: "Daemon status could not be fully confirmed. Review connection settings.",
         message: "Restart failed: daemon status unavailable.",
       },
     },
@@ -290,17 +288,15 @@ describe("DaemonCard", () => {
     expected: {
       status: string;
       health: string;
-      hint: string;
       message?: string;
     };
   }>)("renders the expected daemon labels for $name", ({ options, expected }) => {
     const { card } = renderDaemonCard(options);
-    const { statusChip, healthChip, hint, message, restartButton } =
+    const { statusChip, healthChip, message, restartButton } =
       getCardElements(card);
 
     expect(statusChip).toHaveTextContent(expected.status);
     expect(healthChip).toHaveTextContent(expected.health);
-    expect(hint).toHaveTextContent(expected.hint);
 
     if (expected.message) {
       expect(message).toHaveTextContent(expected.message);
@@ -308,7 +304,7 @@ describe("DaemonCard", () => {
       expect(message).toBeNull();
     }
 
-    if (expected.hint === "Restarting daemon now.") {
+    if (options.restartState?.inFlight) {
       expect(restartButton).toHaveAccessibleName("Restarting…");
       expect(restartButton).toBeDisabled();
     } else {
@@ -347,11 +343,10 @@ describe("DaemonCard", () => {
         inFlight: true,
       },
     });
-    const { hint, restartButton } = getCardElements(card);
+    const { restartButton } = getCardElements(card);
 
     expect(restartButton).toHaveAccessibleName("Restarting…");
     expect(restartButton).toBeDisabled();
-    expect(hint).toHaveTextContent("Restarting daemon now.");
   });
 
   it("calls restartService once when restart is double-clicked and the card flips into flight", async () => {

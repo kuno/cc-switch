@@ -30,7 +30,9 @@ describe("OpenWrtPageShell hard rules", () => {
 
     const renderedText = document.body.textContent ?? "";
     const renderedAppCards = Array.from(
-      container.querySelectorAll<HTMLElement>("article[data-app]"),
+      container.querySelectorAll<HTMLElement>(
+        ".owt-apps-grid .owt-app-card[data-app]",
+      ),
     ).map((card) => card.dataset.app);
 
     expect(document.body.querySelector(".owt-legacy-preserved")).toBeNull();

@@ -11,7 +11,7 @@ describe("OpenWrtPageShell", () => {
   });
 
   it("renders the header and applies the stored initial theme on mount", async () => {
-    renderOpenWrtPageShell({
+    const { target } = renderOpenWrtPageShell({
       initialTheme: "dark",
     });
 
@@ -21,45 +21,49 @@ describe("OpenWrtPageShell", () => {
       ).toBeInTheDocument(),
     );
 
-    expect(screen.getByText("OpenWrt / Services")).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { level: 1, name: "CC Switch" }),
+      screen.getByRole("heading", { level: 2, name: /^Apps\b/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 2, name: /^Daemon\b/ }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Switch to light theme" }),
     ).toBeInTheDocument();
-    expect(document.body.dataset.ccswitchTheme).toBe("dark");
-    expect(document.body).toHaveClass(
-      "ccswitch-openwrt-provider-ui-theme-dark",
-    );
+    expect(target.dataset.ccswitchTheme).toBe("dark");
+    expect(target).toHaveClass("dark");
   });
 
   it("toggles the theme through click, Enter, and Space", async () => {
     const user = userEvent.setup();
-    renderOpenWrtPageShell();
+    const { target } = renderOpenWrtPageShell();
 
     const themeToggle = await screen.findByRole("button", {
       name: "Switch to dark theme",
     });
 
-    expect(document.body.dataset.ccswitchTheme).toBe("light");
+    expect(target.dataset.ccswitchTheme).toBe("light");
+    expect(target).not.toHaveClass("dark");
 
     await user.click(themeToggle);
-    expect(document.body.dataset.ccswitchTheme).toBe("dark");
+    expect(target.dataset.ccswitchTheme).toBe("dark");
+    expect(target).toHaveClass("dark");
 
     const lightToggle = screen.getByRole("button", {
       name: "Switch to light theme",
     });
     lightToggle.focus();
     await user.keyboard("{Enter}");
-    expect(document.body.dataset.ccswitchTheme).toBe("light");
+    expect(target.dataset.ccswitchTheme).toBe("light");
+    expect(target).not.toHaveClass("dark");
 
     const darkToggle = screen.getByRole("button", {
       name: "Switch to dark theme",
     });
     darkToggle.focus();
     await user.keyboard("[Space]");
-    expect(document.body.dataset.ccswitchTheme).toBe("dark");
+    expect(target.dataset.ccswitchTheme).toBe("dark");
+    expect(target).toHaveClass("dark");
   });
 
   it("wires app-card selection through the shell bridge and opens the provider panel", async () => {
@@ -114,15 +118,12 @@ describe("OpenWrtPageShell", () => {
       await screen.findByRole("button", {
         name: "Open Claude providers",
       })
-    ).closest("article");
+    ).closest(".owt-app-card");
 
     expect(claudeCard).not.toBeNull();
 
-    const openActivityButton = within(claudeCard as HTMLElement).getByRole(
-      "button",
-      {
-        name: "Open",
-      },
+    const openActivityButton = within(claudeCard as HTMLElement).getByTitle(
+      "Show recent requests",
     );
 
     openActivityButton.focus();
