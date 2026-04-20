@@ -40,6 +40,7 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
+    container?: HTMLElement;
     zIndex?: "base" | "nested" | "alert" | "top";
     variant?: "default" | "fullscreen";
     overlayClassName?: string;
@@ -49,6 +50,7 @@ const DialogContent = React.forwardRef<
     {
       className,
       children,
+      container,
       zIndex = "base",
       variant = "default",
       overlayClassName,
@@ -86,7 +88,7 @@ const DialogContent = React.forwardRef<
     }[variant];
 
     return (
-      <DialogPortal>
+      <DialogPortal container={container}>
         <DialogOverlay
           zIndex={zIndex}
           className={cn(

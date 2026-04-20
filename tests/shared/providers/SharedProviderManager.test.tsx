@@ -4,6 +4,7 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { flushSync } from "react-dom";
 import { describe, expect, it, vi } from "vitest";
+import { PortalContainerContext } from "@/shared/contexts/PortalContainerContext";
 import {
   SharedProviderManager,
   emptySharedProviderView,
@@ -309,7 +310,9 @@ describe("SharedProviderManager", () => {
       />,
     );
 
-    expect(screen.getByText("Loading provider settings...")).toBeInTheDocument();
+    expect(
+      screen.getByText("Loading provider settings..."),
+    ).toBeInTheDocument();
 
     resolveProviders(buildState("claude", [], null));
 
@@ -391,6 +394,74 @@ describe("SharedProviderManager", () => {
       ).not.toBeInTheDocument(),
     );
     expect(deleteButton).toHaveFocus();
+  });
+
+  it("renders provider dialogs into the configured portal container", async () => {
+    const adapter = createAdapter({
+      listProviderState: vi.fn().mockResolvedValue(
+        buildState(
+          "claude",
+          [
+            createProvider({
+              providerId: "alpha",
+              name: "Alpha",
+              baseUrl: "https://alpha.example.com",
+            }),
+          ],
+          "alpha",
+        ),
+      ),
+    });
+    const portalContainer = document.createElement("div");
+    document.body.appendChild(portalContainer);
+
+    try {
+      const { container, user } = renderManager(
+        <PortalContainerContext.Provider value={portalContainer}>
+          <SharedProviderManager adapter={adapter} defaultApp="claude" />
+        </PortalContainerContext.Provider>,
+      );
+
+      await screen.findByRole("button", { name: "Edit Alpha" });
+
+      await user.click(
+        screen.getAllByRole("button", {
+          name: "Add provider",
+        })[0]!,
+      );
+
+      const addDialog = within(portalContainer).getByRole("dialog", {
+        name: "Save Claude provider",
+      });
+
+      expect(addDialog).toBeInTheDocument();
+      expect(container).not.toContainElement(addDialog);
+
+      await user.keyboard("{Escape}");
+
+      await waitFor(() =>
+        expect(
+          within(portalContainer).queryByRole("dialog", {
+            name: "Save Claude provider",
+          }),
+        ).not.toBeInTheDocument(),
+      );
+
+      await user.click(
+        screen.getByRole("button", {
+          name: "Delete Alpha",
+        }),
+      );
+
+      const deleteDialog = within(portalContainer).getByRole("dialog", {
+        name: "Delete provider",
+      });
+
+      expect(deleteDialog).toBeInTheDocument();
+      expect(container).not.toContainElement(deleteDialog);
+    } finally {
+      portalContainer.remove();
+    }
   });
 
   it("exposes stable layout hooks for the embedded provider surface", async () => {
@@ -478,9 +549,9 @@ describe("SharedProviderManager", () => {
     expect(providerCardGrid).toHaveClass("grid");
     expect(providerDetailPanel).not.toBeNull();
     expect(providerCardGrid).toContainElement(
-      screen.getByRole("button", { name: "Edit Claude Primary" }).closest(
-        "article",
-      ),
+      screen
+        .getByRole("button", { name: "Edit Claude Primary" })
+        .closest("article"),
     );
     expect(
       summaryGrid?.querySelector('[data-ccswitch-region="provider-summary"]'),
@@ -615,7 +686,9 @@ describe("SharedProviderManager", () => {
     expect(restartRequiredNotice).toHaveTextContent(/apply provider changes/i);
     expect(restartRequiredNotice).toHaveTextContent(/luci restart control/i);
     expect(restartRequiredNotice).toHaveTextContent(/service: ccswitch/i);
-    expect(restartRequiredNotice).toHaveTextContent(/current service status: running/i);
+    expect(restartRequiredNotice).toHaveTextContent(
+      /current service status: running/i,
+    );
     expect(restartRequiredNotice).not.toHaveTextContent(
       "Changes are available immediately.",
     );
@@ -663,63 +736,62 @@ describe("SharedProviderManager", () => {
     expect(screen.getByText("Router preset")).toBeInTheDocument();
   });
 
-  it(
-    "treats restart-required mutation notices as warning-level instead of success-only",
-    async () => {
-      const adapter = createMutableAdapter({
-        claude: buildState("claude", [], null),
-      });
-      const onRestartRequired = vi.fn();
-      const { user } = renderManager(
-        <SharedProviderManager
-          adapter={adapter}
-          onRestartRequired={onRestartRequired}
-          shellState={{
-            serviceName: "ccswitch",
-            serviceStatusLabel: "running",
-          }}
-        />,
-      );
+  it("treats restart-required mutation notices as warning-level instead of success-only", async () => {
+    const adapter = createMutableAdapter({
+      claude: buildState("claude", [], null),
+    });
+    const onRestartRequired = vi.fn();
+    const { user } = renderManager(
+      <SharedProviderManager
+        adapter={adapter}
+        onRestartRequired={onRestartRequired}
+        shellState={{
+          serviceName: "ccswitch",
+          serviceStatusLabel: "running",
+        }}
+      />,
+    );
 
-      await screen.findByText("No Claude providers saved.");
+    await screen.findByText("No Claude providers saved.");
 
-      await user.click(
-        screen.getAllByRole("button", {
-          name: "Add provider",
-        })[0]!,
-      );
+    await user.click(
+      screen.getAllByRole("button", {
+        name: "Add provider",
+      })[0]!,
+    );
 
-      const addDialog = await screen.findByRole("dialog", {
-        name: "Save Claude provider",
-      });
-      const addDialogScope = within(addDialog);
+    const addDialog = await screen.findByRole("dialog", {
+      name: "Save Claude provider",
+    });
+    const addDialogScope = within(addDialog);
 
-      await user.type(addDialogScope.getByLabelText("API token"), "secret-token");
-      await user.click(
-        addDialogScope.getByRole("button", {
-          name: "Save provider",
-        }),
-      );
+    await user.type(addDialogScope.getByLabelText("API token"), "secret-token");
+    await user.click(
+      addDialogScope.getByRole("button", {
+        name: "Save provider",
+      }),
+    );
 
-      expect(
-        await screen.findByRole("button", { name: "Edit Claude Official" }),
-      ).toBeInTheDocument();
-      expect(onRestartRequired).toHaveBeenCalledWith(
-        expect.objectContaining({
-          action: "saved",
-          appId: "claude",
-          providerName: "Claude Official",
-          requiresServiceRestart: true,
-        }),
-      );
+    expect(
+      await screen.findByRole("button", { name: "Edit Claude Official" }),
+    ).toBeInTheDocument();
+    expect(onRestartRequired).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "saved",
+        appId: "claude",
+        providerName: "Claude Official",
+        requiresServiceRestart: true,
+      }),
+    );
 
-      const restartRequiredNotice = screen.getByRole("alert");
-      expect(restartRequiredNotice).toHaveTextContent("Claude Official");
-      expect(restartRequiredNotice).toHaveTextContent(/restart/i);
-      expect(restartRequiredNotice).not.toHaveTextContent(/immediately/i);
-      expect(restartRequiredNotice.className).not.toContain("border-emerald-500/30");
-    },
-  );
+    const restartRequiredNotice = screen.getByRole("alert");
+    expect(restartRequiredNotice).toHaveTextContent("Claude Official");
+    expect(restartRequiredNotice).toHaveTextContent(/restart/i);
+    expect(restartRequiredNotice).not.toHaveTextContent(/immediately/i);
+    expect(restartRequiredNotice.className).not.toContain(
+      "border-emerald-500/30",
+    );
+  });
 
   it("shows grouped presets and form sections, and keeps custom drafts editable after preset selection", async () => {
     const adapter = createMutableAdapter({
@@ -1017,7 +1089,9 @@ describe("SharedProviderManager", () => {
       <SharedProviderManager adapter={adapter} defaultApp="codex" />,
     );
 
-    expect(await screen.findByText("Current provider: Alpha")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Current provider: Alpha"),
+    ).toBeInTheDocument();
     expect(screen.getByText("Gateway edge")).toBeInTheDocument();
 
     const searchInput = screen.getByLabelText("Search providers");
@@ -1408,7 +1482,9 @@ describe("SharedProviderManager", () => {
       }),
     ).toBeInTheDocument();
 
-    const deleteAlphaButton = screen.getByRole("button", { name: "Delete Alpha" });
+    const deleteAlphaButton = screen.getByRole("button", {
+      name: "Delete Alpha",
+    });
     deleteAlphaButton.focus();
     await user.keyboard("{Enter}");
     const confirmDeleteButton = screen.getByRole("button", {
