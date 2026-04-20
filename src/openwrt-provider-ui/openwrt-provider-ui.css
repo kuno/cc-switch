@@ -414,11 +414,11 @@
 }
 
 .owt-app-card--empty {
-  align-self: start;
   border-style: solid;
   border-color: var(--line);
   background: transparent;
   box-shadow: none;
+  min-height: 196px;
 }
 
 .owt-app-card--empty:hover {
@@ -628,6 +628,10 @@
   font-size: 13px;
 }
 
+.owt-app-card--empty .owt-app-card__empty-cta {
+  flex: 1 1 auto;
+}
+
 .owt-app-card__empty-cta-btn {
   color: var(--accent-text);
   font-weight: 700;
@@ -664,9 +668,36 @@
   width: 7px;
   height: 7px;
   border-radius: 999px;
-  background: currentColor;
+  background: var(--owt-soft-text);
   display: inline-block;
+  flex: 0 0 auto;
   opacity: 0.85;
+}
+
+.owt-status-pill[data-tone="success"] .owt-status-pill__dot,
+.owt-status-pill[data-tone="active"] .owt-status-pill__dot,
+.owt-status-pill[data-tone="healthy"] .owt-status-pill__dot {
+  background: var(--success);
+}
+
+.owt-status-pill[data-tone="accent"] .owt-status-pill__dot,
+.owt-status-pill[data-tone="warning"] .owt-status-pill__dot,
+.owt-status-pill[data-tone="warn"] .owt-status-pill__dot,
+.owt-status-pill[data-tone="degraded"] .owt-status-pill__dot {
+  background: var(--warn);
+}
+
+.owt-status-pill[data-tone="fail"] .owt-status-pill__dot,
+.owt-status-pill[data-tone="error"] .owt-status-pill__dot,
+.owt-status-pill[data-tone="stopped"] .owt-status-pill__dot {
+  background: var(--fail);
+}
+
+.owt-status-pill[data-tone="neutral"] .owt-status-pill__dot,
+.owt-status-pill[data-tone="idle"] .owt-status-pill__dot,
+.owt-status-pill[data-tone="draft"] .owt-status-pill__dot,
+.owt-status-pill[data-tone="loading"] .owt-status-pill__dot {
+  background: var(--owt-soft-text);
 }
 
 .owt-status-pill__caret {
@@ -691,6 +722,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   min-height: 28px;
   padding: 0 10px;
   border: 1px solid var(--line);
@@ -2570,7 +2602,7 @@ select.owt-provider-panel__input {
  * Everything below is new, additive styling that powers:
  *   - <SectionHead>            (owt-section-head + owt-section-head__version)
  *   - <AppsGrid> grouping      (owt-group-grid, owt-group-head/label)
- *   - <AppsGrid> skeletons     (owt-app-card--skeleton, owt-app-card--skeleton-dashed)
+ *   - <AppsGrid> skeletons     (owt-app-card--skeleton)
  *   - <DaemonCard> top row     (owt-daemon-row + owt-chip + owt-chip-select + owt-pill)
  *   - <DaemonCard> field grid  (owt-daemon-grid, owt-daemon-field, owt-field-input)
  *   - <ThemeToggle>            (owt-theme-toggle + sun/moon swap)
@@ -2663,6 +2695,7 @@ select.owt-provider-panel__input {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
+  align-items: stretch;
 }
 @media (max-width: 960px) {
   .owt-group-grid {
@@ -2678,15 +2711,117 @@ select.owt-provider-panel__input {
   background: transparent;
   box-shadow: none;
   min-height: 248px;
+  pointer-events: none;
   animation: none;
 }
-.owt-app-card--skeleton-dashed {
-  border-color: var(--line-strong);
+
+.owt-app-card--skeleton-compact {
+  min-height: 196px;
 }
 .owt-app-card--skeleton:hover {
   transform: none;
   border-color: var(--line);
   background: transparent;
+}
+
+.sk-icon,
+.sk-chip,
+.sk-mini,
+.sk-line,
+.sk-active {
+  background: var(--panel-softer);
+  border-radius: 6px;
+}
+
+.sk-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-icon);
+  flex: 0 0 auto;
+}
+
+.sk-chip {
+  width: 68px;
+  height: 24px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+
+.sk-mini {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  flex: 0 0 auto;
+}
+
+.sk-line--xs {
+  height: 8px;
+}
+
+.sk-line--sm {
+  height: 10px;
+}
+
+.sk-line--md {
+  height: 16px;
+}
+
+.sk-line--lg {
+  height: 18px;
+}
+
+.sk-active {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-control);
+  background: var(--panel-softer);
+  border: 1px solid var(--line);
+  margin-bottom: 18px;
+}
+
+.owt-app-card--skeleton-compact .sk-active {
+  margin-bottom: 0;
+}
+
+.sk-usage {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  margin-top: 4px;
+}
+
+.sk-usage-cell {
+  padding: 2px 14px;
+  border-left: 1px solid var(--line);
+}
+
+.sk-usage-cell:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+@keyframes owt-sk-shimmer {
+  0% {
+    opacity: 0.6;
+  }
+
+  50% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0.6;
+  }
+}
+
+.owt-app-card--skeleton .sk-icon,
+.owt-app-card--skeleton .sk-chip,
+.owt-app-card--skeleton .sk-mini,
+.owt-app-card--skeleton .sk-line,
+.owt-app-card--skeleton .sk-active {
+  animation: owt-sk-shimmer 2.4s ease-in-out infinite;
 }
 
 /* =====================================================================
