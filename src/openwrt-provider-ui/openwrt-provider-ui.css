@@ -583,8 +583,8 @@
 }
 
 .owt-app-card__empty-cta {
-  margin-top: 18px;
-  padding: 16px 14px;
+  margin-top: 12px;
+  padding: 12px 14px;
   border-radius: var(--radius-control);
   border: 1px dashed var(--line-strong);
   background: var(--panel-soft);
@@ -594,10 +594,6 @@
   gap: 12px;
   color: var(--muted);
   font-size: 13px;
-}
-
-.owt-app-card--empty .owt-app-card__empty-cta {
-  flex: 1 1 auto;
 }
 
 .owt-app-card__empty-cta-btn {
