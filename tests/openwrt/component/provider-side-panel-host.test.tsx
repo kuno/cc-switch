@@ -1,13 +1,19 @@
-import { useRef } from "react";
+import { type ReactElement, useRef } from "react";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import { ProviderSidePanelHost, type ProviderSidePanelHandle } from "@/openwrt-provider-ui/components/ProviderSidePanelHost";
+import {
+  ProviderSidePanelHost,
+  type ProviderSidePanelHandle,
+} from "@/openwrt-provider-ui/components/ProviderSidePanelHost";
 import type { OpenWrtSharedPageShellApi } from "@/openwrt-provider-ui/pageTypes";
 import type { OpenWrtProviderTransport } from "@/platform/openwrt/providers";
 import { createBridgeFixture } from "./fixtures/bridge";
 import { createProviderTransportFixture } from "./fixtures/providerTransport";
-import { createProviderState, createProviderView } from "../provider-panel-fixtures";
+import {
+  createProviderState,
+  createProviderView,
+} from "../provider-panel-fixtures";
 
 function HostHarness({
   providerId,
@@ -38,6 +44,27 @@ function HostHarness({
       />
     </>
   );
+}
+
+function renderInShadowRoot(ui: ReactElement) {
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const shadowRoot = host.attachShadow({ mode: "open" });
+  const container = document.createElement("div");
+  shadowRoot.appendChild(container);
+  const view = render(ui, {
+    baseElement: container,
+    container,
+  });
+
+  return {
+    ...view,
+    shadowRoot,
+    cleanup() {
+      view.unmount();
+      host.remove();
+    },
+  };
 }
 
 describe("ProviderSidePanelHost", () => {
@@ -115,11 +142,7 @@ describe("ProviderSidePanelHost", () => {
     });
 
     render(
-      <HostHarness
-        selectedApp="gemini"
-        shell={shell}
-        transport={transport}
-      />,
+      <HostHarness selectedApp="gemini" shell={shell} transport={transport} />,
     );
 
     await user.click(
@@ -147,6 +170,58 @@ describe("ProviderSidePanelHost", () => {
         name: "Save",
       }),
     ).toBeDisabled();
-    expect(dialog).toHaveTextContent("Create a new Gemini route from this draft.");
+    expect(dialog).toHaveTextContent(
+      "Create a new Gemini route from this draft.",
+    );
+  });
+
+  it("keeps forward tab navigation inside the panel when mounted in a shadow root", async () => {
+    const user = userEvent.setup();
+    const shell = createBridgeFixture({
+      serviceStatus: {
+        isRunning: true,
+      },
+    });
+    const primaryProvider = createProviderView("claude", {
+      active: true,
+      name: "Claude Primary",
+      providerId: "claude-primary",
+    });
+    const { transport } = createProviderTransportFixture({
+      claude: createProviderState("claude", [primaryProvider]),
+    });
+    const view = renderInShadowRoot(
+      <HostHarness shell={shell} transport={transport} />,
+    );
+
+    try {
+      await user.click(
+        view.getByRole("button", {
+          name: "Open provider panel",
+        }),
+      );
+
+      const dialog = await view.findByRole("dialog", {
+        name: "Claude providers",
+      });
+      const closeButton = within(dialog).getByRole("button", {
+        name: "Close provider panel",
+      });
+
+      await waitFor(() =>
+        expect(view.shadowRoot.activeElement).toBe(closeButton),
+      );
+
+      const tabEvent = new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        key: "Tab",
+      });
+      closeButton.dispatchEvent(tabEvent);
+
+      expect(tabEvent.defaultPrevented).toBe(false);
+    } finally {
+      view.cleanup();
+    }
   });
 });

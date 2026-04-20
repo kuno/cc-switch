@@ -23,6 +23,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { usePortalContainer } from "@/shared/contexts/PortalContainerContext";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -193,11 +194,16 @@ export function SharedProviderEditorPanel({
   const [codexAuthPending, setCodexAuthPending] = useState(false);
   const appPresentation = SHARED_PROVIDER_APP_PRESENTATION[appId];
   const appLabel = appPresentation.label;
-  const codexOfficialPreset = isCodexOpenAiOfficialPreset(appId, selectedPreset);
+  const codexOfficialPreset = isCodexOpenAiOfficialPreset(
+    appId,
+    selectedPreset,
+  );
   const codexAuthMode = getCodexAuthMode(draft.authMode);
-  const showCodexAuthUpload = codexOfficialPreset && codexAuthMode === "codex_oauth";
+  const showCodexAuthUpload =
+    codexOfficialPreset && codexAuthMode === "codex_oauth";
   const codexAuthSummary: SharedProviderCodexAuthSummary | undefined =
     editingProvider?.codexAuth;
+  const portalContainer = usePortalContainer();
   const title =
     mode === "edit"
       ? `Update ${appLabel} provider`
@@ -248,6 +254,7 @@ export function SharedProviderEditorPanel({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className="ccswitch-openwrt-provider-ui-dialog ccswitch-openwrt-dialog-shell max-w-6xl overflow-hidden p-0"
+        container={portalContainer ?? undefined}
         zIndex="alert"
         onOpenAutoFocus={(event) => {
           event.preventDefault();
@@ -601,7 +608,8 @@ export function SharedProviderEditorPanel({
                       </div>
                       {!editingProvider?.providerId ? (
                         <div className="ccswitch-openwrt-inline-note rounded-2xl border border-border-default/70 bg-background px-4 py-3 text-sm text-muted-foreground">
-                          Save this provider first, then upload `auth.json` for the saved provider ID.
+                          Save this provider first, then upload `auth.json` for
+                          the saved provider ID.
                         </div>
                       ) : null}
                       <div className="flex flex-col gap-2 sm:flex-row">
@@ -638,11 +646,14 @@ export function SharedProviderEditorPanel({
                             Stored auth.json
                           </p>
                           <p>
-                            Account ID: {codexAuthSummary.accountId || "Unavailable"}
+                            Account ID:{" "}
+                            {codexAuthSummary.accountId || "Unavailable"}
                           </p>
                           <p>
                             Refresh token present:{" "}
-                            {codexAuthSummary.refreshTokenPresent ? "yes" : "no"}
+                            {codexAuthSummary.refreshTokenPresent
+                              ? "yes"
+                              : "no"}
                           </p>
                           {codexAuthSummary.expiresAt != null ? (
                             <p>Expires at: {codexAuthSummary.expiresAt}</p>
