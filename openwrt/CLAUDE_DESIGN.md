@@ -246,3 +246,166 @@ Only show this section when the app's `supportsProviderStats` flag is true (§7)
 5. If your design needs a state the struct doesn't expose, that's a backend gap. Annotate it as a placeholder (`<!-- state: disabled until backend exposes this -->`) and flag it in `WIRING.md`.
 
 Following this keeps the mockup and the backend in the same shape, and means the engineer never has to guess what "Degraded" means.
+
+---
+
+# Handoff quality — what makes drops painless
+
+The annotation discipline above closes the wiring gap. This section closes the *porting* gap: what a designer can do in the mockup itself (independent of annotations) to make each drop significantly cheaper to integrate. Written after the 2026-04-20 round, where a single drop took ~12 hours to port because of avoidable frictions.
+
+## 1. Use the project's naming conventions
+
+- CSS classes follow BEM with the `.owt-` prefix: `.owt-component__part--modifier`.
+- Examples: `.owt-app-card__title`, `.owt-provider-panel__header`, `.owt-daemon-row--degraded`.
+- **Avoid** standalone shorthand namespaces like `.sp-head`, `.prov-row`, `.ap-*`, `.card`, `.chip`. These force a rename pass before integration.
+- **Never** rely on bare element selectors (`h2 { ... }`, `select { ... }`, `button { ... }`). Use classes always. LuCI (the host page) styles those tags, and bare element selectors fight the host cascade.
+
+If you introduce a new component, coordinate the class prefix with the engineer *before* the drop so we agree on the namespace in advance.
+
+## 2. Ship a design-token contract
+
+Every color, spacing, radius, shadow, and animation value should be a CSS custom property, not a literal. Provide them in a single block or file:
+
+```css
+:root {
+  --bg: #eef3f8;
+  --panel: rgba(255, 255, 255, 0.86);
+  --panel-strong: #ffffff;
+  --text: #172133;
+  /* ...etc */
+}
+body[data-theme="dark"] {
+  --bg: #0f141b;
+  /* ...etc */
+}
+```
+
+Rules inside components reference these tokens: `background: var(--panel-strong)`, never literal `#fff`.
+
+**Version the token set** in the mockup's header comment: `/* tokens v0.4 — 2026-05-01 */`. When tokens change between drops, call out additions/renames/removals in a short changelog.
+
+## 3. Deliver a per-component kit, not just a page
+
+Each component you redesign should arrive as a self-contained bundle:
+
+1. The **TSX template** (typed props explicit).
+2. The **scoped CSS** under the `.owt-` namespace.
+3. **Every state variant** rendered:
+   - default
+   - hover
+   - focus-visible (keyboard focus)
+   - active / selected / open
+   - disabled
+   - loading
+   - empty
+   - error
+4. A screenshot (or the standalone HTML preview) showing each state.
+5. Responsive behavior at every agreed breakpoint (see §5).
+
+We learned the hard way: if a state isn't drawn, it gets invented by the engineer and you'll spot the divergence later.
+
+## 4. Include a CHANGELOG with every drop
+
+One file in the drop, even if prose:
+
+```
+## 2026-05-01
+### Added
+- AppCard: new empty-state CTA with dashed border (see empty-state.png)
+- New token: --accent-soft-hover
+### Changed
+- AppCard: status chip renamed from .status-pill to .owt-app-card__status
+### Removed
+- Old .provider-detail-drawer. Use .owt-activity-drawer now.
+### Breaking
+- Drawer width jumped from 520 → 820. Check pixel-parity against your hosting page.
+```
+
+Semver-style severity (added / changed / removed / breaking) makes scope obvious. Without it we end up diffing two 2000-line HTML files to figure out what changed.
+
+## 5. Document interactive specs explicitly
+
+Annotations cover *what data goes where* (see the first half of this doc). This section covers *how elements animate and behave*:
+
+- **Timings + easings**: `transform 260ms cubic-bezier(0.22, 0.8, 0.28, 1)` — not "it slides in".
+- **Transition properties**: list every property that transitions when state changes. `transition: background-color 180ms, border-color 180ms, transform 220ms` is a spec; `transition: all` is a problem.
+- **Focus trap rules**: when an overlay opens, where does focus go? Which elements trap Tab cycling? What does Esc do?
+- **Keyboard shortcuts**: Enter to submit, Esc to close, etc. — make the contract explicit.
+
+## 6. Responsive breakpoints agreed up front
+
+Decide the breakpoints once, apply consistently:
+
+- **Mobile**: `< 640px`
+- **Tablet**: `640-860px`
+- **Desktop**: `> 860px`
+
+For every component, annotate what happens at each size: "on `< 640`, the stats row stacks vertically"; "on `< 860`, the drawer body collapses from 2-col to 1-col". Without this, we discover the responsive behavior by resizing the browser and guessing.
+
+## 7. Preview ≠ source of truth
+
+If the standalone `index.html` uses CSS or markup that isn't meant for production (e.g., inline JS that emits mockup stubs, `.app-card--skeleton` classes that are preview-only scaffolding), **mark it clearly**. One of the biggest pains in the 2026-04-20 drop was a raw-class skeleton placeholder in the mockup's HTML that we initially mistook for production intent.
+
+A header comment like `<!-- PREVIEW: the following <script> generates mock data; do NOT port to production -->` saves hours.
+
+Ideally, the preview runs off the same CSS the engineer will integrate, proving the CSS works in isolation — not a parallel stylesheet that only the preview uses.
+
+## 8. Data-shape contracts per component
+
+Alongside the TSX template, state what data the component needs:
+
+```
+AppCard props:
+  - appId: "claude" | "codex" | "gemini" | "deepseek" | ...
+  - status: "running" | "stopped" | "degraded" | "unavailable"
+  - providerName: string (may be empty if not configured)
+  - tokens: number (optional, shown only if supportsProviderStats)
+  - onOpenActivity: () => void
+```
+
+The current annotation section (`<!-- wire: ... -->`) covers the *where*; this is the *what*. Together they let the engineer implement without inferring field names.
+
+## 9. Accessibility baseline
+
+Every drop should meet a minimum:
+
+- **ARIA labels** on icon-only buttons, status chips, decorative elements that carry meaning.
+- **Keyboard operability**: every interactive element reachable by Tab; Esc closes modals/overlays.
+- **Contrast ratios**: WCAG AA minimum (4.5:1 for text, 3:1 for large text). The design tokens should already pass these, but worth rechecking when token values change.
+- **Focus order**: for drawers/modals, the Tab cycle inside is explicit. When the overlay closes, focus returns to the triggering element.
+
+## 10. Dark mode is not an afterthought
+
+Every token has a dark counterpart. Every component renders correctly in both themes. Don't assume "invert colors" works — hand-tune dark values. Every state screenshot should exist in both light and dark.
+
+## 11. Explicit "what's not in this drop"
+
+If the mockup shows a UI element that you're **not** delivering this round (e.g., a feature mocked up for client review but not ready to ship), say so in the CHANGELOG:
+
+```
+### Mocked-only (do NOT port)
+- Analytics panel — visible in index.html but intentionally non-functional for this drop.
+- Provider rename flow — click handler is a no-op placeholder.
+```
+
+Without this we port things you never meant us to.
+
+## Quick wins — what the next drop should include at minimum
+
+Pragmatically, a single-page improvement for the next drop would be:
+
+1. Use `.owt-*` class names throughout (cuts rename work ~90%).
+2. Ship a `tokens.css` as a separate file (prevents hunting through HTML for CSS variable definitions).
+3. Include a `CHANGELOG.md` in the drop root — even 10 lines of prose changelog.
+
+Everything else in this section is nice-to-have but not blocking.
+
+## Nice-to-have (more effort for designer, bigger leverage for engineering)
+
+- **Storybook-style preview**: each component rendered in isolation with all states on one page.
+- **Figma/design spec handoff with CSS snippets** generated by the design tool.
+- **Visual regression snapshots the designer approves before handoff** — mockup-side baselines that the engineer can diff against the integrated build.
+
+---
+
+If a future drop lands without any of these, the porting cost will regress to where we were before 2026-04-20. The Shadow DOM migration + namespace discipline we landed eliminates the host-pollution class of bugs; this checklist eliminates the human-side class.
