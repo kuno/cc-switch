@@ -108,6 +108,69 @@ fn is_claude_oauth_provider(provider: &crate::provider::Provider) -> bool {
         == Some(CLAUDE_OAUTH_AUTH_MODE)
 }
 
+fn quota_cache_key(app_type: &str, provider_id: &str) -> String {
+    format!("{app_type}:{provider_id}")
+}
+
+fn subscription_quota_error(quota: &SubscriptionQuota) -> String {
+    quota
+        .error
+        .clone()
+        .unwrap_or_else(|| "unknown upstream error".to_string())
+}
+
+async fn build_subscription_quota_snapshot(
+    state: &ProxyState,
+    app_type: &str,
+    provider_id: &str,
+    provider_name: &str,
+    quota: SubscriptionQuota,
+) -> Result<super::rate_limit::RateLimitSnapshot, String> {
+    if !quota.success {
+        return Err(subscription_quota_error(&quota));
+    }
+
+    let previous = {
+        let store = state.rate_limits.read().await;
+        store.get(provider_id).cloned()
+    };
+
+    super::rate_limit::snapshot_from_subscription_quota(
+        app_type,
+        provider_id,
+        provider_name,
+        &quota,
+        previous.as_ref(),
+    )
+    .ok_or_else(|| subscription_quota_error(&quota))
+}
+
+async fn refresh_cached_quota_snapshot<F, Fut>(
+    state: &ProxyState,
+    app_type: &str,
+    provider_id: String,
+    provider_name: String,
+    refresh: F,
+) -> Option<super::rate_limit::RateLimitSnapshot>
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = Result<super::rate_limit::RateLimitSnapshot, String>>,
+{
+    match state
+        .quota_snapshot_cache
+        .get_or_refresh(&quota_cache_key(app_type, &provider_id), refresh)
+        .await
+    {
+        Ok(mut snapshot) => {
+            snapshot.app_type = app_type.to_string();
+            snapshot.provider_id = provider_id;
+            snapshot.provider_name = provider_name;
+            Some(snapshot)
+        }
+        Err(_) => None,
+    }
+}
+
 async fn refresh_codex_quota_snapshots(state: &ProxyState) {
     let providers = match state.db.get_all_providers("codex") {
         Ok(providers) => providers,
@@ -124,42 +187,34 @@ async fn refresh_codex_quota_snapshots(state: &ProxyState) {
         let Some(auth) = load_codex_auth_for_provider(&provider.id) else {
             continue;
         };
+        let provider_id = provider.id.clone();
+        let provider_name = provider.name.clone();
 
         live_refresh_provider_ids.insert(provider.id.clone());
-        live_fetches.push(async move {
-            let quota = query_codex_quota(
-                &auth.access_token,
-                auth.account_id.as_deref(),
-                "codex_oauth",
-                "Codex OAuth access token expired or rejected. Please re-login via cc-switch.",
-            )
-            .await;
+        live_fetches.push(refresh_cached_quota_snapshot(
+            state,
+            "codex",
+            provider_id.clone(),
+            provider_name.clone(),
+            move || async move {
+                let quota = query_codex_quota(
+                    &auth.access_token,
+                    auth.account_id.as_deref(),
+                    "codex_oauth",
+                    "Codex OAuth access token expired or rejected. Please re-login via cc-switch.",
+                )
+                .await;
 
-            if !quota.success {
-                log::warn!(
-                    "[Quota] live Codex quota refresh failed for {}: {}",
-                    provider.id,
-                    quota
-                        .error
-                        .clone()
-                        .unwrap_or_else(|| "unknown upstream error".to_string())
-                );
-                return None;
-            }
-
-            let previous = {
-                let store = state.rate_limits.read().await;
-                store.get(&provider.id).cloned()
-            };
-
-            super::rate_limit::snapshot_from_subscription_quota(
-                "codex",
-                &provider.id,
-                &provider.name,
-                &quota,
-                previous.as_ref(),
-            )
-        });
+                build_subscription_quota_snapshot(
+                    state,
+                    "codex",
+                    &provider_id,
+                    &provider_name,
+                    quota,
+                )
+                .await
+            },
+        ));
     }
 
     {
@@ -228,35 +283,26 @@ where
         }
 
         let query_quota = query_quota.clone();
+        let provider_id = provider.id.clone();
+        let provider_name = provider.name.clone();
         live_refresh_provider_ids.insert(provider.id.clone());
-        live_fetches.push(async move {
-            let quota = query_quota(auth.access_token.clone()).await;
-
-            if !quota.success {
-                log::warn!(
-                    "[Quota] live Claude quota refresh failed for {}: {}",
-                    provider.id,
-                    quota
-                        .error
-                        .clone()
-                        .unwrap_or_else(|| "unknown upstream error".to_string())
-                );
-                return None;
-            }
-
-            let previous = {
-                let store = state.rate_limits.read().await;
-                store.get(&provider.id).cloned()
-            };
-
-            super::rate_limit::snapshot_from_subscription_quota(
-                "claude",
-                &provider.id,
-                &provider.name,
-                &quota,
-                previous.as_ref(),
-            )
-        });
+        live_fetches.push(refresh_cached_quota_snapshot(
+            state,
+            "claude",
+            provider_id.clone(),
+            provider_name.clone(),
+            move || async move {
+                let quota = query_quota(auth.access_token.clone()).await;
+                build_subscription_quota_snapshot(
+                    state,
+                    "claude",
+                    &provider_id,
+                    &provider_name,
+                    quota,
+                )
+                .await
+            },
+        ));
     }
 
     let mut store = state.rate_limits.write().await;
@@ -3985,6 +4031,7 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
             codex_oauth_auth: None,
             failover_manager: Arc::new(FailoverSwitchManager::new(db, current_providers)),
             rate_limits: new_rate_limit_store(),
+            quota_snapshot_cache: crate::proxy::quota_cache::RateLimitSnapshotCache::new(),
             #[cfg(feature = "tauri-desktop")]
             app_handle: None,
         }
