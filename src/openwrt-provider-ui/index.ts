@@ -218,6 +218,7 @@ function attachShadowHost(
   mountKind: OpenWrtProviderUiMountKind,
 ): { reactMount: HTMLElement; dispose: () => void } {
   clearTarget(target);
+  target.dataset.ccswitchProviderUiMount = mountKind;
 
   const doc = target.ownerDocument;
   const shadow = target.shadowRoot ?? target.attachShadow({ mode: "open" });
