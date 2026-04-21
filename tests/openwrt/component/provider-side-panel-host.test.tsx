@@ -67,9 +67,48 @@ function renderInShadowRoot(ui: ReactElement) {
   };
 }
 
+function mockScrollbarWidth(width: number) {
+  const innerWidthDescriptor = Object.getOwnPropertyDescriptor(
+    window,
+    "innerWidth",
+  );
+  const clientWidthDescriptor = Object.getOwnPropertyDescriptor(
+    document.documentElement,
+    "clientWidth",
+  );
+
+  Object.defineProperty(window, "innerWidth", {
+    configurable: true,
+    value: 1200,
+  });
+  Object.defineProperty(document.documentElement, "clientWidth", {
+    configurable: true,
+    value: 1200 - width,
+  });
+
+  return () => {
+    if (innerWidthDescriptor) {
+      Object.defineProperty(window, "innerWidth", innerWidthDescriptor);
+    } else {
+      Reflect.deleteProperty(window, "innerWidth");
+    }
+
+    if (clientWidthDescriptor) {
+      Object.defineProperty(
+        document.documentElement,
+        "clientWidth",
+        clientWidthDescriptor,
+      );
+    } else {
+      Reflect.deleteProperty(document.documentElement, "clientWidth");
+    }
+  };
+}
+
 describe("ProviderSidePanelHost", () => {
   it("opens as a modal, traps focus, closes on Escape, and restores focus", async () => {
     const user = userEvent.setup();
+    const restoreScrollbarWidth = mockScrollbarWidth(15);
     const shell = createBridgeFixture({
       serviceStatus: {
         isRunning: true,
@@ -93,43 +132,54 @@ describe("ProviderSidePanelHost", () => {
       claude: createProviderState("claude", [primaryProvider, backupProvider]),
     });
 
-    render(<HostHarness shell={shell} transport={transport} />);
+    document.body.style.overflow = "clip";
+    document.body.style.paddingRight = "4px";
 
-    const trigger = screen.getByRole("button", {
-      name: "Open provider panel",
-    });
-    await user.click(trigger);
+    try {
+      render(<HostHarness shell={shell} transport={transport} />);
 
-    const dialog = await screen.findByRole("dialog", {
-      name: "Claude providers",
-    });
-    const closeButton = within(dialog).getByRole("button", {
-      name: "Close provider panel",
-    });
+      const trigger = screen.getByRole("button", {
+        name: "Open provider panel",
+      });
+      await user.click(trigger);
 
-    await waitFor(() => expect(closeButton).toHaveFocus());
-    expect(dialog).toHaveAttribute("aria-modal", "true");
-    expect(document.body.style.overflow).toBe("hidden");
+      const dialog = await screen.findByRole("dialog", {
+        name: "Claude providers",
+      });
+      const closeButton = within(dialog).getByRole("button", {
+        name: "Close provider panel",
+      });
 
-    const saveButton = within(dialog).getByRole("button", {
-      name: "Save",
-    });
+      await waitFor(() => expect(closeButton).toHaveFocus());
+      expect(dialog).toHaveAttribute("aria-modal", "true");
+      expect(document.body.style.overflow).toBe("hidden");
+      expect(document.body.style.paddingRight).toBe("15px");
 
-    saveButton.focus();
-    await user.tab();
-    expect(closeButton).toHaveFocus();
-    await user.tab({ shift: true });
-    expect(saveButton).toHaveFocus();
+      const saveButton = within(dialog).getByRole("button", {
+        name: "Save",
+      });
 
-    await user.keyboard("{Escape}");
+      saveButton.focus();
+      await user.tab();
+      expect(closeButton).toHaveFocus();
+      await user.tab({ shift: true });
+      expect(saveButton).toHaveFocus();
 
-    await waitFor(() =>
-      expect(
-        screen.queryByRole("dialog", { name: "Claude providers" }),
-      ).not.toBeInTheDocument(),
-    );
-    expect(trigger).toHaveFocus();
-    expect(document.body.style.overflow).toBe("");
+      await user.keyboard("{Escape}");
+
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("dialog", { name: "Claude providers" }),
+        ).not.toBeInTheDocument(),
+      );
+      expect(trigger).toHaveFocus();
+      expect(document.body.style.overflow).toBe("clip");
+      expect(document.body.style.paddingRight).toBe("4px");
+    } finally {
+      restoreScrollbarWidth();
+      document.body.style.overflow = "";
+      document.body.style.paddingRight = "";
+    }
   });
 
   it("opens into a new-provider preset workflow when no providers exist", async () => {
@@ -160,19 +210,13 @@ describe("ProviderSidePanelHost", () => {
         "No providers yet. Create one from a preset or a custom draft.",
       ),
     ).toBeInTheDocument();
+    expect(dialog).toHaveAttribute("data-panel-mode", "preset-picker");
+    expect(dialog).toHaveTextContent("Preset browser");
     expect(
       within(dialog).getByRole("button", {
-        name: "Preset",
+        name: /Custom draft/i,
       }),
-    ).toHaveAttribute("data-active", "true");
-    expect(
-      within(dialog).getByRole("button", {
-        name: "Save",
-      }),
-    ).toBeDisabled();
-    expect(dialog).toHaveTextContent(
-      "Create a new Gemini route from this draft.",
-    );
+    ).toBeInTheDocument();
   });
 
   it("keeps forward tab navigation inside the panel when mounted in a shadow root", async () => {

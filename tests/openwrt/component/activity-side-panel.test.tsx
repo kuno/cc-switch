@@ -69,12 +69,52 @@ function renderInShadowRoot(ui: ReactElement) {
   };
 }
 
+function mockScrollbarWidth(width: number) {
+  const innerWidthDescriptor = Object.getOwnPropertyDescriptor(
+    window,
+    "innerWidth",
+  );
+  const clientWidthDescriptor = Object.getOwnPropertyDescriptor(
+    document.documentElement,
+    "clientWidth",
+  );
+
+  Object.defineProperty(window, "innerWidth", {
+    configurable: true,
+    value: 1200,
+  });
+  Object.defineProperty(document.documentElement, "clientWidth", {
+    configurable: true,
+    value: 1200 - width,
+  });
+
+  return () => {
+    if (innerWidthDescriptor) {
+      Object.defineProperty(window, "innerWidth", innerWidthDescriptor);
+    } else {
+      Reflect.deleteProperty(window, "innerWidth");
+    }
+
+    if (clientWidthDescriptor) {
+      Object.defineProperty(
+        document.documentElement,
+        "clientWidth",
+        clientWidthDescriptor,
+      );
+    } else {
+      Reflect.deleteProperty(document.documentElement, "clientWidth");
+    }
+  };
+}
+
 describe("ActivitySidePanel", () => {
   beforeEach(() => {
     vi.spyOn(Date, "now").mockReturnValue(FIXED_ACTIVITY_NOW);
   });
 
   afterEach(() => {
+    document.body.style.overflow = "";
+    document.body.style.paddingRight = "";
     vi.restoreAllMocks();
   });
 
@@ -122,6 +162,50 @@ describe("ActivitySidePanel", () => {
     );
 
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("locks body scroll with scrollbar compensation and restores prior styles on close", async () => {
+    const restoreScrollbarWidth = mockScrollbarWidth(15);
+    const onClose = vi.fn();
+    const shell = createBridgeFixture({
+      requestLogs: {
+        claude: createRequestLogsPage([]),
+      },
+    });
+
+    document.body.style.overflow = "clip";
+    document.body.style.paddingRight = "6px";
+
+    try {
+      const view = render(
+        <ActivitySidePanel
+          open
+          appId="claude"
+          onClose={onClose}
+          shell={shell}
+        />,
+      );
+
+      await screen.findByText("No recent requests for this filter.");
+      expect(document.body.style.overflow).toBe("hidden");
+      expect(document.body.style.paddingRight).toBe("15px");
+
+      view.rerender(
+        <ActivitySidePanel
+          open={false}
+          appId="claude"
+          onClose={onClose}
+          shell={shell}
+        />,
+      );
+
+      await waitFor(() => {
+        expect(document.body.style.overflow).toBe("clip");
+        expect(document.body.style.paddingRight).toBe("6px");
+      });
+    } finally {
+      restoreScrollbarWidth();
+    }
   });
 
   it("renders all-app request logs in compact rows without loading detail", async () => {
