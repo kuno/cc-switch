@@ -1,5 +1,6 @@
 import {
   forwardRef,
+  memo,
   useDeferredValue,
   useEffect,
   useImperativeHandle,
@@ -276,7 +277,7 @@ function buildPresetGroups(
   }));
 }
 
-export const ProviderSidePanelHost = forwardRef<
+const ProviderSidePanelHostComponent = forwardRef<
   ProviderSidePanelHandle,
   ProviderSidePanelHostProps
 >(function ProviderSidePanelHost(
@@ -313,6 +314,10 @@ export const ProviderSidePanelHost = forwardRef<
   const deferredSearch = useDeferredValue(search);
   const selectedProvider = getProviderById(providerState, selectedProviderId);
   const presetGroups = useMemo(() => buildPresetGroups(appId), [appId]);
+  const tokenFieldOptions = useMemo(
+    () => [...SHARED_PROVIDER_TOKEN_FIELD_OPTIONS[appId]],
+    [appId],
+  );
   const filteredProviders = useMemo(
     () => filterProviders(providerState?.providers ?? [], deferredSearch),
     [deferredSearch, providerState?.providers],
@@ -819,7 +824,7 @@ export const ProviderSidePanelHost = forwardRef<
       search={search}
       selectedPresetId={pickerSelectedPresetId}
       presetGroups={presetGroups}
-      tokenFieldOptions={[...SHARED_PROVIDER_TOKEN_FIELD_OPTIONS[appId]]}
+      tokenFieldOptions={tokenFieldOptions}
       selectedFileName={selectedAuthFile?.name ?? ""}
       authPending={authPending}
       savePending={savePending}
@@ -865,3 +870,5 @@ export const ProviderSidePanelHost = forwardRef<
     />
   );
 });
+
+export const ProviderSidePanelHost = memo(ProviderSidePanelHostComponent);

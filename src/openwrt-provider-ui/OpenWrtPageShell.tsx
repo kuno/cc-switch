@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -283,6 +284,10 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
     providerPanelRef.current?.openForApp(appId);
   }
 
+  const handleProviderMutation = useCallback(() => {
+    setProviderMutationVersion((current) => current + 1);
+  }, []);
+
   const daemonVersion = formatVersion(
     snapshot.host.version,
     DAEMON_FALLBACK_VERSION,
@@ -372,9 +377,7 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
         selectedApp={snapshot.host.app}
         shell={shell}
         transport={options.transport}
-        onProviderMutation={() =>
-          setProviderMutationVersion((current) => current + 1)
-        }
+        onProviderMutation={handleProviderMutation}
       />
     </div>
   );
