@@ -2623,58 +2623,58 @@ select.owt-provider-panel__input {
   border-color: var(--line-strong);
 }
 
-.sk-icon,
-.sk-chip,
-.sk-mini,
-.sk-line,
-.sk-active {
+.owt-app-card__skeleton-icon,
+.owt-app-card__skeleton-chip,
+.owt-app-card__skeleton-mini,
+.owt-app-card__skeleton-line,
+.owt-app-card__skeleton-active {
   background: var(--panel-softer);
   border-radius: 6px;
 }
 
-.sk-icon {
+.owt-app-card__skeleton-icon {
   width: 48px;
   height: 48px;
   border-radius: var(--radius-icon);
   flex: 0 0 auto;
 }
 
-.owt-app-card--empty-skeleton .sk-icon {
+.owt-app-card--empty-skeleton .owt-app-card__skeleton-icon {
   background: transparent;
   border: 1px dashed var(--line-strong);
 }
 
-.sk-chip {
+.owt-app-card__skeleton-chip {
   width: 68px;
   height: 24px;
   border-radius: 999px;
   flex: 0 0 auto;
 }
 
-.sk-mini {
+.owt-app-card__skeleton-mini {
   width: 32px;
   height: 32px;
   border-radius: 10px;
   flex: 0 0 auto;
 }
 
-.sk-line--xs {
+.owt-app-card__skeleton-line--xs {
   height: 8px;
 }
 
-.sk-line--sm {
+.owt-app-card__skeleton-line--sm {
   height: 10px;
 }
 
-.sk-line--md {
+.owt-app-card__skeleton-line--md {
   height: 16px;
 }
 
-.sk-line--lg {
+.owt-app-card__skeleton-line--lg {
   height: 18px;
 }
 
-.sk-active {
+.owt-app-card__skeleton-active {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -2685,11 +2685,11 @@ select.owt-provider-panel__input {
   margin-bottom: 18px;
 }
 
-.owt-app-card--skeleton-compact .sk-active {
+.owt-app-card--skeleton-compact .owt-app-card__skeleton-active {
   margin-bottom: 0;
 }
 
-.sk-empty-cta {
+.owt-app-card__skeleton-empty-cta {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2698,30 +2698,32 @@ select.owt-provider-panel__input {
   padding: 12px 14px;
 }
 
-.owt-app-card--empty-skeleton .sk-empty-cta {
+.owt-app-card--empty-skeleton .owt-app-card__skeleton-empty-cta {
   border: 1px dashed var(--line-strong);
   border-radius: var(--radius-control);
   background: var(--panel-soft);
 }
 
-.owt-app-card--empty-skeleton .sk-empty-cta .sk-line:first-child {
+.owt-app-card--empty-skeleton
+  .owt-app-card__skeleton-empty-cta
+  .owt-app-card__skeleton-line:first-child {
   flex: 1;
   max-width: 220px;
 }
 
-.sk-usage {
+.owt-app-card__skeleton-usage {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 0;
   margin-top: 4px;
 }
 
-.sk-usage-cell {
+.owt-app-card__skeleton-usage-cell {
   padding: 2px 14px;
   border-left: 1px solid var(--line);
 }
 
-.sk-usage-cell:first-child {
+.owt-app-card__skeleton-usage-cell:first-child {
   padding-left: 0;
   border-left: 0;
 }
@@ -2740,11 +2742,11 @@ select.owt-provider-panel__input {
   }
 }
 
-.owt-app-card--skeleton .sk-icon,
-.owt-app-card--skeleton .sk-chip,
-.owt-app-card--skeleton .sk-mini,
-.owt-app-card--skeleton .sk-line,
-.owt-app-card--skeleton .sk-active {
+.owt-app-card--skeleton .owt-app-card__skeleton-icon,
+.owt-app-card--skeleton .owt-app-card__skeleton-chip,
+.owt-app-card--skeleton .owt-app-card__skeleton-mini,
+.owt-app-card--skeleton .owt-app-card__skeleton-line,
+.owt-app-card--skeleton .owt-app-card__skeleton-active {
   animation: owt-sk-shimmer 2.4s ease-in-out infinite;
 }
 
