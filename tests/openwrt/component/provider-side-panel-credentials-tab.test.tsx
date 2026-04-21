@@ -85,15 +85,8 @@ describe("ProviderSidePanelCredentialsTab", () => {
       baseUrl: "https://api.deepseek.com/anthropic",
     });
 
-    fireEvent.change(screen.getByLabelText("Env key"), {
-      target: {
-        value: "ANTHROPIC_API_KEY",
-      },
-    });
-    expect(onDraftChange).toHaveBeenLastCalledWith({
-      ...draft,
-      tokenField: "ANTHROPIC_API_KEY",
-    });
+    expect(screen.getByText("Primary env mapping")).toBeInTheDocument();
+    expect(screen.getByText(draft.tokenField)).toBeInTheDocument();
 
     fireEvent.change(apiKeyInput, {
       target: {
@@ -139,15 +132,15 @@ describe("ProviderSidePanelCredentialsTab", () => {
     );
 
     expect(
-      screen.getByRole("button", {
-        name: "auth.json",
+      screen.getByRole("combobox", {
+        name: "Authentication mode",
       }),
-    ).toHaveAttribute("data-active", "true");
+    ).toHaveValue("codex_oauth");
     expect(screen.getByText("Stored auth.json")).toBeInTheDocument();
     expect(screen.getByText(/Account ID: acct-codex/)).toBeInTheDocument();
     expect(
       screen.getByRole("button", {
-        name: "Upload auth.json",
+        name: "Upload",
       }),
     ).toBeEnabled();
     expect(
@@ -200,13 +193,18 @@ describe("ProviderSidePanelCredentialsTab", () => {
     );
 
     expect(
-      screen.getByRole("button", {
-        name: "auth.json",
+      screen.getByRole("combobox", {
+        name: "Authentication mode",
       }),
-    ).toHaveAttribute("data-active", "true");
+    ).toHaveValue("claude_oauth");
     expect(screen.getByText("Stored auth.json")).toBeInTheDocument();
     expect(screen.getByText(/Subscription type: max/)).toBeInTheDocument();
     expect(screen.getByText(/Scopes:/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: "Upload",
+      }),
+    ).toBeEnabled();
 
     const fileInput = container.querySelector(
       'input[type="file"]',
@@ -334,12 +332,12 @@ describe("ProviderSidePanelCredentialsTab", () => {
     });
     expect(
       screen.getByRole("button", {
-        name: "Upload auth.json",
+        name: "Upload",
       }),
     ).toBeEnabled();
     await user.click(
       screen.getByRole("button", {
-        name: "Upload auth.json",
+        name: "Upload",
       }),
     );
 
@@ -352,7 +350,7 @@ describe("ProviderSidePanelCredentialsTab", () => {
     );
     expect(
       screen.getByRole("button", {
-        name: "Upload auth.json",
+        name: "Upload",
       }),
     ).toBeDisabled();
     expect(
@@ -368,7 +366,7 @@ describe("ProviderSidePanelCredentialsTab", () => {
     await waitFor(() =>
       expect(
         screen.getByRole("button", {
-          name: "Upload auth.json",
+          name: "Upload",
         }),
       ).toBeDisabled(),
     );
@@ -452,7 +450,7 @@ describe("ProviderSidePanelCredentialsTab", () => {
     });
     await user.click(
       screen.getByRole("button", {
-        name: "Upload auth.json",
+        name: "Upload",
       }),
     );
 
