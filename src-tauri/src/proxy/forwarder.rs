@@ -536,17 +536,8 @@ impl RequestForwarder {
         }
 
         let mut last_error = None;
-        let mut last_provider: Option<Provider> = None;
+        let mut last_provider = None;
         let mut attempted_providers = 0usize;
-
-        let rid_buf = uuid::Uuid::new_v4().to_string();
-        let rid = &rid_buf[..8];
-        let req_start = std::time::Instant::now();
-        log::info!(
-            "[REQ-IN] rid={rid} app={app_type_str} model={} provider={} path={endpoint}",
-            body.get("model").and_then(|m| m.as_str()).unwrap_or("?"),
-            providers.first().map(|p| p.id.as_str()).unwrap_or("?")
-        );
 
         // 单 Provider 场景下跳过熔断器检查（故障转移关闭时）
         let bypass_circuit_breaker = providers.len() == 1;
@@ -603,10 +594,6 @@ impl RequestForwarder {
                 };
 
             attempted_providers += 1;
-            if attempted_providers > 1 {
-                let from_id = last_provider.as_ref().map(|p| p.id.as_str()).unwrap_or("?");
-                log::info!("[Router] {app_type_str} failover: {from_id} → {}", provider.id);
-            }
 
             // 更新状态中的当前 Provider 信息（per-attempt 维度的标识）
             //
@@ -687,12 +674,6 @@ impl RequestForwarder {
                         }
                     }
 
-                    log::info!(
-                        "[REQ-OUT] rid={rid} status={} latency_ms={} provider={}",
-                        response.status().as_u16(),
-                        req_start.elapsed().as_millis(),
-                        provider.id
-                    );
                     return Ok(ForwardResult {
                         response,
                         provider: provider.clone(),
@@ -2636,7 +2617,6 @@ impl RequestForwarder {
             }
 
             let status_code = status.as_u16();
-            log::info!("[Upstream] {app_type_str} provider={} status={status_code}", provider.id);
             // 错误响应同样可能被上游压缩（content-encoding）。reqwest 未启用任何
             // 自动解压 feature，这里拿到的是原始字节；不解压的话，压缩过的错误体会
             // 在 from_utf8 处变成非 UTF-8 而被丢弃，隐藏掉上游的限流/鉴权等详情。
