@@ -3,8 +3,8 @@ import { OpenWrtPageShell } from "@/openwrt-provider-ui/OpenWrtPageShell";
 import type { OpenWrtPaginatedRequestLogs } from "@/openwrt-provider-ui/pageTypes";
 import type { SharedProviderAppId } from "@/shared/providers/domain";
 import { createBridgeFixture, type BridgeFixtureOptions } from "./bridge";
+import { createProviderTransportFixture } from "./providerTransport";
 import {
-  createProviderTransportFixture,
   OPENWRT_PAGE_THEME_STORAGE_KEY,
   OPENWRT_PROVIDER_UI_THEME_CLASS,
   REALISTIC_HOST_STATE,
@@ -94,7 +94,7 @@ export function renderOpenWrtPageShell({
   const bridge = createBridgeFixture(
     createRealisticBridgeOptions(bridgeOptions),
   );
-  const transport = createProviderTransportFixture(REALISTIC_PROVIDER_STATES);
+  const { transport } = createProviderTransportFixture(REALISTIC_PROVIDER_STATES);
   const view = render(
     <OpenWrtPageShell
       options={{
