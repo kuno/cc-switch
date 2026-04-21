@@ -20,6 +20,10 @@ import type {
   SharedProviderTokenField,
   SharedProviderView,
 } from "@/shared/providers/domain";
+import {
+  getOpenWrtAppIconUrl,
+  OpenWrtProviderIcon,
+} from "../providerIcons";
 import { ProviderSidePanelCredentialsTab } from "./ProviderSidePanelCredentialsTab";
 import { ProviderSidePanelGeneralTab } from "./ProviderSidePanelGeneralTab";
 import {
@@ -92,19 +96,6 @@ const APP_SUBTITLES: Record<SharedProviderAppId, string> = {
   codex: "OpenAI · Codex CLI",
   gemini: "Google · Gemini CLI",
 };
-
-const APP_ICON_BASE_URL = "/luci-static/resources/ccswitch/provider-ui/icons";
-
-const APP_ICON_FILENAMES: Partial<Record<SharedProviderAppId, string>> = {
-  claude: "claude.svg",
-  codex: "openai.svg",
-  gemini: "gemini.svg",
-};
-
-function appIconUrl(appId: SharedProviderAppId): string | null {
-  const filename = APP_ICON_FILENAMES[appId];
-  return filename ? `${APP_ICON_BASE_URL}/${filename}` : null;
-}
 
 const FOCUSABLE_SELECTOR = [
   "a[href]",
@@ -348,11 +339,7 @@ export function ProviderSidePanel({
       >
         <header className="owt-provider-panel__header">
           <div className="owt-provider-panel__app-badge" data-app={appId}>
-            {appIconUrl(appId) ? (
-              <img src={appIconUrl(appId)!} alt="" />
-            ) : (
-              APP_LABELS[appId].slice(0, 1)
-            )}
+            <img src={getOpenWrtAppIconUrl(appId)} alt="" />
           </div>
           <div className="owt-provider-panel__header-copy">
             <h3 className="owt-provider-panel__title">{APP_LABELS[appId]}</h3>
@@ -412,17 +399,16 @@ export function ProviderSidePanel({
                       className="owt-provider-panel__provider-mark"
                       data-app={appId}
                     >
-                      {appIconUrl(appId) ? (
-                        <img src={appIconUrl(appId)!} alt="" />
-                      ) : (
-                        (
+                      <OpenWrtProviderIcon
+                        appId={appId}
+                        name={
                           provider.name ||
                           provider.providerId ||
                           APP_LABELS[appId]
-                        )
-                          .slice(0, 1)
-                          .toUpperCase()
-                      )}
+                        }
+                        size={18}
+                        source={provider}
+                      />
                     </div>
                     <div className="owt-provider-panel__provider-copy">
                       <div className="owt-provider-panel__provider-name">
@@ -475,11 +461,12 @@ export function ProviderSidePanel({
                       className="owt-provider-panel__provider-mark owt-provider-panel__provider-mark--detail"
                       data-app={appId}
                     >
-                      {appIconUrl(appId) ? (
-                        <img src={appIconUrl(appId)!} alt="" />
-                      ) : (
-                        providerName.slice(0, 1).toUpperCase()
-                      )}
+                      <OpenWrtProviderIcon
+                        appId={appId}
+                        name={providerName}
+                        size={22}
+                        source={selectedProvider ?? draft}
+                      />
                     </div>
                     <div className="owt-provider-panel__detail-copy">
                       <div className="owt-provider-panel__detail-title">
