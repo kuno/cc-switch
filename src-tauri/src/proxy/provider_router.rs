@@ -105,6 +105,10 @@ impl ProviderRouter {
             }
         }
 
+        let reason = if auto_failover_enabled { "failover queue" } else { "active provider" };
+        let ids: Vec<&str> = result.iter().map(|p| p.id.as_str()).collect();
+        log::info!("[Router] {app_type} selected [{}] ({reason})", ids.join(", "));
+
         Ok(result)
     }
 
@@ -251,7 +255,7 @@ impl ProviderRouter {
             Err(_) => crate::proxy::circuit_breaker::CircuitBreakerConfig::default(),
         };
 
-        let breaker = Arc::new(CircuitBreaker::new(config));
+        let breaker = Arc::new(CircuitBreaker::new(key.to_string(), config));
         breakers.insert(key.to_string(), breaker.clone());
 
         breaker
