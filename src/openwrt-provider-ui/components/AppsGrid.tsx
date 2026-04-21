@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createOpenWrtProviderAdapter } from "@/platform/openwrt/providers";
 import type { SharedProviderAppId } from "@/shared/providers/domain";
 import type {
@@ -26,6 +26,10 @@ type AppGridData = {
   providerStats: OpenWrtProviderStat[];
   recentActivity: OpenWrtRecentActivityItem[];
 };
+
+type ProviderStateByApp = Partial<
+  Record<SharedProviderAppId, NonNullable<AppGridData["providerState"]>>
+>;
 
 function createInitialCard(appId: SharedProviderAppId): AppGridData {
   return {
@@ -210,6 +214,29 @@ async function loadUsageSummaries(
   return summaries;
 }
 
+async function loadProviderStates(
+  transport: OpenWrtSharedPageMountOptions["transport"],
+): Promise<ProviderStateByApp> {
+  const adapter = createOpenWrtProviderAdapter(transport);
+  const results = await Promise.allSettled(
+    APP_OPTIONS.map(async (appId) => ({
+      appId,
+      providerState: await adapter.listProviderState(appId),
+    })),
+  );
+  const providerStates: ProviderStateByApp = {};
+
+  results.forEach((result) => {
+    if (result.status !== "fulfilled") {
+      return;
+    }
+
+    providerStates[result.value.appId] = result.value.providerState;
+  });
+
+  return providerStates;
+}
+
 export interface AppsGridProps {
   options: OpenWrtSharedPageMountOptions;
   onOpenActivity: (appId: SharedProviderAppId) => void;
@@ -226,16 +253,20 @@ export function AppsGrid({
   const [cards, setCards] = useState<AppGridData[]>(() =>
     APP_OPTIONS.map(createInitialCard),
   );
+  const requestEpochRef = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
+    const requestEpoch = requestEpochRef.current + 1;
+
+    requestEpochRef.current = requestEpoch;
 
     setCards((current) => current.map((card) => ({ ...card, loading: true })));
 
     void Promise.all(
       APP_OPTIONS.map((appId) => loadCardData(options, appId)),
     ).then((nextCards) => {
-      if (cancelled) return;
+      if (cancelled || requestEpoch !== requestEpochRef.current) return;
       setCards(nextCards);
     });
 
@@ -267,20 +298,52 @@ export function AppsGrid({
         ? POLL_INTERVAL_BACKGROUND_MS
         : POLL_INTERVAL_MS;
 
-    const refetchUsageSummaries = async () => {
-      const newSummaryByApp = await loadUsageSummaries(options.shell);
+    const refreshHostState = async () => {
+      try {
+        await options.shell.refreshHostState();
+      } catch (error) {
+        console.debug(
+          "[openwrt/provider-ui] Failed to refresh daemon host state",
+          error,
+        );
+      }
+    };
 
-      if (cancelled) {
+    const refetchCards = async () => {
+      const requestEpoch = requestEpochRef.current;
+      const [summaryResult, providerStateResult] = await Promise.allSettled([
+        loadUsageSummaries(options.shell),
+        loadProviderStates(options.transport),
+        refreshHostState(),
+      ]);
+
+      if (cancelled || requestEpoch !== requestEpochRef.current) {
         return;
       }
+
+      const newSummaryByApp =
+        summaryResult.status === "fulfilled" ? summaryResult.value : {};
+      const newProviderStateByApp =
+        providerStateResult.status === "fulfilled"
+          ? providerStateResult.value
+          : {};
 
       setCards((prev) =>
         prev.map((card) => {
           const nextSummary = newSummaryByApp[card.appId];
+          const nextProviderState = newProviderStateByApp[card.appId];
 
-          return nextSummary !== undefined
-            ? { ...card, summary: nextSummary }
-            : card;
+          if (nextSummary === undefined && nextProviderState === undefined) {
+            return card;
+          }
+
+          return {
+            ...card,
+            ...(nextSummary !== undefined ? { summary: nextSummary } : {}),
+            ...(nextProviderState !== undefined
+              ? { providerState: nextProviderState }
+              : {}),
+          };
         }),
       );
     };
@@ -294,7 +357,7 @@ export function AppsGrid({
       }
 
       intervalId = window.setInterval(() => {
-        void refetchUsageSummaries();
+        void refetchCards();
       }, pollIntervalMs);
     };
 
@@ -304,7 +367,7 @@ export function AppsGrid({
         return;
       }
 
-      void refetchUsageSummaries();
+      void refetchCards();
       startPolling();
     };
 
@@ -316,7 +379,7 @@ export function AppsGrid({
       clearPollingInterval();
       doc.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [options.shell]);
+  }, [options.shell, options.transport]);
 
   const hostState = options.shell.getHostState();
   const serviceRunning = options.shell.getServiceStatus().isRunning;
@@ -356,7 +419,9 @@ export function AppsGrid({
           <GroupHeader label="Not configured" />
           <div className="owt-group-grid owt-group-grid--unconfigured">
             {unconfigured.map(renderCard)}
-            {unconfigured.length % 2 === 1 && <SkeletonCard showStats={false} />}
+            {unconfigured.length % 2 === 1 && (
+              <SkeletonCard showStats={false} />
+            )}
           </div>
         </>
       )}

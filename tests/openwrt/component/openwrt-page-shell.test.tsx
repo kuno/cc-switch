@@ -1,14 +1,32 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type Mock,
+} from "vitest";
 import { OPENWRT_APP_IDS } from "../fixtures/openwrtProviderUi";
 import { OPENWRT_PAGE_FIXED_NOW } from "./fixtures/pageShell";
 import { renderOpenWrtPageShell } from "./fixtures/renderPageShell";
+
+async function flushMicrotasks() {
+  await act(async () => {
+    await Promise.resolve();
+  });
+}
 
 describe("OpenWrtPageShell", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.spyOn(Date, "now").mockReturnValue(OPENWRT_PAGE_FIXED_NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("renders the header and applies the stored initial theme on mount", async () => {
@@ -175,9 +193,7 @@ describe("OpenWrtPageShell", () => {
     await waitFor(() => {
       expect(
         Array.from(
-          new Set(
-            listProviders.mock.calls.map(([appId]) => appId as string),
-          ),
+          new Set(listProviders.mock.calls.map(([appId]) => appId as string)),
         ).sort(),
       ).toEqual([...OPENWRT_APP_IDS]);
     });
@@ -207,5 +223,66 @@ describe("OpenWrtPageShell", () => {
     await screen.findByRole("dialog", { name: "Recent activity" });
 
     expect(listProviders).not.toHaveBeenCalled();
+  });
+
+  it("refreshes daemon host state once on each 10 second apps-grid poll tick", async () => {
+    vi.useFakeTimers();
+    const { bridge } = renderOpenWrtPageShell();
+
+    await flushMicrotasks();
+    expect(
+      screen.getByRole("button", { name: "Open Claude providers" }),
+    ).toBeInTheDocument();
+
+    const refreshHostState = bridge.refreshHostState as unknown as Mock;
+    refreshHostState.mockClear();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    await flushMicrotasks();
+
+    expect(refreshHostState).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves the daemon running state when a host refresh poll errors", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, "debug").mockImplementation(() => {});
+    const refreshHostState = vi.fn(async () => {
+      throw new Error("Transient transport failure");
+    });
+    renderOpenWrtPageShell({
+      bridgeOptions: {
+        host: {
+          status: "running",
+          health: "healthy",
+        },
+        serviceStatus: {
+          isRunning: true,
+        },
+        overrides: {
+          refreshHostState,
+        },
+      },
+    });
+
+    await flushMicrotasks();
+    expect(
+      screen.getByRole("button", { name: "Open Claude providers" }),
+    ).toBeInTheDocument();
+
+    const daemonCard = screen.getByLabelText("Router daemon");
+    expect(within(daemonCard).getByText("Running")).toBeInTheDocument();
+
+    refreshHostState.mockClear();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    await flushMicrotasks();
+
+    expect(refreshHostState).toHaveBeenCalledTimes(1);
+    expect(within(daemonCard).getByText("Running")).toBeInTheDocument();
+    expect(within(daemonCard).queryByText("Stopped")).not.toBeInTheDocument();
   });
 });
