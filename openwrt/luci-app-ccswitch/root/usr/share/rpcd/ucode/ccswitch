@@ -63,29 +63,6 @@ function runReadCommand(command) {
 	};
 }
 
-function commandFailure(result) {
-	return {
-		ok: false,
-		code: result.code,
-		error: result.error ? result.error : (result.output ? result.output : 'command failed')
-	};
-}
-
-function commandSuccess(result) {
-	let parsed = json(result.output);
-
-	if (parsed == null)
-		return {
-			ok: false,
-			code: result.code,
-			error: 'invalid JSON from daemon'
-		};
-
-	parsed.ok = true;
-
-	return parsed;
-}
-
 function getAdminListenPort() {
 	let ctx = cursor();
 	let port;
@@ -204,40 +181,26 @@ function runAdminHttpJson(method, path, body) {
 	return parsed;
 }
 
-function runProviderCommand(command) {
-	let result = runReadCommand(command);
+function runAdminGetJson(path) {
+	let port = getAdminListenPort();
+	let url = 'http://127.0.0.1:' + port + '/openwrt/admin' + path;
+	let fh = popen('curl -sf --max-time 5 ' + shellquote(url), 'r');
+	let output, parsed;
 
-	if (!result.ok)
-		return commandFailure(result);
+	if (!fh)
+		return { ok: false, error: 'daemon HTTP call failed: ' + path };
 
-	return commandSuccess(result);
-}
+	output = fh.read('all');
 
-function runProvidersCommand(command) {
-	let result = runReadCommand(command);
+	if (fh.close() !== 0 || !output)
+		return { ok: false, error: 'daemon HTTP call failed: ' + path };
 
-	if (!result.ok)
-		return commandFailure(result);
+	parsed = json(output);
 
-	return commandSuccess(result);
-}
+	if (parsed == null)
+		return { ok: false, error: 'daemon HTTP call failed: ' + path };
 
-function runResultCommand(command) {
-	let result = runReadCommand(command);
-
-	if (!result.ok)
-		return commandFailure(result);
-
-	return commandSuccess(result);
-}
-
-function runStatusCommand(command) {
-	let result = runReadCommand(command);
-
-	if (!result.ok)
-		return commandFailure(result);
-
-	return commandSuccess(result);
+	return parsed;
 }
 
 function requireProviderId(providerId) {
@@ -332,7 +295,7 @@ function listProviders(app) {
 	if (!normalizedApp)
 		return { ok: false, error: 'unsupported app' };
 
-	return runProvidersCommand(daemonCommand(`openwrt ${shellquote(normalizedApp)} list-providers`));
+	return runAdminGetJson('/apps/' + percentEncodePath(normalizedApp) + '/providers');
 }
 
 function getProvider(app, providerId) {
@@ -344,9 +307,7 @@ function getProvider(app, providerId) {
 	if (!normalizedApp)
 		return { ok: false, error: 'unsupported app' };
 
-	return runProviderCommand(
-		daemonCommand(`openwrt ${shellquote(normalizedApp)} get-provider ${shellquote(providerId)}`)
-	);
+	return runAdminGetJson('/apps/' + percentEncodePath(normalizedApp) + '/providers/' + percentEncodePath(providerId));
 }
 
 function getProviderFailover(app, providerId) {
@@ -358,9 +319,7 @@ function getProviderFailover(app, providerId) {
 	if (!normalizedApp)
 		return { ok: false, error: 'unsupported app' };
 
-	return runStatusCommand(
-		daemonCommand(`openwrt ${shellquote(normalizedApp)} get-provider-failover ${shellquote(providerId)}`)
-	);
+	return runAdminGetJson('/apps/' + percentEncodePath(normalizedApp) + '/providers/' + percentEncodePath(providerId) + '/failover');
 }
 
 function getActiveProvider(app) {
@@ -369,11 +328,11 @@ function getActiveProvider(app) {
 	if (!normalizedApp)
 		return { ok: false, error: 'unsupported app' };
 
-	return runProviderCommand(daemonCommand(`openwrt ${shellquote(normalizedApp)} get-active-provider`));
+	return runAdminGetJson('/apps/' + percentEncodePath(normalizedApp) + '/providers/active');
 }
 
 function getRuntimeStatus() {
-	return runStatusCommand(daemonCommand('openwrt get-runtime-status'));
+	return runAdminGetJson('/runtime');
 }
 
 function getAppRuntimeStatus(app) {
@@ -382,9 +341,7 @@ function getAppRuntimeStatus(app) {
 	if (!normalizedApp)
 		return { ok: false, error: 'unsupported app' };
 
-	return runStatusCommand(
-		daemonCommand(`openwrt ${shellquote(normalizedApp)} get-runtime-status`)
-	);
+	return runAdminGetJson('/apps/' + percentEncodePath(normalizedApp) + '/runtime');
 }
 
 function getUsageSummary(app) {
@@ -393,9 +350,7 @@ function getUsageSummary(app) {
 	if (!normalizedApp)
 		return { ok: false, error: 'unsupported app' };
 
-	return runResultCommand(
-		daemonCommand(`openwrt ${shellquote(normalizedApp)} get-usage-summary`)
-	);
+	return runAdminGetJson('/apps/' + percentEncodePath(normalizedApp) + '/usage-summary');
 }
 
 function getProviderStats(app) {
@@ -404,47 +359,37 @@ function getProviderStats(app) {
 	if (!normalizedApp)
 		return { ok: false, error: 'unsupported app' };
 
-	return runResultCommand(
-		daemonCommand(`openwrt ${shellquote(normalizedApp)} get-provider-stats`)
-	);
+	return runAdminGetJson('/apps/' + percentEncodePath(normalizedApp) + '/provider-stats');
 }
 
 function getRecentActivity(app) {
 	let normalizedApp = normalizeApp(app);
-	let result;
 
 	if (!normalizedApp)
 		return { ok: false, error: 'unsupported app' };
 
-	result = runReadCommand(
-		daemonCommand(`openwrt ${shellquote(normalizedApp)} get-recent-activity`)
-	);
-
-	if (!result.ok)
-		return commandFailure(result);
-
-	return {
-		ok: true,
-		recentActivityJson: result.output
-	};
+	return runAdminGetJson('/apps/' + percentEncodePath(normalizedApp) + '/recent-activity');
 }
 
 function getRequestLogs(app, page, pageSize) {
 	let normalizedApp = normalizeApp(app);
-	let pageArg = '';
-	let pageSizeArg = '';
+	let path, sep;
 
 	if (!normalizedApp)
 		return { ok: false, error: 'unsupported app' };
 
-	if (page != null && page !== '')
-		pageArg = ' ' + shellquote('' + page);
-	if (pageSize != null && pageSize !== '')
-		pageSizeArg = ' ' + shellquote('' + pageSize);
+	path = '/apps/' + percentEncodePath(normalizedApp) + '/request-logs';
+	sep = '?';
 
-	return runResultCommand(
-		daemonCommand(`openwrt ${shellquote(normalizedApp)} get-request-logs${pageArg}${pageSizeArg}`)
-	);
+	if (page != null && page !== '') {
+		path += sep + 'page=' + page;
+		sep = '&';
+	}
+
+	if (pageSize != null && pageSize !== '')
+		path += sep + 'pageSize=' + pageSize;
+
+	return runAdminGetJson(path);
 }
 
 function getRequestDetail(app, requestId) {
@@ -456,9 +401,7 @@ function getRequestDetail(app, requestId) {
 	if (!normalizedApp)
 		return { ok: false, error: 'unsupported app' };
 
-	return runResultCommand(
-		daemonCommand(`openwrt ${shellquote(normalizedApp)} get-request-detail ${shellquote(requestId)}`)
-	);
+	return runAdminGetJson('/apps/' + percentEncodePath(normalizedApp) + '/request-logs/' + percentEncodePath(requestId));
 }
 
 function getAvailableFailoverProviders(app) {
@@ -467,9 +410,7 @@ function getAvailableFailoverProviders(app) {
 	if (!normalizedApp)
 		return { ok: false, error: 'unsupported app' };
 
-	return runProvidersCommand(
-		daemonCommand(`openwrt ${shellquote(normalizedApp)} get-available-failover-providers`)
-	);
+	return runAdminGetJson('/apps/' + percentEncodePath(normalizedApp) + '/failover/providers/available');
 }
 
 function adminAppPath(app) {
