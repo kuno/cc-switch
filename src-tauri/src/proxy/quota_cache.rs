@@ -79,7 +79,8 @@ where
         let ttl = quota_cache_ttl();
         let provider_id = provider_id.to_string();
 
-        if let Some(value) = self.get_fresh(&provider_id, ttl).await {
+        if let Some((value, age_secs)) = self.get_fresh(&provider_id, ttl).await {
+            log::info!("[Quota] {} cache=hit age={}s", provider_id, age_secs);
             return Ok(value);
         }
 
@@ -108,6 +109,7 @@ where
             .get_or_init(|| {
                 let provider_id = provider_id.clone();
                 async move {
+                    log::info!("[Quota] {} cache=miss", provider_id);
                     let stale = {
                         let state = self.state.lock().await;
                         state.entries.get(&provider_id).map(|entry| entry.value.clone())
@@ -157,12 +159,13 @@ where
         result
     }
 
-    async fn get_fresh(&self, provider_id: &str, ttl: Duration) -> Option<T> {
+    async fn get_fresh(&self, provider_id: &str, ttl: Duration) -> Option<(T, u64)> {
         let state = self.state.lock().await;
-        state
-            .entries
-            .get(provider_id)
-            .and_then(|entry| entry.is_fresh(ttl).then_some(entry.value.clone()))
+        state.entries.get(provider_id).and_then(|entry| {
+            entry
+                .is_fresh(ttl)
+                .then_some((entry.value.clone(), entry.refreshed_at.elapsed().as_secs()))
+        })
     }
 }
 
