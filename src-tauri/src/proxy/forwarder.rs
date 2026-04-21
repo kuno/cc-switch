@@ -208,17 +208,8 @@ impl RequestForwarder {
         }
 
         let mut last_error = None;
-        let mut last_provider: Option<Provider> = None;
+        let mut last_provider = None;
         let mut attempted_providers = 0usize;
-
-        let rid_buf = uuid::Uuid::new_v4().to_string();
-        let rid = &rid_buf[..8];
-        let req_start = std::time::Instant::now();
-        log::info!(
-            "[REQ-IN] rid={rid} app={app_type_str} model={} provider={} path={endpoint}",
-            body.get("model").and_then(|m| m.as_str()).unwrap_or("?"),
-            providers.first().map(|p| p.id.as_str()).unwrap_or("?")
-        );
 
         // 整流器重试标记：确保整流最多触发一次
         let mut rectifier_retried = false;
@@ -262,10 +253,6 @@ impl RequestForwarder {
                 };
 
             attempted_providers += 1;
-            if attempted_providers > 1 {
-                let from_id = last_provider.as_ref().map(|p| p.id.as_str()).unwrap_or("?");
-                log::info!("[Router] {app_type_str} failover: {from_id} → {}", provider.id);
-            }
 
             // 更新状态中的当前Provider信息
             {
@@ -349,12 +336,6 @@ impl RequestForwarder {
                         }
                     }
 
-                    log::info!(
-                        "[REQ-OUT] rid={rid} status={} latency_ms={} provider={}",
-                        response.status().as_u16(),
-                        req_start.elapsed().as_millis(),
-                        provider.id
-                    );
                     return Ok(ForwardResult {
                         response,
                         provider: provider.clone(),
@@ -1623,7 +1604,6 @@ impl RequestForwarder {
             }
 
             let status_code = status.as_u16();
-            log::info!("[Upstream] {app_type_str} provider={} status={status_code}", provider.id);
             let body_text = String::from_utf8(response.bytes().await?.to_vec()).ok();
 
             Err(ProxyError::UpstreamError {
