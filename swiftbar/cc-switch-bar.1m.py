@@ -15,6 +15,12 @@ TIMEOUT = 5
 
 APP_ORDER = ["claude", "codex", "gemini"]
 
+APP_TITLE_ICONS = {
+    "claude": "🅒",
+    "codex": "🅞",
+    "gemini": "🅖",
+}
+
 STATUS_ICON = {}
 
 STATUS_COLOR = {
@@ -177,11 +183,8 @@ def load_app_icon_base64(app):
 
 
 def render_app_header(app, summary):
-    encoded = load_app_icon_base64(app)
-    if encoded:
-        title = summary.strip() or " "
-        return f"{title} | templateImage={encoded} size=14 color=#e2e8f0"
-    return f"{app.upper()}{summary} | size=14 color=#e2e8f0"
+    # Plain app name (Claude, Codex, Gemini); icons + numbers moved off the header.
+    return f"{app.capitalize()} | size=14 color=#e2e8f0"
 
 
 def menu_bar_title(quota_groups, stats_by_app):
@@ -192,17 +195,16 @@ def menu_bar_title(quota_groups, stats_by_app):
         if not providers and not app_stats:
             continue
         window_pcts = app_window_headline(providers)
-        if any(pct is not None for pct in window_pcts.values()):
-            short_5h = window_pcts.get("5h")
-            short_7d = window_pcts.get("7d")
-            if short_5h is not None and short_7d is not None:
-                parts.append(f"[{short_5h}/{short_7d}]%")
-            else:
-                fallback_bits = []
-                for window_name, pct in window_pcts.items():
-                    if pct is not None:
-                        fallback_bits.append(f"{window_name} {pct}%")
-                parts.append(" / ".join(fallback_bits))
+        short_5h = window_pcts.get("5h")
+        if short_5h is not None:
+            icon = APP_TITLE_ICONS.get(app, "")
+            parts.append(f"{icon} {short_5h}%".strip())
+        elif any(pct is not None for pct in window_pcts.values()):
+            # 5h unavailable but other windows reported — fall back to the longest one
+            for window_name, pct in window_pcts.items():
+                if pct is not None:
+                    parts.append(f"{window_name} {pct}%")
+                    break
         elif app_stats:
             total_req = sum(s.get("requestCount", 0) for s in app_stats)
             parts.append(f"{total_req}r")
