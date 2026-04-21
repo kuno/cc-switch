@@ -456,7 +456,7 @@ describe("OpenWrt settings shared-provider shell", () => {
       "/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js",
     );
     expect(settings.getBundleStylePath()).toBe(
-      "/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.css",
+      "/luci-static/resources/ccswitch/provider-ui/openwrt-luci-host.css",
     );
 
     settings.saveSelectedApp("codex");
@@ -677,7 +677,7 @@ describe("OpenWrt settings shared-provider shell", () => {
 
     expect(stylesheet).not.toBeNull();
     expect(stylesheet?.getAttribute("href")).toBe(
-      "/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.css",
+      "/luci-static/resources/ccswitch/provider-ui/openwrt-luci-host.css",
     );
     expect(script).not.toBeNull();
     expect(script?.getAttribute("src")).toBe(
@@ -887,6 +887,205 @@ describe("OpenWrt settings shared-provider shell", () => {
           call.spec.object === "ccswitch" &&
           (call.spec.method === "list_providers" ||
             call.spec.method === "get_active_provider"),
+      ),
+    ).toBe(false);
+  });
+
+  it("routes provider mutations through the daemon-admin HTTP contract when an override base URL is configured", async () => {
+    const { settings, rpcCalls } = loadSettingsView("codex");
+    const transport = settings.createProviderTransport();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ ok: true }),
+    });
+    const providerPayload = {
+      name: "OpenAI Official",
+      baseUrl: "https://api.openai.com/v1",
+      tokenField: "OPENAI_API_KEY",
+      token: "sk-live-123",
+      model: "gpt-5.4",
+      notes: "Pinned live route",
+    };
+    const activeProviderPayload = {
+      name: "Claude Direct",
+      baseUrl: "https://api.anthropic.com",
+      tokenField: "ANTHROPIC_AUTH_TOKEN",
+      token: "sk-ant-123",
+      model: "claude-sonnet-4-20250514",
+      notes: "Primary Anthropic route",
+    };
+
+    vi.stubGlobal("fetch", fetchMock);
+    (window as unknown as Record<string, unknown>)[
+      DAEMON_ADMIN_BASE_URL_OVERRIDE_KEY
+    ] = "http://router.example:15721/openwrt/admin";
+
+    await transport.upsertProvider("codex", providerPayload);
+    await transport.upsertProviderByProviderId(
+      "codex",
+      "codex-primary",
+      providerPayload,
+    );
+    await transport.upsertActiveProvider("claude", activeProviderPayload);
+    await transport.deleteProviderByProviderId("codex", "codex-primary");
+    await transport.activateProviderByProviderId("codex", "codex-primary");
+    await transport.uploadCodexAuth(
+      "codex",
+      "codex-primary",
+      '{"access_token":"codex-token"}',
+    );
+    await transport.uploadClaudeAuth(
+      "claude",
+      "claude-primary",
+      '{"access_token":"claude-token"}',
+    );
+    await transport.removeCodexAuth("codex", "codex-primary");
+    await transport.removeClaudeAuth("claude", "claude-primary");
+    await transport.addToFailoverQueue("codex", "codex-primary");
+    await transport.removeFromFailoverQueue("codex", "codex-primary");
+    await transport.reorderFailoverQueue("codex", [
+      "codex-primary",
+      "codex-backup",
+    ]);
+    await transport.setAutoFailoverEnabled("codex", true);
+    await transport.setMaxRetries("codex", 4);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://router.example:15721/openwrt/admin/apps/codex/providers",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify(providerPayload),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://router.example:15721/openwrt/admin/apps/codex/providers/codex-primary",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify(providerPayload),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "http://router.example:15721/openwrt/admin/apps/claude/providers/active",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify(activeProviderPayload),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "http://router.example:15721/openwrt/admin/apps/codex/providers/codex-primary",
+      expect.objectContaining({
+        method: "DELETE",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "http://router.example:15721/openwrt/admin/apps/codex/providers/codex-primary/activate",
+      expect.objectContaining({
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      6,
+      "http://router.example:15721/openwrt/admin/apps/codex/providers/codex-primary/codex-auth",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          authJsonText: '{"access_token":"codex-token"}',
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      7,
+      "http://router.example:15721/openwrt/admin/apps/claude/providers/claude-primary/claude-auth",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          authJsonText: '{"access_token":"claude-token"}',
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      8,
+      "http://router.example:15721/openwrt/admin/apps/codex/providers/codex-primary/codex-auth",
+      expect.objectContaining({
+        method: "DELETE",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      9,
+      "http://router.example:15721/openwrt/admin/apps/claude/providers/claude-primary/claude-auth",
+      expect.objectContaining({
+        method: "DELETE",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      10,
+      "http://router.example:15721/openwrt/admin/apps/codex/failover/providers/codex-primary",
+      expect.objectContaining({
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      11,
+      "http://router.example:15721/openwrt/admin/apps/codex/failover/providers/codex-primary",
+      expect.objectContaining({
+        method: "DELETE",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      12,
+      "http://router.example:15721/openwrt/admin/apps/codex/failover/queue",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({
+          providerIds: ["codex-primary", "codex-backup"],
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      13,
+      "http://router.example:15721/openwrt/admin/apps/codex/failover/auto-enabled",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({
+          enabled: true,
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      14,
+      "http://router.example:15721/openwrt/admin/apps/codex/failover/max-retries",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({
+          value: 4,
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(14);
+    expect(
+      rpcCalls.some(
+        (call) =>
+          call.spec.object === "ccswitch" &&
+          [
+            "upsert_provider",
+            "upsert_active_provider",
+            "delete_provider",
+            "activate_provider",
+            "upload_codex_auth",
+            "upload_claude_auth",
+            "remove_codex_auth",
+            "remove_claude_auth",
+            "add_to_failover_queue",
+            "remove_from_failover_queue",
+            "reorder_failover_queue",
+            "set_auto_failover_enabled",
+            "set_max_retries",
+          ].includes(call.spec.method),
       ),
     ).toBe(false);
   });
