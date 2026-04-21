@@ -75,14 +75,8 @@ describe("ProviderSidePanelGeneralTab", () => {
       model: "claude-haiku-4-5",
     });
 
-    fireEvent.change(screen.getByLabelText(/Website URL/i), {
-      target: {
-        value: "https://backup.example.com",
-      },
-    });
-    expect(onWebsiteChange).toHaveBeenLastCalledWith(
-      "https://backup.example.com",
-    );
+    expect(screen.getByText("https://claude.example.com")).toBeInTheDocument();
+    expect(onWebsiteChange).not.toHaveBeenCalled();
 
     fireEvent.change(screen.getByLabelText("Notes"), {
       target: {
@@ -127,11 +121,6 @@ describe("ProviderSidePanelGeneralTab", () => {
     await user.type(screen.getByLabelText("Provider name"), "Claude Renamed");
     await user.clear(screen.getByLabelText("Model"));
     await user.type(screen.getByLabelText("Model"), "claude-haiku-4-5");
-    await user.clear(screen.getByLabelText(/Website URL/i));
-    await user.type(
-      screen.getByLabelText(/Website URL/i),
-      "https://docs.anthropic.com",
-    );
     await user.clear(screen.getByLabelText("Notes"));
     await user.type(screen.getByLabelText("Notes"), "Updated notes");
 
@@ -148,8 +137,8 @@ describe("ProviderSidePanelGeneralTab", () => {
 
     expect(screen.getByLabelText("Provider name")).toHaveValue("Claude Renamed");
     expect(screen.getByLabelText("Model")).toHaveValue("claude-haiku-4-5");
-    expect(screen.getByLabelText(/Website URL/i)).toHaveValue(
-      "https://docs.anthropic.com",
+    expect(screen.getAllByText("https://api.anthropic.com").length).toBeGreaterThan(
+      0,
     );
     expect(screen.getByLabelText("Notes")).toHaveValue("Updated notes");
 

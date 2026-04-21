@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, type Mock } from "vitest";
 import { AppCard } from "@/openwrt-provider-ui/components/AppCard";
+import type { SharedProviderState } from "@/shared/providers/domain";
 import {
   createProviderStat,
   createRecentActivity,
@@ -10,7 +11,9 @@ import {
 } from "../fixtures/openwrtProviderUi";
 import { createBridgeFixture } from "./fixtures/bridge";
 
-function renderAppCard() {
+function renderAppCard(
+  providerState: SharedProviderState = createSharedProviderState("claude"),
+) {
   const bridge = createBridgeFixture({
     selectedApp: "codex",
     host: {
@@ -24,12 +27,12 @@ function renderAppCard() {
   });
   const user = userEvent.setup();
 
-  render(
+  const renderResult = render(
     <AppCard
       appId="claude"
       hostState={bridge.getHostState()}
       serviceRunning={bridge.getServiceStatus().isRunning}
-      providerState={createSharedProviderState("claude")}
+      providerState={providerState}
       summary={createUsageSummary()}
       providerStats={[createProviderStat("claude")]}
       recentActivity={[createRecentActivity("claude")]}
@@ -42,6 +45,7 @@ function renderAppCard() {
 
   return {
     bridge,
+    ...renderResult,
     user,
   };
 }
@@ -90,5 +94,18 @@ describe("AppCard", () => {
     expect(trigger).toHaveFocus();
     await user.keyboard(" ");
     expect(setSelectedApp).toHaveBeenCalledWith("claude");
+  });
+
+  it("renders the active provider icon when the provider state carries a persisted icon", () => {
+    const { container } = renderAppCard(
+      createSharedProviderState("claude", {
+        icon: "deepseek",
+        name: "DeepSeek Active",
+      }),
+    );
+
+    expect(
+      container.querySelector(".owt-app-card__mini-icon svg title")?.textContent,
+    ).toBe("DeepSeek");
   });
 });

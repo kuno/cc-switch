@@ -77,13 +77,18 @@ describe("ProviderSidePanel hard rules", () => {
         }
       }
 
-      const tablist = screen.getByRole("tablist");
-      const labels = within(tablist)
-        .getAllByRole("button")
-        .map((button) => button.textContent?.trim());
+      if (tab === "preset") {
+        expect(screen.queryByRole("tablist")).toBeNull();
+        expect(screen.getByText("Preset browser")).toBeInTheDocument();
+      } else {
+        const tablist = screen.getByRole("tablist");
+        const labels = within(tablist)
+          .getAllByRole("button")
+          .map((button) => button.textContent?.trim());
 
-      expect(labels).toEqual(["Preset", "General", "Credentials"]);
-      expect(labels).toHaveLength(3);
+        expect(labels).toEqual(["General", "Credentials"]);
+        expect(labels).toHaveLength(2);
+      }
     },
   );
 });

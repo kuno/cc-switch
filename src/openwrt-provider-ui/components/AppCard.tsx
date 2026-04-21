@@ -9,6 +9,10 @@ import type {
   OpenWrtRecentActivityItem,
   OpenWrtUsageSummary,
 } from "../pageTypes";
+import {
+  getOpenWrtAppIconUrl,
+  OpenWrtProviderIcon,
+} from "../providerIcons";
 
 const APP_COPY: Record<
   SharedProviderAppId,
@@ -29,14 +33,6 @@ const APP_COPY: Record<
     label: "Gemini",
     subtitle: "Google · Gemini CLI",
   },
-};
-
-const APP_ICON_BASE_URL = "/luci-static/resources/ccswitch/provider-ui/icons";
-
-const APP_ICON_FILENAMES: Record<SharedProviderAppId, string> = {
-  claude: "claude.svg",
-  codex: "openai.svg",
-  gemini: "gemini.svg",
 };
 
 type StatusTone = "success" | "accent" | "neutral" | "fail";
@@ -185,7 +181,7 @@ export function AppCard({
     recentActivity,
   });
 
-  const iconUrl = `${APP_ICON_BASE_URL}/${APP_ICON_FILENAMES[appId]}`;
+  const appIconUrl = getOpenWrtAppIconUrl(appId);
 
   if (!activeProvider) {
     return (
@@ -197,12 +193,12 @@ export function AppCard({
         aria-label={`Add a ${appCopy.label} provider`}
       >
         <div className="owt-app-card__head">
-          <div
-            className="owt-app-card__icon owt-app-card__icon--muted"
-            aria-hidden="true"
-          >
-            <img src={iconUrl} alt="" />
-          </div>
+        <div
+          className="owt-app-card__icon owt-app-card__icon--muted"
+          aria-hidden="true"
+        >
+          <img src={appIconUrl} alt="" />
+        </div>
           <div className="owt-app-card__titles">
             <h3 className="owt-app-card__title owt-app-card__title--muted">
               {appCopy.label}
@@ -257,7 +253,7 @@ export function AppCard({
     >
       <div className="owt-app-card__head">
         <div className="owt-app-card__icon" aria-hidden="true">
-          <img src={iconUrl} alt="" />
+          <img src={appIconUrl} alt="" />
         </div>
         <div className="owt-app-card__titles">
           <h3 className="owt-app-card__title">
@@ -305,7 +301,12 @@ export function AppCard({
 
       <div className="owt-app-card__active">
         <div className="owt-app-card__mini-icon" aria-hidden="true">
-          <img src={iconUrl} alt="" />
+          <OpenWrtProviderIcon
+            appId={appId}
+            name={activeProvider.name.trim() || appCopy.label}
+            size={18}
+            source={activeProvider}
+          />
         </div>
         <div className="owt-app-card__active-labels">
           <div className="owt-app-card__active-top">Active provider</div>

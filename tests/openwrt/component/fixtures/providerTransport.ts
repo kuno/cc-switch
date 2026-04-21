@@ -23,6 +23,8 @@ function toResponseProvider(provider: SharedProviderView) {
     claudeAuth: provider.claudeAuth,
     codexAuth: provider.codexAuth,
     configured: provider.configured,
+    icon: provider.icon,
+    iconColor: provider.iconColor,
     model: provider.model,
     name: provider.name,
     notes: provider.notes,

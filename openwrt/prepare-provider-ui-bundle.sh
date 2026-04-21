@@ -12,6 +12,7 @@ EMITTED_DIR="$SCRIPT_DIR/luci-app-ccswitch/htdocs/luci-static/resources/ccswitch
 STAGED_DIR="$SCRIPT_DIR/provider-ui-dist"
 STAGED_BUNDLE="$STAGED_DIR/ccswitch-provider-ui.js"
 STAGED_HOST_STYLESHEET="$STAGED_DIR/openwrt-luci-host.css"
+STAGED_ICONS_DIR="$STAGED_DIR/icons"
 OUTPUT_DIR=""
 EXPLICIT_BUNDLE="${CCSWITCH_OPENWRT_PROVIDER_UI_BUNDLE:-}"
 
@@ -50,6 +51,17 @@ copy_optional_host_stylesheet() {
 	cp "$src" "$dest"
 }
 
+sync_optional_icons_dir() {
+	src_dir="$1"
+	dest_dir="$2"
+	dest="$dest_dir/icons"
+
+	rm -rf "$dest"
+	[ -d "$src_dir" ] || return 0
+	mkdir -p "$dest"
+	cp -R "$src_dir"/. "$dest"/
+}
+
 remove_legacy_stylesheet() {
 	dest_dir="$1"
 	rm -f "$dest_dir/ccswitch-provider-ui.css"
@@ -69,7 +81,8 @@ Note:
   An explicit CCSWITCH_OPENWRT_PROVIDER_UI_BUNDLE is copied only to the
   requested output directory. It does not overwrite the canonical staged
   bundle under openwrt/provider-ui-dist/. If openwrt-luci-host.css exists in
-  the same directory, it is copied alongside the JavaScript bundle.
+  the same directory, it is copied alongside the JavaScript bundle. If an
+  icons/ directory exists next to the bundle, it is mirrored too.
 EOF
 }
 
@@ -101,6 +114,7 @@ if [ -n "$EXPLICIT_BUNDLE" ]; then
 	copy_optional_host_stylesheet \
 		"$(dirname "$EXPLICIT_BUNDLE")/openwrt-luci-host.css" \
 		"$OUTPUT_DIR"
+	sync_optional_icons_dir "$(dirname "$EXPLICIT_BUNDLE")/icons" "$OUTPUT_DIR"
 	exit 0
 fi
 
@@ -108,6 +122,7 @@ if [ -f "$STAGED_BUNDLE" ]; then
 	copy_bundle "$STAGED_BUNDLE" "$OUTPUT_DIR"
 	remove_legacy_stylesheet "$OUTPUT_DIR"
 	copy_optional_host_stylesheet "$STAGED_HOST_STYLESHEET" "$OUTPUT_DIR"
+	sync_optional_icons_dir "$STAGED_ICONS_DIR" "$OUTPUT_DIR"
 	exit 0
 fi
 
@@ -121,6 +136,7 @@ if command -v pnpm >/dev/null 2>&1; then
 	copy_bundle "$STAGED_BUNDLE" "$OUTPUT_DIR"
 	remove_legacy_stylesheet "$OUTPUT_DIR"
 	copy_optional_host_stylesheet "$STAGED_HOST_STYLESHEET" "$OUTPUT_DIR"
+	sync_optional_icons_dir "$STAGED_ICONS_DIR" "$OUTPUT_DIR"
 	exit 0
 fi
 

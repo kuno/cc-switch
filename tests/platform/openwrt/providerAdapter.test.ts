@@ -105,6 +105,47 @@ describe("OpenWrt provider adapter", () => {
     expect(state.activeProvider.name).toBe("Beta");
   });
 
+  it("preserves icon and iconColor fields from normalized provider state", async () => {
+    const transport = createTransport({
+      listProviders: vi.fn().mockResolvedValue(
+        createPhase2ListResponse("provider-b", {
+          "provider-a": {
+            provider_id: "provider-a",
+            name: "Alpha",
+            base_url: "https://alpha.example.com",
+          },
+          "provider-b": {
+            provider_id: "provider-b",
+            name: "DeepSeek",
+            base_url: "https://api.deepseek.com/anthropic",
+            icon: "deepseek",
+            icon_color: "#1E88E5",
+          },
+        }),
+      ),
+      getActiveProvider: vi.fn().mockResolvedValue({
+        ...createActiveProviderResponse("provider-b"),
+        name: "DeepSeek",
+        baseUrl: "https://api.deepseek.com/anthropic",
+        icon: "deepseek",
+        iconColor: "#1E88E5",
+        tokenField: "ANTHROPIC_AUTH_TOKEN",
+        tokenMasked: "********deepseek",
+      }),
+    });
+
+    const adapter = createOpenWrtProviderAdapter(transport);
+    const state = await adapter.listProviderState("claude");
+
+    expect(state.activeProvider.icon).toBe("deepseek");
+    expect(state.activeProvider.iconColor).toBe("#1E88E5");
+    expect(state.providers.find((provider) => provider.providerId === "provider-b"))
+      .toMatchObject({
+        icon: "deepseek",
+        iconColor: "#1E88E5",
+      });
+  });
+
   it("falls back to the phase 1 active-provider bridge when saved-provider RPCs are absent", async () => {
     const adapter = createOpenWrtProviderAdapter(createTransport());
     const state = await adapter.listProviderState("claude");

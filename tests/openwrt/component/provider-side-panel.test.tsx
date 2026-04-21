@@ -78,7 +78,6 @@ describe("ProviderSidePanel", () => {
 
     expect(dialog).toHaveAttribute("aria-modal", "true");
     expect(tabButtons.map((button) => button.textContent?.trim())).toEqual([
-      "Preset",
       "General",
       "Credentials",
     ]);
@@ -111,7 +110,7 @@ describe("ProviderSidePanel", () => {
   it("switches visible content when the tab state changes", async () => {
     const user = userEvent.setup();
 
-    render(<StatefulProviderSidePanel />);
+    const view = render(<StatefulProviderSidePanel />);
 
     expect(screen.getByLabelText("Provider name")).toBeInTheDocument();
 
@@ -122,11 +121,8 @@ describe("ProviderSidePanel", () => {
     );
     expect(screen.getByLabelText("Base URL")).toBeInTheDocument();
 
-    await user.click(
-      screen.getByRole("button", {
-        name: "Preset",
-      }),
-    );
+    view.unmount();
+    render(<StatefulProviderSidePanel initialTab="preset" />);
     expect(
       screen.getByRole("button", {
         name: /Custom draft/i,
@@ -219,6 +215,15 @@ describe("ProviderSidePanel", () => {
     expect(within(selectedRow!).getByText("claude-backup")).toHaveClass(
       "owt-provider-panel__rail-id",
     );
+    expect(
+      selectedRow!.querySelector(".owt-provider-panel__provider-mark svg title")
+        ?.textContent,
+    ).toBe("DeepSeek");
+    expect(
+      detailHead!.querySelector(
+        ".owt-provider-panel__provider-mark svg title",
+      )?.textContent,
+    ).toBe("DeepSeek");
     expect(within(selectedRow!).queryByText("Saved")).toBeNull();
     expect(
       within(detailHead!).queryByRole("button", { name: "Set active" }),

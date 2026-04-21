@@ -71,6 +71,8 @@ export interface SharedProviderView {
   providerId: string | null;
   name: string;
   baseUrl: string;
+  icon?: string;
+  iconColor?: string;
   tokenField: SharedProviderTokenField;
   tokenConfigured: boolean;
   tokenMasked: string;

@@ -30,6 +30,8 @@ type ProviderSeed = {
   active?: boolean;
   baseUrl?: string;
   configured?: boolean;
+  icon?: string;
+  iconColor?: string;
   model?: string;
   name: string;
   notes?: string;
@@ -78,6 +80,8 @@ function createProviderState(
     active: provider.active ?? provider.providerId === activeProviderId,
     baseUrl: provider.baseUrl ?? `https://${provider.providerId}.example.com`,
     configured: provider.configured ?? true,
+    icon: provider.icon,
+    iconColor: provider.iconColor,
     model: provider.model ?? "",
     name: provider.name,
     notes: provider.notes ?? "",
@@ -570,6 +574,8 @@ function createProviderStateResponse(
           active: provider.active,
           baseUrl: provider.baseUrl,
           configured: provider.configured,
+          icon: provider.icon,
+          iconColor: provider.iconColor,
           model: provider.model,
           name: provider.name,
           notes: provider.notes,
@@ -594,6 +600,8 @@ function createActiveProviderResponse(
     ok: true,
     baseUrl: state.activeProvider.baseUrl,
     configured: state.activeProvider.configured,
+    icon: state.activeProvider.icon,
+    iconColor: state.activeProvider.iconColor,
     model: state.activeProvider.model,
     name: state.activeProvider.name,
     notes: state.activeProvider.notes,

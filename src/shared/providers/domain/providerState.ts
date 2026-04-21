@@ -190,6 +190,8 @@ export function normalizeSharedProviderView(
     providerId,
     name: getString(provider, ["name"]),
     baseUrl: getString(provider, ["baseUrl", "base_url"]),
+    icon: getString(provider, ["icon"]) || undefined,
+    iconColor: getString(provider, ["iconColor", "icon_color"]) || undefined,
     tokenField:
       (getString(provider, [
         "tokenField",
