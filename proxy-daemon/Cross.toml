@@ -1,3 +1,6 @@
 # Mount repo root so #[path = "../../src-tauri/..."] directives in shared_core/services work inside cross's Docker sandbox.
 [build.env]
 volumes = ["REPO_ROOT=.."]
+
+[target.armv7-unknown-linux-musleabihf]
+pre-build = ["dpkg --add-architecture $CROSS_DEB_ARCH", "apt-get update && apt-get install --assume-yes libclang-dev clang"]
