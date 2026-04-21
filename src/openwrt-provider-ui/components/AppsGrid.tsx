@@ -111,47 +111,59 @@ function SkeletonCard({ showStats = true }: { showStats?: boolean }) {
       aria-hidden="true"
     >
       <div className="owt-app-card__head">
-        <div className="sk-icon" />
+        <div className="owt-app-card__skeleton-icon" />
         <div className="owt-app-card__titles">
-          <div className="sk-line sk-line--lg" style={{ width: "8rem" }} />
           <div
-            className="sk-line sk-line--sm"
+            className="owt-app-card__skeleton-line owt-app-card__skeleton-line--lg"
+            style={{ width: "8rem" }}
+          />
+          <div
+            className="owt-app-card__skeleton-line owt-app-card__skeleton-line--sm"
             style={{ width: "5.5rem", marginTop: "8px" }}
           />
         </div>
         <span className="owt-app-card__spacer" aria-hidden="true" />
-        <div className="sk-chip" />
+        <div className="owt-app-card__skeleton-chip" />
       </div>
 
       {showStats ? (
-        <div className="sk-active">
-          <div className="sk-mini" />
+        <div className="owt-app-card__skeleton-active">
+          <div className="owt-app-card__skeleton-mini" />
           <div className="owt-app-card__active-labels">
-            <div className="sk-line sk-line--xs" style={{ width: "5rem" }} />
             <div
-              className="sk-line sk-line--md"
+              className="owt-app-card__skeleton-line owt-app-card__skeleton-line--xs"
+              style={{ width: "5rem" }}
+            />
+            <div
+              className="owt-app-card__skeleton-line owt-app-card__skeleton-line--md"
               style={{ width: "8.5rem", marginTop: "8px" }}
             />
             <div
-              className="sk-line sk-line--sm"
+              className="owt-app-card__skeleton-line owt-app-card__skeleton-line--sm"
               style={{ width: "6.5rem", marginTop: "6px" }}
             />
           </div>
         </div>
       ) : (
-        <div className="sk-empty-cta">
-          <div className="sk-line sk-line--sm" />
-          <div className="sk-line sk-line--sm" style={{ width: "7rem" }} />
+        <div className="owt-app-card__skeleton-empty-cta">
+          <div className="owt-app-card__skeleton-line owt-app-card__skeleton-line--sm" />
+          <div
+            className="owt-app-card__skeleton-line owt-app-card__skeleton-line--sm"
+            style={{ width: "7rem" }}
+          />
         </div>
       )}
 
       {showStats ? (
-        <div className="sk-usage">
+        <div className="owt-app-card__skeleton-usage">
           {Array.from({ length: 3 }, (_, index) => (
-            <div className="sk-usage-cell" key={index}>
-              <div className="sk-line sk-line--xs" style={{ width: "3rem" }} />
+            <div className="owt-app-card__skeleton-usage-cell" key={index}>
               <div
-                className="sk-line sk-line--md"
+                className="owt-app-card__skeleton-line owt-app-card__skeleton-line--xs"
+                style={{ width: "3rem" }}
+              />
+              <div
+                className="owt-app-card__skeleton-line owt-app-card__skeleton-line--md"
                 style={{ width: "4rem", marginTop: "8px" }}
               />
             </div>
