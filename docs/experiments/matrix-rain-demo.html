@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Matrix Rain — pure CSS preview</title>
+<style>
+:root {
+  color-scheme: light dark;
+}
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: ui-sans-serif, -apple-system, "SF Pro Text", Arial;
+  background: #f5f7fa;
+  color: #1f2937;
+}
+body.dark {
+  background: #0b0f1a;
+  color: #e5e7eb;
+}
+.page {
+  max-width: 640px;
+  margin: 48px auto;
+  padding: 0 24px;
+}
+.toolbar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 24px;
+  font-size: 13px;
+  color: inherit;
+  opacity: 0.7;
+}
+.toolbar label {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  cursor: pointer;
+}
+.toolbar input[type="range"] { width: 140px; }
+
+/* ---------- App card (mimics your provider card) ---------- */
+.app-card {
+  position: relative;
+  border: 1px solid rgba(127, 127, 127, 0.25);
+  border-radius: 12px;
+  padding: 20px;
+  background: #ffffff;
+  overflow: hidden;
+  isolation: isolate;
+}
+body.dark .app-card {
+  background: #0f1624;
+  border-color: rgba(180, 200, 255, 0.15);
+}
+
+.app-head { display: flex; justify-content: space-between; align-items: flex-start; }
+.app-title { font-size: 28px; font-weight: 700; letter-spacing: -0.01em; }
+.app-sub { font-size: 13px; opacity: 0.6; margin-top: 2px; }
+.status-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px; border-radius: 999px;
+  background: rgba(72, 187, 120, 0.15);
+  color: #2f855a;
+  font-weight: 600; font-size: 13px;
+}
+body.dark .status-pill { color: #6ee7b7; background: rgba(52, 211, 153, 0.15); }
+.status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+.active-provider {
+  position: relative;
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: 1px solid rgba(127, 127, 127, 0.2);
+  border-radius: 10px;
+  background: rgba(248, 250, 252, 0.6);
+  overflow: hidden;
+  isolation: isolate;
+}
+body.dark .active-provider {
+  background: rgba(20, 28, 44, 0.55);
+  border-color: rgba(180, 200, 255, 0.1);
+}
+.active-provider__label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.55;
+  font-weight: 600;
+}
+.active-provider__name { margin-top: 2px; font-size: 16px; font-weight: 700; }
+.active-provider__url { margin-top: 2px; font-family: ui-monospace, Menlo, monospace; font-size: 13px; color: #2563eb; }
+body.dark .active-provider__url { color: #93c5fd; }
+
+/* ---------- Matrix rain (pure CSS) ---------- */
+.matrix-rain {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  opacity: var(--rain-opacity, 0.12);
+  transition: opacity 200ms;
+}
+/* Keep real content above the rain inside the active-provider panel. */
+.active-provider > :not(.matrix-rain) { position: relative; z-index: 1; }
+
+/* Rows (horizontal scroll) ------------------------------------ */
+.matrix-rain .col {
+  position: absolute;
+  left: 0;
+  color: var(--rain-color, #d97757);
+  font-family: "Courier New", ui-monospace, monospace;
+  font-size: 13px;
+  line-height: 1.15;
+  white-space: nowrap;
+  animation-name: drift;
+  animation-iteration-count: infinite;
+  animation-timing-function: linear;
+  text-shadow: 0 0 4px currentColor;
+  will-change: transform;
+}
+
+/* Log-line rows: spans flow inline with a separator, form a long horizontal strip. */
+.matrix-rain .col.log {
+  font-size: 10px;
+  line-height: 1.4;
+}
+.matrix-rain .col.log > span {
+  display: inline;
+  margin-right: 28px;
+}
+
+/* Per-app color tokens (light / dark pairs) */
+.app-card[data-app="claude"] .matrix-rain { --rain-color: #d97757; }
+.app-card[data-app="codex"]  .matrix-rain { --rain-color: #10a37f; }
+.app-card[data-app="gemini"] .matrix-rain { --rain-color: #4285f4; }
+
+body.dark .app-card[data-app="claude"] .matrix-rain { --rain-color: #f09878; }
+body.dark .app-card[data-app="codex"]  .matrix-rain { --rain-color: #34d399; }
+body.dark .app-card[data-app="gemini"] .matrix-rain { --rain-color: #7aa6f7; }
+
+@keyframes drift {
+  from { transform: translateX(110%); }
+  to   { transform: translateX(-110%); }
+}
+
+/* Row placement by vertical position. 12 rows, staggered across card height. */
+.matrix-rain .col:nth-child(1)  { top:  3%; animation-duration: calc(14s / var(--rain-speed, 1)); animation-delay: -2.3s; }
+.matrix-rain .col:nth-child(2)  { top: 11%; animation-duration: calc(20s / var(--rain-speed, 1)); animation-delay:   -0s; }
+.matrix-rain .col:nth-child(3)  { top: 19%; animation-duration: calc(16s / var(--rain-speed, 1)); animation-delay: -4.1s; }
+.matrix-rain .col:nth-child(4)  { top: 27%; animation-duration: calc(24s / var(--rain-speed, 1)); animation-delay: -1.7s; }
+.matrix-rain .col:nth-child(5)  { top: 35%; animation-duration: calc(12s / var(--rain-speed, 1)); animation-delay: -5.2s; }
+.matrix-rain .col:nth-child(6)  { top: 43%; animation-duration: calc(18s / var(--rain-speed, 1)); animation-delay: -0.4s; }
+.matrix-rain .col:nth-child(7)  { top: 51%; animation-duration: calc(22s / var(--rain-speed, 1)); animation-delay: -3.8s; }
+.matrix-rain .col:nth-child(8)  { top: 59%; animation-duration: calc(14s / var(--rain-speed, 1)); animation-delay: -1.0s; }
+.matrix-rain .col:nth-child(9)  { top: 67%; animation-duration: calc(20s / var(--rain-speed, 1)); animation-delay: -2.7s; }
+.matrix-rain .col:nth-child(10) { top: 75%; animation-duration: calc(16s / var(--rain-speed, 1)); animation-delay: -5.9s; }
+.matrix-rain .col:nth-child(11) { top: 83%; animation-duration: calc(26s / var(--rain-speed, 1)); animation-delay: -1.3s; }
+.matrix-rain .col:nth-child(12) { top: 91%; animation-duration: calc(18s / var(--rain-speed, 1)); animation-delay: -4.6s; }
+
+/* Respect users who have reduced-motion on */
+@media (prefers-reduced-motion: reduce) {
+  .matrix-rain .col { animation: none; }
+  .matrix-rain { opacity: calc(var(--rain-opacity, 0.12) * 0.6); }
+}
+
+/* Mode toggle: body class controls which columns render */
+body[data-rain-mode="glyph"] .matrix-rain .col.log { display: none; }
+body[data-rain-mode="log"]   .matrix-rain .col:not(.log) { display: none; }
+/* "both" shows everything (no hide rules) */
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="toolbar">
+    <label><input type="checkbox" id="theme"> Dark</label>
+    <label>Opacity
+      <input type="range" id="opacity" min="0" max="0.35" step="0.01" value="0.12">
+      <span id="opacityLabel">0.12</span>
+    </label>
+    <label>Speed
+      <input type="range" id="speed" min="0.2" max="3" step="0.05" value="1">
+      <span id="speedLabel">1.00×</span>
+    </label>
+    <label>Mode
+      <select id="mode">
+        <option value="glyph">Glyphs</option>
+        <option value="log" selected>Log lines</option>
+        <option value="both">Both</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="app-card" data-app="claude">
+    <div class="app-head">
+      <div>
+        <div class="app-title">Claude</div>
+        <div class="app-sub">Anthropic · Claude Code</div>
+      </div>
+      <div class="status-pill"><span class="status-dot"></span>Running</div>
+    </div>
+
+    <div class="active-provider">
+      <div class="matrix-rain" aria-hidden="true">
+        <div class="col log"><span>POST /v1/messages 200 312ms</span><span>claude-opus-4-7 · 1247 tok</span><span>[Quota] cache=hit age=42s</span><span>[Router] claude active</span><span>[FWD-001] upstream 200</span><span>refresh access_token OK</span><span>POST /v1/messages 200 289ms</span><span>claude-sonnet-4-6 · 874 tok</span><span>stream chunk 2048 bytes</span><span>[REQ-OUT] status=200</span></div>
+        <div class="col log"><span>POST /v1/messages 200 412ms</span><span>claude-opus-4-7 · 2134 tok</span><span>[CB] closed provider healthy</span><span>[Upstream] anthropic 200</span><span>cache=miss refresh OK</span><span>[REQ-IN] rid=b7ea12</span><span>stream chunk 1024 bytes</span><span>oauth refresh scheduled</span><span>POST /v1/messages 200 367ms</span><span>[Router] failover skipped</span></div>
+        <div class="col log"><span>POST /v1/messages 200 201ms</span><span>claude-sonnet-4-6 · 523 tok</span><span>[Quota] 5h=14% 7d=52%</span><span>[FWD-002] ok</span><span>rid=5be8778a</span><span>session:msg_01MG · OK</span><span>POST /v1/messages 429 retry</span><span>cache snapshot reused</span><span>latency p50=289ms</span><span>claude-opus-4-7 · 1783 tok</span></div>
+        <div class="col">ｦｱｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜ01</div>
+        <div class="col">7ﾘﾏ4ｹ9ｻ0ﾌ2ｳ8ﾀ1ｵ3ﾁ5ﾆ6ｷｸ7ﾈ9ﾖ2ﾔ4ﾚ6ﾍ8ﾏ0ﾎ3ﾉ5</div>
+        <div class="col">0110101001110010100011010010110100111001010</div>
+        <div class="col">ﾃﾂﾀﾅﾆﾇﾈﾉｼｽｾｿｨｩｪｫｬｭｮｯｰｲｴｵﾊﾋﾌﾍﾎ3457892103</div>
+        <div class="col">6ﾙﾊ3ﾁ8ﾖ2ｿ4ﾏ5ﾎ7ﾜ9ﾕ1ｸ0ﾆ2ﾅ4ﾄ6ｰ8ｩ0ｬ3ｮ5ｹ7ｺ</div>
+        <div class="col">ﾘﾙﾚﾛﾜﾝﾞﾟ01234ﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖ56789</div>
+        <div class="col">11010010110110100101101000111010100110010ﾄﾓﾐ</div>
+        <div class="col">4ｻ1ｺ8ｸ6ｹ2ｿ0ﾁ5ﾆ9ﾈ3ﾋ7ｰ1ﾂ8ｨ5ﾇ9ｬ4ｷ0ﾏ2ﾙ7ﾃﾑ</div>
+        <div class="col">ｦｧｨｩｪｫｬｭｮｯｰｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉ</div>
+        <div class="col">9ﾆ2ｽ7ﾄ5ﾍ1ｷ6ﾚ0ｰ3ﾎ8ﾔ4ﾒ2ﾑ9ｬ6ﾘ1ｨ8ﾇ0ｬ3ｶ7ｦ</div>
+        <div class="col">010011010101001101001010001100101011001101010</div>
+        <div class="col">ﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝﾞﾟ0123456789ｦｧｨｩｪｫ</div>
+      </div>
+      <div class="active-provider__label">ACTIVE PROVIDER</div>
+      <div class="active-provider__name">Claude Official</div>
+      <div class="active-provider__url">https://api.anthropic.com</div>
+    </div>
+  </div>
+
+  <div style="height: 16px"></div>
+
+  <div class="app-card" data-app="codex">
+    <div class="app-head">
+      <div>
+        <div class="app-title">Codex</div>
+        <div class="app-sub">OpenAI · Codex CLI</div>
+      </div>
+      <div class="status-pill"><span class="status-dot"></span>Running</div>
+    </div>
+
+    <div class="active-provider">
+      <div class="matrix-rain" aria-hidden="true">
+        <div class="col log"><span>POST /v1/responses 200 218ms</span><span>gpt-5.4 · 842 tok</span><span>[Quota] five_hour 13%</span><span>[Router] codex active</span><span>[REQ-IN] rid=b3c2d9</span><span>stream chunk 1536 bytes</span><span>session:resp_abc123 OK</span><span>codex device_flow poll OK</span><span>[FWD-002] upstream 200</span><span>cache=miss refresh</span></div>
+        <div class="col log"><span>POST /v1/responses 200 189ms</span><span>gpt-5.4 · 1203 tok</span><span>[CB] closed provider ok</span><span>[Upstream] openai 200</span><span>oauth.refresh_token used</span><span>[REQ-OUT] 200 latency=189</span><span>stream chunk 2048 bytes</span><span>[Router] codex selected</span><span>POST /v1/responses 200 312ms</span><span>gpt-4o-mini · 456 tok</span></div>
+        <div class="col log"><span>POST /v1/responses 200 402ms</span><span>gpt-5.4 · 1890 tok</span><span>[Quota] cache=hit age=18s</span><span>[FWD-003] ok 402ms</span><span>rid=d4f8112e</span><span>session:resp_xyz789</span><span>POST /v1/responses 200 223ms</span><span>[Router] codex failover none</span><span>token refresh in 3547s</span><span>gpt-5.4 · 987 tok</span></div>
+        <div class="col">ｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜ01</div>
+        <div class="col">3ｻ8ﾅ2ﾖ6ｹ0ｴ4ﾁ9ﾈ1ﾋ7ﾔ5ｲ2ｦ8ｷ3ｹ9ﾍ5ﾆ1ﾎ7ﾏ4ﾝ</div>
+        <div class="col">101001101100110100101100101001101101010011001</div>
+        <div class="col">ｨｩｪｫｬｭｮｯｰｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋ</div>
+        <div class="col">9ｳ5ﾊ1ｺ6ﾓ2ﾄ7ﾒ3ﾕ8ﾙ4ｨ0ｶ5ﾇ1ﾅ6ﾉ2ｽ7ｲ3ﾌ8ｾ4ﾑ0ｷ</div>
+        <div class="col">ﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙ01234ﾚﾛﾜﾝﾞﾟ56789</div>
+        <div class="col">001101010011001101001100101010011001100101010</div>
+        <div class="col">5ﾋ0ﾆ7ｽ2ﾕ9ﾁ4ｿ1ﾓ8ｪ6ﾊ3ｺ1ｨ7ﾒ4ｯ9ｰ5ﾄ2ﾔ6ｮ3ﾛ</div>
+        <div class="col">ﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝｦｧｨｩｪｫｬｭｮｯｰｱｲｳｴｵ</div>
+        <div class="col">2ｹ7ﾒ4ﾕ9ｰ1ﾉ6ｷ0ﾁ8ﾓ3ｨ5ﾐ2ﾝ7ﾌ9ｮ4ﾞ6ｻ1ﾎ8ﾟ5ｱ</div>
+        <div class="col">110100110011010010110100011100100110110101001</div>
+        <div class="col">ﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙ0123456789ｦｧｨｩｪｫ</div>
+      </div>
+      <div class="active-provider__label">ACTIVE PROVIDER</div>
+      <div class="active-provider__name">OpenAI Official</div>
+      <div class="active-provider__url">https://api.openai.com</div>
+    </div>
+  </div>
+
+  <div style="height: 16px"></div>
+
+  <div class="app-card" data-app="gemini">
+    <div class="app-head">
+      <div>
+        <div class="app-title">Gemini</div>
+        <div class="app-sub">Google · Gemini CLI</div>
+      </div>
+      <div class="status-pill"><span class="status-dot"></span>Running</div>
+    </div>
+
+    <div class="active-provider">
+      <div class="matrix-rain" aria-hidden="true">
+        <div class="col log"><span>POST /v1beta/models 200 289ms</span><span>gemini-2.0-flash · 612 tok</span><span>[Quota] day_limit 42%</span><span>[Router] gemini selected</span><span>[REQ-IN] rid=7df4c1</span><span>cache=hit age=15s</span><span>POST /v1beta/models 200 201ms</span><span>gemini-pro · 423 tok</span><span>stream chunk 892 bytes</span><span>[FWD-003] upstream 200</span></div>
+        <div class="col log"><span>POST /v1beta/models 200 178ms</span><span>gemini-2.0-flash · 334 tok</span><span>[CB] closed provider ok</span><span>[Upstream] google 200</span><span>oauth.access_token fresh</span><span>[REQ-OUT] 200 latency=178</span><span>stream chunk 1024 bytes</span><span>[Router] gemini failover none</span><span>POST /v1beta/models 200 256ms</span><span>gemini-pro · 789 tok</span></div>
+        <div class="col log"><span>POST /v1beta/models 200 312ms</span><span>gemini-2.0-flash · 1087 tok</span><span>[Quota] cache=hit age=28s</span><span>[FWD-004] ok 312ms</span><span>rid=c2f0945a</span><span>session:gem_abc456</span><span>POST /v1beta/models 200 189ms</span><span>[Router] gemini ok</span><span>token refresh in 2987s</span><span>gemini-2.0-flash · 678 tok</span></div>
+        <div class="col">ｧｨｩｪｫｬｭｮｯｰｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋ01</div>
+        <div class="col">2ﾖ7ﾕ4ﾔ9ｽ1ﾃ6ｸ0ｵ8ｯ3ﾞ5ｶ2ﾁ7ﾉ9ｻ4ﾍ6ﾘ1ﾎ8ﾊ3ﾇ</div>
+        <div class="col">011010100110010110110100101100110100101100101</div>
+        <div class="col">ﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝﾞﾟｦｧｨｩｪｫｬｭｮｯｰｱｲｳｴｵ</div>
+        <div class="col">7ｲ2ｹ9ｺ3ﾓ5ﾛ1ｰ6ｷ0ﾔ8ﾒ4ｮ2ｫ7ﾂ9ｿ5ﾆ1ﾀ6ﾊ3ﾎ8ｬ</div>
+        <div class="col">ﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚ01234ﾛﾜﾝﾞﾟ56789</div>
+        <div class="col">110010101001101100110100101101010011011010010</div>
+        <div class="col">8ｷ3ﾅ9ﾐ4ﾌ6ﾞ1ﾉ2ﾛ5ｰ7ﾞ0ｸ9ｴ3ﾄ6ｨ1ﾜ5ｯ2ﾒ8ﾏ</div>
+        <div class="col">ｪｫｬｭｮｯｰｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍ</div>
+        <div class="col">5ﾏ0ｳ6ｻ2ﾙ7ｸ9ﾍ3ﾌ8ｼ4ﾂ1ｨ6ﾐ0ﾕ2ｲ8ｽ5ﾑ9ﾝ</div>
+        <div class="col">101101010011001100110101001100101011001101011</div>
+        <div class="col">ｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉ0123456789ｦｧｨｩｪｫ</div>
+      </div>
+      <div class="active-provider__label">ACTIVE PROVIDER</div>
+      <div class="active-provider__name">Gemini (OAuth)</div>
+      <div class="active-provider__url">https://generativelanguage.googleapis.com</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const themeToggle = document.getElementById("theme");
+  themeToggle.addEventListener("change", () => {
+    document.body.classList.toggle("dark", themeToggle.checked);
+  });
+  const opacitySlider = document.getElementById("opacity");
+  const opacityLabel = document.getElementById("opacityLabel");
+  opacitySlider.addEventListener("input", () => {
+    document.documentElement.style.setProperty("--rain-opacity", opacitySlider.value);
+    opacityLabel.textContent = Number(opacitySlider.value).toFixed(2);
+  });
+  const speedSlider = document.getElementById("speed");
+  const speedLabel = document.getElementById("speedLabel");
+  speedSlider.addEventListener("input", () => {
+    document.documentElement.style.setProperty("--rain-speed", speedSlider.value);
+    speedLabel.textContent = Number(speedSlider.value).toFixed(2) + "×";
+  });
+  const modeSelect = document.getElementById("mode");
+  document.body.dataset.rainMode = modeSelect.value;
+  modeSelect.addEventListener("change", () => {
+    document.body.dataset.rainMode = modeSelect.value;
+  });
+</script>
+</body>
+</html>
