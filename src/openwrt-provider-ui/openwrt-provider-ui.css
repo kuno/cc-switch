@@ -418,6 +418,12 @@
   display: block;
 }
 
+.owt-app-card__mini-icon > span,
+.owt-provider-panel__provider-mark > span,
+.owt-provider-panel__preset-icon > span {
+  display: inline-flex;
+}
+
 .owt-app-card__icon--muted {
   background: transparent;
   border-style: dashed;
@@ -1267,6 +1273,10 @@
   object-fit: contain;
 }
 
+.owt-provider-panel__provider-mark img {
+  object-fit: contain;
+}
+
 .owt-provider-panel__provider-mark {
   width: 34px;
   height: 34px;
@@ -1725,6 +1735,33 @@
 .owt-provider-panel__preset-card[data-selected="true"] {
   border-color: color-mix(in srgb, var(--accent) 44%, transparent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.owt-provider-panel__preset-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.owt-provider-panel__preset-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 11px;
+  border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
+  background: color-mix(in srgb, var(--panel-soft) 84%, transparent);
+}
+
+.owt-provider-panel__preset-icon img {
+  object-fit: contain;
+}
+
+.owt-provider-panel__preset-copy {
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .owt-provider-panel__preset-title {
