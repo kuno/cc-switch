@@ -104,8 +104,74 @@ function getAdminListenPort() {
 	return port || DEFAULT_ADMIN_PORT;
 }
 
+function resolveDaemonHost() {
+	let ctx = cursor();
+	let host;
+
+	if (!ctx)
+		return '127.0.0.1';
+
+	ctx.load('ccswitch');
+	host = ctx.get('ccswitch', 'main', 'listen_addr');
+
+	if (host == null)
+		return '127.0.0.1';
+
+	host = trim('' + host);
+
+	if (!host || host == '0.0.0.0' || host == '::' || host == '::0')
+		return '127.0.0.1';
+
+	return host;
+}
+
+function formatDaemonHttpHost(host) {
+	if (index(host, ':') >= 0 && substr(host, 0, 1) != '[')
+		return `[${host}]`;
+
+	return host;
+}
+
+function isPathUnreservedByte(code) {
+	return (code >= 0x41 && code <= 0x5a) ||
+		(code >= 0x61 && code <= 0x7a) ||
+		(code >= 0x30 && code <= 0x39) ||
+		code == 0x2d ||
+		code == 0x2e ||
+		code == 0x5f ||
+		code == 0x7e;
+}
+
+function percentEncodePath(value) {
+	let string = value == null ? '' : '' + value;
+	let encoded = [];
+	let i, code, hex;
+
+	for (i = 0; i < length(string); i++) {
+		code = ord(string, i);
+
+		if (isPathUnreservedByte(code)) {
+			push(encoded, chr(code));
+			continue;
+		}
+
+		hex = uc(hexenc(chr(code)));
+
+		if (length(hex) < 2)
+			hex = '0' + hex;
+
+		push(encoded, '%' + hex);
+	}
+
+	return join('', encoded);
+}
+
+function buildAdminUrl(path) {
+	return `http://${formatDaemonHttpHost(resolveDaemonHost())}:${getAdminListenPort()}${path}`;
+}
+
 function runAdminHttpJson(method, path, body) {
-	let url = `http://127.0.0.1:${getAdminListenPort()}${path}`;
+	let url = buildAdminUrl(path);
 	let command = `${shellquote(CURL)} -sS -X ${shellquote(method)} --max-time 30 -H 'Content-Type: application/json' ${shellquote(url)}`;
 	let parsed;
 	let result;
@@ -406,6 +472,18 @@ function getAvailableFailoverProviders(app) {
 	);
 }
 
+function adminAppPath(app) {
+	return `/openwrt/admin/apps/${percentEncodePath(app)}`;
+}
+
+function adminProviderPath(app, providerId) {
+	return `${adminAppPath(app)}/providers/${percentEncodePath(providerId)}`;
+}
+
+function adminFailoverProviderPath(app, providerId) {
+	return `${adminAppPath(app)}/failover/providers/${percentEncodePath(providerId)}`;
+}
+
 function upsertProvider(app, providerId, provider) {
 	let normalizedApp = normalizeApp(app);
 
@@ -418,13 +496,13 @@ function upsertProvider(app, providerId, provider) {
 	if (providerId)
 		return runAdminHttpJson(
 			'PUT',
-			`/openwrt/admin/apps/${normalizedApp}/providers/${providerId}`,
+			adminProviderPath(normalizedApp, providerId),
 			provider
 		);
 
 	return runAdminHttpJson(
 		'POST',
-		`/openwrt/admin/apps/${normalizedApp}/providers`,
+		`${adminAppPath(normalizedApp)}/providers`,
 		provider
 	);
 }
@@ -440,7 +518,7 @@ function upsertActiveProvider(app, provider) {
 
 	return runAdminHttpJson(
 		'POST',
-		`/openwrt/admin/apps/${normalizedApp}/providers/active`,
+		`${adminAppPath(normalizedApp)}/providers/active`,
 		provider
 	);
 }
@@ -456,7 +534,7 @@ function deleteProvider(app, providerId) {
 
 	return runAdminHttpJson(
 		'DELETE',
-		`/openwrt/admin/apps/${normalizedApp}/providers/${providerId}`
+		adminProviderPath(normalizedApp, providerId)
 	);
 }
 
@@ -471,7 +549,7 @@ function activateProvider(app, providerId) {
 
 	return runAdminHttpJson(
 		'POST',
-		`/openwrt/admin/apps/${normalizedApp}/providers/${providerId}/activate`
+		`${adminProviderPath(normalizedApp, providerId)}/activate`
 	);
 }
 
@@ -492,7 +570,7 @@ function uploadCodexAuth(app, providerId, authJsonText) {
 
 	return runAdminHttpJson(
 		'POST',
-		`/openwrt/admin/apps/${normalizedApp}/providers/${providerId}/codex-auth`,
+		`${adminProviderPath(normalizedApp, providerId)}/codex-auth`,
 		{
 			authJsonText: '' + authJsonText
 		}
@@ -516,7 +594,7 @@ function uploadClaudeAuth(app, providerId, authJsonText) {
 
 	return runAdminHttpJson(
 		'POST',
-		`/openwrt/admin/apps/${normalizedApp}/providers/${providerId}/claude-auth`,
+		`${adminProviderPath(normalizedApp, providerId)}/claude-auth`,
 		{
 			authJsonText: '' + authJsonText
 		}
@@ -534,7 +612,7 @@ function removeCodexAuth(app, providerId) {
 
 	return runAdminHttpJson(
 		'DELETE',
-		`/openwrt/admin/apps/${normalizedApp}/providers/${providerId}/codex-auth`
+		`${adminProviderPath(normalizedApp, providerId)}/codex-auth`
 	);
 }
 
@@ -549,7 +627,7 @@ function removeClaudeAuth(app, providerId) {
 
 	return runAdminHttpJson(
 		'DELETE',
-		`/openwrt/admin/apps/${normalizedApp}/providers/${providerId}/claude-auth`
+		`${adminProviderPath(normalizedApp, providerId)}/claude-auth`
 	);
 }
 
@@ -564,7 +642,7 @@ function addToFailoverQueue(app, providerId) {
 
 	return runAdminHttpJson(
 		'POST',
-		`/openwrt/admin/apps/${normalizedApp}/failover/providers/${providerId}`
+		adminFailoverProviderPath(normalizedApp, providerId)
 	);
 }
 
@@ -579,7 +657,7 @@ function removeFromFailoverQueue(app, providerId) {
 
 	return runAdminHttpJson(
 		'DELETE',
-		`/openwrt/admin/apps/${normalizedApp}/failover/providers/${providerId}`
+		adminFailoverProviderPath(normalizedApp, providerId)
 	);
 }
 
@@ -594,7 +672,7 @@ function reorderFailoverQueue(app, providerIds) {
 
 	return runAdminHttpJson(
 		'PUT',
-		`/openwrt/admin/apps/${normalizedApp}/failover/queue`,
+		`${adminAppPath(normalizedApp)}/failover/queue`,
 		{
 			providerIds: providerIds
 		}
@@ -613,7 +691,7 @@ function setAutoFailoverEnabled(app, enabled) {
 
 	return runAdminHttpJson(
 		'PUT',
-		`/openwrt/admin/apps/${normalizedApp}/failover/auto-enabled`,
+		`${adminAppPath(normalizedApp)}/failover/auto-enabled`,
 		{
 			enabled: normalizedEnabled
 		}
@@ -631,7 +709,7 @@ function setMaxRetries(app, value) {
 
 	return runAdminHttpJson(
 		'PUT',
-		`/openwrt/admin/apps/${normalizedApp}/failover/max-retries`,
+		`${adminAppPath(normalizedApp)}/failover/max-retries`,
 		{
 			value: +value
 		}

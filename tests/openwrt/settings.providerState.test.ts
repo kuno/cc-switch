@@ -119,6 +119,18 @@ type RpcCall = {
   spec: RpcSpec;
 };
 
+type UcodeMethodRequest = {
+  args: Record<string, unknown>;
+};
+
+type UcodeMethod = {
+  call(request: UcodeMethodRequest): unknown;
+};
+
+type UcodeApi = {
+  ccswitch: Record<string, UcodeMethod>;
+};
+
 type StaticPrototypeSettings = SettingsView & {
   buildStaticPrototypeWorkspaceData(data: unknown[]): {
     apps: Record<
@@ -419,6 +431,111 @@ function loadSettingsView(selectedApp?: AppId) {
     settings,
     storage,
     uci,
+    uciState,
+  };
+}
+
+function loadOpenWrtRpcHandler(overrides?: {
+  popenOutput?: string;
+  uci?: Record<string, string>;
+}) {
+  const commands: string[] = [];
+  const uciState = new Map<string, string>([
+    ["ccswitch.main.enabled", "1"],
+    ["ccswitch.main.listen_addr", "0.0.0.0"],
+    ["ccswitch.main.listen_port", "15721"],
+    ["ccswitch.main.http_proxy", ""],
+    ["ccswitch.main.https_proxy", ""],
+    ["ccswitch.main.log_level", "info"],
+    ...Object.entries(overrides?.uci ?? {}),
+  ]);
+  const source = readFileSync(
+    path.resolve(
+      process.cwd(),
+      "openwrt/luci-app-ccswitch/root/usr/share/rpcd/ucode/ccswitch",
+    ),
+    "utf8",
+  ).replace(/^import\s+\{[^}]+\}\s+from\s+'[^']+';\n/gm, "");
+  const cursor = vi.fn(() => ({
+    commit: vi.fn(() => true),
+    get: vi.fn((config: string, section: string, option: string) => {
+      return uciState.get(`${config}.${section}.${option}`) ?? null;
+    }),
+    load: vi.fn(() => true),
+    set: vi.fn(
+      (config: string, section: string, option: string, value: unknown) => {
+        uciState.set(
+          `${config}.${section}.${option}`,
+          value == null ? "" : String(value),
+        );
+
+        return true;
+      },
+    ),
+  }));
+  const popen = vi.fn((command: string) => {
+    commands.push(command);
+
+    return {
+      close: vi.fn(() => 0),
+      read: vi.fn(() => overrides?.popenOutput ?? '{"ok":true}'),
+    };
+  });
+  const api = new Function(
+    "popen",
+    "cursor",
+    "replace",
+    "trim",
+    "json",
+    "sprintf",
+    "length",
+    "index",
+    "substr",
+    "ord",
+    "chr",
+    "hexenc",
+    "uc",
+    "push",
+    "join",
+    source,
+  )(
+    popen,
+    cursor,
+    (
+      value: unknown,
+      pattern: string | RegExp,
+      replacement: string | ((substring: string) => string),
+    ) => String(value ?? "").replace(pattern, replacement as never),
+    (value: unknown) => String(value ?? "").trim(),
+    (value: string) => {
+      try {
+        return JSON.parse(value);
+      } catch {
+        return null;
+      }
+    },
+    (format: string, value: unknown) =>
+      format === "%J" ? JSON.stringify(value) : String(value ?? ""),
+    (value: { length?: number } | null | undefined) => value?.length ?? 0,
+    (value: unknown, search: string) => String(value ?? "").indexOf(search),
+    (value: unknown, start: number, count?: number) =>
+      String(value ?? "").substr(start, count),
+    (value: unknown, offset: number) => String(value ?? "").charCodeAt(offset),
+    (code: number) => String.fromCharCode(code),
+    (value: unknown) => Buffer.from(String(value ?? ""), "utf8").toString("hex"),
+    (value: unknown) => String(value ?? "").toUpperCase(),
+    (target: unknown[], value: unknown) => {
+      target.push(value);
+      return target.length;
+    },
+    (separator: string, values: unknown[]) => values.join(separator),
+  ) as UcodeApi;
+
+  return {
+    api,
+    commands,
+    cursor,
+    popen,
     uciState,
   };
 }
@@ -1088,6 +1205,47 @@ describe("OpenWrt settings shared-provider shell", () => {
           ].includes(call.spec.method),
       ),
     ).toBe(false);
+  });
+
+  it("uses the configured listen_addr for rpcd daemon-admin mutations when the daemon is not bound to loopback", () => {
+    const { api, commands } = loadOpenWrtRpcHandler({
+      uci: {
+        "ccswitch.main.listen_addr": "10.1.2.3",
+        "ccswitch.main.listen_port": "28443",
+      },
+    });
+
+    const result = api.ccswitch.activate_provider.call({
+      args: {
+        app: "codex",
+        provider_id: "provider-a",
+      },
+    });
+
+    expect(result).toMatchObject({ ok: true });
+    expect(commands).toHaveLength(1);
+    expect(commands[0]).toContain(
+      "'http://10.1.2.3:28443/openwrt/admin/apps/codex/providers/provider-a/activate'",
+    );
+    expect(commands[0]).not.toContain("127.0.0.1");
+  });
+
+  it("percent-encodes provider IDs in rpcd daemon-admin mutation paths", () => {
+    const { api, commands } = loadOpenWrtRpcHandler();
+
+    const result = api.ccswitch.remove_from_failover_queue.call({
+      args: {
+        app: "codex",
+        provider_id: "primary route/blue",
+      },
+    });
+
+    expect(result).toMatchObject({ ok: true });
+    expect(commands).toHaveLength(1);
+    expect(commands[0]).toContain(
+      "'http://127.0.0.1:15721/openwrt/admin/apps/codex/failover/providers/primary%20route%2Fblue'",
+    );
+    expect(commands[0]).not.toContain("primary route/blue'");
   });
 
   it("builds contract-checked host bindings and nested provider.failover payload for the static prototype bridge", () => {
