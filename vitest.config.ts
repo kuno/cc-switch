@@ -14,8 +14,18 @@ const OPENWRT_TEST_GLOB = "tests/openwrt/**";
 const hasExplicitOpenWrtTarget = process.argv.some((arg) =>
   arg.includes("tests/openwrt/"),
 );
+const setupFiles = hasExplicitOpenWrtTarget
+  ? [
+      "./tests/setupGlobals.ts",
+      "./tests/setupTests.ts",
+      "./tests/openwrt/component/setup.ts",
+    ]
+  : ["./tests/setupGlobals.ts", "./tests/setupTests.ts"];
 
 export default defineConfig({
+  define: {
+    __OPENWRT_LUCI_APP_VERSION__: JSON.stringify("test"),
+  },
   plugins: [react()],
   resolve: {
     alias: {
@@ -24,7 +34,7 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
-    setupFiles: ["./tests/setupGlobals.ts", "./tests/setupTests.ts"],
+    setupFiles,
     globals: true,
     exclude: hasExplicitOpenWrtTarget
       ? DEFAULT_EXCLUDES
