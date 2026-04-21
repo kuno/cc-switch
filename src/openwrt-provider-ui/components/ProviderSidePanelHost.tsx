@@ -36,6 +36,7 @@ type ProviderSidePanelMode = "new" | "edit";
 type ProviderSidePanelViewMode = "detail" | "preset-picker";
 
 type ProviderSidePanelHostProps = {
+  onProviderMutation?: () => void;
   shell: OpenWrtSharedPageShellApi;
   transport: OpenWrtProviderTransport;
   selectedApp: SharedProviderAppId;
@@ -278,7 +279,7 @@ export const ProviderSidePanelHost = forwardRef<
   ProviderSidePanelHandle,
   ProviderSidePanelHostProps
 >(function ProviderSidePanelHost(
-  { shell, transport, selectedApp },
+  { onProviderMutation, shell, transport, selectedApp },
   ref,
 ) {
   const [open, setOpen] = useState(false);
@@ -355,9 +356,10 @@ export const ProviderSidePanelHost = forwardRef<
             event.restartRequired,
           );
           shell.showMessage(message.kind, message.text);
+          onProviderMutation?.();
         },
       }),
-    [shell, transport],
+    [onProviderMutation, shell, transport],
   );
 
   function syncSelectionFromState(

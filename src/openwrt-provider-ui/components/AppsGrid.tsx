@@ -10,6 +10,8 @@ import type {
 import { AppCard } from "./AppCard";
 
 const APP_OPTIONS: SharedProviderAppId[] = ["claude", "codex", "gemini"];
+const POLL_INTERVAL_MS = 10_000;
+const POLL_INTERVAL_BACKGROUND_MS = 0;
 
 type AppGridData = {
   appId: SharedProviderAppId;
@@ -173,27 +175,45 @@ function isConfigured(card: AppGridData): boolean {
   return card.providerState?.activeProvider.configured ?? false;
 }
 
+async function loadUsageSummaries(
+  shell: OpenWrtSharedPageMountOptions["shell"],
+): Promise<Partial<Record<SharedProviderAppId, OpenWrtUsageSummary>>> {
+  const results = await Promise.allSettled(
+    APP_OPTIONS.map(async (appId) => ({
+      appId,
+      summary: await shell.getUsageSummary(appId),
+    })),
+  );
+  const summaries: Partial<Record<SharedProviderAppId, OpenWrtUsageSummary>> =
+    {};
+
+  results.forEach((result) => {
+    if (result.status !== "fulfilled") {
+      return;
+    }
+
+    summaries[result.value.appId] = result.value.summary;
+  });
+
+  return summaries;
+}
+
 export interface AppsGridProps {
   options: OpenWrtSharedPageMountOptions;
   onOpenActivity: (appId: SharedProviderAppId) => void;
   onOpenProviderPanel: (appId: SharedProviderAppId) => void;
+  providerMutationVersion?: number;
 }
 
 export function AppsGrid({
   options,
   onOpenActivity,
   onOpenProviderPanel,
+  providerMutationVersion = 0,
 }: AppsGridProps) {
   const [cards, setCards] = useState<AppGridData[]>(() =>
     APP_OPTIONS.map(createInitialCard),
   );
-  const [refreshToken, setRefreshToken] = useState(0);
-
-  useEffect(() => {
-    return options.shell.subscribe?.(() => {
-      setRefreshToken((current) => current + 1);
-    });
-  }, [options.shell]);
 
   useEffect(() => {
     let cancelled = false;
@@ -210,7 +230,81 @@ export function AppsGrid({
     return () => {
       cancelled = true;
     };
-  }, [options, refreshToken]);
+  }, [options, providerMutationVersion]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let intervalId: number | null = null;
+    const doc = typeof document === "undefined" ? null : document;
+
+    if (!doc) {
+      return;
+    }
+
+    const clearPollingInterval = () => {
+      if (intervalId == null) {
+        return;
+      }
+
+      window.clearInterval(intervalId);
+      intervalId = null;
+    };
+
+    const getPollIntervalMs = () =>
+      doc.visibilityState === "hidden"
+        ? POLL_INTERVAL_BACKGROUND_MS
+        : POLL_INTERVAL_MS;
+
+    const refetchUsageSummaries = async () => {
+      const newSummaryByApp = await loadUsageSummaries(options.shell);
+
+      if (cancelled) {
+        return;
+      }
+
+      setCards((prev) =>
+        prev.map((card) => {
+          const nextSummary = newSummaryByApp[card.appId];
+
+          return nextSummary !== undefined
+            ? { ...card, summary: nextSummary }
+            : card;
+        }),
+      );
+    };
+
+    const startPolling = () => {
+      clearPollingInterval();
+
+      const pollIntervalMs = getPollIntervalMs();
+      if (pollIntervalMs <= 0) {
+        return;
+      }
+
+      intervalId = window.setInterval(() => {
+        void refetchUsageSummaries();
+      }, pollIntervalMs);
+    };
+
+    const handleVisibilityChange = () => {
+      if (doc.visibilityState === "hidden") {
+        clearPollingInterval();
+        return;
+      }
+
+      void refetchUsageSummaries();
+      startPolling();
+    };
+
+    doc.addEventListener("visibilitychange", handleVisibilityChange);
+    startPolling();
+
+    return () => {
+      cancelled = true;
+      clearPollingInterval();
+      doc.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [options.shell]);
 
   const hostState = options.shell.getHostState();
   const serviceRunning = options.shell.getServiceStatus().isRunning;

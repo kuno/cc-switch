@@ -216,6 +216,7 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
   );
   const [theme, setTheme] = useState<OpenWrtPageTheme>(() => getInitialTheme());
   const [saveInFlight, setSaveInFlight] = useState(false);
+  const [providerMutationVersion, setProviderMutationVersion] = useState(0);
   const previousHostDraftRef = useRef(createHostDraft(shell.getHostState()));
   const activityHostRef = useRef<ActivityDrawerHostHandle | null>(null);
   const providerPanelRef = useRef<ProviderSidePanelHandle | null>(null);
@@ -327,6 +328,7 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
             options={options}
             onOpenActivity={handleOpenActivity}
             onOpenProviderPanel={handleOpenProviderPanel}
+            providerMutationVersion={providerMutationVersion}
           />
         </section>
 
@@ -370,6 +372,9 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
         selectedApp={snapshot.host.app}
         shell={shell}
         transport={options.transport}
+        onProviderMutation={() =>
+          setProviderMutationVersion((current) => current + 1)
+        }
       />
     </div>
   );

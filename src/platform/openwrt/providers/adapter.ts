@@ -285,7 +285,7 @@ async function loadProviderState(
   transport: OpenWrtProviderTransport,
   appId: SharedProviderAppId,
 ): Promise<SharedProviderState> {
-  const [listResponse, savedResponse, activeResponse] = await Promise.all([
+  const [listResult, savedResult, activeResult] = await Promise.allSettled([
     resolveProviderStateResponse(() => transport.listProviders(appId), null, {
       compatibilityFallback: true,
       missingMessage: "Failed to load Phase 2 providers.",
@@ -307,6 +307,25 @@ async function loadProviderState(
       },
     ),
   ]);
+  const allRequestsFailed =
+    listResult.status === "rejected" &&
+    savedResult.status === "rejected" &&
+    activeResult.status === "rejected";
+
+  if (allRequestsFailed) {
+    const failure = [listResult, savedResult, activeResult].find(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+
+    throw failure?.reason instanceof Error
+      ? failure.reason
+      : new Error(String(failure?.reason ?? "Failed to load provider state."));
+  }
+
+  const listResponse = listResult.status === "fulfilled" ? listResult.value : null;
+  const savedResponse = savedResult.status === "fulfilled" ? savedResult.value : [];
+  const activeResponse =
+    activeResult.status === "fulfilled" ? activeResult.value : null;
   const activeProvider = parseActiveProviderResponse(activeResponse, appId);
 
   const phase2State =
