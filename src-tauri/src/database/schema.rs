@@ -1197,6 +1197,23 @@ impl Database {
     fn seed_model_pricing(conn: &Connection) -> Result<(), AppError> {
         let pricing_data = [
             // Claude 4.6 系列
+            // TODO: update when claude-opus-4-7 official pricing is published
+            (
+                "claude-opus-4-7",
+                "Claude Opus 4.7",
+                "5",
+                "25",
+                "0.50",
+                "6.25",
+            ),
+            (
+                "claude-opus-4-6",
+                "Claude Opus 4.6",
+                "5",
+                "25",
+                "0.50",
+                "6.25",
+            ),
             (
                 "claude-opus-4-6-20260206",
                 "Claude Opus 4.6",
@@ -1207,6 +1224,14 @@ impl Database {
             ),
             (
                 "claude-sonnet-4-6-20260217",
+                "Claude Sonnet 4.6",
+                "3",
+                "15",
+                "0.30",
+                "3.75",
+            ),
+            (
+                "claude-sonnet-4-6",
                 "Claude Sonnet 4.6",
                 "3",
                 "15",
@@ -1232,6 +1257,14 @@ impl Database {
             ),
             (
                 "claude-haiku-4-5-20251001",
+                "Claude Haiku 4.5",
+                "1",
+                "5",
+                "0.10",
+                "1.25",
+            ),
+            (
+                "claude-haiku-4-5",
                 "Claude Haiku 4.5",
                 "1",
                 "5",
