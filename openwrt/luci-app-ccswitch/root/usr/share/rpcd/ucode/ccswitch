@@ -5,8 +5,10 @@ import { cursor } from 'uci';
 
 const DATA_DIR = '/etc/cc-switch';
 const BINARY = '/usr/bin/cc-switch';
+const CURL = '/usr/bin/curl';
 const INIT_SCRIPT = '/etc/init.d/ccswitch';
 const DEFAULT_APP = 'claude';
+const DEFAULT_ADMIN_PORT = '15721';
 const CLAUDE_AUTH_UPLOAD_LIMIT = 64 * 1024;
 const CODEX_AUTH_UPLOAD_LIMIT = 64 * 1024;
 
@@ -77,6 +79,58 @@ function commandSuccess(result) {
 			ok: false,
 			code: result.code,
 			error: 'invalid JSON from daemon'
+		};
+
+	parsed.ok = true;
+
+	return parsed;
+}
+
+function getAdminListenPort() {
+	let ctx = cursor();
+	let port;
+
+	if (!ctx)
+		return DEFAULT_ADMIN_PORT;
+
+	ctx.load('ccswitch');
+	port = ctx.get('ccswitch', 'main', 'listen_port');
+
+	if (port == null)
+		return DEFAULT_ADMIN_PORT;
+
+	port = trim('' + port);
+
+	return port || DEFAULT_ADMIN_PORT;
+}
+
+function runAdminHttpJson(method, path, body) {
+	let url = `http://127.0.0.1:${getAdminListenPort()}${path}`;
+	let command = `${shellquote(CURL)} -sS -X ${shellquote(method)} --max-time 30 -H 'Content-Type: application/json' ${shellquote(url)}`;
+	let parsed;
+	let result;
+
+	if (body != null)
+		command += ` -d ${shellquote(sprintf('%J', body))}`;
+
+	result = runReadCommand(`${command} 2>&1`);
+
+	if (!result.ok)
+		return { ok: false, error: 'daemon unreachable' };
+
+	parsed = json(result.output);
+
+	if (parsed == null)
+		return {
+			ok: false,
+			code: result.code,
+			error: 'invalid JSON from daemon'
+		};
+
+	if (parsed.ok === false)
+		return {
+			ok: false,
+			error: parsed.error ? parsed.error : 'daemon request failed'
 		};
 
 	parsed.ok = true;
@@ -361,13 +415,17 @@ function upsertProvider(app, providerId, provider) {
 	if (!normalizedApp)
 		return { ok: false, error: 'unsupported app' };
 
-	let providerJson = sprintf('%J', provider);
-	let command = providerId
-		? daemonCommand(`openwrt ${shellquote(normalizedApp)} upsert-provider ${shellquote(providerId)}`)
-		: daemonCommand(`openwrt ${shellquote(normalizedApp)} upsert-provider`);
+	if (providerId)
+		return runAdminHttpJson(
+			'PUT',
+			`/openwrt/admin/apps/${normalizedApp}/providers/${providerId}`,
+			provider
+		);
 
-	return runProviderCommand(
-		`printf '%s\n' ${shellquote(providerJson)} | ${command}`
+	return runAdminHttpJson(
+		'POST',
+		`/openwrt/admin/apps/${normalizedApp}/providers`,
+		provider
 	);
 }
 
@@ -380,10 +438,10 @@ function upsertActiveProvider(app, provider) {
 	if (!normalizedApp)
 		return { ok: false, error: 'unsupported app' };
 
-	let providerJson = sprintf('%J', provider);
-
-	return runProviderCommand(
-		`printf '%s\n' ${shellquote(providerJson)} | ${daemonCommand(`openwrt ${shellquote(normalizedApp)} upsert-active-provider`)}`
+	return runAdminHttpJson(
+		'POST',
+		`/openwrt/admin/apps/${normalizedApp}/providers/active`,
+		provider
 	);
 }
 
@@ -396,8 +454,9 @@ function deleteProvider(app, providerId) {
 	if (!normalizedApp)
 		return { ok: false, error: 'unsupported app' };
 
-	return runResultCommand(
-		daemonCommand(`openwrt ${shellquote(normalizedApp)} delete-provider ${shellquote(providerId)}`)
+	return runAdminHttpJson(
+		'DELETE',
+		`/openwrt/admin/apps/${normalizedApp}/providers/${providerId}`
 	);
 }
 
@@ -410,8 +469,9 @@ function activateProvider(app, providerId) {
 	if (!normalizedApp)
 		return { ok: false, error: 'unsupported app' };
 
-	return runProviderCommand(
-		daemonCommand(`openwrt ${shellquote(normalizedApp)} activate-provider ${shellquote(providerId)}`)
+	return runAdminHttpJson(
+		'POST',
+		`/openwrt/admin/apps/${normalizedApp}/providers/${providerId}/activate`
 	);
 }
 
@@ -430,8 +490,12 @@ function uploadCodexAuth(app, providerId, authJsonText) {
 	if (!normalizedApp)
 		return { ok: false, error: 'unsupported app' };
 
-	return runResultCommand(
-		`printf '%s' ${shellquote('' + authJsonText)} | ${daemonCommand(`openwrt ${shellquote(normalizedApp)} upload-codex-auth ${shellquote(providerId)}`)}`
+	return runAdminHttpJson(
+		'POST',
+		`/openwrt/admin/apps/${normalizedApp}/providers/${providerId}/codex-auth`,
+		{
+			authJsonText: '' + authJsonText
+		}
 	);
 }
 
@@ -450,8 +514,12 @@ function uploadClaudeAuth(app, providerId, authJsonText) {
 	if (!normalizedApp)
 		return { ok: false, error: 'unsupported app' };
 
-	return runResultCommand(
-		`printf '%s' ${shellquote('' + authJsonText)} | ${daemonCommand(`openwrt ${shellquote(normalizedApp)} upload-claude-auth ${shellquote(providerId)}`)}`
+	return runAdminHttpJson(
+		'POST',
+		`/openwrt/admin/apps/${normalizedApp}/providers/${providerId}/claude-auth`,
+		{
+			authJsonText: '' + authJsonText
+		}
 	);
 }
 
@@ -464,8 +532,9 @@ function removeCodexAuth(app, providerId) {
 	if (!normalizedApp)
 		return { ok: false, error: 'unsupported app' };
 
-	return runResultCommand(
-		daemonCommand(`openwrt ${shellquote(normalizedApp)} remove-codex-auth ${shellquote(providerId)}`)
+	return runAdminHttpJson(
+		'DELETE',
+		`/openwrt/admin/apps/${normalizedApp}/providers/${providerId}/codex-auth`
 	);
 }
 
@@ -478,8 +547,9 @@ function removeClaudeAuth(app, providerId) {
 	if (!normalizedApp)
 		return { ok: false, error: 'unsupported app' };
 
-	return runResultCommand(
-		daemonCommand(`openwrt ${shellquote(normalizedApp)} remove-claude-auth ${shellquote(providerId)}`)
+	return runAdminHttpJson(
+		'DELETE',
+		`/openwrt/admin/apps/${normalizedApp}/providers/${providerId}/claude-auth`
 	);
 }
 
@@ -492,8 +562,9 @@ function addToFailoverQueue(app, providerId) {
 	if (!normalizedApp)
 		return { ok: false, error: 'unsupported app' };
 
-	return runStatusCommand(
-		daemonCommand(`openwrt ${shellquote(normalizedApp)} add-to-failover-queue ${shellquote(providerId)}`)
+	return runAdminHttpJson(
+		'POST',
+		`/openwrt/admin/apps/${normalizedApp}/failover/providers/${providerId}`
 	);
 }
 
@@ -506,8 +577,9 @@ function removeFromFailoverQueue(app, providerId) {
 	if (!normalizedApp)
 		return { ok: false, error: 'unsupported app' };
 
-	return runStatusCommand(
-		daemonCommand(`openwrt ${shellquote(normalizedApp)} remove-from-failover-queue ${shellquote(providerId)}`)
+	return runAdminHttpJson(
+		'DELETE',
+		`/openwrt/admin/apps/${normalizedApp}/failover/providers/${providerId}`
 	);
 }
 
@@ -520,10 +592,12 @@ function reorderFailoverQueue(app, providerIds) {
 	if (!normalizedApp)
 		return { ok: false, error: 'unsupported app' };
 
-	let providerIdsJson = sprintf('%J', providerIds);
-
-	return runStatusCommand(
-		`printf '%s\n' ${shellquote(providerIdsJson)} | ${daemonCommand(`openwrt ${shellquote(normalizedApp)} reorder-failover-queue`)}`
+	return runAdminHttpJson(
+		'PUT',
+		`/openwrt/admin/apps/${normalizedApp}/failover/queue`,
+		{
+			providerIds: providerIds
+		}
 	);
 }
 
@@ -537,8 +611,12 @@ function setAutoFailoverEnabled(app, enabled) {
 	if (!normalizedApp)
 		return { ok: false, error: 'unsupported app' };
 
-	return runStatusCommand(
-		daemonCommand(`openwrt ${shellquote(normalizedApp)} set-auto-failover-enabled ${shellquote(normalizedEnabled ? 'true' : 'false')}`)
+	return runAdminHttpJson(
+		'PUT',
+		`/openwrt/admin/apps/${normalizedApp}/failover/auto-enabled`,
+		{
+			enabled: normalizedEnabled
+		}
 	);
 }
 
@@ -551,8 +629,12 @@ function setMaxRetries(app, value) {
 	if (!normalizedApp)
 		return { ok: false, error: 'unsupported app' };
 
-	return runStatusCommand(
-		daemonCommand(`openwrt ${shellquote(normalizedApp)} set-max-retries ${shellquote(value)}`)
+	return runAdminHttpJson(
+		'PUT',
+		`/openwrt/admin/apps/${normalizedApp}/failover/max-retries`,
+		{
+			value: +value
+		}
 	);
 }
 
