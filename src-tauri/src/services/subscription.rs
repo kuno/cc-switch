@@ -599,14 +599,8 @@ struct CodexRateLimitWindow {
 }
 
 #[derive(Deserialize)]
-struct CodexRateLimit {
-    primary_window: Option<CodexRateLimitWindow>,
-    secondary_window: Option<CodexRateLimitWindow>,
-}
-
-#[derive(Deserialize)]
 struct CodexUsageResponse {
-    rate_limit: Option<CodexRateLimit>,
+    rate_limit: Option<serde_json::Value>,
 }
 
 /// 根据窗口秒数映射到 tier 名称（与 Claude 的命名兼容以复用前端 i18n）
@@ -696,11 +690,12 @@ pub(crate) async fn query_codex_quota(
 
     let mut tiers = Vec::new();
 
-    if let Some(rate_limit) = body.rate_limit {
-        for window in [rate_limit.primary_window, rate_limit.secondary_window]
-            .into_iter()
-            .flatten()
-        {
+    if let Some(rate_limit_obj) = body.rate_limit.as_ref().and_then(|v| v.as_object()) {
+        for (_key, window_val) in rate_limit_obj {
+            let Ok(window) = serde_json::from_value::<CodexRateLimitWindow>(window_val.clone())
+            else {
+                continue;
+            };
             if let Some(used) = window.used_percent {
                 tiers.push(QuotaTier {
                     name: window
@@ -1319,7 +1314,9 @@ fn now_millis() -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{remap_tier_name, KNOWN_TIERS};
+    use super::{remap_tier_name, window_seconds_to_tier_name, CodexRateLimitWindow, KNOWN_TIERS};
+    use crate::services::subscription::QuotaTier;
+    use serde_json::json;
 
     #[test]
     fn known_tiers_include_claude_design_upstream_name() {
@@ -1333,5 +1330,45 @@ mod tests {
             "seven_day_claude_design"
         );
         assert_eq!(remap_tier_name("seven_day"), "seven_day");
+    }
+
+    /// All windows in a wham/usage rate_limit object must produce QuotaTier entries,
+    /// including keys beyond primary_window and secondary_window.
+    #[test]
+    fn codex_quota_passes_through_all_rate_limit_windows() {
+        let rate_limit_obj = json!({
+            "primary_window":   { "used_percent": 10.0, "limit_window_seconds": 18000, "reset_at": 1700000000_i64 },
+            "secondary_window": { "used_percent": 50.0, "limit_window_seconds": 604800, "reset_at": 1700000000_i64 },
+            "tertiary_window":  { "used_percent": 75.0, "limit_window_seconds": 3600, "reset_at": 1700000000_i64 }
+        });
+
+        let mut tiers: Vec<QuotaTier> = Vec::new();
+        if let Some(obj) = rate_limit_obj.as_object() {
+            for (_key, window_val) in obj {
+                let Ok(window) =
+                    serde_json::from_value::<CodexRateLimitWindow>(window_val.clone())
+                else {
+                    continue;
+                };
+                if let Some(used) = window.used_percent {
+                    tiers.push(QuotaTier {
+                        name: window
+                            .limit_window_seconds
+                            .map(window_seconds_to_tier_name)
+                            .unwrap_or_else(|| "unknown".to_string()),
+                        utilization: used,
+                        resets_at: window
+                            .reset_at
+                            .and_then(super::unix_ts_to_iso),
+                    });
+                }
+            }
+        }
+
+        assert_eq!(tiers.len(), 3, "all three windows should produce a tier");
+        let names: Vec<&str> = tiers.iter().map(|t| t.name.as_str()).collect();
+        assert!(names.contains(&"five_hour"), "primary window → five_hour");
+        assert!(names.contains(&"seven_day"), "secondary window → seven_day");
+        assert!(names.contains(&"1_hour"), "tertiary window → 1_hour");
     }
 }
