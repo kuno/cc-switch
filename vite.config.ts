@@ -1,4 +1,5 @@
 import path from "node:path";
+import fs from "node:fs";
 import { execSync } from "node:child_process";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
@@ -12,6 +13,7 @@ const openWrtProviderUiOutDir = path.resolve(
   __dirname,
   "openwrt/provider-ui-dist",
 );
+const extractedIconDir = path.resolve(__dirname, "src/icons/extracted");
 const openWrtVisualHarnessRoot = path.resolve(
   __dirname,
   "tests/openwrt/visual/harness",
@@ -61,6 +63,33 @@ export default defineConfig(({ command }) => {
         ? openWrtVisualHarnessRoot
         : "src",
     plugins: [
+      isOpenWrtProviderUiBuild && {
+        name: "emit-openwrt-provider-icons",
+        generateBundle() {
+          const emittedByImports = new Set([
+            "dds.svg",
+            "eflowcode.png",
+            "pipellm.png",
+            "shengsuanyun.svg",
+          ]);
+
+          for (const iconFile of fs.readdirSync(extractedIconDir)) {
+            if (!/\.(svg|png)$/i.test(iconFile)) {
+              continue;
+            }
+
+            if (emittedByImports.has(iconFile)) {
+              continue;
+            }
+
+            this.emitFile({
+              type: "asset",
+              fileName: `icons/${iconFile}`,
+              source: fs.readFileSync(path.join(extractedIconDir, iconFile)),
+            });
+          }
+        },
+      },
       !isOpenWrtProviderUiBuild &&
         !isOpenWrtVisualHarnessBuild &&
         command === "serve" &&
@@ -84,6 +113,19 @@ export default defineConfig(({ command }) => {
           },
           rollupOptions: {
             output: {
+              assetFileNames: (assetInfo) => {
+                const assetName = assetInfo.name ?? "";
+
+                if (/\.css$/i.test(assetName)) {
+                  return "openwrt-luci-host.css";
+                }
+
+                if (/\.(svg|png)$/i.test(assetName)) {
+                  return "icons/[name][extname]";
+                }
+
+                return "assets/[name]-[hash][extname]";
+              },
               inlineDynamicImports: true,
             },
           },

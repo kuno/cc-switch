@@ -16,10 +16,11 @@ LUCI_SRC="$SCRIPT_DIR/luci-app-ccswitch"
 STAGED_OPENWRT_PROVIDER_UI_DIR="$SCRIPT_DIR/provider-ui-dist"
 STAGED_OPENWRT_PROVIDER_UI_BUNDLE="$STAGED_OPENWRT_PROVIDER_UI_DIR/ccswitch-provider-ui.js"
 STAGED_OPENWRT_PROVIDER_UI_HOST_STYLESHEET="$STAGED_OPENWRT_PROVIDER_UI_DIR/openwrt-luci-host.css"
+STAGED_OPENWRT_PROVIDER_UI_ICONS_DIR="$STAGED_OPENWRT_PROVIDER_UI_DIR/icons"
 OPENWRT_PROVIDER_UI_ASSET="$LUCI_SRC/htdocs/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js"
 OPENWRT_PROVIDER_UI_HOST_STYLESHEET="$LUCI_SRC/htdocs/luci-static/resources/ccswitch/provider-ui/openwrt-luci-host.css"
+OPENWRT_PROVIDER_UI_ICONS_DIR="$LUCI_SRC/htdocs/luci-static/resources/ccswitch/provider-ui/icons"
 PREPARE_PROVIDER_UI_BUNDLE="$SCRIPT_DIR/prepare-provider-ui-bundle.sh"
-OPENWRT_PROVIDER_UI_ICONS_SRC_DIR="$PROJECT_DIR/src/openwrt-provider-ui/icons"
 
 read_make_var() {
 	local file="$1"
@@ -104,6 +105,7 @@ rebuild_openwrt_provider_ui_bundle() {
 
 	[ -f "$STAGED_OPENWRT_PROVIDER_UI_BUNDLE" ] || die "pnpm reported success but did not produce: $STAGED_OPENWRT_PROVIDER_UI_BUNDLE"
 	[ -f "$STAGED_OPENWRT_PROVIDER_UI_HOST_STYLESHEET" ] || die "pnpm reported success but did not produce: $STAGED_OPENWRT_PROVIDER_UI_HOST_STYLESHEET"
+	[ -d "$STAGED_OPENWRT_PROVIDER_UI_ICONS_DIR" ] || die "pnpm reported success but did not produce: $STAGED_OPENWRT_PROVIDER_UI_ICONS_DIR"
 }
 
 ensure_openwrt_provider_ui_asset() {
@@ -122,6 +124,7 @@ ensure_openwrt_provider_ui_asset() {
 	"$PREPARE_PROVIDER_UI_BUNDLE" --output-dir "$(dirname "$OPENWRT_PROVIDER_UI_ASSET")"
 	[ -f "$OPENWRT_PROVIDER_UI_ASSET" ] || die "expected OpenWrt provider UI bundle was not produced: $OPENWRT_PROVIDER_UI_ASSET"
 	[ -f "$OPENWRT_PROVIDER_UI_HOST_STYLESHEET" ] || die "expected OpenWrt provider UI host stylesheet was not produced: $OPENWRT_PROVIDER_UI_HOST_STYLESHEET"
+	[ -d "$OPENWRT_PROVIDER_UI_ICONS_DIR" ] || die "expected OpenWrt provider UI icon directory was not produced: $OPENWRT_PROVIDER_UI_ICONS_DIR"
 }
 
 parse_args() {
@@ -240,6 +243,7 @@ assert_inputs() {
 	require_command mktemp
 	require_command file
 	require_command install
+	require_command find
 
 	[ -f "$BINARY" ] || die "binary not found: $BINARY
 Build it first with:
@@ -253,6 +257,21 @@ Build it first with:
 	[ -f "$LUCI_SRC/htdocs/luci-static/resources/view/ccswitch/settings.js" ] || die "missing LuCI settings view"
 	[ -f "$OPENWRT_PROVIDER_UI_ASSET" ] || die "missing OpenWrt provider UI bundle"
 	[ -f "$OPENWRT_PROVIDER_UI_HOST_STYLESHEET" ] || die "missing OpenWrt provider UI host stylesheet"
+	[ -d "$OPENWRT_PROVIDER_UI_ICONS_DIR" ] || die "missing OpenWrt provider UI icons directory"
+}
+
+install_openwrt_provider_ui_icons() {
+	local source_dir="$1"
+	local dest_dir="$2"
+	local icon_path rel_path
+
+	[ -d "$source_dir" ] || return 0
+
+	while IFS= read -r -d '' icon_path; do
+		rel_path="${icon_path#$source_dir/}"
+		install -d "$(dirname "$dest_dir/$rel_path")"
+		install -m 0644 "$icon_path" "$dest_dir/$rel_path"
+	done < <(find "$source_dir" -type f -print0)
 }
 
 build_daemon_binary() {
@@ -505,16 +524,6 @@ build_luci_package() {
 	local control_dir="$WORK_DIR/luci-control"
 	local data_dir="$WORK_DIR/luci-data"
 	local output="$DIST_DIR/luci-app-cc-switch_${VERSION}-${PKG_RELEASE}_all.ipk"
-	local provider_ui_icon_filenames=(
-		claude.svg
-		deepseek.svg
-		gemini.svg
-		minimax.svg
-		openai.svg
-		packycode.svg
-		qwen.svg
-	)
-	local icon_name
 
 	rm -rf "$control_dir" "$data_dir"
 	mkdir -p \
@@ -558,11 +567,9 @@ build_luci_package() {
 	install -m 0644 \
 		"$OPENWRT_PROVIDER_UI_HOST_STYLESHEET" \
 		"$data_dir/www/luci-static/resources/ccswitch/provider-ui/openwrt-luci-host.css"
-	for icon_name in "${provider_ui_icon_filenames[@]}"; do
-		install -m 0644 \
-			"$OPENWRT_PROVIDER_UI_ICONS_SRC_DIR/$icon_name" \
-			"$data_dir/www/luci-static/resources/ccswitch/provider-ui/icons/$icon_name"
-	done
+	install_openwrt_provider_ui_icons \
+		"$OPENWRT_PROVIDER_UI_ICONS_DIR" \
+		"$data_dir/www/luci-static/resources/ccswitch/provider-ui/icons"
 
 	rm -f "$output"
 	build_ipk "$control_dir" "$data_dir" "$output"
