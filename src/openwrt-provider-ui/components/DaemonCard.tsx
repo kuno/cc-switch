@@ -31,9 +31,9 @@ function getHealthTone(health: OpenWrtHostState["health"]): string {
     case "healthy":
       return "success";
     case "degraded":
-      return "accent";
+      return "warning";
     case "stopped":
-      return "neutral";
+      return "muted";
     default:
       return "neutral";
   }
@@ -120,10 +120,9 @@ export function DaemonCard({
         </div>
 
         <span
-          className="owt-daemon-health owt-status-pill"
+          className="owt-daemon-health owt-chip owt-chip--dot"
           data-tone={healthTone}
         >
-          <span className="owt-status-pill__dot" aria-hidden="true" />
           {healthLabel}
         </span>
 

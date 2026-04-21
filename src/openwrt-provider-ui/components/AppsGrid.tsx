@@ -106,7 +106,7 @@ function SkeletonCard({ showStats = true }: { showStats?: boolean }) {
       className={`owt-app-card owt-app-card--skeleton${
         showStats
           ? ""
-          : " owt-app-card--skeleton-compact owt-app-card--empty-skeleton"
+          : " owt-app-card--skeleton-dashed owt-app-card--empty-skeleton"
       }`}
       aria-hidden="true"
     >

@@ -207,7 +207,6 @@ export function AppCard({
           </div>
           <span className="owt-app-card__spacer" aria-hidden="true" />
           <span className="owt-status-pill" data-tone="neutral">
-            <span className="owt-status-pill__dot" aria-hidden="true" />
             Not configured
           </span>
         </div>

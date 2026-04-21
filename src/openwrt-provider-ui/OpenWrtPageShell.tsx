@@ -297,7 +297,7 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
       }
     >
       <main className="owt-main">
-        <section data-slot="alert-strip">
+        <section className="owt-slot owt-slot-alert" data-slot="alert-strip">
           <AlertStrip
             host={snapshot.host}
             isRunning={snapshot.isRunning}
@@ -323,7 +323,7 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
           }
         />
 
-        <section data-slot="apps-grid">
+        <section className="owt-slot owt-slot-apps" data-slot="apps-grid">
           <AppsGrid
             options={options}
             onOpenActivity={handleOpenActivity}
@@ -339,7 +339,7 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
           style={{ marginTop: 34 }}
         />
 
-        <section data-slot="daemon-card">
+        <section className="owt-slot owt-slot-daemon" data-slot="daemon-card">
           <DaemonCard
             host={snapshot.host}
             draft={hostDraft}
