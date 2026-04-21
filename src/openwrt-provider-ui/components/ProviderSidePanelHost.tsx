@@ -26,6 +26,7 @@ import {
   SHARED_PROVIDER_TOKEN_FIELD_OPTIONS,
 } from "@/shared/providers/ui/presentation";
 import type { OpenWrtSharedPageShellApi } from "../pageTypes";
+import { lockBodyScroll } from "../utils/bodyScrollLock";
 import {
   ProviderSidePanel,
   type ProviderSidePanelTab,
@@ -308,6 +309,7 @@ export const ProviderSidePanelHost = forwardRef<
   const [activatePending, setActivatePending] = useState(false);
   const [authPending, setAuthPending] = useState(false);
   const loadRequestIdRef = useRef(0);
+  const unlockBodyScrollRef = useRef<(() => void) | null>(null);
   const deferredSearch = useDeferredValue(search);
   const selectedProvider = getProviderById(providerState, selectedProviderId);
   const presetGroups = useMemo(() => buildPresetGroups(appId), [appId]);
@@ -469,11 +471,15 @@ export const ProviderSidePanelHost = forwardRef<
       return;
     }
 
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const unlockBodyScroll = lockBodyScroll();
+    unlockBodyScrollRef.current = unlockBodyScroll;
 
     return () => {
-      document.body.style.overflow = previousOverflow;
+      if (unlockBodyScrollRef.current === unlockBodyScroll) {
+        unlockBodyScrollRef.current = null;
+      }
+
+      unlockBodyScroll();
     };
   }, [open]);
 

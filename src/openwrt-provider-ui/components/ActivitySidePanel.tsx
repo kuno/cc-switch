@@ -12,6 +12,7 @@ import type {
   OpenWrtRequestLog,
   OpenWrtSharedPageShellApi,
 } from "../pageTypes";
+import { lockBodyScroll } from "../utils/bodyScrollLock";
 import { getActiveElementInTree } from "./focusTree";
 
 const ACTIVITY_DRAWER_PAGE_SIZE = 6;
@@ -273,6 +274,7 @@ export function ActivitySidePanel({
   const titleId = useId();
   const descriptionId = useId();
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const unlockBodyScrollRef = useRef<(() => void) | null>(null);
   const activeAppId = resolveAppId(appId, shell.getSelectedApp());
   const [filterMode, setFilterMode] = useState<ActivityDrawerFilterMode>("app");
   const [page, setPage] = useState(0);
@@ -402,7 +404,8 @@ export function ActivitySidePanel({
       previousActiveElementInTree instanceof HTMLElement
         ? previousActiveElementInTree
         : null;
-    const previousOverflow = document.body.style.overflow;
+    const unlockBodyScroll = lockBodyScroll();
+    unlockBodyScrollRef.current = unlockBodyScroll;
     const focusTimer = window.requestAnimationFrame(() => {
       const focusTarget =
         getFocusableElements(panelRef.current ?? document.body)[0] ??
@@ -410,8 +413,6 @@ export function ActivitySidePanel({
 
       focusTarget?.focus();
     });
-
-    document.body.style.overflow = "hidden";
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
@@ -460,7 +461,12 @@ export function ActivitySidePanel({
     return () => {
       window.cancelAnimationFrame(focusTimer);
       document.removeEventListener("keydown", handleKeyDown);
-      document.body.style.overflow = previousOverflow;
+
+      if (unlockBodyScrollRef.current === unlockBodyScroll) {
+        unlockBodyScrollRef.current = null;
+      }
+
+      unlockBodyScroll();
       previousActiveElement?.focus();
     };
   }, [onClose, open]);
