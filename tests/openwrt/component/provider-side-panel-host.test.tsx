@@ -211,12 +211,26 @@ describe("ProviderSidePanelHost", () => {
       ),
     ).toBeInTheDocument();
     expect(dialog).toHaveAttribute("data-panel-mode", "preset-picker");
-    expect(dialog).toHaveTextContent("Preset browser");
+    expect(within(dialog).queryByRole("tablist")).toBeNull();
+    expect(within(dialog).getByText("Preset browser")).toBeInTheDocument();
     expect(
       within(dialog).getByRole("button", {
         name: /Custom draft/i,
       }),
     ).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("button", {
+        name: "Cancel",
+      }),
+    ).toBeEnabled();
+    expect(
+      within(dialog).queryByRole("button", {
+        name: "Save",
+      }),
+    ).toBeNull();
+    expect(dialog).toHaveTextContent(
+      "Presets speed up setup but never save automatically.",
+    );
   });
 
   it("keeps forward tab navigation inside the panel when mounted in a shadow root", async () => {

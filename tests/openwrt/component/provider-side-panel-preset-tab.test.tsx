@@ -59,6 +59,12 @@ describe("ProviderSidePanelPresetTab", () => {
         name: /Custom draft/i,
       }),
     ).toHaveAttribute("data-selected", "true");
+    expect(
+      screen
+        .getByRole("button", { name: /OpenAI Official/i })
+        .querySelector(".owt-provider-panel__preset-icon svg title")
+        ?.textContent,
+    ).toBe("OpenAI");
 
     await user.click(
       screen.getByRole("button", {
@@ -107,10 +113,8 @@ describe("ProviderSidePanelPresetTab", () => {
       "https://api.openai.com/v1",
     );
     expect(
-      screen.getByRole("button", {
-        name: "auth.json",
-      }),
-    ).toHaveAttribute("data-active", "true");
+      screen.getByLabelText("Authentication mode"),
+    ).toHaveValue("codex_oauth");
 
     await user.click(
       screen.getByRole("button", {
