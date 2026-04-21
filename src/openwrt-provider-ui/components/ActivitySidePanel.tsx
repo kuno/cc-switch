@@ -275,6 +275,8 @@ export function ActivitySidePanel({
   const descriptionId = useId();
   const panelRef = useRef<HTMLDivElement | null>(null);
   const unlockBodyScrollRef = useRef<(() => void) | null>(null);
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
   const activeAppId = resolveAppId(appId, shell.getSelectedApp());
   const [filterMode, setFilterMode] = useState<ActivityDrawerFilterMode>("app");
   const [page, setPage] = useState(0);
@@ -417,7 +419,7 @@ export function ActivitySidePanel({
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         event.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
 
@@ -469,7 +471,7 @@ export function ActivitySidePanel({
       unlockBodyScroll();
       previousActiveElement?.focus();
     };
-  }, [onClose, open]);
+  }, [open]);
 
   function handleFilterChange(nextFilterMode: ActivityDrawerFilterMode) {
     setFilterMode(nextFilterMode);
