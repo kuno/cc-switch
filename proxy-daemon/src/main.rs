@@ -395,6 +395,75 @@ fn sync_openwrt_host_proxy_into_runtime_state(db: &database::Database) -> anyhow
     Ok(())
 }
 
+async fn startup_claude_oauth_refresh_with_refresher<R>(
+    db: &database::Database,
+    lock_manager: &services::oauth_refresh::OAuthRefreshLockManager,
+    refresher: &R,
+) where
+    R: services::oauth_refresh::OAuthTokenRefresher,
+{
+    let providers = match db.get_all_providers("claude") {
+        Ok(providers) => providers,
+        Err(error) => {
+            log::warn!(
+                "[Startup] failed to list Claude providers for eager OAuth refresh: {error}"
+            );
+            return;
+        }
+    };
+
+    for provider in providers.into_values() {
+        if provider
+            .settings_config
+            .get("auth_mode")
+            .and_then(|v| v.as_str())
+            != Some("claude_oauth")
+        {
+            continue;
+        }
+
+        let provider_id = provider.id.clone();
+        let provider_key = format!("claude:{provider_id}");
+
+        let result = services::oauth_refresh::load_or_refresh_oauth_credentials(
+            "Claude",
+            &provider_id,
+            &provider_key,
+            refresher,
+            lock_manager,
+            || {
+                services::oauth_refresh::storage::load_claude_refresh_auth_for_provider(
+                    &provider_id,
+                )
+            },
+            |stored, refreshed| {
+                services::oauth_refresh::storage::save_refreshed_claude_auth_for_provider(
+                    &provider_id,
+                    stored,
+                    refreshed,
+                )
+            },
+        )
+        .await;
+
+        if result.is_none() {
+            log::warn!("[Startup] Claude OAuth provider {provider_id} has no usable token after refresh attempt");
+        }
+    }
+}
+
+async fn startup_claude_oauth_refresh(
+    db: &database::Database,
+    lock_manager: &services::oauth_refresh::OAuthRefreshLockManager,
+) {
+    startup_claude_oauth_refresh_with_refresher(
+        db,
+        lock_manager,
+        &services::oauth_refresh::ClaudeTokenRefresher::new(),
+    )
+    .await;
+}
+
 async fn run_daemon() -> anyhow::Result<()> {
     log::info!(
         "cc-switch proxy daemon starting ({})...",
@@ -459,6 +528,16 @@ async fn run_daemon() -> anyhow::Result<()> {
         .start()
         .await
         .map_err(|e| anyhow::anyhow!("Failed to start proxy: {e}"))?;
+
+    // Eagerly refresh any Claude OAuth providers whose access_token is already
+    // expired so they are ready for the first request without needing a quota
+    // call to trigger lazy refresh.
+    if let Some(lock_manager) = proxy_service.clone_oauth_refresh_locks().await {
+        let db_for_refresh = db.clone();
+        tokio::spawn(async move {
+            startup_claude_oauth_refresh(db_for_refresh.as_ref(), &lock_manager).await;
+        });
+    }
 
     log::info!("Proxy listening on {}:{}", info.address, info.port);
 
@@ -545,6 +624,174 @@ mod tests {
             None
         );
         assert_eq!(proxy::http_client::get_current_proxy_url(), None);
+    }
+
+    // ---- startup OAuth refresh tests ----
+
+    struct TestAuthEnv {
+        _guard: std::sync::MutexGuard<'static, ()>,
+        _tmp: tempfile::TempDir,
+    }
+
+    impl TestAuthEnv {
+        fn new() -> Self {
+            let guard = env_lock().lock().expect("lock env");
+            let tmp = tempfile::TempDir::new().expect("create temp dir");
+            let data = tmp.path().join("data");
+            std::fs::create_dir_all(&data).expect("create data dir");
+            std::env::set_var("CC_SWITCH_DATA_DIR", &data);
+            Self {
+                _guard: guard,
+                _tmp: tmp,
+            }
+        }
+
+        fn claude_auth_path(&self, provider_id: &str) -> std::path::PathBuf {
+            self._tmp
+                .path()
+                .join("data")
+                .join("claude_auth")
+                .join(format!("{provider_id}.json"))
+        }
+    }
+
+    impl Drop for TestAuthEnv {
+        fn drop(&mut self) {
+            std::env::remove_var("CC_SWITCH_DATA_DIR");
+        }
+    }
+
+    fn expired_claude_auth_json() -> Vec<u8> {
+        serde_json::json!({
+            "claudeAiOauth": {
+                "accessToken": "expired-access-token",
+                "refreshToken": "valid-refresh-token",
+                "expiresAt": 1_738_000_000_000i64,
+                "scopes": ["user:inference"]
+            }
+        })
+        .to_string()
+        .into_bytes()
+    }
+
+    struct MockRefresher {
+        new_access_token: String,
+    }
+
+    #[async_trait::async_trait]
+    impl services::oauth_refresh::OAuthTokenRefresher for MockRefresher {
+        async fn refresh(
+            &self,
+            _refresh_token: &str,
+        ) -> Result<
+            services::oauth_refresh::RefreshedCredentials,
+            services::oauth_refresh::OAuthRefreshError,
+        > {
+            Ok(services::oauth_refresh::RefreshedCredentials {
+                access_token: self.new_access_token.clone(),
+                expires_at_ms: chrono::Utc::now().timestamp_millis() + 3_600_000,
+                refresh_token: Some("rotated-refresh-token".to_string()),
+                extra: serde_json::Value::Null,
+            })
+        }
+    }
+
+    fn insert_claude_oauth_provider(db: &database::Database, provider_id: &str) {
+        let provider = crate::provider::Provider {
+            id: provider_id.to_string(),
+            name: "Claude OAuth".to_string(),
+            settings_config: serde_json::json!({ "auth_mode": "claude_oauth" }),
+            website_url: None,
+            category: None,
+            created_at: None,
+            sort_index: None,
+            notes: None,
+            meta: None,
+            icon: None,
+            icon_color: None,
+            in_failover_queue: false,
+        };
+        db.save_provider("claude", &provider)
+            .expect("save provider");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn startup_refresh_updates_expired_claude_oauth_token() {
+        let env = TestAuthEnv::new();
+        let db = database::Database::memory().expect("db");
+
+        insert_claude_oauth_provider(&db, "claude-oauth");
+
+        let auth_dir = env._tmp.path().join("data").join("claude_auth");
+        std::fs::create_dir_all(&auth_dir).expect("create auth dir");
+        std::fs::write(
+            auth_dir.join("claude-oauth.json"),
+            expired_claude_auth_json(),
+        )
+        .expect("write expired auth");
+
+        let lock_manager = services::oauth_refresh::OAuthRefreshLockManager::new();
+        let refresher = MockRefresher {
+            new_access_token: "refreshed-access-token".to_string(),
+        };
+
+        startup_claude_oauth_refresh_with_refresher(&db, &lock_manager, &refresher).await;
+
+        let updated =
+            services::oauth_refresh::storage::load_claude_refresh_auth_for_provider("claude-oauth")
+                .expect("load auth")
+                .expect("auth present");
+        assert_eq!(updated.access_token, "refreshed-access-token");
+        assert_eq!(
+            updated.refresh_token.as_deref(),
+            Some("rotated-refresh-token")
+        );
+        assert!(updated
+            .expires_at_ms
+            .is_some_and(|t| t > chrono::Utc::now().timestamp_millis()));
+
+        drop(env);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn startup_refresh_skips_non_oauth_claude_providers() {
+        let env = TestAuthEnv::new();
+        let db = database::Database::memory().expect("db");
+
+        // Insert a provider with plain API key (not claude_oauth).
+        let provider = crate::provider::Provider {
+            id: "claude-apikey".to_string(),
+            name: "Claude API Key".to_string(),
+            settings_config: serde_json::json!({
+                "env": { "ANTHROPIC_API_KEY": "sk-ant-key" }
+            }),
+            website_url: None,
+            category: None,
+            created_at: None,
+            sort_index: None,
+            notes: None,
+            meta: None,
+            icon: None,
+            icon_color: None,
+            in_failover_queue: false,
+        };
+        db.save_provider("claude", &provider)
+            .expect("save provider");
+
+        let lock_manager = services::oauth_refresh::OAuthRefreshLockManager::new();
+        let refresher = MockRefresher {
+            new_access_token: "should-not-be-called".to_string(),
+        };
+
+        // Should complete without touching any auth file.
+        startup_claude_oauth_refresh_with_refresher(&db, &lock_manager, &refresher).await;
+
+        // No auth file should have been created.
+        assert!(!env.claude_auth_path("claude-apikey").exists());
+
+        drop(env);
     }
 }
 
