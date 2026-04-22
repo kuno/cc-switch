@@ -1528,7 +1528,7 @@ mod tests {
     }
 
     #[test]
-    fn test_transform_claude_request_for_api_format_openai_chat_keeps_explicit_prompt_cache_key() {
+    fn test_transform_claude_request_for_api_format_openai_chat_drops_prompt_cache_key() {
         let provider = create_provider_with_meta(
             json!({
                 "env": {
@@ -1552,6 +1552,6 @@ mod tests {
             transform_claude_request_for_api_format(body, &provider, "openai_chat", None, None)
                 .unwrap();
 
-        assert_eq!(transformed["prompt_cache_key"], "claude-cache-route");
+        assert_eq!(transformed["prompt_cache_key"], serde_json::Value::Null);
     }
 }
