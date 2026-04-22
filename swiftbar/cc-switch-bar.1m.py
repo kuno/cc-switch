@@ -59,16 +59,8 @@ def bar_graph(ratio, width=10):
 def format_reset(epoch):
     if epoch is None:
         return ""
-    dt = datetime.fromtimestamp(epoch, tz=timezone.utc)
-    now = datetime.now(tz=timezone.utc)
-    secs = int((dt - now).total_seconds())
-    if secs <= 0:
-        return "now"
-    hours, rem = divmod(secs, 3600)
-    mins = rem // 60
-    if hours > 0:
-        return f"{hours}h{mins}m"
-    return f"{mins}m"
+    dt = datetime.fromtimestamp(epoch, tz=timezone.utc).astimezone()
+    return dt.strftime("%b %d %H:%M")
 
 
 def format_ago(captured):

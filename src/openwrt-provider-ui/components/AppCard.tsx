@@ -147,16 +147,33 @@ function getStatus({
 
 function formatReset(reset: number | null | undefined): string {
   if (!reset) return "—";
-  return new Date(reset * 1000).toLocaleDateString("en-US", {
+  const parts = new Intl.DateTimeFormat(undefined, {
     month: "short",
     day: "numeric",
-  });
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date(reset * 1000));
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+  const hour = parts.find((part) => part.type === "hour")?.value;
+  const minute = parts.find((part) => part.type === "minute")?.value;
+  if (!month || !day || !hour || !minute) return "—";
+  return `${month} ${day} ${hour}:${minute}`;
 }
 
 function utilBarClass(util: number | null | undefined): string {
   if (util == null) return "owt-quota-bar--success";
   if (util >= 0.8) return "owt-quota-bar--danger";
   if (util >= 0.6) return "owt-quota-bar--warning";
+  return "owt-quota-bar--success";
+}
+
+function remainingBarClass(util: number | null | undefined): string {
+  if (util == null) return "owt-quota-bar--success";
+  const remaining = 1 - util;
+  if (remaining <= 0.2) return "owt-quota-bar--danger";
+  if (remaining <= 0.4) return "owt-quota-bar--warning";
   return "owt-quota-bar--success";
 }
 
@@ -172,15 +189,22 @@ function formatBalanceAmount(amount: number, currency: string): string {
 }
 
 function WindowRow({ window: w }: { window: QuotaWindow }) {
-  const pct = w.utilization != null ? Math.round(w.utilization * 100) : null;
-  const barClass = utilBarClass(w.utilization);
+  const pct =
+    w.utilization != null
+      ? Math.max(0, Math.min(100, Math.round((1 - w.utilization) * 100)))
+      : null;
+  const fillPct =
+    w.utilization != null
+      ? Math.max(0, Math.min(100, Number(((1 - w.utilization) * 100).toFixed(2))))
+      : null;
+  const barClass = remainingBarClass(w.utilization);
 
   return (
     <div className="owt-quota-row">
       <div className="owt-quota-row__label">
         <span className="owt-quota-row__name">{w.name}</span>
         {pct != null && (
-          <span className="owt-quota-row__pct">{pct}% used</span>
+          <span className="owt-quota-row__pct">{pct}% remaining</span>
         )}
         {w.reset != null && (
           <span className="owt-quota-row__reset">
@@ -188,11 +212,11 @@ function WindowRow({ window: w }: { window: QuotaWindow }) {
           </span>
         )}
       </div>
-      {pct != null && (
+      {fillPct != null && (
         <div className="owt-quota-bar" aria-hidden="true">
           <div
             className={`owt-quota-bar__fill ${barClass}`}
-            style={{ width: `${Math.min(100, pct)}%` }}
+            style={{ width: `${fillPct}%` }}
           />
         </div>
       )}
