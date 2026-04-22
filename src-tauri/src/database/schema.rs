@@ -1725,6 +1725,14 @@ impl Database {
                 "0.30",
                 "3.75",
             ),
+            (
+                "claude-sonnet-4-6",
+                "Claude Sonnet 4.6",
+                "3",
+                "15",
+                "0.30",
+                "3.75",
+            ),
             // Claude 4.5 系列
             (
                 "claude-opus-4-5-20251101",
@@ -1744,6 +1752,14 @@ impl Database {
             ),
             (
                 "claude-haiku-4-5-20251001",
+                "Claude Haiku 4.5",
+                "1",
+                "5",
+                "0.10",
+                "1.25",
+            ),
+            (
+                "claude-haiku-4-5",
                 "Claude Haiku 4.5",
                 "1",
                 "5",
