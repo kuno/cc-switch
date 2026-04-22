@@ -729,6 +729,12 @@ export function createPlainPageShellBridge(
     async getProviderStats(appId) {
       return providerStats[appId] ?? [];
     },
+    async getQuota() {
+      return {
+        providers: [],
+        timestamp: "2026-04-22T00:00:00.000Z",
+      };
+    },
     async getRequestDetail(appId, requestId) {
       return requestDetails[appId]?.[requestId] ?? null;
     },

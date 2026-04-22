@@ -386,6 +386,12 @@ var callGetRecentActivity = rpc.declare({
 	expect: { '': {} }
 });
 
+var callGetQuota = rpc.declare({
+	object: 'ccswitch',
+	method: 'get_quota',
+	expect: { '': {} }
+});
+
 var callGetRequestLogs = rpc.declare({
 	object: 'ccswitch',
 	method: 'get_request_logs',
@@ -540,6 +546,10 @@ function callOpenWrtRecentActivity(appId) {
 	}, function () {
 		return L.resolveDefault(callGetRecentActivity(appId), { ok: false });
 	});
+}
+
+function callOpenWrtQuota() {
+	return callGetQuota();
 }
 
 function normalizeOptionalNonNegativeInteger(value, fallbackValue) {
@@ -1423,6 +1433,15 @@ return view.extend({
 				throw new Error(this.rpcFailureMessage(response) || _('Failed to load recent activity.'));
 
 			return this.normalizeRecentActivity(response);
+		}, this));
+	},
+
+	loadNativeQuota: function () {
+		return L.resolveDefault(callOpenWrtQuota(), { ok: false }).then(L.bind(function (response) {
+			if (!response || typeof response !== 'object' || response.ok === false || response.success === false)
+				throw new Error(this.rpcFailureMessage(response) || _('Failed to load quota.'));
+
+			return response;
 		}, this));
 	},
 
@@ -2727,6 +2746,9 @@ return view.extend({
 			},
 			getRecentActivity: async function (appId) {
 				return self.loadNativeRecentActivity(appId || uiState.selectedApp);
+			},
+			getQuota: async function () {
+				return self.loadNativeQuota();
 			},
 			getRequestLogs: async function (appId, page, pageSize) {
 				return self.loadNativeRequestLogs(appId || uiState.selectedApp, page, pageSize);
