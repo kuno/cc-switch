@@ -9,6 +9,11 @@ import type {
   OpenWrtRecentActivityItem,
   OpenWrtUsageSummary,
 } from "../pageTypes";
+import type {
+  BalanceSnapshot,
+  ProviderQuotaSnapshot,
+  QuotaWindow,
+} from "../types/quota";
 import {
   getOpenWrtAppIconUrl,
   OpenWrtProviderIcon,
@@ -140,6 +145,129 @@ function getStatus({
   return { label: "Running", tone: "success" };
 }
 
+function formatReset(reset: number | null | undefined): string {
+  if (!reset) return "—";
+  return new Date(reset * 1000).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function utilBarClass(util: number | null | undefined): string {
+  if (util == null) return "owt-quota-bar--success";
+  if (util >= 0.8) return "owt-quota-bar--danger";
+  if (util >= 0.6) return "owt-quota-bar--warning";
+  return "owt-quota-bar--success";
+}
+
+function formatBalanceAmount(amount: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency,
+    }).format(amount);
+  } catch {
+    return `${amount.toFixed(2)} ${currency}`;
+  }
+}
+
+function WindowRow({ window: w }: { window: QuotaWindow }) {
+  const pct = w.utilization != null ? Math.round(w.utilization * 100) : null;
+  const barClass = utilBarClass(w.utilization);
+
+  return (
+    <div className="owt-quota-row">
+      <div className="owt-quota-row__label">
+        <span className="owt-quota-row__name">{w.name}</span>
+        {pct != null && (
+          <span className="owt-quota-row__pct">{pct}% used</span>
+        )}
+        {w.reset != null && (
+          <span className="owt-quota-row__reset">
+            resets {formatReset(w.reset)}
+          </span>
+        )}
+      </div>
+      {pct != null && (
+        <div className="owt-quota-bar" aria-hidden="true">
+          <div
+            className={`owt-quota-bar__fill ${barClass}`}
+            style={{ width: `${Math.min(100, pct)}%` }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BalanceRow({ balance }: { balance: BalanceSnapshot }) {
+  const currency = balance.currency ?? "USD";
+  const remaining = balance.remaining ?? 0;
+  const isInvalid = balance.is_valid === false || remaining <= 0;
+  const formattedRemaining = formatBalanceAmount(remaining, currency);
+  const hasTotal =
+    balance.total != null && balance.total > 0;
+  const usedAmount = balance.used ?? (hasTotal ? (balance.total ?? 0) - remaining : null);
+  const fillPct =
+    hasTotal && balance.total != null && balance.total > 0
+      ? Math.min(100, Math.round(((usedAmount ?? 0) / balance.total) * 100))
+      : null;
+  const barClass = isInvalid
+    ? "owt-quota-bar--danger"
+    : utilBarClass(fillPct != null ? fillPct / 100 : null);
+
+  return (
+    <div className="owt-quota-row">
+      <div className="owt-quota-row__label">
+        <span
+          className={`owt-quota-row__name${isInvalid ? " owt-quota-row__name--invalid" : ""}`}
+        >
+          {formattedRemaining} remaining
+          {hasTotal && balance.total != null
+            ? ` / ${formatBalanceAmount(balance.total, currency)}`
+            : null}
+        </span>
+        {isInvalid && balance.invalid_message ? (
+          <span className="owt-quota-row__invalid-msg">
+            {balance.invalid_message}
+          </span>
+        ) : null}
+      </div>
+      {fillPct != null && (
+        <div className="owt-quota-bar" aria-hidden="true">
+          <div
+            className={`owt-quota-bar__fill ${barClass}`}
+            style={{ width: `${fillPct}%` }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function QuotaBand({ snapshot }: { snapshot: ProviderQuotaSnapshot }) {
+  const hasWindows = snapshot.windows.length > 0;
+  const activeBalances = snapshot.balances?.filter(
+    (b) => b.remaining != null || b.total != null,
+  );
+  const hasBalances = (activeBalances?.length ?? 0) > 0;
+
+  if (!hasWindows && !hasBalances) return null;
+
+  return (
+    <div className="owt-quota-band">
+      <div className="owt-quota-band__label">Quota</div>
+      {hasWindows
+        ? snapshot.windows.map((w, i) => (
+            <WindowRow key={`${w.name}-${i}`} window={w} />
+          ))
+        : activeBalances!.map((b, i) => (
+            <BalanceRow key={i} balance={b} />
+          ))}
+    </div>
+  );
+}
+
 export interface AppCardProps {
   appId: SharedProviderAppId;
   hostState: OpenWrtHostState;
@@ -150,6 +278,7 @@ export interface AppCardProps {
   recentActivity: OpenWrtRecentActivityItem[];
   loading: boolean;
   error: string | null;
+  quotaSnapshot?: ProviderQuotaSnapshot;
   onOpenActivity: (appId: SharedProviderAppId) => void;
   onOpenProviderPanel: (appId: SharedProviderAppId) => void;
 }
@@ -163,6 +292,7 @@ export function AppCard({
   recentActivity,
   loading,
   error,
+  quotaSnapshot,
   onOpenActivity,
   onOpenProviderPanel,
 }: AppCardProps) {
@@ -336,6 +466,8 @@ export function AppCard({
           </div>
         </div>
       </div>
+
+      {quotaSnapshot ? <QuotaBand snapshot={quotaSnapshot} /> : null}
 
       {error ? <p className="owt-app-card__telemetry-note">{error}</p> : null}
     </div>

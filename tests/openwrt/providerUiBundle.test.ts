@@ -1043,6 +1043,9 @@ describe("OpenWrt provider UI bundle", () => {
         page: 0,
         pageSize: 6,
       }),
+      getQuota: vi
+        .fn()
+        .mockResolvedValue({ providers: [], timestamp: "2026-04-22T00:00:00Z" }),
       getSelectedApp: vi.fn().mockImplementation(() => selectedApp),
       getUsageSummary: vi.fn().mockResolvedValue({
         totalRequests: 12,
@@ -1501,6 +1504,9 @@ describe("OpenWrt provider UI bundle", () => {
         inFlight: false,
         pending: false,
       }),
+      getQuota: vi
+        .fn()
+        .mockResolvedValue({ providers: [], timestamp: "2026-04-22T00:00:00Z" }),
       getServiceStatus: vi.fn().mockReturnValue({ isRunning: true }),
       getUsageSummary: vi.fn().mockResolvedValue({
         totalRequests: 0,
