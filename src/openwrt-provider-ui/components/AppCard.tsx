@@ -245,7 +245,7 @@ function BalanceRow({ balance }: { balance: BalanceSnapshot }) {
   );
 }
 
-function QuotaBand({ snapshot }: { snapshot: ProviderQuotaSnapshot }) {
+function QuotaBand({ snapshot, hideLabel }: { snapshot: ProviderQuotaSnapshot; hideLabel?: boolean }) {
   const hasWindows = snapshot.windows.length > 0;
   const activeBalances = snapshot.balances?.filter(
     (b) => b.remaining != null || b.total != null,
@@ -256,7 +256,7 @@ function QuotaBand({ snapshot }: { snapshot: ProviderQuotaSnapshot }) {
 
   return (
     <div className="owt-quota-band">
-      <div className="owt-quota-band__label">Quota</div>
+      {!hideLabel && <div className="owt-quota-band__label">Quota</div>}
       {hasWindows
         ? snapshot.windows.map((w, i) => (
             <WindowRow key={`${w.name}-${i}`} window={w} />
@@ -430,23 +430,26 @@ export function AppCard({
       </div>
 
       <div className="owt-app-card__active">
-        <div className="owt-app-card__mini-icon" aria-hidden="true">
-          <OpenWrtProviderIcon
-            appId={appId}
-            name={activeProvider.name.trim() || appCopy.label}
-            size={18}
-            source={activeProvider}
-          />
-        </div>
-        <div className="owt-app-card__active-labels">
-          <div className="owt-app-card__active-top">Active provider</div>
-          <div className="owt-app-card__active-main">
-            {activeProvider.name.trim() || "Unnamed provider"}
+        <div className="owt-app-card__active-row">
+          <div className="owt-app-card__mini-icon" aria-hidden="true">
+            <OpenWrtProviderIcon
+              appId={appId}
+              name={activeProvider.name.trim() || appCopy.label}
+              size={18}
+              source={activeProvider}
+            />
           </div>
-          <div className="owt-app-card__active-endpoint">
-            {activeProvider.baseUrl.trim() || "Endpoint unavailable"}
+          <div className="owt-app-card__active-labels">
+            <div className="owt-app-card__active-top">Active provider</div>
+            <div className="owt-app-card__active-main">
+              {activeProvider.name.trim() || "Unnamed provider"}
+            </div>
+            <div className="owt-app-card__active-endpoint">
+              {activeProvider.baseUrl.trim() || "Endpoint unavailable"}
+            </div>
           </div>
         </div>
+        {quotaSnapshot ? <QuotaBand snapshot={quotaSnapshot} hideLabel /> : null}
       </div>
 
       <div className="owt-app-card__usage">
@@ -467,7 +470,6 @@ export function AppCard({
         </div>
       </div>
 
-      {quotaSnapshot ? <QuotaBand snapshot={quotaSnapshot} /> : null}
 
       {error ? <p className="owt-app-card__telemetry-note">{error}</p> : null}
     </div>
