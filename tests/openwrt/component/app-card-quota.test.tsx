@@ -1,7 +1,8 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppCard } from "@/openwrt-provider-ui/components/AppCard";
 import type { ProviderQuotaSnapshot } from "@/openwrt-provider-ui/types/quota";
+import { formatResetDelta } from "@/openwrt-provider-ui/utils/formatResetDelta";
 import {
   createProviderStat,
   createRecentActivity,
@@ -78,12 +79,51 @@ function renderCardWithQuota(quota: ProviderQuotaSnapshot | undefined) {
   );
 }
 
-describe("AppCard quota band", () => {
-  it("renders window name and utilisation percentage for a subscription snapshot", () => {
-    renderCardWithQuota(makeWindowSnapshot());
+function renderQuotaBarForUtilization(utilization: number) {
+  return renderCardWithQuota(
+    makeWindowSnapshot({
+      windows: [
+        {
+          name: "Monthly tokens",
+          utilization,
+          reset: 1_800_000_000,
+        },
+      ],
+    }),
+  );
+}
 
-    expect(screen.getByText("Monthly tokens")).toBeInTheDocument();
-    expect(screen.getByText("42% used")).toBeInTheDocument();
+describe("AppCard quota band", () => {
+  it("renders window name, remaining quota, reset delta, and a draining bar for a subscription snapshot", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+
+    try {
+      const reset = Math.trunc(Date.now() / 1000) + 3 * 3600 + 42 * 60;
+      const { container } = renderCardWithQuota(
+        makeWindowSnapshot({
+          windows: [
+            {
+              name: "Monthly tokens",
+              utilization: 0.42,
+              reset,
+            },
+          ],
+        }),
+      );
+
+      expect(screen.getByText("Monthly tokens")).toBeInTheDocument();
+      expect(screen.getByText("58% remaining")).toBeInTheDocument();
+      expect(screen.getByText("resets 3h42m")).toBeInTheDocument();
+      expect(container.querySelector(".owt-quota-bar__fill")).toHaveClass(
+        "owt-quota-bar--success",
+      );
+      expect(container.querySelector(".owt-quota-bar__fill")).toHaveStyle({
+        width: "58%",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("renders currency-formatted remaining balance for a balance snapshot", () => {
@@ -106,5 +146,64 @@ describe("AppCard quota band", () => {
     const { container } = renderCardWithQuota(undefined);
 
     expect(container.querySelector(".owt-quota-band")).toBeNull();
+  });
+
+  describe("formatResetDelta", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("returns an empty string for null input", () => {
+      expect(formatResetDelta(null)).toBe("");
+    });
+
+    it("returns now for past timestamps", () => {
+      const past = Math.trunc(Date.now() / 1000) - 1;
+
+      expect(formatResetDelta(past)).toBe("now");
+    });
+
+    it("formats minute-only deltas without a leading hour segment", () => {
+      const reset = Math.trunc(Date.now() / 1000) + 42 * 60;
+
+      expect(formatResetDelta(reset)).toBe("42m");
+    });
+
+    it("formats hour and minute deltas", () => {
+      const reset = Math.trunc(Date.now() / 1000) + 3 * 3600 + 42 * 60;
+
+      expect(formatResetDelta(reset)).toBe("3h42m");
+    });
+  });
+
+  describe("WindowRow remaining thresholds", () => {
+    it("uses the danger class when 15% remains", () => {
+      const { container } = renderQuotaBarForUtilization(0.85);
+
+      expect(container.querySelector(".owt-quota-bar__fill")).toHaveClass(
+        "owt-quota-bar--danger",
+      );
+    });
+
+    it("uses the warning class when 35% remains", () => {
+      const { container } = renderQuotaBarForUtilization(0.65);
+
+      expect(container.querySelector(".owt-quota-bar__fill")).toHaveClass(
+        "owt-quota-bar--warning",
+      );
+    });
+
+    it("uses the success class when 70% remains", () => {
+      const { container } = renderQuotaBarForUtilization(0.3);
+
+      expect(container.querySelector(".owt-quota-bar__fill")).toHaveClass(
+        "owt-quota-bar--success",
+      );
+    });
   });
 });
