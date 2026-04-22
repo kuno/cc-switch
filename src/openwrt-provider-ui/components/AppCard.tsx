@@ -18,6 +18,7 @@ import {
   getOpenWrtAppIconUrl,
   OpenWrtProviderIcon,
 } from "../providerIcons";
+import { formatResetDelta } from "../utils/formatResetDelta";
 
 const APP_COPY: Record<
   SharedProviderAppId,
@@ -145,18 +146,17 @@ function getStatus({
   return { label: "Running", tone: "success" };
 }
 
-function formatReset(reset: number | null | undefined): string {
-  if (!reset) return "—";
-  return new Date(reset * 1000).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  });
-}
-
 function utilBarClass(util: number | null | undefined): string {
   if (util == null) return "owt-quota-bar--success";
   if (util >= 0.8) return "owt-quota-bar--danger";
   if (util >= 0.6) return "owt-quota-bar--warning";
+  return "owt-quota-bar--success";
+}
+
+function remainingBarClass(remainingPct: number | null): string {
+  if (remainingPct == null) return "owt-quota-bar--success";
+  if (remainingPct <= 20) return "owt-quota-bar--danger";
+  if (remainingPct <= 40) return "owt-quota-bar--warning";
   return "owt-quota-bar--success";
 }
 
@@ -172,27 +172,37 @@ function formatBalanceAmount(amount: number, currency: string): string {
 }
 
 function WindowRow({ window: w }: { window: QuotaWindow }) {
-  const pct = w.utilization != null ? Math.round(w.utilization * 100) : null;
-  const barClass = utilBarClass(w.utilization);
+  const remainingRatio =
+    w.utilization != null ? Math.max(0, Math.min(1, 1 - w.utilization)) : null;
+  const remainingPct =
+    remainingRatio != null
+      ? Math.max(0, Math.min(100, Math.trunc(remainingRatio * 100)))
+      : null;
+  const remainingWidth =
+    remainingRatio != null
+      ? Math.max(0, Math.min(100, Math.round(remainingRatio * 1000) / 10))
+      : null;
+  const barClass = remainingBarClass(remainingPct);
+  const resetLabel = formatResetDelta(w.reset);
 
   return (
     <div className="owt-quota-row">
       <div className="owt-quota-row__label">
         <span className="owt-quota-row__name">{w.name}</span>
-        {pct != null && (
-          <span className="owt-quota-row__pct">{pct}% used</span>
+        {remainingPct != null && (
+          <span className="owt-quota-row__pct">{remainingPct}% remaining</span>
         )}
-        {w.reset != null && (
+        {resetLabel && (
           <span className="owt-quota-row__reset">
-            resets {formatReset(w.reset)}
+            resets {resetLabel}
           </span>
         )}
       </div>
-      {pct != null && (
+      {remainingWidth != null && (
         <div className="owt-quota-bar" aria-hidden="true">
           <div
             className={`owt-quota-bar__fill ${barClass}`}
-            style={{ width: `${Math.min(100, pct)}%` }}
+            style={{ width: `${remainingWidth}%` }}
           />
         </div>
       )}
