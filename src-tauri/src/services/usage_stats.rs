@@ -193,6 +193,15 @@ fn row_to_request_log_detail(row: &rusqlite::Row<'_>) -> rusqlite::Result<Reques
     })
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ResolvedModelPricingRow {
+    pub model_id: String,
+    pub input_cost_per_million: String,
+    pub output_cost_per_million: String,
+    pub cache_read_cost_per_million: String,
+    pub cache_creation_cost_per_million: String,
+}
+
 /// SQL fragment: resolve provider_name with fallback for session-based entries.
 /// Session logs use placeholder provider_ids (e.g., `_session`, `_<app>_session`)
 /// that don't exist in the providers table — the CASE expression below is the
@@ -1675,6 +1684,22 @@ pub(crate) fn find_model_pricing_row(
     conn: &Connection,
     model_id: &str,
 ) -> Result<Option<(String, String, String, String)>, AppError> {
+    Ok(
+        resolve_model_pricing_with_fallback(conn, model_id)?.map(|row| {
+            (
+                row.input_cost_per_million,
+                row.output_cost_per_million,
+                row.cache_read_cost_per_million,
+                row.cache_creation_cost_per_million,
+            )
+        }),
+    )
+}
+
+pub(crate) fn resolve_model_pricing_with_fallback(
+    conn: &Connection,
+    model_id: &str,
+) -> Result<Option<ResolvedModelPricingRow>, AppError> {
     let candidates = model_pricing_candidates(model_id);
     if candidates.is_empty() {
         return Ok(None);
@@ -1694,6 +1719,7 @@ pub(crate) fn find_model_pricing_row(
         }
     }
 
+    log::warn!("模型 {model_id} 未找到定价信息，成本将记录为 0");
     Ok(None)
 }
 
@@ -1705,20 +1731,21 @@ pub(crate) fn is_placeholder_pricing_model(model_id: &str) -> bool {
 fn query_model_pricing_exact(
     conn: &Connection,
     model_id: &str,
-) -> Result<Option<(String, String, String, String)>, AppError> {
+) -> Result<Option<ResolvedModelPricingRow>, AppError> {
     conn.query_row(
-        "SELECT input_cost_per_million, output_cost_per_million,
+        "SELECT model_id, input_cost_per_million, output_cost_per_million,
                 cache_read_cost_per_million, cache_creation_cost_per_million
          FROM model_pricing
          WHERE model_id = ?1",
         [model_id],
         |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-            ))
+            Ok(ResolvedModelPricingRow {
+                model_id: row.get::<_, String>(0)?,
+                input_cost_per_million: row.get::<_, String>(1)?,
+                output_cost_per_million: row.get::<_, String>(2)?,
+                cache_read_cost_per_million: row.get::<_, String>(3)?,
+                cache_creation_cost_per_million: row.get::<_, String>(4)?,
+            })
         },
     )
     .optional()
@@ -1728,23 +1755,24 @@ fn query_model_pricing_exact(
 fn query_model_pricing_prefix(
     conn: &Connection,
     model_id: &str,
-) -> Result<Option<(String, String, String, String)>, AppError> {
+) -> Result<Option<ResolvedModelPricingRow>, AppError> {
     let pattern = format!("{model_id}-%");
     conn.query_row(
-        "SELECT input_cost_per_million, output_cost_per_million,
+        "SELECT model_id, input_cost_per_million, output_cost_per_million,
                 cache_read_cost_per_million, cache_creation_cost_per_million
          FROM model_pricing
          WHERE model_id LIKE ?1
-         ORDER BY LENGTH(model_id) ASC
+         ORDER BY LENGTH(model_id) ASC, model_id ASC
          LIMIT 1",
         [pattern],
         |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-            ))
+            Ok(ResolvedModelPricingRow {
+                model_id: row.get::<_, String>(0)?,
+                input_cost_per_million: row.get::<_, String>(1)?,
+                output_cost_per_million: row.get::<_, String>(2)?,
+                cache_read_cost_per_million: row.get::<_, String>(3)?,
+                cache_creation_cost_per_million: row.get::<_, String>(4)?,
+            })
         },
     )
     .optional()
@@ -1955,6 +1983,8 @@ fn should_try_pricing_prefix_match(model_id: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use log::{Level, LevelFilter, Metadata, Record};
+    use std::sync::{Mutex, OnceLock};
 
     fn local_ts(year: i32, month: u32, day: u32, hour: u32, minute: u32, second: u32) -> i64 {
         match Local.with_ymd_and_hms(year, month, day, hour, minute, second) {
@@ -3199,6 +3229,28 @@ mod tests {
             ],
         )?;
 
+        // 测试新增占位 alias 行
+        let result = resolve_model_pricing_with_fallback(&conn, "claude-opus-4-7")?
+            .expect("应该能匹配 claude-opus-4-7");
+        assert_eq!(result.model_id, "claude-opus-4-7");
+        assert_eq!(result.input_cost_per_million, "5");
+        assert_eq!(result.output_cost_per_million, "25");
+
+        // 测试新增 undated alias 优先精确命中，不回退到 dated 行
+        let result = resolve_model_pricing_with_fallback(&conn, "claude-sonnet-4-6")?
+            .expect("应该能匹配 claude-sonnet-4-6");
+        assert_eq!(result.model_id, "claude-sonnet-4-6");
+
+        // 测试精确匹配 dated 行
+        let result = resolve_model_pricing_with_fallback(&conn, "claude-sonnet-4-6-20260217")?
+            .expect("应该能匹配 claude-sonnet-4-6-20260217");
+        assert_eq!(result.model_id, "claude-sonnet-4-6-20260217");
+
+        // 测试未知日期后缀回退到 undated alias
+        let result = resolve_model_pricing_with_fallback(&conn, "claude-sonnet-4-6-99999999")?
+            .expect("未知日期后缀应回退到 claude-sonnet-4-6");
+        assert_eq!(result.model_id, "claude-sonnet-4-6");
+
         // 测试精确匹配（seed_model_pricing 已预置 claude-sonnet-4-5-20250929）
         let result = find_model_pricing_row(&conn, "claude-sonnet-4-5-20250929")?;
         assert!(
@@ -3288,10 +3340,73 @@ mod tests {
         let result = find_model_pricing_row(&conn, "kimi-for-coding")?;
         assert!(result.is_none(), "kimi-for-coding 没有固定 token 单价");
 
+        init_test_logger();
+
         // 测试不存在的模型
         let result = find_model_pricing_row(&conn, "unknown-model-123")?;
         assert!(result.is_none(), "不应该匹配不存在的模型");
+        assert!(
+            test_logs()
+                .lock()
+                .expect("logger mutex poisoned")
+                .iter()
+                .any(|entry| {
+                    entry.level == Level::Warn && entry.message.contains("unknown-model-123")
+                }),
+            "不存在的模型应记录 warn 日志"
+        );
 
         Ok(())
+    }
+
+    #[derive(Debug, Clone)]
+    struct TestLogEntry {
+        level: Level,
+        message: String,
+    }
+
+    #[derive(Default)]
+    struct TestLogger {
+        entries: Mutex<Vec<TestLogEntry>>,
+    }
+
+    impl log::Log for TestLogger {
+        fn enabled(&self, metadata: &Metadata<'_>) -> bool {
+            metadata.level() <= Level::Warn
+        }
+
+        fn log(&self, record: &Record<'_>) {
+            if !self.enabled(record.metadata()) {
+                return;
+            }
+
+            self.entries
+                .lock()
+                .expect("logger mutex poisoned")
+                .push(TestLogEntry {
+                    level: record.level(),
+                    message: record.args().to_string(),
+                });
+        }
+
+        fn flush(&self) {}
+    }
+
+    fn test_logger() -> &'static TestLogger {
+        static LOGGER: OnceLock<TestLogger> = OnceLock::new();
+        LOGGER.get_or_init(TestLogger::default)
+    }
+
+    fn test_logs() -> &'static Mutex<Vec<TestLogEntry>> {
+        &test_logger().entries
+    }
+
+    fn init_test_logger() {
+        static LOGGER_INIT: OnceLock<()> = OnceLock::new();
+
+        LOGGER_INIT.get_or_init(|| {
+            log::set_logger(test_logger()).expect("set test logger");
+            log::set_max_level(LevelFilter::Warn);
+        });
     }
 }
