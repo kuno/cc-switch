@@ -1333,6 +1333,15 @@ impl ProxyService {
         Ok(())
     }
 
+    /// Clone the shared OAuth refresh lock manager from the running server.
+    /// Returns `None` if the server is not currently running.
+    pub async fn clone_oauth_refresh_locks(
+        &self,
+    ) -> Option<crate::services::oauth_refresh::OAuthRefreshLockManager> {
+        let server = self.server.read().await;
+        server.as_ref().map(|s| s.clone_oauth_refresh_locks())
+    }
+
     /// 停止代理服务器
     pub async fn stop(&self) -> Result<(), String> {
         if let Some(server) = self.server.write().await.take() {
