@@ -393,6 +393,7 @@ async fn refresh_claude_quota_snapshots(state: &ProxyState) {
 pub async fn get_quota(State(state): State<ProxyState>) -> (StatusCode, Json<Value>) {
     refresh_codex_quota_snapshots(&state).await;
     refresh_claude_quota_snapshots(&state).await;
+    super::third_party_quota::refresh_third_party_coding_plan_snapshots(&state).await;
     let store = state.rate_limits.read().await;
     let providers: Vec<_> = store.values().cloned().collect();
     (
