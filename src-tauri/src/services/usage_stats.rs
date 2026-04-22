@@ -5,11 +5,17 @@
 use crate::database::{lock_conn, Database};
 use crate::error::AppError;
 use chrono::{Local, NaiveDate, TimeZone, Timelike};
+use regex::Regex;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::LazyLock;
+
+static MODEL_DATED_SUFFIX_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"-(?:\d{8}|\d{4}-\d{2}-\d{2})$").expect("invalid model date suffix regex")
+});
 
 /// 使用量汇总
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -115,6 +121,15 @@ pub struct RequestLogDetail {
     pub created_at: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data_source: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ResolvedModelPricingRow {
+    pub model_id: String,
+    pub input_cost_per_million: String,
+    pub output_cost_per_million: String,
+    pub cache_read_cost_per_million: String,
+    pub cache_creation_cost_per_million: String,
 }
 
 /// SQL fragment: resolve provider_name with fallback for session-based entries.
@@ -1301,47 +1316,134 @@ pub(crate) fn find_model_pricing_row(
     conn: &Connection,
     model_id: &str,
 ) -> Result<Option<(String, String, String, String)>, AppError> {
-    // 清洗模型名称：去前缀(/)、去后缀(:)、@ 替换为 -
-    // 例如 moonshotai/gpt-5.2-codex@low:v2 → gpt-5.2-codex-low
-    let cleaned = model_id
+    Ok(
+        resolve_model_pricing_with_fallback(conn, model_id)?.map(|row| {
+            (
+                row.input_cost_per_million,
+                row.output_cost_per_million,
+                row.cache_read_cost_per_million,
+                row.cache_creation_cost_per_million,
+            )
+        }),
+    )
+}
+
+pub(crate) fn resolve_model_pricing_with_fallback(
+    conn: &Connection,
+    model_id: &str,
+) -> Result<Option<ResolvedModelPricingRow>, AppError> {
+    let cleaned = normalize_model_id_for_pricing_lookup(model_id);
+
+    if let Some(row) = query_model_pricing_row_exact(conn, &cleaned)? {
+        return Ok(Some(row));
+    }
+
+    let stripped = strip_trailing_dated_suffix(&cleaned);
+    if let Some(stripped_model_id) = stripped.as_deref() {
+        if let Some(row) = query_model_pricing_row_exact(conn, stripped_model_id)? {
+            return Ok(Some(row));
+        }
+    }
+
+    let like_prefix = build_bounded_like_prefix(stripped.as_deref().unwrap_or(&cleaned));
+    if let Some(row) = query_model_pricing_row_like(conn, &like_prefix)? {
+        return Ok(Some(row));
+    }
+
+    log::warn!("模型 {model_id}（清洗后: {cleaned}）未找到定价信息，成本将记录为 0");
+    Ok(None)
+}
+
+fn normalize_model_id_for_pricing_lookup(model_id: &str) -> String {
+    model_id
         .rsplit_once('/')
         .map_or(model_id, |(_, r)| r)
         .split(':')
         .next()
         .unwrap_or(model_id)
         .trim()
-        .replace('@', "-");
+        .replace('@', "-")
+}
 
-    // 精确匹配清洗后的名称
-    let exact = conn
-        .query_row(
-            "SELECT input_cost_per_million, output_cost_per_million,
-                    cache_read_cost_per_million, cache_creation_cost_per_million
-             FROM model_pricing
-             WHERE model_id = ?1",
-            [&cleaned],
-            |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, String>(3)?,
-                ))
-            },
-        )
-        .optional()
-        .map_err(|e| AppError::Database(format!("查询模型定价失败: {e}")))?;
+fn strip_trailing_dated_suffix(model_id: &str) -> Option<String> {
+    let stripped = MODEL_DATED_SUFFIX_RE.replace(model_id, "");
+    if stripped == model_id {
+        None
+    } else {
+        Some(stripped.into_owned())
+    }
+}
 
-    if exact.is_none() {
-        log::warn!("模型 {model_id}（清洗后: {cleaned}）未找到定价信息，成本将记录为 0");
+fn build_bounded_like_prefix(model_id: &str) -> String {
+    let parts: Vec<&str> = model_id
+        .split('-')
+        .filter(|part| !part.is_empty())
+        .collect();
+    if parts.is_empty() {
+        return model_id.to_string();
     }
 
-    Ok(exact)
+    let prefix_len = parts.len().min(4);
+    parts[..prefix_len].join("-")
+}
+
+fn query_model_pricing_row_exact(
+    conn: &Connection,
+    model_id: &str,
+) -> Result<Option<ResolvedModelPricingRow>, AppError> {
+    conn.query_row(
+        "SELECT model_id, input_cost_per_million, output_cost_per_million,
+                cache_read_cost_per_million, cache_creation_cost_per_million
+         FROM model_pricing
+         WHERE model_id = ?1",
+        [model_id],
+        |row| {
+            Ok(ResolvedModelPricingRow {
+                model_id: row.get::<_, String>(0)?,
+                input_cost_per_million: row.get::<_, String>(1)?,
+                output_cost_per_million: row.get::<_, String>(2)?,
+                cache_read_cost_per_million: row.get::<_, String>(3)?,
+                cache_creation_cost_per_million: row.get::<_, String>(4)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(|e| AppError::Database(format!("查询模型定价失败: {e}")))
+}
+
+fn query_model_pricing_row_like(
+    conn: &Connection,
+    model_id_prefix: &str,
+) -> Result<Option<ResolvedModelPricingRow>, AppError> {
+    let pattern = format!("{model_id_prefix}%");
+
+    conn.query_row(
+        "SELECT model_id, input_cost_per_million, output_cost_per_million,
+                cache_read_cost_per_million, cache_creation_cost_per_million
+         FROM model_pricing
+         WHERE model_id LIKE ?1
+         ORDER BY LENGTH(model_id) ASC, model_id ASC
+         LIMIT 1",
+        [pattern],
+        |row| {
+            Ok(ResolvedModelPricingRow {
+                model_id: row.get::<_, String>(0)?,
+                input_cost_per_million: row.get::<_, String>(1)?,
+                output_cost_per_million: row.get::<_, String>(2)?,
+                cache_read_cost_per_million: row.get::<_, String>(3)?,
+                cache_creation_cost_per_million: row.get::<_, String>(4)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(|e| AppError::Database(format!("模糊查询模型定价失败: {e}")))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use log::{Level, LevelFilter, Metadata, Record};
+    use std::sync::{Mutex, OnceLock};
 
     fn local_ts(year: i32, month: u32, day: u32, hour: u32, minute: u32, second: u32) -> i64 {
         match Local.with_ymd_and_hms(year, month, day, hour, minute, second) {
@@ -1895,6 +1997,28 @@ mod tests {
             ],
         )?;
 
+        // 测试新增占位 alias 行
+        let result = resolve_model_pricing_with_fallback(&conn, "claude-opus-4-7")?
+            .expect("应该能匹配 claude-opus-4-7");
+        assert_eq!(result.model_id, "claude-opus-4-7");
+        assert_eq!(result.input_cost_per_million, "5");
+        assert_eq!(result.output_cost_per_million, "25");
+
+        // 测试新增 undated alias 优先精确命中，不回退到 dated 行
+        let result = resolve_model_pricing_with_fallback(&conn, "claude-sonnet-4-6")?
+            .expect("应该能匹配 claude-sonnet-4-6");
+        assert_eq!(result.model_id, "claude-sonnet-4-6");
+
+        // 测试精确匹配 dated 行
+        let result = resolve_model_pricing_with_fallback(&conn, "claude-sonnet-4-6-20260217")?
+            .expect("应该能匹配 claude-sonnet-4-6-20260217");
+        assert_eq!(result.model_id, "claude-sonnet-4-6-20260217");
+
+        // 测试未知日期后缀回退到 undated alias
+        let result = resolve_model_pricing_with_fallback(&conn, "claude-sonnet-4-6-99999999")?
+            .expect("未知日期后缀应回退到 claude-sonnet-4-6");
+        assert_eq!(result.model_id, "claude-sonnet-4-6");
+
         // 测试精确匹配（seed_model_pricing 已预置 claude-sonnet-4-5-20250929）
         let result = find_model_pricing_row(&conn, "claude-sonnet-4-5-20250929")?;
         assert!(
@@ -1921,10 +2045,73 @@ mod tests {
             "带 @ 分隔符的模型 gpt-5.2-codex@low 应能匹配到 gpt-5.2-codex-low"
         );
 
+        init_test_logger();
+
         // 测试不存在的模型
         let result = find_model_pricing_row(&conn, "unknown-model-123")?;
         assert!(result.is_none(), "不应该匹配不存在的模型");
+        assert!(
+            test_logs()
+                .lock()
+                .expect("logger mutex poisoned")
+                .iter()
+                .any(|entry| {
+                    entry.level == Level::Warn && entry.message.contains("unknown-model-123")
+                }),
+            "不存在的模型应记录 warn 日志"
+        );
 
         Ok(())
+    }
+
+    #[derive(Debug, Clone)]
+    struct TestLogEntry {
+        level: Level,
+        message: String,
+    }
+
+    #[derive(Default)]
+    struct TestLogger {
+        entries: Mutex<Vec<TestLogEntry>>,
+    }
+
+    impl log::Log for TestLogger {
+        fn enabled(&self, metadata: &Metadata<'_>) -> bool {
+            metadata.level() <= Level::Warn
+        }
+
+        fn log(&self, record: &Record<'_>) {
+            if !self.enabled(record.metadata()) {
+                return;
+            }
+
+            self.entries
+                .lock()
+                .expect("logger mutex poisoned")
+                .push(TestLogEntry {
+                    level: record.level(),
+                    message: record.args().to_string(),
+                });
+        }
+
+        fn flush(&self) {}
+    }
+
+    fn test_logger() -> &'static TestLogger {
+        static LOGGER: OnceLock<TestLogger> = OnceLock::new();
+        LOGGER.get_or_init(TestLogger::default)
+    }
+
+    fn test_logs() -> &'static Mutex<Vec<TestLogEntry>> {
+        &test_logger().entries
+    }
+
+    fn init_test_logger() {
+        static LOGGER_INIT: OnceLock<()> = OnceLock::new();
+
+        LOGGER_INIT.get_or_init(|| {
+            log::set_logger(test_logger()).expect("set test logger");
+            log::set_max_level(LevelFilter::Warn);
+        });
     }
 }
