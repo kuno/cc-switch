@@ -79,11 +79,11 @@ function renderCardWithQuota(quota: ProviderQuotaSnapshot | undefined) {
 }
 
 describe("AppCard quota band", () => {
-  it("renders window name and utilisation percentage for a subscription snapshot", () => {
+  it("renders window name and remaining percentage for a subscription snapshot", () => {
     renderCardWithQuota(makeWindowSnapshot());
 
     expect(screen.getByText("Monthly tokens")).toBeInTheDocument();
-    expect(screen.getByText("42% used")).toBeInTheDocument();
+    expect(screen.getByText("58% remaining")).toBeInTheDocument();
   });
 
   it("renders currency-formatted remaining balance for a balance snapshot", () => {
