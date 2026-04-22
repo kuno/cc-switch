@@ -93,9 +93,9 @@ def format_tokens(n):
 
 
 def quota_hex_color(pct):
-    if pct >= 80:
+    if pct <= 20:
         return "#f87171"
-    if pct >= 60:
+    if pct <= 40:
         return "#facc15"
     return "#4ade80"
 
@@ -125,13 +125,13 @@ def provider_headline(p):
             w = windows[-1]
         util = w.get("utilization")
         if util is not None:
-            pct = int(util * 100)
+            pct = int((1 - util) * 100)
             icon = STATUS_ICON.get(status or w.get("status", ""), "")
             return icon, pct
     req_rem = p.get("requests_remaining")
     req_lim = p.get("requests_limit")
     if req_rem is not None and req_lim:
-        pct = int((1 - req_rem / req_lim) * 100)
+        pct = int((req_rem / req_lim) * 100)
         return "", pct
     return "", None
 
@@ -146,17 +146,17 @@ def normalize_window_name(name):
 
 
 def app_window_headline(providers):
-    best = OrderedDict([("5h", None), ("7d", None)])
+    lowest_remaining = OrderedDict([("5h", None), ("7d", None)])
     for p in providers:
         for w in p.get("windows", []):
             label = normalize_window_name(w.get("name"))
             util = w.get("utilization")
             if not label or util is None:
                 continue
-            pct = int(util * 100)
-            if best[label] is None or pct > best[label]:
-                best[label] = pct
-    return best
+            pct = int((1 - util) * 100)
+            if lowest_remaining[label] is None or pct < lowest_remaining[label]:
+                lowest_remaining[label] = pct
+    return lowest_remaining
 
 
 def sanitize_title_text(text):
@@ -222,9 +222,9 @@ def render_quota_windows(p, prefix):
             util = w.get("utilization")
             reset = w.get("reset")
             if util is not None:
-                pct = int(util * 100)
+                pct = int((1 - util) * 100)
                 color = STATUS_COLOR.get(wstatus) or quota_hex_color(pct)
-                graph = bar_graph(util)
+                graph = bar_graph(1 - util)
                 reset_str = format_reset(reset)
                 reset_label = f"  resets {reset_str}" if reset_str else ""
                 lines.append(
@@ -248,11 +248,11 @@ def render_quota_windows(p, prefix):
         tok_lim = p.get("tokens_limit")
         tok_rem = p.get("tokens_remaining")
         if req_lim is not None and req_rem is not None:
-            ratio = 1 - req_rem / req_lim if req_lim > 0 else 0
+            ratio = req_rem / req_lim if req_lim > 0 else 1
             graph = bar_graph(ratio)
             lines.append(f"{prefix}Requests: {graph} {req_rem}/{req_lim} | font=Menlo size=12")
         if tok_lim is not None and tok_rem is not None:
-            ratio = 1 - tok_rem / tok_lim if tok_lim > 0 else 0
+            ratio = tok_rem / tok_lim if tok_lim > 0 else 1
             graph = bar_graph(ratio)
             lines.append(f"{prefix}Tokens:   {graph} {tok_rem}/{tok_lim} | font=Menlo size=12")
     ago = format_ago(p.get("captured_at"))
@@ -332,7 +332,7 @@ def main():
             best_icon, best_pct = "", None
             for p in app_quota:
                 icon, pct = provider_headline(p)
-                if pct is not None and (best_pct is None or pct > best_pct):
+                if pct is not None and (best_pct is None or pct < best_pct):
                     best_pct = pct
                     best_icon = icon
 
@@ -383,5 +383,25 @@ def main():
     print("Refresh | refresh=true")
 
 
+def _self_test():
+    p = {
+        "windows": [{"name": "5hour", "utilization": 0.3, "status": "allowed"}],
+        "status": "allowed",
+        "representative_claim": "5hour",
+    }
+    _, pct = provider_headline(p)
+    assert pct == 70, f"expected 70, got {pct}"
+    assert quota_hex_color(70) == "#4ade80"
+    assert quota_hex_color(35) == "#facc15"
+    assert quota_hex_color(15) == "#f87171"
+    graph = bar_graph(1 - 0.3)
+    assert graph.count("\u2588") == 7, f"expected 7 filled cells, got {graph.count(chr(0x2588))}"
+    print("self-test passed")
+
+
 if __name__ == "__main__":
-    main()
+    import sys
+    if "--self-test" in sys.argv:
+        _self_test()
+    else:
+        main()
