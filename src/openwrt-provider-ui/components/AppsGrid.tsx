@@ -330,12 +330,21 @@ export function AppsGrid({
       startPolling();
     };
 
+    const QUOTA_POLL_INTERVAL_MS = 60_000;
+    const quotaIntervalId = window.setInterval(async () => {
+      const map = await loadQuotaByProviderId(options.shell);
+      if (!cancelled) {
+        setQuotaByProviderId(map);
+      }
+    }, QUOTA_POLL_INTERVAL_MS);
+
     doc.addEventListener("visibilitychange", handleVisibilityChange);
     startPolling();
 
     return () => {
       cancelled = true;
       clearPollingInterval();
+      window.clearInterval(quotaIntervalId);
       doc.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [options.shell]);
