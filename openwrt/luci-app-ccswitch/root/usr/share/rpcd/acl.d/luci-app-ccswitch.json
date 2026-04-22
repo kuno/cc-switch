@@ -18,6 +18,7 @@
 					"get_recent_activity",
 					"get_request_logs",
 					"get_request_detail",
+					"get_quota",
 					"get_available_failover_providers"
 				]
 			}
