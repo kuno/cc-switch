@@ -7,7 +7,9 @@ import type {
   OpenWrtSharedPageMountOptions,
   OpenWrtUsageSummary,
 } from "../pageTypes";
+import type { ProviderQuotaSnapshot } from "../types/quota";
 import { AppCard } from "./AppCard";
+
 
 const APP_OPTIONS: SharedProviderAppId[] = ["claude", "codex", "gemini"];
 const POLL_INTERVAL_MS = 10_000;
@@ -217,6 +219,21 @@ export interface AppsGridProps {
   providerMutationVersion?: number;
 }
 
+async function loadQuotaByProviderId(
+  shell: OpenWrtSharedPageMountOptions["shell"],
+): Promise<Record<string, ProviderQuotaSnapshot>> {
+  try {
+    const response = await shell.getQuota();
+    const map: Record<string, ProviderQuotaSnapshot> = {};
+    for (const snapshot of response.providers) {
+      map[snapshot.provider_id] = snapshot;
+    }
+    return map;
+  } catch {
+    return {};
+  }
+}
+
 export function AppsGrid({
   options,
   onOpenActivity,
@@ -226,17 +243,22 @@ export function AppsGrid({
   const [cards, setCards] = useState<AppGridData[]>(() =>
     APP_OPTIONS.map(createInitialCard),
   );
+  const [quotaByProviderId, setQuotaByProviderId] = useState<
+    Record<string, ProviderQuotaSnapshot>
+  >({});
 
   useEffect(() => {
     let cancelled = false;
 
     setCards((current) => current.map((card) => ({ ...card, loading: true })));
 
-    void Promise.all(
-      APP_OPTIONS.map((appId) => loadCardData(options, appId)),
-    ).then((nextCards) => {
+    void Promise.all([
+      Promise.all(APP_OPTIONS.map((appId) => loadCardData(options, appId))),
+      loadQuotaByProviderId(options.shell),
+    ]).then(([nextCards, quotaMap]) => {
       if (cancelled) return;
       setCards(nextCards);
+      setQuotaByProviderId(quotaMap);
     });
 
     return () => {
@@ -325,22 +347,33 @@ export function AppsGrid({
   const configured = cards.filter(isConfigured);
   const unconfigured = cards.filter((card) => !isConfigured(card));
 
-  const renderCard = (card: AppGridData) => (
-    <AppCard
-      key={card.appId}
-      appId={card.appId}
-      hostState={hostState}
-      serviceRunning={serviceRunning}
-      providerState={card.providerState}
-      summary={card.summary}
-      providerStats={card.providerStats}
-      recentActivity={card.recentActivity}
-      loading={card.loading}
-      error={card.error}
-      onOpenActivity={onOpenActivity}
-      onOpenProviderPanel={onOpenProviderPanel}
-    />
-  );
+  const renderCard = (card: AppGridData) => {
+    const activeProviderId =
+      card.providerState?.activeProvider.configured
+        ? card.providerState.activeProvider.providerId
+        : undefined;
+    const quotaSnapshot = activeProviderId
+      ? quotaByProviderId[activeProviderId]
+      : undefined;
+
+    return (
+      <AppCard
+        key={card.appId}
+        appId={card.appId}
+        hostState={hostState}
+        serviceRunning={serviceRunning}
+        providerState={card.providerState}
+        summary={card.summary}
+        providerStats={card.providerStats}
+        recentActivity={card.recentActivity}
+        loading={card.loading}
+        error={card.error}
+        quotaSnapshot={quotaSnapshot}
+        onOpenActivity={onOpenActivity}
+        onOpenProviderPanel={onOpenProviderPanel}
+      />
+    );
+  };
 
   return (
     <div className="owt-apps-grid">
