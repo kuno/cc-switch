@@ -8,6 +8,7 @@ import type {
   OpenWrtPageMessage,
   OpenWrtPaginatedRequestLogs,
   OpenWrtProviderStat,
+  QuotaResponse,
   OpenWrtRecentActivityItem,
   OpenWrtRequestLog,
   OpenWrtSharedPageShellApi,
@@ -76,6 +77,11 @@ const DEFAULT_USAGE_SUMMARY: OpenWrtUsageSummary = {
   totalCacheCreationTokens: 0,
   totalCacheReadTokens: 0,
   successRate: 100,
+};
+
+const DEFAULT_QUOTA_RESPONSE: QuotaResponse = {
+  providers: [],
+  timestamp: "2026-04-22T00:00:00.000Z",
 };
 
 function resolveTransportResult(
@@ -270,6 +276,7 @@ export interface ShellStubOptions {
   recentActivity?: Partial<
     Record<SharedProviderAppId, OpenWrtRecentActivityItem[]>
   >;
+  quota?: QuotaResponse;
   usageSummary?: Partial<Record<SharedProviderAppId, OpenWrtUsageSummary>>;
 }
 
@@ -338,6 +345,9 @@ export function createShellStub(
     },
     async getProviderStats(appId) {
       return options.providerStats?.[appId] ?? [];
+    },
+    async getQuota() {
+      return options.quota ?? DEFAULT_QUOTA_RESPONSE;
     },
     async getRequestDetail(appId, requestId) {
       return options.requestDetails?.[appId]?.[requestId] ?? null;

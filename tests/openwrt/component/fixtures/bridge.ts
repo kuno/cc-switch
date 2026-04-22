@@ -5,6 +5,7 @@ import type {
   OpenWrtPageMessage,
   OpenWrtPaginatedRequestLogs,
   OpenWrtProviderStat,
+  QuotaResponse,
   OpenWrtRecentActivityItem,
   OpenWrtRequestLog,
   OpenWrtSharedPageShellApi,
@@ -43,6 +44,11 @@ const DEFAULT_REQUEST_LOGS: OpenWrtPaginatedRequestLogs = {
   pageSize: 20,
 };
 
+const DEFAULT_QUOTA_RESPONSE: QuotaResponse = {
+  providers: [],
+  timestamp: "2026-04-22T00:00:00.000Z",
+};
+
 export interface BridgeFixtureOptions {
   selectedApp?: SharedProviderAppId;
   host?: Partial<OpenWrtHostState>;
@@ -64,6 +70,7 @@ export interface BridgeFixtureOptions {
   recentActivity?: Partial<
     Record<SharedProviderAppId, OpenWrtRecentActivityItem[]>
   >;
+  quota?: QuotaResponse;
   usageSummary?: Partial<Record<SharedProviderAppId, OpenWrtUsageSummary>>;
   overrides?: Partial<OpenWrtSharedPageShellApi>;
 }
@@ -141,6 +148,7 @@ export function createBridgeFixture(
     getProviderStats: vi.fn(async (appId) =>
       getAppRecord(options.providerStats, appId, []),
     ),
+    getQuota: vi.fn(async () => options.quota ?? DEFAULT_QUOTA_RESPONSE),
     getRequestDetail: vi.fn(
       async (appId: SharedProviderAppId, requestId: string) =>
         options.requestDetails?.[appId]?.[requestId] ?? null,

@@ -203,6 +203,27 @@ function runAdminGetJson(path) {
 	return parsed;
 }
 
+function runDaemonGetJson(path) {
+	let url = buildAdminUrl(path);
+	let fh = popen(shellquote(CURL) + ' -sf --max-time 5 ' + shellquote(url), 'r');
+	let output, parsed;
+
+	if (!fh)
+		return { ok: false, error: 'daemon HTTP call failed: ' + path };
+
+	output = fh.read('all');
+
+	if (fh.close() !== 0 || !output)
+		return { ok: false, error: 'daemon HTTP call failed: ' + path };
+
+	parsed = json(output);
+
+	if (parsed == null)
+		return { ok: false, error: 'daemon HTTP call failed: ' + path };
+
+	return parsed;
+}
+
 function requireProviderId(providerId) {
 	if (!providerId)
 		return { ok: false, error: 'provider_id is required' };
@@ -369,6 +390,10 @@ function getRecentActivity(app) {
 		return { ok: false, error: 'unsupported app' };
 
 	return runAdminGetJson('/apps/' + percentEncodePath(normalizedApp) + '/recent-activity');
+}
+
+function getQuota() {
+	return runDaemonGetJson('/api/quota');
 }
 
 function getRequestLogs(app, page, pageSize) {
@@ -761,6 +786,12 @@ return {
 
 			call: function(request) {
 				return getRecentActivity(request.args.app);
+			}
+		},
+
+		get_quota: {
+			call: function() {
+				return getQuota();
 			}
 		},
 

@@ -269,6 +269,10 @@ function createActivityShellStub({
     getHostState: () => host,
     getMessage: () => null,
     getProviderStats: async () => [],
+    getQuota: async () => ({
+      providers: [],
+      timestamp: "2026-04-22T00:00:00.000Z",
+    }),
     getRequestDetail: async (appId, requestId) => {
       if (requestDetailPending) {
         return await new Promise<OpenWrtRequestLog | null>(() => {});
