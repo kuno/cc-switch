@@ -1259,6 +1259,7 @@ fn openwrt_app_profile(app_type: &AppType) -> anyhow::Result<OpenWrtAppProfile> 
             icon: "gemini",
             icon_color: "#4285F4",
         }),
+        AppType::Hermes => Err(anyhow!("Hermes is not supported in proxy-daemon")),
         AppType::OpenCode | AppType::OpenClaw => Err(anyhow!(
             "OpenWrt provider management is not implemented for {} yet",
             app_type.as_str()
@@ -1752,6 +1753,7 @@ fn build_provider(
         AppType::Claude => build_claude_provider(profile, existing, provider_id, payload),
         AppType::Codex => build_codex_provider(profile, existing, provider_id, payload),
         AppType::Gemini => build_gemini_provider(profile, existing, provider_id, payload),
+        AppType::Hermes => Err(anyhow!("Hermes is not supported in proxy-daemon")),
         AppType::OpenCode | AppType::OpenClaw => Err(anyhow!(
             "OpenWrt provider management is not implemented for {} yet",
             app_type.as_str()
@@ -3723,6 +3725,12 @@ mod tests {
         assert!(error
             .to_string()
             .contains("OpenWrt provider management is not implemented"));
+
+        let hermes_error =
+            parse_supported_app("hermes").expect_err("Hermes should stay unsupported");
+        assert!(hermes_error
+            .to_string()
+            .contains("Hermes is not supported in proxy-daemon"));
     }
 
     #[tokio::test(flavor = "current_thread")]
