@@ -7,10 +7,9 @@ import type {
   OpenWrtSharedPageMountOptions,
   OpenWrtUsageSummary,
 } from "../pageTypes";
-import type { ProviderQuotaSnapshot, QuotaResponse } from "../types/quota";
+import type { ProviderQuotaSnapshot } from "../types/quota";
 import { AppCard } from "./AppCard";
 
-const BRIDGE_METHOD = "getQuota";
 
 const APP_OPTIONS: SharedProviderAppId[] = ["claude", "codex", "gemini"];
 const POLL_INTERVAL_MS = 10_000;
@@ -224,11 +223,7 @@ async function loadQuotaByProviderId(
   shell: OpenWrtSharedPageMountOptions["shell"],
 ): Promise<Record<string, ProviderQuotaSnapshot>> {
   try {
-    // @ts-expect-error pending RPC bridge PR — getQuota will be declared in pageTypes.ts by parallel PR
-    const fn = (shell as Record<string, unknown>)[BRIDGE_METHOD];
-    if (typeof fn !== "function") return {};
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call
-    const response = (await (fn as () => Promise<QuotaResponse>).call(shell)) as QuotaResponse;
+    const response = await shell.getQuota();
     const map: Record<string, ProviderQuotaSnapshot> = {};
     for (const snapshot of response.providers) {
       map[snapshot.provider_id] = snapshot;
