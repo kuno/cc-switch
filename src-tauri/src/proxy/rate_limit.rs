@@ -13,6 +13,24 @@ pub struct RateLimitWindow {
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct BalanceSnapshot {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plan_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub currency: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub used: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remaining: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_valid: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub invalid_message: Option<String>,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct RateLimitSnapshot {
     pub app_type: String,
     pub provider_id: String,
@@ -32,6 +50,8 @@ pub struct RateLimitSnapshot {
     pub tokens_limit: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tokens_remaining: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub balances: Option<Vec<BalanceSnapshot>>,
     pub captured_at: i64,
 }
 
@@ -90,6 +110,7 @@ pub fn snapshot_from_subscription_quota(
         requests_remaining: previous.and_then(|snapshot| snapshot.requests_remaining),
         tokens_limit: previous.and_then(|snapshot| snapshot.tokens_limit),
         tokens_remaining: previous.and_then(|snapshot| snapshot.tokens_remaining),
+        balances: None,
         captured_at: chrono::Utc::now().timestamp_millis(),
     })
 }
@@ -251,6 +272,7 @@ pub async fn capture_rate_limits(
             requests_remaining: raw.requests_remaining,
             tokens_limit: raw.tokens_limit,
             tokens_remaining: raw.tokens_remaining,
+            balances: None,
             captured_at: now,
         };
         log::debug!(
@@ -436,6 +458,7 @@ mod tests {
             requests_remaining: Some(900),
             tokens_limit: Some(100_000),
             tokens_remaining: Some(80_000),
+            balances: None,
             captured_at: 0,
         };
         let quota = SubscriptionQuota {
