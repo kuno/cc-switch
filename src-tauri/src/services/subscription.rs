@@ -619,8 +619,16 @@ struct CodexRateLimit {
 }
 
 #[derive(Deserialize)]
+struct CodexAdditionalRateLimit {
+    limit_name: Option<String>,
+    metered_feature: Option<String>,
+    rate_limit: Option<CodexRateLimit>,
+}
+
+#[derive(Deserialize)]
 struct CodexUsageResponse {
     rate_limit: Option<CodexRateLimit>,
+    additional_rate_limits: Option<Vec<CodexAdditionalRateLimit>>,
 }
 
 /// 根据窗口秒数映射到 tier 名称（与 Claude 的命名兼容以复用前端 i18n）
@@ -642,6 +650,76 @@ fn window_seconds_to_tier_name(secs: i64) -> String {
 /// Unix 时间戳（秒）转 ISO 8601 字符串
 fn unix_ts_to_iso(ts: i64) -> Option<String> {
     chrono::DateTime::from_timestamp(ts, 0).map(|dt| dt.to_rfc3339())
+}
+
+fn sanitize_codex_tier_prefix(prefix: &str) -> Option<String> {
+    let trimmed = prefix.trim();
+
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    Some(trimmed.split_whitespace().collect::<Vec<_>>().join("_"))
+}
+
+fn push_codex_tiers(
+    tiers: &mut Vec<QuotaTier>,
+    prefix: Option<&str>,
+    rate_limit: Option<CodexRateLimit>,
+) {
+    let prefix = match prefix {
+        Some(prefix) => match sanitize_codex_tier_prefix(prefix) {
+            Some(prefix) => Some(prefix),
+            None => return,
+        },
+        None => None,
+    };
+
+    if let Some(rate_limit) = rate_limit {
+        for window in [rate_limit.primary_window, rate_limit.secondary_window]
+            .into_iter()
+            .flatten()
+        {
+            if let Some(used) = window.used_percent {
+                let tier_name = window
+                    .limit_window_seconds
+                    .map(window_seconds_to_tier_name)
+                    .unwrap_or_else(|| "unknown".to_string());
+
+                tiers.push(QuotaTier {
+                    name: match prefix.as_deref() {
+                        Some(prefix) => format!("{}_{}", prefix, tier_name),
+                        None => tier_name,
+                    },
+                    utilization: used,
+                    resets_at: window.reset_at.and_then(unix_ts_to_iso),
+                });
+            }
+        }
+    }
+}
+
+fn codex_usage_response_to_tiers(body: CodexUsageResponse) -> Vec<QuotaTier> {
+    let mut tiers = Vec::new();
+
+    push_codex_tiers(&mut tiers, None, body.rate_limit);
+
+    for extra in body.additional_rate_limits.unwrap_or_default() {
+        let CodexAdditionalRateLimit {
+            limit_name,
+            metered_feature,
+            rate_limit,
+        } = extra;
+
+        let Some(prefix) = limit_name.as_deref().or(metered_feature.as_deref()) else {
+            // Skip unnamed entries so they cannot collide with the legacy top-level tier names.
+            continue;
+        };
+
+        push_codex_tiers(&mut tiers, Some(prefix), rate_limit);
+    }
+
+    tiers
 }
 
 /// 查询 Codex / ChatGPT 反代订阅额度
@@ -708,32 +786,12 @@ pub(crate) async fn query_codex_quota(
         }
     };
 
-    let mut tiers = Vec::new();
-
-    if let Some(rate_limit) = body.rate_limit {
-        for window in [rate_limit.primary_window, rate_limit.secondary_window]
-            .into_iter()
-            .flatten()
-        {
-            if let Some(used) = window.used_percent {
-                tiers.push(QuotaTier {
-                    name: window
-                        .limit_window_seconds
-                        .map(window_seconds_to_tier_name)
-                        .unwrap_or_else(|| "unknown".to_string()),
-                    utilization: used,
-                    resets_at: window.reset_at.and_then(unix_ts_to_iso),
-                });
-            }
-        }
-    }
-
     SubscriptionQuota {
         tool: tool_label.to_string(),
         credential_status: CredentialStatus::Valid,
         credential_message: None,
         success: true,
-        tiers,
+        tiers: codex_usage_response_to_tiers(body),
         extra_usage: None,
         error: None,
         queried_at: Some(now_millis()),
@@ -1333,7 +1391,7 @@ fn now_millis() -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{remap_tier_name, KNOWN_TIERS};
+    use super::{codex_usage_response_to_tiers, remap_tier_name, CodexUsageResponse, KNOWN_TIERS};
 
     #[test]
     fn known_tiers_include_claude_design_upstream_name() {
@@ -1347,5 +1405,86 @@ mod tests {
             "seven_day_claude_design"
         );
         assert_eq!(remap_tier_name("seven_day"), "seven_day");
+    }
+
+    #[test]
+    fn codex_usage_response_includes_additional_rate_limit_tiers() {
+        let body: CodexUsageResponse = serde_json::from_str(
+            r#"
+            {
+              "rate_limit": {
+                "primary_window": {
+                  "used_percent": 1,
+                  "limit_window_seconds": 18000,
+                  "reset_at": 1776840889
+                },
+                "secondary_window": {
+                  "used_percent": 1,
+                  "limit_window_seconds": 604800,
+                  "reset_at": 1777409681
+                }
+              },
+              "additional_rate_limits": [
+                {
+                  "limit_name": "GPT-5.3-Codex-Spark",
+                  "metered_feature": "codex_bengalfox",
+                  "rate_limit": {
+                    "primary_window": {
+                      "used_percent": 0,
+                      "limit_window_seconds": 18000,
+                      "reset_at": 1776841960
+                    },
+                    "secondary_window": {
+                      "used_percent": 0,
+                      "limit_window_seconds": 604800,
+                      "reset_at": 1777428760
+                    }
+                  }
+                },
+                {
+                  "limit_name": null,
+                  "metered_feature": "codex_lobsterpincer",
+                  "rate_limit": {
+                    "primary_window": {
+                      "used_percent": 12,
+                      "limit_window_seconds": 18000,
+                      "reset_at": 1776842960
+                    },
+                    "secondary_window": null
+                  }
+                },
+                {
+                  "limit_name": null,
+                  "metered_feature": null,
+                  "rate_limit": {
+                    "primary_window": {
+                      "used_percent": 20,
+                      "limit_window_seconds": 18000,
+                      "reset_at": 1776843960
+                    },
+                    "secondary_window": null
+                  }
+                }
+              ]
+            }
+            "#,
+        )
+        .expect("fixture should deserialize");
+
+        let tier_names: Vec<String> = codex_usage_response_to_tiers(body)
+            .into_iter()
+            .map(|tier| tier.name)
+            .collect();
+
+        assert_eq!(
+            tier_names,
+            vec![
+                "five_hour",
+                "seven_day",
+                "GPT-5.3-Codex-Spark_five_hour",
+                "GPT-5.3-Codex-Spark_seven_day",
+                "codex_lobsterpincer_five_hour",
+            ]
+        );
     }
 }
