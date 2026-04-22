@@ -21,6 +21,9 @@ pub mod stream_check;
 #[path = "../../../src-tauri/src/services/subscription.rs"]
 pub mod subscription;
 
+#[path = "../../../src-tauri/src/services/coding_plan.rs"]
+pub mod coding_plan;
+
 #[path = "../../../src-tauri/src/services/usage_stats.rs"]
 pub mod usage_stats;
 
