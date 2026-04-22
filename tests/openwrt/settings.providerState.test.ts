@@ -566,6 +566,25 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(source).toContain("getRecentActivity: async function (appId)");
   });
 
+  it("declares the quota passthrough contract for the native page shell", () => {
+    const { rpcDeclares } = loadSettingsView();
+    const source = readFileSync(
+      path.resolve(
+        process.cwd(),
+        "openwrt/luci-app-ccswitch/htdocs/luci-static/resources/view/ccswitch/settings.js",
+      ),
+      "utf8",
+    );
+
+    expect(
+      rpcDeclares.some(
+        (spec) => spec.object === "ccswitch" && spec.method === "get_quota",
+      ),
+    ).toBe(true);
+    expect(source).toContain("callOpenWrtQuota");
+    expect(source).toContain("getQuota: async function ()");
+  });
+
   it("declares the app request-log contracts for the native page shell", () => {
     const { rpcDeclares } = loadSettingsView();
     const source = readFileSync(
