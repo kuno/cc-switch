@@ -228,7 +228,7 @@ def render_quota_windows(p, prefix):
                 reset_str = format_reset(reset)
                 reset_label = f"  resets {reset_str}" if reset_str else ""
                 lines.append(
-                    f"{prefix}{graph} {pct}% ({wname}){reset_label} | font=Menlo size=12 color={color}"
+                    f"{prefix}{graph} {pct}% remaining ({wname}){reset_label} | font=Menlo size=12 color={color}"
                 )
             else:
                 color = STATUS_COLOR.get(wstatus, "#a1a1aa")
