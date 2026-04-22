@@ -13,6 +13,7 @@ mod codex_config;
 mod config;
 mod error;
 mod gemini_config;
+mod hermes_config;
 mod openclaw_config;
 mod opencode_config;
 mod openwrt_admin;
