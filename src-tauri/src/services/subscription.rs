@@ -594,35 +594,34 @@ fn is_codex_token_stale(last_refresh: &str) -> bool {
 #[derive(Deserialize)]
 struct CodexRateLimitWindow {
     used_percent: Option<f64>,
-    limit_window_seconds: Option<i64>,
+    #[serde(rename = "limit_window_seconds")]
+    _limit_window_seconds: Option<i64>,
     reset_at: Option<i64>,
 }
 
-#[derive(Deserialize)]
-struct CodexRateLimit {
-    primary_window: Option<CodexRateLimitWindow>,
-    secondary_window: Option<CodexRateLimitWindow>,
+fn parse_codex_usage_tiers(body: &serde_json::Value) -> Vec<QuotaTier> {
+    let Some(rate_limit) = body
+        .get("rate_limit")
+        .and_then(serde_json::Value::as_object)
+    else {
+        return Vec::new();
+    };
+
+    rate_limit
+        .iter()
+        .filter_map(|(name, value)| parse_codex_rate_limit_tier(name, value))
+        .collect()
 }
 
-#[derive(Deserialize)]
-struct CodexUsageResponse {
-    rate_limit: Option<CodexRateLimit>,
-}
+fn parse_codex_rate_limit_tier(name: &str, value: &serde_json::Value) -> Option<QuotaTier> {
+    let window: CodexRateLimitWindow = serde_json::from_value(value.clone()).ok()?;
+    let used_percent = window.used_percent?;
 
-/// 根据窗口秒数映射到 tier 名称（与 Claude 的命名兼容以复用前端 i18n）
-fn window_seconds_to_tier_name(secs: i64) -> String {
-    match secs {
-        18000 => "five_hour".to_string(),
-        604800 => "seven_day".to_string(),
-        s => {
-            let hours = s / 3600;
-            if hours >= 24 {
-                format!("{}_day", hours / 24)
-            } else {
-                format!("{}_hour", hours)
-            }
-        }
-    }
+    Some(QuotaTier {
+        name: name.to_string(),
+        utilization: used_percent,
+        resets_at: window.reset_at.and_then(unix_ts_to_iso),
+    })
 }
 
 /// Unix 时间戳（秒）转 ISO 8601 字符串
@@ -683,7 +682,7 @@ pub(crate) async fn query_codex_quota(
         );
     }
 
-    let body: CodexUsageResponse = match resp.json().await {
+    let body: serde_json::Value = match resp.json().await {
         Ok(v) => v,
         Err(e) => {
             return SubscriptionQuota::error(
@@ -694,25 +693,7 @@ pub(crate) async fn query_codex_quota(
         }
     };
 
-    let mut tiers = Vec::new();
-
-    if let Some(rate_limit) = body.rate_limit {
-        for window in [rate_limit.primary_window, rate_limit.secondary_window]
-            .into_iter()
-            .flatten()
-        {
-            if let Some(used) = window.used_percent {
-                tiers.push(QuotaTier {
-                    name: window
-                        .limit_window_seconds
-                        .map(window_seconds_to_tier_name)
-                        .unwrap_or_else(|| "unknown".to_string()),
-                    utilization: used,
-                    resets_at: window.reset_at.and_then(unix_ts_to_iso),
-                });
-            }
-        }
-    }
+    let tiers = parse_codex_usage_tiers(&body);
 
     SubscriptionQuota {
         tool: tool_label.to_string(),
@@ -1319,7 +1300,8 @@ fn now_millis() -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{remap_tier_name, KNOWN_TIERS};
+    use super::{parse_codex_usage_tiers, remap_tier_name, KNOWN_TIERS};
+    use serde_json::json;
 
     #[test]
     fn known_tiers_include_claude_design_upstream_name() {
@@ -1333,5 +1315,55 @@ mod tests {
             "seven_day_claude_design"
         );
         assert_eq!(remap_tier_name("seven_day"), "seven_day");
+    }
+
+    #[test]
+    fn parse_codex_usage_tiers_preserves_all_window_keys() {
+        let body = json!({
+            "rate_limit": {
+                "primary_window": {
+                    "used_percent": 12.5,
+                    "limit_window_seconds": 18000,
+                    "reset_at": 1_776_427_200
+                },
+                "secondary_window": {
+                    "used_percent": 33.3,
+                    "limit_window_seconds": 604800,
+                    "reset_at": 1_776_500_000,
+                    "new_field_from_openai": "kept tolerant"
+                },
+                "same_duration_different_key": {
+                    "used_percent": 66.6,
+                    "limit_window_seconds": 604800,
+                    "reset_at": 1_776_600_000
+                },
+                "malformed_window": "skip me"
+            }
+        });
+
+        let tiers = parse_codex_usage_tiers(&body);
+
+        assert_eq!(tiers.len(), 3);
+        assert_eq!(tiers[0].name, "primary_window");
+        assert_eq!(tiers[0].utilization, 12.5);
+        assert_eq!(
+            tiers[0].resets_at.as_deref(),
+            Some("2026-04-17T12:00:00+00:00")
+        );
+
+        assert_eq!(tiers[1].name, "secondary_window");
+        assert_eq!(tiers[1].utilization, 33.3);
+        assert_eq!(tiers[2].name, "same_duration_different_key");
+        assert_eq!(tiers[2].utilization, 66.6);
+
+        let distinct_names: Vec<_> = tiers.iter().map(|tier| tier.name.as_str()).collect();
+        assert_eq!(
+            distinct_names,
+            vec![
+                "primary_window",
+                "secondary_window",
+                "same_duration_different_key"
+            ]
+        );
     }
 }

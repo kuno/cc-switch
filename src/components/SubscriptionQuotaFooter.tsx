@@ -24,6 +24,8 @@ interface SubscriptionQuotaViewProps {
 export const TIER_I18N_KEYS: Record<string, string> = {
   five_hour: "subscription.fiveHour",
   seven_day: "subscription.sevenDay",
+  primary_window: "subscription.fiveHour",
+  secondary_window: "subscription.sevenDay",
   seven_day_opus: "subscription.sevenDayOpus",
   seven_day_sonnet: "subscription.sevenDaySonnet",
   // Gemini 模型分类
