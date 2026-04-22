@@ -372,6 +372,13 @@ impl ProxyServer {
         self.state.rate_limits.write().await.remove(provider_id);
     }
 
+    /// Clone the shared OAuth refresh lock manager so callers outside this server
+    /// (e.g. a startup background task) can acquire the same per-provider locks and
+    /// avoid racing with the lazy refresh path in the request handlers.
+    pub fn clone_oauth_refresh_locks(&self) -> OAuthRefreshLockManager {
+        self.state.oauth_refresh_locks.clone()
+    }
+
     /// 更新某个应用类型当前"目标供应商"（用于 UI 展示 active_targets）
     ///
     /// 注意：这不代表该供应商一定已经处理过请求，而是用于"热切换/启用故障转移立即切 P1"
