@@ -399,6 +399,7 @@ pub async fn get_quota(State(state): State<ProxyState>) -> (StatusCode, Json<Val
     refresh_codex_quota_snapshots(&state).await;
     refresh_claude_quota_snapshots(&state).await;
     super::third_party_quota::refresh_third_party_coding_plan_snapshots(&state).await;
+    super::third_party_quota::refresh_third_party_balance_snapshots(&state).await;
     let store = state.rate_limits.read().await;
     let providers: Vec<_> = store.values().cloned().collect();
     (
@@ -4245,6 +4246,7 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
                     requests_remaining: Some(10),
                     tokens_limit: Some(1_000),
                     tokens_remaining: Some(500),
+                    balances: None,
                     captured_at: 1_700_000_000_000,
                 },
             );
@@ -4269,6 +4271,7 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
                     requests_remaining: None,
                     tokens_limit: None,
                     tokens_remaining: None,
+                    balances: None,
                     captured_at: 1_700_000_000_100,
                 },
             );
@@ -4288,6 +4291,7 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
                     requests_remaining: None,
                     tokens_limit: None,
                     tokens_remaining: None,
+                    balances: None,
                     captured_at: 1_700_000_000_200,
                 },
             );
@@ -4445,6 +4449,7 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
                     requests_remaining: None,
                     tokens_limit: None,
                     tokens_remaining: None,
+                    balances: None,
                     captured_at: 1_700_000_000_000,
                 },
             );
