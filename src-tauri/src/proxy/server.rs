@@ -597,6 +597,7 @@ mod tests {
                     requests_remaining: None,
                     tokens_limit: None,
                     tokens_remaining: None,
+                    balances: None,
                     captured_at: 1,
                 },
             );
@@ -616,6 +617,7 @@ mod tests {
                     requests_remaining: None,
                     tokens_limit: None,
                     tokens_remaining: None,
+                    balances: None,
                     captured_at: 2,
                 },
             );
@@ -697,6 +699,7 @@ mod tests {
                     requests_remaining: None,
                     tokens_limit: None,
                     tokens_remaining: None,
+                    balances: None,
                     captured_at: 1,
                 },
             );
@@ -717,6 +720,7 @@ mod tests {
                     requests_remaining: None,
                     tokens_limit: None,
                     tokens_remaining: None,
+                    balances: None,
                     captured_at: 2,
                 },
             );
@@ -737,6 +741,7 @@ mod tests {
                     requests_remaining: None,
                     tokens_limit: None,
                     tokens_remaining: None,
+                    balances: None,
                     captured_at: 3,
                 },
             );
