@@ -2173,7 +2173,10 @@ fn provider_to_view(
         name: provider.name.clone(),
         base_url: extract_base_url(profile, provider).unwrap_or_default(),
         token_field: token_field.to_string(),
-        token_configured: !token_value.is_empty(),
+        token_configured: !token_value.is_empty()
+            || claude_auth
+                .as_ref()
+                .is_some_and(|a| a.refresh_token_present),
         token_masked: mask_secret(token_value),
         model: extract_model(profile, provider).unwrap_or_default(),
         notes: provider.notes.clone().unwrap_or_default(),
@@ -3489,6 +3492,54 @@ mod tests {
                 .get("auth_mode")
                 .and_then(Value::as_str),
             Some("claude_oauth")
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn claude_oauth_provider_with_uploaded_auth_is_token_configured() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+        let payload = OpenWrtProviderPayload {
+            provider_id: None,
+            name: "Claude Official".to_string(),
+            base_url: "https://api.anthropic.com".to_string(),
+            token_field: DEFAULT_TOKEN_FIELD.to_string(),
+            token: String::new(),
+            model: String::new(),
+            notes: String::new(),
+            auth_mode: Some("claude_oauth".to_string()),
+        };
+        upsert_provider_with_payload(&db, &AppType::Claude, Some("claude-oauth"), payload)
+            .expect("create claude oauth provider");
+
+        // Before auth upload: no refresh token on disk, so token_configured = false.
+        let view_before = get_provider(&db, &AppType::Claude, "claude-oauth")
+            .expect("get provider before upload");
+        assert!(!view_before.token_configured, "no auth on disk yet");
+
+        // Upload auth with a refresh_token present.
+        upload_claude_auth(
+            &db,
+            &AppType::Claude,
+            "claude-oauth",
+            &sample_claude_auth_json(),
+        )
+        .expect("upload auth");
+
+        // After upload: refresh_token_present = true → token_configured = true.
+        let view_after =
+            get_provider(&db, &AppType::Claude, "claude-oauth").expect("get provider after upload");
+        assert!(
+            view_after.token_configured,
+            "refresh_token present should make token_configured true"
+        );
+        assert_eq!(
+            view_after
+                .claude_auth
+                .as_ref()
+                .map(|a| a.refresh_token_present),
+            Some(true)
         );
     }
 
