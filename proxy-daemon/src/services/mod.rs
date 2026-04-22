@@ -24,6 +24,9 @@ pub mod subscription;
 #[path = "../../../src-tauri/src/services/coding_plan.rs"]
 pub mod coding_plan;
 
+#[path = "../../../src-tauri/src/services/balance.rs"]
+pub mod balance;
+
 #[path = "../../../src-tauri/src/services/usage_stats.rs"]
 pub mod usage_stats;
 
