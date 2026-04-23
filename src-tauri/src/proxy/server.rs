@@ -19,7 +19,7 @@ use crate::proxy::providers::copilot_auth::CopilotAuthManager;
 use crate::services::oauth_refresh::OAuthRefreshLockManager;
 use axum::{
     extract::DefaultBodyLimit,
-    routing::{get, post},
+    routing::{get, head, post},
     Router,
 };
 use hyper_util::rt::TokioIo;
@@ -400,10 +400,13 @@ impl ProxyServer {
         let router: Router<ProxyState> = Router::new()
             // 健康检查
             .route("/health", get(handlers::health_check))
+            .route("/", head(handlers::handle_head_root))
             .route("/status", get(handlers::get_status))
             .route("/api/quota", get(handlers::get_quota))
             // Claude API (支持带前缀和不带前缀两种格式)
+            .route("/v1/models", get(handlers::handle_list_models))
             .route("/v1/messages", post(handlers::handle_messages))
+            .route("/claude/v1/models", get(handlers::handle_list_models))
             .route("/claude/v1/messages", post(handlers::handle_messages))
             // OpenAI Chat Completions API (Codex CLI，支持带前缀和不带前缀)
             .route("/chat/completions", post(handlers::handle_chat_completions))
@@ -480,11 +483,239 @@ impl ProxyServer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::database::Database;
     use crate::provider::Provider;
     use crate::proxy::rate_limit::RateLimitSnapshot;
-    use axum::{extract::State, http::StatusCode};
-    use serde_json::json;
+    use crate::{app_config::AppType, database::Database};
+    use axum::{
+        extract::{RawQuery, State},
+        http::{HeaderMap, StatusCode, Uri},
+        response::IntoResponse,
+        routing::get,
+        Json, Router,
+    };
+    use reqwest::Client;
+    use serde_json::{json, Value};
+    use serial_test::serial;
+    use std::sync::{Arc, Mutex, OnceLock};
+    use tempfile::TempDir;
+
+    struct TestEnv {
+        _guard: std::sync::MutexGuard<'static, ()>,
+        _tmp: TempDir,
+        original_home: Option<String>,
+        original_userprofile: Option<String>,
+        original_test_home: Option<String>,
+        original_data_dir: Option<String>,
+    }
+
+    impl TestEnv {
+        fn new() -> Self {
+            let guard = crate::settings::test_env_lock()
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner());
+            let tmp = TempDir::new().expect("create temp dir");
+            let home = tmp.path().join("home");
+            let data = tmp.path().join("data");
+
+            std::fs::create_dir_all(&home).expect("create home");
+            std::fs::create_dir_all(&data).expect("create data");
+
+            let original_home = std::env::var("HOME").ok();
+            let original_userprofile = std::env::var("USERPROFILE").ok();
+            let original_test_home = std::env::var("CC_SWITCH_TEST_HOME").ok();
+            let original_data_dir = std::env::var("CC_SWITCH_DATA_DIR").ok();
+
+            std::env::set_var("HOME", &home);
+            std::env::set_var("USERPROFILE", &home);
+            std::env::set_var("CC_SWITCH_TEST_HOME", &home);
+            std::env::set_var("CC_SWITCH_DATA_DIR", &data);
+            let _ = crate::settings::set_current_provider(&AppType::Claude, None);
+
+            Self {
+                _guard: guard,
+                _tmp: tmp,
+                original_home,
+                original_userprofile,
+                original_test_home,
+                original_data_dir,
+            }
+        }
+    }
+
+    impl Drop for TestEnv {
+        fn drop(&mut self) {
+            let _ = crate::settings::set_current_provider(&AppType::Claude, None);
+            match &self.original_home {
+                Some(value) => std::env::set_var("HOME", value),
+                None => std::env::remove_var("HOME"),
+            }
+            match &self.original_userprofile {
+                Some(value) => std::env::set_var("USERPROFILE", value),
+                None => std::env::remove_var("USERPROFILE"),
+            }
+            match &self.original_test_home {
+                Some(value) => std::env::set_var("CC_SWITCH_TEST_HOME", value),
+                None => std::env::remove_var("CC_SWITCH_TEST_HOME"),
+            }
+            match &self.original_data_dir {
+                Some(value) => std::env::set_var("CC_SWITCH_DATA_DIR", value),
+                None => std::env::remove_var("CC_SWITCH_DATA_DIR"),
+            }
+        }
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    struct CapturedUpstreamRequest {
+        method: String,
+        path_and_query: String,
+        authorization: Option<String>,
+        anthropic_beta: Option<String>,
+    }
+
+    #[derive(Clone, Default)]
+    struct MockAnthropicState {
+        requests: Arc<Mutex<Vec<CapturedUpstreamRequest>>>,
+    }
+
+    struct SpawnedServer {
+        base_url: String,
+        handle: tokio::task::JoinHandle<()>,
+    }
+
+    impl Drop for SpawnedServer {
+        fn drop(&mut self) {
+            self.handle.abort();
+        }
+    }
+
+    fn claude_oauth_provider(provider_id: &str, base_url: &str) -> Provider {
+        Provider::with_id(
+            provider_id.to_string(),
+            "Claude OAuth".to_string(),
+            json!({
+                "auth_mode": "claude_oauth",
+                "env": {
+                    "ANTHROPIC_BASE_URL": base_url
+                }
+            }),
+            None,
+        )
+    }
+
+    fn header_value(headers: &HeaderMap, name: &str) -> Option<String> {
+        headers
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .map(ToString::to_string)
+    }
+
+    fn ensure_rustls_crypto_provider() {
+        static INIT: OnceLock<()> = OnceLock::new();
+        INIT.get_or_init(|| {
+            let _ = rustls::crypto::ring::default_provider().install_default();
+        });
+    }
+
+    async fn mock_models_handler(
+        State(state): State<MockAnthropicState>,
+        headers: HeaderMap,
+        uri: Uri,
+        raw_query: RawQuery,
+    ) -> impl IntoResponse {
+        state
+            .requests
+            .lock()
+            .expect("lock mock requests")
+            .push(CapturedUpstreamRequest {
+                method: "GET".to_string(),
+                path_and_query: uri
+                    .path_and_query()
+                    .map(|value| value.as_str().to_string())
+                    .unwrap_or_else(|| uri.path().to_string()),
+                authorization: header_value(&headers, "authorization"),
+                anthropic_beta: header_value(&headers, "anthropic-beta"),
+            });
+
+        assert_eq!(raw_query.0.as_deref(), Some("limit=1000"));
+
+        (
+            StatusCode::OK,
+            [("x-upstream-test", "models")],
+            Json(json!({
+                "data": [{
+                    "id": "claude-3-5-sonnet-20241022",
+                    "type": "model",
+                    "display_name": "Claude 3.5 Sonnet"
+                }],
+                "has_more": false,
+                "first_id": "claude-3-5-sonnet-20241022",
+                "last_id": "claude-3-5-sonnet-20241022"
+            })),
+        )
+    }
+
+    async fn spawn_router(app: Router) -> SpawnedServer {
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind test listener");
+        let address = listener.local_addr().expect("listener addr");
+        let handle = tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve test router");
+        });
+
+        SpawnedServer {
+            base_url: format!("http://{}", address),
+            handle,
+        }
+    }
+
+    async fn spawn_mock_anthropic() -> (SpawnedServer, MockAnthropicState) {
+        let state = MockAnthropicState::default();
+        let app = Router::new()
+            .route("/v1/models", get(mock_models_handler))
+            .route("/claude/v1/models", get(mock_models_handler))
+            .with_state(state.clone());
+
+        (spawn_router(app).await, state)
+    }
+
+    async fn spawn_proxy_with_claude_provider(base_url: &str) -> SpawnedServer {
+        ensure_rustls_crypto_provider();
+        let db = Arc::new(Database::memory().expect("init db"));
+        let provider = claude_oauth_provider("claude-oauth", base_url);
+        db.save_provider("claude", &provider)
+            .expect("save claude provider");
+        db.set_current_provider("claude", &provider.id)
+            .expect("set current provider");
+        crate::settings::set_current_provider(&AppType::Claude, Some(&provider.id))
+            .expect("set local current provider");
+
+        let server = ProxyServer::new(
+            ProxyConfig::default(),
+            db,
+            None,
+            None,
+            #[cfg(feature = "tauri-desktop")]
+            None,
+        );
+
+        spawn_router(server.build_router()).await
+    }
+
+    async fn spawn_proxy_without_claude_provider() -> SpawnedServer {
+        ensure_rustls_crypto_provider();
+        let db = Arc::new(Database::memory().expect("init db"));
+        let server = ProxyServer::new(
+            ProxyConfig::default(),
+            db,
+            None,
+            None,
+            #[cfg(feature = "tauri-desktop")]
+            None,
+        );
+
+        spawn_router(server.build_router()).await
+    }
 
     #[tokio::test]
     async fn get_status_prefers_claude_target_for_legacy_current_provider_fields() {
@@ -756,5 +987,118 @@ mod tests {
             store.contains_key("codex-passthrough"),
             "codex snapshot should remain in the in-memory store"
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn build_router_forwards_claude_models_query_and_headers() {
+        let _env = TestEnv::new();
+        let (upstream, upstream_state) = spawn_mock_anthropic().await;
+        let proxy = spawn_proxy_with_claude_provider(&upstream.base_url).await;
+
+        let response = Client::new()
+            .get(format!("{}/v1/models?limit=1000", proxy.base_url))
+            .header("authorization", "Bearer test-oauth-token")
+            .header("anthropic-version", "2023-06-01")
+            .header("anthropic-beta", "effort-2025-11-24")
+            .header(
+                "user-agent",
+                "claude-cli/2.1.111 (external, claude-desktop-3p)",
+            )
+            .send()
+            .await
+            .expect("send proxy request");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get("x-upstream-test")
+                .and_then(|value| value.to_str().ok()),
+            Some("models")
+        );
+
+        let body: Value = response.json().await.expect("parse response json");
+        assert_eq!(body["has_more"], json!(false));
+        assert_eq!(body["first_id"], json!("claude-3-5-sonnet-20241022"));
+        assert_eq!(body["last_id"], json!("claude-3-5-sonnet-20241022"));
+
+        let requests = upstream_state
+            .requests
+            .lock()
+            .expect("lock upstream requests");
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].method, "GET");
+        assert_eq!(requests[0].path_and_query, "/v1/models?limit=1000");
+        assert_eq!(
+            requests[0].authorization.as_deref(),
+            Some("Bearer test-oauth-token")
+        );
+        assert_eq!(
+            requests[0].anthropic_beta.as_deref(),
+            Some("effort-2025-11-24")
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn build_router_mounts_prefixed_claude_models_route() {
+        let _env = TestEnv::new();
+        let (upstream, upstream_state) = spawn_mock_anthropic().await;
+        let proxy = spawn_proxy_with_claude_provider(&upstream.base_url).await;
+
+        let response = Client::new()
+            .get(format!("{}/claude/v1/models?limit=1000", proxy.base_url))
+            .header("authorization", "Bearer test-oauth-token")
+            .header("anthropic-version", "2023-06-01")
+            .send()
+            .await
+            .expect("send prefixed proxy request");
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let requests = upstream_state
+            .requests
+            .lock()
+            .expect("lock upstream requests");
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].path_and_query, "/claude/v1/models?limit=1000");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn build_router_head_root_returns_no_content() {
+        let _env = TestEnv::new();
+        let proxy = spawn_proxy_without_claude_provider().await;
+
+        let response = Client::new()
+            .head(format!("{}/", proxy.base_url))
+            .send()
+            .await
+            .expect("send head request");
+
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        assert!(response
+            .bytes()
+            .await
+            .expect("read response body")
+            .is_empty());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn build_router_models_returns_503_without_active_claude_provider() {
+        let _env = TestEnv::new();
+        let proxy = spawn_proxy_without_claude_provider().await;
+
+        let response = Client::new()
+            .get(format!("{}/v1/models?limit=1000", proxy.base_url))
+            .header("authorization", "Bearer test-oauth-token")
+            .header("anthropic-version", "2023-06-01")
+            .send()
+            .await
+            .expect("send models request");
+
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 }

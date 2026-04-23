@@ -67,6 +67,11 @@ pub async fn health_check() -> (StatusCode, Json<Value>) {
     )
 }
 
+/// Claude Desktop readiness probe
+pub async fn handle_head_root() -> StatusCode {
+    StatusCode::NO_CONTENT
+}
+
 fn is_codex_oauth_provider(provider: &crate::provider::Provider) -> bool {
     provider.id == CODEX_OFFICIAL_PROVIDER_ID
         || provider
@@ -405,6 +410,52 @@ pub async fn get_status(State(state): State<ProxyState>) -> Result<Json<ProxySta
 // ============================================================================
 // Claude API 处理器（包含格式转换逻辑）
 // ============================================================================
+
+/// 处理 /v1/models 请求（Claude Models API）
+pub async fn handle_list_models(
+    State(state): State<ProxyState>,
+    request: axum::extract::Request,
+) -> Result<axum::response::Response, ProxyError> {
+    let (parts, _body) = request.into_parts();
+    let uri = parts.uri;
+    let headers = parts.headers;
+    let extensions = parts.extensions;
+    let body = Value::Null;
+
+    let mut ctx =
+        RequestContext::new(&state, &body, &headers, AppType::Claude, "Claude", "claude").await?;
+
+    let endpoint = uri
+        .path_and_query()
+        .map(|path_and_query| path_and_query.as_str())
+        .unwrap_or(uri.path());
+
+    let forwarder = ctx.create_forwarder(&state);
+    let result = match forwarder
+        .forward_with_retry_generic(
+            axum::http::Method::GET,
+            &AppType::Claude,
+            endpoint,
+            body,
+            headers,
+            extensions,
+            ctx.get_providers(),
+        )
+        .await
+    {
+        Ok(result) => result,
+        Err(mut err) => {
+            if let Some(provider) = err.provider.take() {
+                ctx.provider = provider;
+            }
+            log_forward_error(&state, &ctx, false, &err.error);
+            return Err(err.error);
+        }
+    };
+
+    ctx.provider = result.provider;
+    process_response(result.response, &ctx, &state, &CLAUDE_PARSER_CONFIG, false).await
+}
 
 /// 处理 /v1/messages 请求（Claude API）
 ///

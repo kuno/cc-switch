@@ -104,6 +104,10 @@ fn build_effective_auth_headers(
     Vec::new()
 }
 
+fn method_allows_request_body(method: &http::Method) -> bool {
+    !matches!(*method, http::Method::GET | http::Method::HEAD)
+}
+
 const CODEX_CHATGPT_BACKEND_BASE_URL: &str = "https://chatgpt.com/backend-api/codex";
 const CODEX_REASONING_ENCRYPTED_CONTENT: &str = "reasoning.encrypted_content";
 const CODEX_OFFICIAL_PROVIDER_ID: &str = "codex-official";
@@ -343,6 +347,28 @@ impl RequestForwarder {
         extensions: Extensions,
         providers: Vec<Provider>,
     ) -> Result<ForwardResult, ForwardError> {
+        self.forward_with_retry_generic(
+            http::Method::POST,
+            app_type,
+            endpoint,
+            body,
+            headers,
+            extensions,
+            providers,
+        )
+        .await
+    }
+
+    pub async fn forward_with_retry_generic(
+        &self,
+        method: http::Method,
+        app_type: &AppType,
+        endpoint: &str,
+        body: Value,
+        headers: axum::http::HeaderMap,
+        extensions: Extensions,
+        providers: Vec<Provider>,
+    ) -> Result<ForwardResult, ForwardError> {
         // 获取适配器
         let adapter = get_adapter(app_type);
         let app_type_str = app_type.as_str();
@@ -413,7 +439,8 @@ impl RequestForwarder {
 
             // 转发请求（每个 Provider 只尝试一次，重试由客户端控制）
             match self
-                .forward(
+                .forward_generic(
+                    &method,
                     provider,
                     app_type_str,
                     endpoint,
@@ -553,7 +580,8 @@ impl RequestForwarder {
 
                                 // 使用同一供应商重试（不计入熔断器）
                                 match self
-                                    .forward(
+                                    .forward_generic(
+                                        &method,
                                         provider,
                                         app_type_str,
                                         endpoint,
@@ -760,7 +788,8 @@ impl RequestForwarder {
 
                             // 使用同一供应商重试（不计入熔断器）
                             match self
-                                .forward(
+                                .forward_generic(
+                                    &method,
                                     provider,
                                     app_type_str,
                                     endpoint,
@@ -1006,8 +1035,9 @@ impl RequestForwarder {
     }
 
     /// 转发单个请求（使用适配器）
-    async fn forward(
+    async fn forward_generic(
         &self,
+        method: &http::Method,
         provider: &Provider,
         app_type_str: &str,
         endpoint: &str,
@@ -1225,7 +1255,7 @@ impl RequestForwarder {
         };
 
         // 转换请求体（如果需要）
-        let mut request_body = if needs_transform {
+        let mut request_body = if needs_transform && method_allows_request_body(method) {
             if adapter.name() == "Claude" {
                 let api_format = resolved_claude_api_format
                     .as_deref()
@@ -1482,6 +1512,8 @@ impl RequestForwarder {
 
         let should_send_anthropic_headers = adapter.name() == "Claude"
             && matches!(resolved_claude_api_format.as_deref(), Some("anthropic"));
+        let should_enforce_claude_code_beta = should_send_anthropic_headers
+            && is_claude_messages_path(split_endpoint_and_query(endpoint).0);
         let should_inject_stored_claude_oauth_beta = should_send_anthropic_headers
             && is_claude_oauth_provider(provider)
             && stored_claude_oauth_auth.is_some();
@@ -1495,19 +1527,26 @@ impl RequestForwarder {
                 headers.get("anthropic-beta"),
             ))
         } else if should_send_anthropic_headers && !is_claude_oauth_provider(provider) {
-            Some(if let Some(beta) = headers.get("anthropic-beta") {
-                if let Ok(beta_str) = beta.to_str() {
-                    if beta_str.contains(CLAUDE_CODE_BETA) {
-                        beta_str.to_string()
+            if should_enforce_claude_code_beta {
+                Some(if let Some(beta) = headers.get("anthropic-beta") {
+                    if let Ok(beta_str) = beta.to_str() {
+                        if beta_str.contains(CLAUDE_CODE_BETA) {
+                            beta_str.to_string()
+                        } else {
+                            format!("{CLAUDE_CODE_BETA},{beta_str}")
+                        }
                     } else {
-                        format!("{CLAUDE_CODE_BETA},{beta_str}")
+                        CLAUDE_CODE_BETA.to_string()
                     }
                 } else {
                     CLAUDE_CODE_BETA.to_string()
-                }
+                })
             } else {
-                CLAUDE_CODE_BETA.to_string()
-            })
+                headers
+                    .get("anthropic-beta")
+                    .and_then(|beta| beta.to_str().ok())
+                    .map(ToString::to_string)
+            }
         } else {
             None
         };
@@ -1676,11 +1715,18 @@ impl RequestForwarder {
         }
 
         // 序列化请求体
-        let body_bytes = serde_json::to_vec(&filtered_body)
-            .map_err(|e| ProxyError::Internal(format!("Failed to serialize request body: {e}")))?;
+        let body_bytes = if method_allows_request_body(method) {
+            serde_json::to_vec(&filtered_body).map_err(|e| {
+                ProxyError::Internal(format!("Failed to serialize request body: {e}"))
+            })?
+        } else {
+            Vec::new()
+        };
 
         // 确保 content-type 存在
-        if !ordered_headers.contains_key(http::header::CONTENT_TYPE) {
+        if method_allows_request_body(method)
+            && !ordered_headers.contains_key(http::header::CONTENT_TYPE)
+        {
             ordered_headers.insert(
                 http::header::CONTENT_TYPE,
                 http::HeaderValue::from_static("application/json"),
@@ -1693,13 +1739,18 @@ impl RequestForwarder {
             .get("model")
             .and_then(|v| v.as_str())
             .unwrap_or("<none>");
-        log::info!("[{tag}] >>> 请求 URL: {url} (model={request_model})");
-        if let Ok(body_str) = serde_json::to_string(&filtered_body) {
-            log::debug!(
-                "[{tag}] >>> 请求体内容 ({}字节): {}",
-                body_str.len(),
-                body_str
-            );
+        log::info!(
+            "[{tag}] >>> {} 请求 URL: {url} (model={request_model})",
+            method.as_str()
+        );
+        if method_allows_request_body(method) {
+            if let Ok(body_str) = serde_json::to_string(&filtered_body) {
+                log::debug!(
+                    "[{tag}] >>> 请求体内容 ({}字节): {}",
+                    body_str.len(),
+                    body_str
+                );
+            }
         }
 
         // 确定超时
@@ -1727,14 +1778,17 @@ impl RequestForwarder {
             // SOCKS5 代理：只能走 reqwest（不支持 header case 保留）
             log::debug!("[Forwarder] Using reqwest for SOCKS5 proxy");
             let client = super::http_client::get();
-            let mut request = client.post(&url);
+            let mut request = client.request(method.clone(), &url);
             if !self.non_streaming_timeout.is_zero() {
                 request = request.timeout(self.non_streaming_timeout);
             }
             for (key, value) in &ordered_headers {
                 request = request.header(key, value);
             }
-            let reqwest_resp = request.body(body_bytes).send().await.map_err(|e| {
+            if method_allows_request_body(method) {
+                request = request.body(body_bytes.clone());
+            }
+            let reqwest_resp = request.send().await.map_err(|e| {
                 if e.is_timeout() {
                     ProxyError::Timeout(format!("请求超时: {e}"))
                 } else if e.is_connect() {
@@ -1749,7 +1803,7 @@ impl RequestForwarder {
             // 如果有 HTTP 代理，hyper_client 会用 CONNECT 隧道穿过代理
             super::hyper_client::send_request(
                 uri,
-                http::Method::POST,
+                method.clone(),
                 ordered_headers,
                 extensions.clone(),
                 body_bytes,
