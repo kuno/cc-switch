@@ -424,6 +424,7 @@ pub async fn handle_list_models(
 
     let mut ctx =
         RequestContext::new(&state, &body, &headers, AppType::Claude, "Claude", "claude").await?;
+    ctx.skip_health_accounting = true;
 
     let endpoint = uri
         .path_and_query()

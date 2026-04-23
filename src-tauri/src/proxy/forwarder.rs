@@ -70,6 +70,8 @@ pub struct RequestForwarder {
     optimizer_config: OptimizerConfig,
     /// Copilot 优化器配置
     copilot_optimizer_config: CopilotOptimizerConfig,
+    /// 跳过 Provider 健康统计（metadata 路由使用 neutral permit release）
+    skip_health_accounting: bool,
     /// 非流式请求超时（秒）
     non_streaming_timeout: std::time::Duration,
     /// Per-provider rate limit snapshots
@@ -283,6 +285,7 @@ impl RequestForwarder {
         rectifier_config: RectifierConfig,
         optimizer_config: OptimizerConfig,
         copilot_optimizer_config: CopilotOptimizerConfig,
+        skip_health_accounting: bool,
         rate_limits: super::rate_limit::RateLimitStore,
         #[cfg(feature = "tauri-desktop")] app_handle: Option<tauri::AppHandle>,
     ) -> Self {
@@ -299,6 +302,7 @@ impl RequestForwarder {
             rectifier_config,
             optimizer_config,
             copilot_optimizer_config,
+            skip_health_accounting,
             non_streaming_timeout: std::time::Duration::from_secs(non_streaming_timeout),
             rate_limits,
             #[cfg(feature = "tauri-desktop")]
@@ -328,6 +332,33 @@ impl RequestForwarder {
     #[cfg(test)]
     fn set_claude_oauth_refresher_for_tests(&mut self, refresher: Arc<dyn OAuthTokenRefresher>) {
         self.claude_oauth_refresher = Some(refresher);
+    }
+
+    async fn finish_provider_attempt(
+        &self,
+        provider_id: &str,
+        app_type: &str,
+        used_half_open_permit: bool,
+        success: bool,
+        error_msg: Option<String>,
+    ) {
+        if self.skip_health_accounting {
+            self.router
+                .release_permit_neutral(provider_id, app_type, used_half_open_permit)
+                .await;
+            return;
+        }
+
+        let _ = self
+            .router
+            .record_result(
+                provider_id,
+                app_type,
+                used_half_open_permit,
+                success,
+                error_msg,
+            )
+            .await;
     }
 
     /// 转发请求（带故障转移）
@@ -453,16 +484,14 @@ impl RequestForwarder {
             {
                 Ok((response, claude_api_format)) => {
                     // 成功：记录成功并更新熔断器
-                    let _ = self
-                        .router
-                        .record_result(
-                            &provider.id,
-                            app_type_str,
-                            used_half_open_permit,
-                            true,
-                            None,
-                        )
-                        .await;
+                    self.finish_provider_attempt(
+                        &provider.id,
+                        app_type_str,
+                        used_half_open_permit,
+                        true,
+                        None,
+                    )
+                    .await;
 
                     // 更新当前应用类型使用的 provider
                     {
@@ -594,17 +623,14 @@ impl RequestForwarder {
                                 {
                                     Ok((response, claude_api_format)) => {
                                         log::info!("[{app_type_str}] [RECT-002] 整流重试成功");
-                                        // 记录成功
-                                        let _ = self
-                                            .router
-                                            .record_result(
-                                                &provider.id,
-                                                app_type_str,
-                                                used_half_open_permit,
-                                                true,
-                                                None,
-                                            )
-                                            .await;
+                                        self.finish_provider_attempt(
+                                            &provider.id,
+                                            app_type_str,
+                                            used_half_open_permit,
+                                            true,
+                                            None,
+                                        )
+                                        .await;
 
                                         // 更新当前应用类型使用的 provider
                                         {
@@ -679,16 +705,14 @@ impl RequestForwarder {
 
                                         if is_provider_error {
                                             // Provider 问题：记录失败到熔断器
-                                            let _ = self
-                                                .router
-                                                .record_result(
-                                                    &provider.id,
-                                                    app_type_str,
-                                                    used_half_open_permit,
-                                                    false,
-                                                    Some(retry_err.to_string()),
-                                                )
-                                                .await;
+                                            self.finish_provider_attempt(
+                                                &provider.id,
+                                                app_type_str,
+                                                used_half_open_permit,
+                                                false,
+                                                Some(retry_err.to_string()),
+                                            )
+                                            .await;
                                         } else {
                                             // 客户端问题：仅释放 permit，不记录熔断器
                                             self.router
@@ -802,16 +826,14 @@ impl RequestForwarder {
                             {
                                 Ok((response, claude_api_format)) => {
                                     log::info!("[{app_type_str}] [RECT-011] budget 整流重试成功");
-                                    let _ = self
-                                        .router
-                                        .record_result(
-                                            &provider.id,
-                                            app_type_str,
-                                            used_half_open_permit,
-                                            true,
-                                            None,
-                                        )
-                                        .await;
+                                    self.finish_provider_attempt(
+                                        &provider.id,
+                                        app_type_str,
+                                        used_half_open_permit,
+                                        true,
+                                        None,
+                                    )
+                                    .await;
 
                                     {
                                         let mut current_providers =
@@ -876,16 +898,14 @@ impl RequestForwarder {
                                     };
 
                                     if is_provider_error {
-                                        let _ = self
-                                            .router
-                                            .record_result(
-                                                &provider.id,
-                                                app_type_str,
-                                                used_half_open_permit,
-                                                false,
-                                                Some(retry_err.to_string()),
-                                            )
-                                            .await;
+                                        self.finish_provider_attempt(
+                                            &provider.id,
+                                            app_type_str,
+                                            used_half_open_permit,
+                                            false,
+                                            Some(retry_err.to_string()),
+                                        )
+                                        .await;
                                     } else {
                                         self.router
                                             .release_permit_neutral(
@@ -936,16 +956,14 @@ impl RequestForwarder {
                     }
 
                     // 失败：记录失败并更新熔断器
-                    let _ = self
-                        .router
-                        .record_result(
-                            &provider.id,
-                            app_type_str,
-                            used_half_open_permit,
-                            false,
-                            Some(e.to_string()),
-                        )
-                        .await;
+                    self.finish_provider_attempt(
+                        &provider.id,
+                        app_type_str,
+                        used_half_open_permit,
+                        false,
+                        Some(e.to_string()),
+                    )
+                    .await;
 
                     // 分类错误
                     let category = self.categorize_proxy_error(&e);

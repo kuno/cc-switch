@@ -63,6 +63,8 @@ pub struct RequestContext {
     pub optimizer_config: OptimizerConfig,
     /// Copilot 优化器配置
     pub copilot_optimizer_config: CopilotOptimizerConfig,
+    /// 跳过 Provider 健康统计（用于 metadata 路由）
+    pub skip_health_accounting: bool,
 }
 
 impl RequestContext {
@@ -166,6 +168,7 @@ impl RequestContext {
             rectifier_config,
             optimizer_config,
             copilot_optimizer_config,
+            skip_health_accounting: false,
         })
     }
 
@@ -231,6 +234,7 @@ impl RequestContext {
             self.rectifier_config.clone(),
             self.optimizer_config.clone(),
             self.copilot_optimizer_config.clone(),
+            self.skip_health_accounting,
             state.rate_limits.clone(),
             #[cfg(feature = "tauri-desktop")]
             state.app_handle.clone(),

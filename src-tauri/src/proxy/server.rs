@@ -484,6 +484,7 @@ impl ProxyServer {
 mod tests {
     use super::*;
     use crate::provider::Provider;
+    use crate::proxy::circuit_breaker::CircuitState;
     use crate::proxy::rate_limit::RateLimitSnapshot;
     use crate::{app_config::AppType, database::Database};
     use axum::{
@@ -572,9 +573,19 @@ mod tests {
         anthropic_beta: Option<String>,
     }
 
-    #[derive(Clone, Default)]
+    #[derive(Clone)]
     struct MockAnthropicState {
         requests: Arc<Mutex<Vec<CapturedUpstreamRequest>>>,
+        models_status: Arc<Mutex<StatusCode>>,
+    }
+
+    impl Default for MockAnthropicState {
+        fn default() -> Self {
+            Self {
+                requests: Arc::new(Mutex::new(Vec::new())),
+                models_status: Arc::new(Mutex::new(StatusCode::OK)),
+            }
+        }
     }
 
     struct SpawnedServer {
@@ -638,20 +649,35 @@ mod tests {
 
         assert_eq!(raw_query.0.as_deref(), Some("limit=1000"));
 
-        (
-            StatusCode::OK,
-            [("x-upstream-test", "models")],
-            Json(json!({
-                "data": [{
-                    "id": "claude-3-5-sonnet-20241022",
-                    "type": "model",
-                    "display_name": "Claude 3.5 Sonnet"
-                }],
-                "has_more": false,
-                "first_id": "claude-3-5-sonnet-20241022",
-                "last_id": "claude-3-5-sonnet-20241022"
-            })),
-        )
+        let status = *state.models_status.lock().expect("lock mock models status");
+
+        if status == StatusCode::OK {
+            (
+                status,
+                [("x-upstream-test", "models")],
+                Json(json!({
+                    "data": [{
+                        "id": "claude-3-5-sonnet-20241022",
+                        "type": "model",
+                        "display_name": "Claude 3.5 Sonnet"
+                    }],
+                    "has_more": false,
+                    "first_id": "claude-3-5-sonnet-20241022",
+                    "last_id": "claude-3-5-sonnet-20241022"
+                })),
+            )
+                .into_response()
+        } else {
+            (
+                status,
+                Json(json!({
+                    "error": {
+                        "message": "mock models failure"
+                    }
+                })),
+            )
+                .into_response()
+        }
     }
 
     async fn spawn_router(app: Router) -> SpawnedServer {
@@ -671,6 +697,20 @@ mod tests {
 
     async fn spawn_mock_anthropic() -> (SpawnedServer, MockAnthropicState) {
         let state = MockAnthropicState::default();
+        let app = Router::new()
+            .route("/v1/models", get(mock_models_handler))
+            .route("/claude/v1/models", get(mock_models_handler))
+            .with_state(state.clone());
+
+        (spawn_router(app).await, state)
+    }
+
+    async fn spawn_mock_anthropic_with_models_status(
+        models_status: StatusCode,
+    ) -> (SpawnedServer, MockAnthropicState) {
+        let state = MockAnthropicState::default();
+        *state.models_status.lock().expect("lock mock models status") = models_status;
+
         let app = Router::new()
             .route("/v1/models", get(mock_models_handler))
             .route("/claude/v1/models", get(mock_models_handler))
@@ -700,6 +740,85 @@ mod tests {
         );
 
         spawn_router(server.build_router()).await
+    }
+
+    async fn spawn_proxy_with_claude_failover_chain(
+        base_url: &str,
+    ) -> (SpawnedServer, ProxyState, String) {
+        ensure_rustls_crypto_provider();
+        let db = Arc::new(Database::memory().expect("init db"));
+        let primary = claude_oauth_provider("claude-oauth-a", base_url);
+        let secondary = claude_oauth_provider("claude-oauth-b", base_url);
+
+        db.save_provider("claude", &primary)
+            .expect("save primary claude provider");
+        db.save_provider("claude", &secondary)
+            .expect("save secondary claude provider");
+        db.set_current_provider("claude", &primary.id)
+            .expect("set current provider");
+        db.add_to_failover_queue("claude", &primary.id)
+            .expect("queue primary provider");
+        db.add_to_failover_queue("claude", &secondary.id)
+            .expect("queue secondary provider");
+        crate::settings::set_current_provider(&AppType::Claude, Some(&primary.id))
+            .expect("set local current provider");
+
+        let mut config = db
+            .get_proxy_config_for_app("claude")
+            .await
+            .expect("load proxy config");
+        config.auto_failover_enabled = true;
+        config.circuit_failure_threshold = 1;
+        config.circuit_success_threshold = 1;
+        config.circuit_timeout_seconds = 0;
+        db.update_proxy_config_for_app(config)
+            .await
+            .expect("persist proxy config");
+
+        let server = ProxyServer::new(
+            ProxyConfig::default(),
+            db,
+            None,
+            None,
+            #[cfg(feature = "tauri-desktop")]
+            None,
+        );
+        let state = server.state.clone();
+
+        (spawn_router(server.build_router()).await, state, primary.id)
+    }
+
+    async fn prepare_half_open_breaker(state: &ProxyState, provider_id: &str) {
+        state
+            .provider_router
+            .record_result(
+                provider_id,
+                "claude",
+                false,
+                false,
+                Some("trip breaker".to_string()),
+            )
+            .await
+            .expect("trip breaker");
+
+        let probe = state
+            .provider_router
+            .allow_provider_request(provider_id, "claude")
+            .await;
+        assert!(probe.allowed);
+        assert!(probe.used_half_open_permit);
+
+        state
+            .provider_router
+            .release_permit_neutral(provider_id, "claude", probe.used_half_open_permit)
+            .await;
+
+        let stats = state
+            .provider_router
+            .get_circuit_breaker_stats(provider_id, "claude")
+            .await
+            .expect("breaker stats after half-open prep");
+        assert_eq!(stats.state, CircuitState::HalfOpen);
     }
 
     async fn spawn_proxy_without_claude_provider() -> SpawnedServer {
@@ -1100,5 +1219,82 @@ mod tests {
             .expect("send models request");
 
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn build_router_models_success_keeps_half_open_breaker_neutral() {
+        let _env = TestEnv::new();
+        let (upstream, _upstream_state) = spawn_mock_anthropic().await;
+        let (proxy, state, provider_id) =
+            spawn_proxy_with_claude_failover_chain(&upstream.base_url).await;
+
+        prepare_half_open_breaker(&state, &provider_id).await;
+        let before = state
+            .provider_router
+            .get_circuit_breaker_stats(&provider_id, "claude")
+            .await
+            .expect("breaker stats before metadata request");
+        assert_eq!(before.state, CircuitState::HalfOpen);
+
+        let response = Client::new()
+            .get(format!("{}/v1/models?limit=1000", proxy.base_url))
+            .header("authorization", "Bearer test-oauth-token")
+            .header("anthropic-version", "2023-06-01")
+            .send()
+            .await
+            .expect("send metadata request");
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let after = state
+            .provider_router
+            .get_circuit_breaker_stats(&provider_id, "claude")
+            .await
+            .expect("breaker stats after metadata request");
+        assert_eq!(after.state, CircuitState::HalfOpen);
+        assert_eq!(after.consecutive_failures, before.consecutive_failures);
+        assert_eq!(after.consecutive_successes, before.consecutive_successes);
+        assert_eq!(after.total_requests, before.total_requests);
+        assert_eq!(after.failed_requests, before.failed_requests);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn build_router_models_upstream_failure_keeps_half_open_breaker_neutral() {
+        let _env = TestEnv::new();
+        let (upstream, _upstream_state) =
+            spawn_mock_anthropic_with_models_status(StatusCode::INTERNAL_SERVER_ERROR).await;
+        let (proxy, state, provider_id) =
+            spawn_proxy_with_claude_failover_chain(&upstream.base_url).await;
+
+        prepare_half_open_breaker(&state, &provider_id).await;
+        let before = state
+            .provider_router
+            .get_circuit_breaker_stats(&provider_id, "claude")
+            .await
+            .expect("breaker stats before metadata request");
+        assert_eq!(before.state, CircuitState::HalfOpen);
+
+        let response = Client::new()
+            .get(format!("{}/v1/models?limit=1000", proxy.base_url))
+            .header("authorization", "Bearer test-oauth-token")
+            .header("anthropic-version", "2023-06-01")
+            .send()
+            .await
+            .expect("send metadata request");
+
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+
+        let after = state
+            .provider_router
+            .get_circuit_breaker_stats(&provider_id, "claude")
+            .await
+            .expect("breaker stats after metadata request");
+        assert_eq!(after.state, CircuitState::HalfOpen);
+        assert_eq!(after.consecutive_failures, before.consecutive_failures);
+        assert_eq!(after.consecutive_successes, before.consecutive_successes);
+        assert_eq!(after.total_requests, before.total_requests);
+        assert_eq!(after.failed_requests, before.failed_requests);
     }
 }
