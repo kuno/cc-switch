@@ -153,13 +153,20 @@ export function createBridgeFixture(
       async (appId: SharedProviderAppId, requestId: string) =>
         options.requestDetails?.[appId]?.[requestId] ?? null,
     ),
-    getRequestLogs: vi.fn(async (appId, page, pageSize) =>
-      paginateRequestLogs(
-        getAppRecord(options.requestLogs, appId, DEFAULT_REQUEST_LOGS),
+    getRequestLogs: vi.fn(async (appId, page, pageSize, providerId) => {
+      const response = getAppRecord(options.requestLogs, appId, DEFAULT_REQUEST_LOGS);
+
+      return paginateRequestLogs(
+        {
+          ...response,
+          data: providerId
+            ? response.data.filter((entry) => entry.providerId === providerId)
+            : response.data,
+        },
         page,
         pageSize,
-      ),
-    ),
+      );
+    }),
     getRecentActivity: vi.fn(async (appId) =>
       getAppRecord(options.recentActivity, appId, []),
     ),
