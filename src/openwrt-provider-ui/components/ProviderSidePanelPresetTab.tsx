@@ -85,7 +85,7 @@ export function ProviderSidePanelPresetTab({
         <PresetCard
           appId={groups[0]?.presets[0]?.appId ?? "claude"}
           title="Custom draft"
-          description="Keep the fields fully editable without applying a preset."
+          description="Keep the current fields editable without applying a preset."
           meta="Manual endpoint and token configuration"
           selected={selectedPresetId === "custom"}
           onClick={() => onPresetSelect("custom")}
