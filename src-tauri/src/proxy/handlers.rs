@@ -1766,10 +1766,10 @@ mod tests {
     use super::{
         codex_proxy_error_json,
         is_claude_oauth_provider, is_codex_oauth_provider,
-        refresh_claude_quota_snapshots_with_query, responses_sse_to_response_value,
-        should_use_claude_transform_streaming,
+        refresh_claude_quota_snapshots_with_query,
         refresh_claude_quota_snapshots_with_query_and_refresher,
-        refresh_codex_quota_snapshots_with_query_and_refresher,
+        refresh_codex_quota_snapshots_with_query_and_refresher, responses_sse_to_response_value,
+        should_use_claude_transform_streaming,
     };
     use crate::database::Database;
     use crate::provider::Provider;
@@ -2180,7 +2180,7 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
         .expect("save passthrough provider");
         save_claude_auth_for_provider(
             "claude-oauth",
-            &sample_claude_auth_json(chrono::Utc::now().timestamp_millis() + 60_000),
+            &sample_claude_auth_json(chrono::Utc::now().timestamp_millis() + 10 * 60_000),
         )
         .expect("save uploaded auth");
 

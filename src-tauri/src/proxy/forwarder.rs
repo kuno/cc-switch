@@ -24,6 +24,14 @@ use super::{
 use crate::proxy::providers::codex_oauth_auth::CodexOAuthManager;
 use crate::proxy::providers::codex_oauth_store::load_codex_auth_for_provider;
 use crate::proxy::providers::copilot_auth::CopilotAuthManager;
+use crate::services::oauth_refresh::storage::{
+    load_claude_refresh_auth_for_provider, save_refreshed_claude_auth_for_provider,
+    StoredClaudeRefreshAuth,
+};
+use crate::services::oauth_refresh::{
+    load_or_refresh_oauth_credentials, ClaudeTokenRefresher, OAuthRefreshLockManager,
+    OAuthTokenRefresher,
+};
 use crate::{app_config::AppType, provider::Provider};
 use http::Extensions;
 use serde_json::{json, Value};
@@ -124,6 +132,8 @@ pub struct RequestForwarder {
     /// AppHandle for failover UI updates (desktop only)
     #[cfg(feature = "tauri-desktop")]
     app_handle: Option<tauri::AppHandle>,
+    #[cfg(test)]
+    claude_oauth_refresher: Option<Arc<dyn OAuthTokenRefresher>>,
 }
 
 fn resolve_upstream_proxy_url() -> Option<String> {
@@ -154,6 +164,7 @@ const CODEX_REASONING_ENCRYPTED_CONTENT: &str = "reasoning.encrypted_content";
 const CODEX_OFFICIAL_PROVIDER_ID: &str = "codex-official";
 const CODEX_OAUTH_AUTH_MODE: &str = "codex_oauth";
 const CODEX_LEGACY_CLIENT_PASSTHROUGH_AUTH_MODE: &str = "client_passthrough";
+const CLAUDE_OAUTH_AUTH_MODE: &str = "claude_oauth";
 
 fn is_codex_oauth_upload_eligible(app_type_str: &str, provider: &Provider, base_url: &str) -> bool {
     app_type_str == AppType::Codex.as_str()
@@ -191,6 +202,45 @@ fn apply_codex_oauth_body_contract(body: &mut Value) {
         includes.push(json!(CODEX_REASONING_ENCRYPTED_CONTENT));
     }
     obj.insert("include".to_string(), json!(includes));
+}
+
+fn is_claude_oauth_provider(provider: &Provider) -> bool {
+    provider
+        .settings_config
+        .get("auth_mode")
+        .and_then(Value::as_str)
+        .or_else(|| {
+            provider
+                .settings_config
+                .get("env")
+                .and_then(|env| env.get("AUTH_MODE"))
+                .and_then(Value::as_str)
+        })
+        == Some(CLAUDE_OAUTH_AUTH_MODE)
+}
+
+async fn load_claude_oauth_auth_with_refresher<R: OAuthTokenRefresher + ?Sized>(
+    provider: &Provider,
+    refresher: &R,
+) -> Option<StoredClaudeRefreshAuth> {
+    let provider_id = provider.id.clone();
+    let provider_key = format!("claude:{provider_id}");
+    let load_provider_id = provider_id.clone();
+    let save_provider_id = provider_id.clone();
+    let lock_manager = OAuthRefreshLockManager::shared();
+
+    load_or_refresh_oauth_credentials(
+        "Claude",
+        &provider_id,
+        &provider_key,
+        refresher,
+        &lock_manager,
+        move || load_claude_refresh_auth_for_provider(&load_provider_id),
+        move |stored, refreshed| {
+            save_refreshed_claude_auth_for_provider(&save_provider_id, stored, refreshed)
+        },
+    )
+    .await
 }
 
 impl RequestForwarder {
@@ -288,6 +338,8 @@ impl RequestForwarder {
             rate_limits,
             #[cfg(feature = "tauri-desktop")]
             app_handle,
+            #[cfg(test)]
+            claude_oauth_refresher: None,
         }
     }
 
@@ -387,6 +439,28 @@ impl RequestForwarder {
             error: retry_err,
             provider: Some(provider.clone()),
         })
+    }
+
+    async fn load_claude_oauth_auth_for_provider(
+        &self,
+        provider: &Provider,
+    ) -> Option<StoredClaudeRefreshAuth> {
+        if !is_claude_oauth_provider(provider) {
+            return None;
+        }
+
+        #[cfg(test)]
+        if let Some(refresher) = self.claude_oauth_refresher.as_ref() {
+            return load_claude_oauth_auth_with_refresher(provider, refresher.as_ref()).await;
+        }
+
+        let refresher = ClaudeTokenRefresher::new();
+        load_claude_oauth_auth_with_refresher(provider, &refresher).await
+    }
+
+    #[cfg(test)]
+    fn set_claude_oauth_refresher_for_tests(&mut self, refresher: Arc<dyn OAuthTokenRefresher>) {
+        self.claude_oauth_refresher = Some(refresher);
     }
 
     /// 转发请求（带故障转移）
@@ -1501,6 +1575,15 @@ impl RequestForwarder {
         // Codex OAuth 需要注入的 ChatGPT-Account-Id（在动态 token 获取期间填充）
         let mut codex_oauth_account_id: Option<String> = None;
         let mut should_send_codex_oauth_session_headers = false;
+        let stored_claude_oauth_auth = self.load_claude_oauth_auth_for_provider(provider).await;
+        let allow_request_scoped_inbound_auth_fallback =
+            is_claude_oauth_provider(provider) && stored_claude_oauth_auth.is_none();
+        if allow_request_scoped_inbound_auth_fallback {
+            log::debug!(
+                "[ClaudeOAuth] provider={} 无可用存储 OAuth，回退到入站 Authorization",
+                provider.id
+            );
+        }
 
         // 获取认证头（提前准备，用于内联替换）
         let mut auth_headers = if let Some(tmp_auth) = tmp_codex_auth.as_ref() {
@@ -1526,6 +1609,18 @@ impl RequestForwarder {
                 ));
             }
             headers
+        } else if let Some(stored_auth) = stored_claude_oauth_auth.as_ref() {
+            log::debug!(
+                "[ClaudeOAuth] 使用存储的 OAuth access_token 转发 provider={}",
+                provider.id
+            );
+            vec![(
+                http::HeaderName::from_static("authorization"),
+                http::HeaderValue::from_str(&format!("Bearer {}", stored_auth.access_token))
+                    .map_err(|err| {
+                        ProxyError::AuthError(format!("存储的 Claude access_token 非法: {err}"))
+                    })?,
+            )]
         } else if let Some(mut auth) = adapter.extract_auth(provider) {
             // GitHub Copilot 特殊处理：从 CopilotAuthManager 获取真实 token
             if auth.strategy == AuthStrategy::GitHubCopilot {
@@ -1629,8 +1724,9 @@ impl RequestForwarder {
         } else {
             Vec::new()
         };
-        let allow_inbound_authorization_passthrough =
-            auth_headers.is_empty() && adapter.allows_inbound_auth_passthrough(provider);
+        let allow_inbound_authorization_passthrough = auth_headers.is_empty()
+            && (adapter.allows_inbound_auth_passthrough(provider)
+                || allow_request_scoped_inbound_auth_fallback);
 
         // 注入 Codex OAuth 的 ChatGPT-Account-Id header（如果有 account_id）
         if let Some(ref account_id) = codex_oauth_account_id {
@@ -2711,16 +2807,21 @@ fn value_for_log(value: &Value) -> String {
 mod tests {
     use super::*;
     use crate::database::Database;
+    use crate::services::oauth_refresh::{OAuthRefreshError, RefreshedCredentials};
     use axum::http::header::{HeaderValue, ACCEPT};
     use axum::http::HeaderMap;
+    use axum::{extract::State, routing::post, Json, Router};
     use base64::Engine as _;
     use bytes::Bytes;
     use http::StatusCode;
     use serde_json::json;
     use serial_test::serial;
-    use std::collections::HashMap;
-    use std::fs;
-    use std::time::Duration;
+    use std::{
+        collections::HashMap,
+        fs,
+        sync::{Arc, Mutex},
+        time::Duration,
+    };
 
     struct ScopedDataDirEnv(Option<String>);
 
@@ -2788,6 +2889,198 @@ mod tests {
             streaming_first_byte_timeout,
             max_attempts: 1,
             rate_limits: super::rate_limit::new_rate_limit_store(),
+            #[cfg(test)]
+            claude_oauth_refresher: None,
+        }
+    }
+
+    #[derive(Clone)]
+    struct TestUpstreamState {
+        seen_auth: Arc<Mutex<Vec<Option<String>>>>,
+    }
+
+    #[derive(Clone)]
+    struct FixedRefresher {
+        calls: Arc<Mutex<usize>>,
+        result: Result<RefreshedCredentials, OAuthRefreshError>,
+    }
+
+    #[async_trait::async_trait]
+    impl OAuthTokenRefresher for FixedRefresher {
+        async fn refresh(
+            &self,
+            _refresh_token: &str,
+        ) -> Result<RefreshedCredentials, OAuthRefreshError> {
+            *self.calls.lock().expect("lock refresh calls") += 1;
+            self.result.clone()
+        }
+    }
+
+    async fn capture_upstream_auth(
+        State(state): State<TestUpstreamState>,
+        headers: HeaderMap,
+    ) -> (http::StatusCode, Json<Value>) {
+        let auth = headers
+            .get(http::header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            .map(ToString::to_string);
+        state
+            .seen_auth
+            .lock()
+            .expect("lock seen auth")
+            .push(auth.clone());
+
+        match auth {
+            Some(auth) => (http::StatusCode::OK, Json(json!({ "authorization": auth }))),
+            None => (
+                http::StatusCode::UNAUTHORIZED,
+                Json(json!({ "error": "missing authorization" })),
+            ),
+        }
+    }
+
+    async fn spawn_test_upstream() -> (
+        String,
+        Arc<Mutex<Vec<Option<String>>>>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let seen_auth = Arc::new(Mutex::new(Vec::new()));
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind test listener");
+        let port = listener.local_addr().expect("listener addr").port();
+        let app = Router::new()
+            .route("/v1/messages", post(capture_upstream_auth))
+            .with_state(TestUpstreamState {
+                seen_auth: seen_auth.clone(),
+            });
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app)
+                .await
+                .expect("serve test upstream");
+        });
+
+        (format!("http://127.0.0.1:{port}"), seen_auth, server)
+    }
+
+    fn install_rustls_crypto_provider_for_tests() {
+        if rustls::crypto::CryptoProvider::get_default().is_none() {
+            let _ = rustls::crypto::ring::default_provider().install_default();
+        }
+    }
+
+    fn build_test_forwarder() -> RequestForwarder {
+        install_rustls_crypto_provider_for_tests();
+
+        let db = Arc::new(Database::memory().expect("db"));
+        let current_providers = Arc::new(tokio::sync::RwLock::new(HashMap::new()));
+
+        RequestForwarder::new(
+            Arc::new(ProviderRouter::new(db.clone())),
+            30,
+            Arc::new(tokio::sync::RwLock::new(ProxyStatus::default())),
+            current_providers.clone(),
+            Arc::new(GeminiShadowStore::default()),
+            Arc::new(CodexChatHistoryStore::default()),
+            Arc::new(FailoverSwitchManager::new(db, current_providers)),
+            None,
+            None,
+            String::new(),
+            "test-session".to_string(),
+            true,
+            0,
+            0,
+            RectifierConfig::default(),
+            OptimizerConfig::default(),
+            CopilotOptimizerConfig::default(),
+            0,
+            crate::proxy::rate_limit::new_rate_limit_store(),
+            #[cfg(feature = "tauri-desktop")]
+            None,
+        )
+    }
+
+    fn claude_oauth_provider(provider_id: &str, base_url: &str) -> Provider {
+        Provider::with_id(
+            provider_id.to_string(),
+            "Claude OAuth".to_string(),
+            json!({
+                "auth_mode": "claude_oauth",
+                "env": {
+                    "ANTHROPIC_BASE_URL": base_url
+                }
+            }),
+            None,
+        )
+    }
+
+    fn claude_api_key_provider(base_url: &str) -> Provider {
+        Provider::with_id(
+            "claude-api-key".to_string(),
+            "Claude API Key".to_string(),
+            json!({
+                "env": {
+                    "ANTHROPIC_BASE_URL": base_url,
+                    "ANTHROPIC_API_KEY": "sk-ant-provider-key"
+                }
+            }),
+            None,
+        )
+    }
+
+    fn sample_claude_auth_json(
+        access_token: &str,
+        refresh_token: Option<&str>,
+        expires_at_ms: i64,
+    ) -> Vec<u8> {
+        let mut entry = json!({
+            "accessToken": access_token,
+            "expiresAt": expires_at_ms,
+            "scopes": ["user:profile"],
+        });
+        if let Some(refresh_token) = refresh_token {
+            entry["refreshToken"] = json!(refresh_token);
+        }
+
+        json!({ "claudeAiOauth": entry }).to_string().into_bytes()
+    }
+
+    fn claude_request_headers(inbound_auth: Option<&str>) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            http::header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json"),
+        );
+        if let Some(inbound_auth) = inbound_auth {
+            headers.insert(
+                http::header::AUTHORIZATION,
+                HeaderValue::from_str(inbound_auth).expect("valid authorization header"),
+            );
+        }
+        headers
+    }
+
+    fn claude_request_body() -> Value {
+        json!({
+            "model": "claude-sonnet-4-6",
+            "max_tokens": 16,
+            "messages": [
+                { "role": "user", "content": "ping" }
+            ]
+        })
+    }
+
+    fn expect_forward_success(result: Result<ForwardResult, ForwardError>) -> ForwardResult {
+        match result {
+            Ok(result) => result,
+            Err(error) => panic!("forward request failed: {}", error.error),
+        }
+    }
+
+    fn expect_forward_error(result: Result<ForwardResult, ForwardError>) -> ForwardError {
+        match result {
+            Ok(_) => panic!("forward request unexpectedly succeeded"),
+            Err(error) => error,
         }
     }
 
@@ -3579,6 +3872,286 @@ mod tests {
         );
 
         assert!(headers.is_empty());
+    }
+
+    #[test]
+    fn build_effective_auth_headers_keeps_codex_provider_headers_intact() {
+        let headers = build_effective_auth_headers(
+            &http::HeaderName::from_static("authorization"),
+            &http::HeaderValue::from_static("Bearer inbound-token"),
+            &[
+                (
+                    http::HeaderName::from_static("authorization"),
+                    http::HeaderValue::from_static("Bearer codex-token"),
+                ),
+                (
+                    http::HeaderName::from_static("originator"),
+                    http::HeaderValue::from_static("cc-switch"),
+                ),
+            ],
+            true,
+        );
+
+        assert_eq!(headers.len(), 2);
+        assert_eq!(
+            headers[0],
+            (
+                http::HeaderName::from_static("authorization"),
+                http::HeaderValue::from_static("Bearer codex-token"),
+            )
+        );
+        assert_eq!(
+            headers[1],
+            (
+                http::HeaderName::from_static("originator"),
+                http::HeaderValue::from_static("cc-switch"),
+            )
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn claude_oauth_forwarding_prefers_valid_stored_auth_over_inbound_authorization() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let _env = ScopedDataDirEnv::set(temp.path());
+        let (base_url, seen_auth, server) = spawn_test_upstream().await;
+        let provider = claude_oauth_provider("claude-oauth-valid", &base_url);
+        crate::proxy::providers::claude_oauth_store::save_claude_auth_for_provider(
+            &provider.id,
+            &sample_claude_auth_json(
+                "stored-token",
+                Some("refresh-token"),
+                chrono::Utc::now().timestamp_millis() + 10 * 60_000,
+            ),
+        )
+        .expect("save stored auth");
+
+        let forwarder = build_test_forwarder();
+        let result = expect_forward_success(
+            forwarder
+                .forward_with_retry(
+                    &AppType::Claude,
+                    "/v1/messages",
+                    claude_request_body(),
+                    claude_request_headers(Some("Bearer inbound-token")),
+                    Extensions::new(),
+                    vec![provider],
+                )
+                .await,
+        );
+
+        assert_eq!(result.response.status(), http::StatusCode::OK);
+        assert_eq!(
+            seen_auth.lock().expect("lock seen auth").as_slice(),
+            &[Some("Bearer stored-token".to_string())]
+        );
+
+        server.abort();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn claude_oauth_forwarding_uses_refreshed_auth_when_stored_token_is_expired() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let _env = ScopedDataDirEnv::set(temp.path());
+        let (base_url, seen_auth, server) = spawn_test_upstream().await;
+        let provider = claude_oauth_provider("claude-oauth-refresh", &base_url);
+        crate::proxy::providers::claude_oauth_store::save_claude_auth_for_provider(
+            &provider.id,
+            &sample_claude_auth_json(
+                "expired-token",
+                Some("refresh-token"),
+                chrono::Utc::now().timestamp_millis() - 60_000,
+            ),
+        )
+        .expect("save expired auth");
+
+        let refresh_calls = Arc::new(Mutex::new(0usize));
+        let refresher = FixedRefresher {
+            calls: refresh_calls.clone(),
+            result: Ok(RefreshedCredentials {
+                access_token: "refreshed-token".to_string(),
+                expires_at_ms: chrono::Utc::now().timestamp_millis() + 3_600_000,
+                refresh_token: Some("rotated-refresh".to_string()),
+                extra: json!({
+                    "subscriptionType": "max"
+                }),
+            }),
+        };
+
+        let mut forwarder = build_test_forwarder();
+        forwarder.set_claude_oauth_refresher_for_tests(Arc::new(refresher));
+        let result = expect_forward_success(
+            forwarder
+                .forward_with_retry(
+                    &AppType::Claude,
+                    "/v1/messages",
+                    claude_request_body(),
+                    claude_request_headers(Some("Bearer inbound-token")),
+                    Extensions::new(),
+                    vec![provider.clone()],
+                )
+                .await,
+        );
+
+        assert_eq!(result.response.status(), http::StatusCode::OK);
+        assert_eq!(
+            seen_auth.lock().expect("lock seen auth").as_slice(),
+            &[Some("Bearer refreshed-token".to_string())]
+        );
+        assert_eq!(*refresh_calls.lock().expect("lock refresh calls"), 1);
+
+        let refreshed = load_claude_refresh_auth_for_provider(&provider.id)
+            .expect("load refreshed auth")
+            .expect("refreshed auth");
+        assert_eq!(refreshed.access_token, "refreshed-token");
+        assert_eq!(refreshed.refresh_token.as_deref(), Some("rotated-refresh"));
+
+        server.abort();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn claude_oauth_forwarding_falls_back_to_inbound_auth_when_refresh_fails() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let _env = ScopedDataDirEnv::set(temp.path());
+        let (base_url, seen_auth, server) = spawn_test_upstream().await;
+        let provider = claude_oauth_provider("claude-oauth-fallback", &base_url);
+        crate::proxy::providers::claude_oauth_store::save_claude_auth_for_provider(
+            &provider.id,
+            &sample_claude_auth_json(
+                "expired-token",
+                Some("refresh-token"),
+                chrono::Utc::now().timestamp_millis() - 60_000,
+            ),
+        )
+        .expect("save expired auth");
+
+        let refresh_calls = Arc::new(Mutex::new(0usize));
+        let refresher = FixedRefresher {
+            calls: refresh_calls.clone(),
+            result: Err(OAuthRefreshError::RefreshTokenInvalid),
+        };
+
+        let mut forwarder = build_test_forwarder();
+        forwarder.set_claude_oauth_refresher_for_tests(Arc::new(refresher));
+        let result = expect_forward_success(
+            forwarder
+                .forward_with_retry(
+                    &AppType::Claude,
+                    "/v1/messages",
+                    claude_request_body(),
+                    claude_request_headers(Some("Bearer inbound-token")),
+                    Extensions::new(),
+                    vec![provider],
+                )
+                .await,
+        );
+
+        assert_eq!(result.response.status(), http::StatusCode::OK);
+        assert_eq!(
+            seen_auth.lock().expect("lock seen auth").as_slice(),
+            &[Some("Bearer inbound-token".to_string())]
+        );
+        assert_eq!(*refresh_calls.lock().expect("lock refresh calls"), 1);
+
+        server.abort();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn claude_oauth_forwarding_falls_back_to_inbound_auth_when_store_is_missing() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let _env = ScopedDataDirEnv::set(temp.path());
+        let (base_url, seen_auth, server) = spawn_test_upstream().await;
+        let provider = claude_oauth_provider("claude-oauth-missing", &base_url);
+
+        let forwarder = build_test_forwarder();
+        let result = expect_forward_success(
+            forwarder
+                .forward_with_retry(
+                    &AppType::Claude,
+                    "/v1/messages",
+                    claude_request_body(),
+                    claude_request_headers(Some("Bearer inbound-token")),
+                    Extensions::new(),
+                    vec![provider],
+                )
+                .await,
+        );
+
+        assert_eq!(result.response.status(), http::StatusCode::OK);
+        assert_eq!(
+            seen_auth.lock().expect("lock seen auth").as_slice(),
+            &[Some("Bearer inbound-token".to_string())]
+        );
+
+        server.abort();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn claude_oauth_forwarding_leaves_request_unauthenticated_when_store_and_inbound_auth_are_missing(
+    ) {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let _env = ScopedDataDirEnv::set(temp.path());
+        let (base_url, seen_auth, server) = spawn_test_upstream().await;
+        let provider = claude_oauth_provider("claude-oauth-unauthenticated", &base_url);
+
+        let forwarder = build_test_forwarder();
+        let error = expect_forward_error(
+            forwarder
+                .forward_with_retry(
+                    &AppType::Claude,
+                    "/v1/messages",
+                    claude_request_body(),
+                    claude_request_headers(None),
+                    Extensions::new(),
+                    vec![provider],
+                )
+                .await,
+        );
+
+        assert!(matches!(
+            error.error,
+            ProxyError::UpstreamError {
+                status: 401,
+                body: _
+            }
+        ));
+        assert_eq!(
+            seen_auth.lock().expect("lock seen auth").as_slice(),
+            &[None]
+        );
+
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn claude_api_key_forwarding_is_unchanged() {
+        let (base_url, seen_auth, server) = spawn_test_upstream().await;
+        let provider = claude_api_key_provider(&base_url);
+        let forwarder = build_test_forwarder();
+        let result = expect_forward_success(
+            forwarder
+                .forward_with_retry(
+                    &AppType::Claude,
+                    "/v1/messages",
+                    claude_request_body(),
+                    claude_request_headers(Some("Bearer inbound-token")),
+                    Extensions::new(),
+                    vec![provider],
+                )
+                .await,
+        );
+
+        assert_eq!(result.response.status(), http::StatusCode::OK);
+        assert_eq!(
+            seen_auth.lock().expect("lock seen auth").as_slice(),
+            &[Some("Bearer sk-ant-provider-key".to_string())]
+        );
+
+        server.abort();
     }
 
     // ==================== Copilot 动态 endpoint 路由相关测试 ====================

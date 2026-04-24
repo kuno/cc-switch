@@ -538,12 +538,27 @@ impl ClaudeAdapter {
         false
     }
 
+    fn is_claude_oauth(&self, provider: &Provider) -> bool {
+        provider
+            .settings_config
+            .get("auth_mode")
+            .and_then(|v| v.as_str())
+            .or_else(|| {
+                provider
+                    .settings_config
+                    .get("env")
+                    .and_then(|env| env.get("AUTH_MODE"))
+                    .and_then(|v| v.as_str())
+            })
+            == Some(CLAUDE_OAUTH_AUTH_MODE)
+    }
+
     /// 检测是否启用了显式客户端透传模式。
     ///
     /// 该模式允许在 provider 自身未配置认证信息时，保留客户端传入的
     /// `Authorization` header。内置的 `claude-official` 预设默认视为此模式，
-    /// 以兼容已有数据库里的历史 seed 数据。`claude_oauth` 也沿用该行为，
-    /// 因为上传的 auth.json 仅用于路由器自身的额度查询。
+    /// 以兼容已有数据库里的历史 seed 数据。`claude_oauth` 的主路径改由
+    /// forwarder 注入存储的 OAuth access_token。
     fn is_client_passthrough_mode(&self, provider: &Provider) -> bool {
         if provider.id == CLAUDE_OFFICIAL_PROVIDER_ID {
             return true;
@@ -554,20 +569,14 @@ impl ClaudeAdapter {
             .get("auth_mode")
             .and_then(|v| v.as_str())
         {
-            if matches!(
-                auth_mode,
-                CLAUDE_CLIENT_PASSTHROUGH_AUTH_MODE | CLAUDE_OAUTH_AUTH_MODE
-            ) {
+            if auth_mode == CLAUDE_CLIENT_PASSTHROUGH_AUTH_MODE {
                 return true;
             }
         }
 
         if let Some(env) = provider.settings_config.get("env") {
             if let Some(auth_mode) = env.get("AUTH_MODE").and_then(|v| v.as_str()) {
-                if matches!(
-                    auth_mode,
-                    CLAUDE_CLIENT_PASSTHROUGH_AUTH_MODE | CLAUDE_OAUTH_AUTH_MODE
-                ) {
+                if auth_mode == CLAUDE_CLIENT_PASSTHROUGH_AUTH_MODE {
                     return true;
                 }
             }
@@ -716,7 +725,7 @@ impl ProviderAdapter for ClaudeAdapter {
             return Ok(url);
         }
 
-        if self.allows_inbound_auth_passthrough(provider) {
+        if self.allows_inbound_auth_passthrough(provider) || self.is_claude_oauth(provider) {
             return Ok(ProviderType::Claude.default_endpoint().to_string());
         }
 
@@ -747,10 +756,14 @@ impl ProviderAdapter for ClaudeAdapter {
             ));
         }
 
-        let key = self.extract_key(provider, !self.allows_inbound_auth_passthrough(provider));
+        let allow_missing_provider_key =
+            self.allows_inbound_auth_passthrough(provider) || self.is_claude_oauth(provider);
+        let key = self.extract_key(provider, !allow_missing_provider_key);
 
-        if key.is_none() && self.allows_inbound_auth_passthrough(provider) {
-            log::debug!("[Claude] 使用客户端 Authorization 透传模式");
+        if key.is_none() && allow_missing_provider_key {
+            if self.allows_inbound_auth_passthrough(provider) {
+                log::debug!("[Claude] 使用客户端 Authorization 透传模式");
+            }
             return None;
         }
 
@@ -804,6 +817,7 @@ impl ProviderAdapter for ClaudeAdapter {
 
     fn allows_inbound_auth_passthrough(&self, provider: &Provider) -> bool {
         self.is_client_passthrough_mode(provider)
+            && !self.is_claude_oauth(provider)
             && !self.is_codex_oauth(provider)
             && !self.is_github_copilot(provider)
             && !self.is_openrouter(provider)
@@ -1388,15 +1402,17 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_auth_claude_oauth_without_provider_key() {
+    fn test_extract_auth_claude_oauth_without_provider_key_uses_forwarder_managed_auth() {
         let adapter = ClaudeAdapter::new();
         let provider = create_provider(json!({
             "auth_mode": "claude_oauth",
             "env": {}
         }));
 
+        let url = adapter.extract_base_url(&provider).unwrap();
+        assert_eq!(url, "https://api.anthropic.com");
         assert!(adapter.extract_auth(&provider).is_none());
-        assert!(adapter.allows_inbound_auth_passthrough(&provider));
+        assert!(!adapter.allows_inbound_auth_passthrough(&provider));
     }
 
     #[test]
