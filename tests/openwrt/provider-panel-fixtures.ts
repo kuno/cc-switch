@@ -48,6 +48,7 @@ type ProviderSidePanelCallbacks = {
   onEdit: () => void;
   onPasteAuth: () => void;
   onClearAuth: () => void;
+  onActivate: () => void;
   onDelete: () => void;
   onCancel: () => void;
   onSave: () => void;
@@ -77,7 +78,9 @@ export interface ProviderSidePanelFixtureOptions {
     label: string;
   }>;
   savePending?: boolean;
+  activatePending?: boolean;
   deletePending?: boolean;
+  canActivate?: boolean;
   canDelete?: boolean;
   canSave?: boolean;
   saveIdle?: boolean;
@@ -251,6 +254,7 @@ export function createProviderSidePanelProps(
     onEdit: () => {},
     onPasteAuth: () => {},
     onClearAuth: () => {},
+    onActivate: () => {},
     onDelete: () => {},
     onCancel: () => {},
     onSave: () => {},
@@ -287,7 +291,14 @@ export function createProviderSidePanelProps(
     tokenFieldOptions:
       options.tokenFieldOptions ?? [...SHARED_PROVIDER_TOKEN_FIELD_OPTIONS[appId]],
     savePending: options.savePending ?? false,
+    activatePending: options.activatePending ?? false,
     deletePending: options.deletePending ?? false,
+    canActivate:
+      options.canActivate ??
+      (mode === "edit" &&
+        !Boolean(options.editing) &&
+        Boolean(selectedProvider?.providerId) &&
+        !selectedProvider?.active),
     canDelete: options.canDelete ?? (mode === "edit" && Boolean(selectedProvider)),
     canSave: options.canSave ?? true,
     saveIdle: options.saveIdle ?? false,
