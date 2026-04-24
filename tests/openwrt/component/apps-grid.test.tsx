@@ -89,6 +89,18 @@ afterEach(() => {
 });
 
 describe("AppsGrid", () => {
+  it("renders configured skeleton cards while the initial app data is loading", () => {
+    const { container } = renderAppsGrid();
+
+    expect(container.querySelectorAll(".owt-app-card--skeleton")).toHaveLength(
+      OPENWRT_APP_IDS.length,
+    );
+    expect(
+      container.querySelectorAll(".owt-app-card__skeleton-active"),
+    ).toHaveLength(OPENWRT_APP_IDS.length);
+    expect(screen.queryByText("Not configured")).toBeNull();
+  });
+
   it("keeps tab and shift-tab order aligned with the three card surfaces", async () => {
     const { user } = renderAppsGrid();
     const mainButtons = await screen.findAllByRole("button", {
