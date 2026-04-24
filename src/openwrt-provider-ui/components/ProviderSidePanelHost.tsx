@@ -355,11 +355,12 @@ const ProviderSidePanelHostComponent = forwardRef<
     });
   }, [appId, draft.baseUrl, draft.tokenField]);
   const website = deriveWebsite(draft.baseUrl);
-  const canSave =
+  const hasValidSavePayload =
     getSaveValidity(mode, selectedProvider, draft) &&
     !hasInvalidAuthJson(draft.authContent);
   const saveIdle =
     mode === "edit" && baselineDraft ? areDraftsEqual(draft, baselineDraft) : false;
+  const canSave = hasValidSavePayload && (mode === "new" || !saveIdle);
   const canDelete =
     mode === "edit" &&
     Boolean(selectedProvider?.providerId) &&
