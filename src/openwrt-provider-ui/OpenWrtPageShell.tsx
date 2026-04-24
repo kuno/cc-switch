@@ -4,8 +4,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
-  type ReactNode,
 } from "react";
 import type { SharedProviderAppId } from "@/shared/providers/domain";
 import {
@@ -29,11 +27,7 @@ import type {
 
 const OPENWRT_PAGE_THEME_STORAGE_KEY = "ccswitch-openwrt-native-page-theme";
 
-/**
- * Versions surfaced in the section-head chips. These are display-only:
- * the daemon chip prefers `host.version`, while the Apps chip is injected
- * at bundle build time from the luci-app package version source.
- */
+/** Version strings surfaced in the daemon footer. */
 const LUCI_APP_VERSION = formatVersion(__OPENWRT_LUCI_APP_VERSION__, "unknown");
 const DAEMON_FALLBACK_VERSION = "v0.4.2";
 
@@ -183,32 +177,6 @@ function ThemeToggle({
   );
 }
 
-function SectionHead({
-  title,
-  version,
-  versionTitle,
-  trailing,
-  style,
-}: {
-  title: string;
-  version: string;
-  versionTitle: string;
-  trailing?: ReactNode;
-  style?: CSSProperties;
-}) {
-  return (
-    <div className="owt-section-head" style={style}>
-      <h2>
-        {title}{" "}
-        <span className="owt-section-head__version" title={versionTitle}>
-          {version}
-        </span>
-      </h2>
-      {trailing ?? null}
-    </div>
-  );
-}
-
 export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
   const shell = options.shell;
   const [snapshot, setSnapshot] = useState(() => getHostSnapshot(options));
@@ -314,21 +282,21 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
           />
         </section>
 
-        <SectionHead
-          title="Apps"
-          version={LUCI_APP_VERSION}
-          versionTitle="luci-app-ccswitch version"
-          trailing={
-            <ThemeToggle
-              theme={theme}
-              onToggle={() =>
-                setTheme((current) => (current === "dark" ? "light" : "dark"))
-              }
-            />
-          }
-        />
+        <div className="owt-page__title-row">
+          <h1 className="owt-page__title">CC Switch</h1>
+          <ThemeToggle
+            theme={theme}
+            onToggle={() =>
+              setTheme((current) => (current === "dark" ? "light" : "dark"))
+            }
+          />
+        </div>
 
-        <section data-slot="apps-grid">
+        <h2 id="owt-apps-heading" className="owt-visually-hidden">
+          Apps
+        </h2>
+
+        <section data-slot="apps-grid" aria-labelledby="owt-apps-heading">
           <AppsGrid
             options={options}
             onOpenActivity={handleOpenActivity}
@@ -337,15 +305,16 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
           />
         </section>
 
-        <SectionHead
-          title="Daemon"
-          version={daemonVersion}
-          versionTitle="ccswitch daemon version"
-          style={{ marginTop: 34 }}
-        />
+        <hr className="owt-page__section-divider" aria-hidden="true" />
 
-        <section data-slot="daemon-card">
+        <h2 id="owt-daemon-heading" className="owt-visually-hidden">
+          Daemon
+        </h2>
+
+        <section data-slot="daemon-card" aria-labelledby="owt-daemon-heading">
           <DaemonCard
+            appVersion={LUCI_APP_VERSION}
+            daemonVersion={daemonVersion}
             host={snapshot.host}
             draft={hostDraft}
             isRunning={snapshot.isRunning}
