@@ -97,28 +97,6 @@ const FOCUSABLE_SELECTOR = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(", ");
 
-function getStatusLabel(
-  mode: "new" | "edit",
-  provider: SharedProviderView | null,
-): string {
-  if (mode === "new") {
-    return "Draft";
-  }
-
-  return provider?.active ? "Active" : "Saved";
-}
-
-function getStatusTone(
-  mode: "new" | "edit",
-  provider: SharedProviderView | null,
-): "accent" | "neutral" | "success" {
-  if (mode === "new") {
-    return "accent";
-  }
-
-  return provider?.active ? "success" : "neutral";
-}
-
 function formatProviderIdChipLabel(providerId: string): string {
   if (providerId.length <= 15) {
     return providerId;
@@ -545,16 +523,6 @@ export function ProviderSidePanel({
                     </div>
 
                     <div className="owt-provider-panel__detail-meta">
-                      <span
-                        className="owt-status-pill"
-                        data-tone={getStatusTone(mode, selectedProvider)}
-                      >
-                        <span
-                          className="owt-status-pill__dot"
-                          aria-hidden="true"
-                        />
-                        {getStatusLabel(mode, selectedProvider)}
-                      </span>
                       {canActivate ? (
                         <button
                           type="button"

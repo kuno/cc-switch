@@ -203,6 +203,10 @@ describe("ProviderSidePanelHost", () => {
     render(<HostHarness shell={savedShell} transport={savedTransport} />);
 
     const savedDialog = await openPanel();
+    const detailMeta = savedDialog.querySelector<HTMLElement>(
+      ".owt-provider-panel__detail-meta",
+    );
+
     expect(
       within(await savedDialog).getByRole("button", { name: "Activities" }),
     ).toHaveAttribute("data-active", "true");
@@ -210,6 +214,8 @@ describe("ProviderSidePanelHost", () => {
     expect(
       within(await savedDialog).queryByRole("button", { name: "Save" }),
     ).toBeNull();
+    expect(detailMeta).not.toBeNull();
+    expect(within(detailMeta as HTMLElement).queryByText("Active")).toBeNull();
 
     await user.keyboard("{Escape}");
     await waitFor(() =>

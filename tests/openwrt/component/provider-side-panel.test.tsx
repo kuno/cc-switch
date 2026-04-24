@@ -230,6 +230,8 @@ describe("ProviderSidePanel", () => {
     expect(
       within(detailHead!).getByRole("button", { name: "Set active" }),
     ).toBeInTheDocument();
+    expect(within(detailMeta!).queryByText("Saved")).toBeNull();
+    expect(within(detailMeta!).queryByText("Active")).toBeNull();
 
     const copyChip = within(detailCopy!).getByRole("button", {
       name: "Copy provider ID provider_wg88tuk8z9y0p4q1",
