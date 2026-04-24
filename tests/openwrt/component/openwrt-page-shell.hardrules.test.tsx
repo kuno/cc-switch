@@ -6,7 +6,6 @@ import { renderOpenWrtPageShell } from "./fixtures/renderPageShell";
 
 const FORBIDDEN_TEXT = [
   "Configure routes and provider details",
-  "Failover",
   "OpenClaw",
   "Hermes",
   "autoFailover",
@@ -52,6 +51,13 @@ describe("OpenWrtPageShell hard rules", () => {
         ].join(", "),
       ),
     ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Failover" })).toBeNull();
+    expect(
+      container.querySelector('[data-placeholder-tab="failover"]'),
+    ).toHaveAttribute("hidden");
+    expect(
+      container.querySelector('[data-placeholder-panel="failover"]'),
+    ).toHaveAttribute("hidden");
     expect(renderedAppCards).toEqual(["claude", "codex", "gemini"]);
   });
 
