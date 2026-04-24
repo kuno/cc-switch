@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
-import { Loader2, RefreshCcw, Save } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { CheckCircle2, Loader2, RefreshCcw, Save } from "lucide-react";
 import type {
   OpenWrtHostConfigPayload,
   OpenWrtHostState,
@@ -114,12 +114,45 @@ export function DaemonCard({
   onSave,
   onRestart,
 }: DaemonCardProps) {
+  const saveFlashTimeoutRef = useRef<number | null>(null);
+  const previousSaveInFlightRef = useRef(saveInFlight);
+  const [showSaveFlash, setShowSaveFlash] = useState(false);
   const statusLabel = getStatusLabel(isRunning);
   const healthLabel = getHealthLabel(host.health);
   const healthTone = getHealthTone(host.health);
   const logLevelOptions = getLogLevelOptions(draft.logLevel);
   const resolvedDaemonVersion =
     daemonVersion ?? formatVersion(host.version, DAEMON_FALLBACK_VERSION);
+
+  useEffect(() => {
+    if (saveInFlight) {
+      setShowSaveFlash(false);
+      previousSaveInFlightRef.current = true;
+      return;
+    }
+
+    if (previousSaveInFlightRef.current && !isDirty) {
+      setShowSaveFlash(true);
+      if (saveFlashTimeoutRef.current !== null) {
+        window.clearTimeout(saveFlashTimeoutRef.current);
+      }
+      saveFlashTimeoutRef.current = window.setTimeout(() => {
+        setShowSaveFlash(false);
+        saveFlashTimeoutRef.current = null;
+      }, 1400);
+    }
+
+    previousSaveInFlightRef.current = false;
+  }, [isDirty, saveInFlight]);
+
+  useEffect(
+    () => () => {
+      if (saveFlashTimeoutRef.current !== null) {
+        window.clearTimeout(saveFlashTimeoutRef.current);
+      }
+    },
+    [],
+  );
 
   return (
     <div
@@ -176,18 +209,24 @@ export function DaemonCard({
         <button
           type="button"
           className={
-            isDirty ? "owt-pill owt-pill--primary" : "owt-pill owt-pill--idle"
+            showSaveFlash
+              ? "owt-pill owt-pill--saved-flash"
+              : isDirty
+                ? "owt-pill owt-pill--primary"
+                : "owt-pill owt-pill--idle"
           }
           onClick={onSave}
-          disabled={!isDirty || saveInFlight}
+          disabled={!isDirty || saveInFlight || showSaveFlash}
           title="Persist current daemon config"
         >
           {saveInFlight ? (
             <Loader2 className="h-4 w-4 animate-spin" />
+          ) : showSaveFlash ? (
+            <CheckCircle2 className="h-4 w-4" />
           ) : (
             <Save className="h-4 w-4" />
           )}
-          {saveInFlight ? "Saving…" : "Save"}
+          {saveInFlight ? "Saving…" : showSaveFlash ? "Saved" : "Save"}
         </button>
       </div>
 
