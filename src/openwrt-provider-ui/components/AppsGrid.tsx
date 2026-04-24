@@ -101,77 +101,102 @@ async function loadCardData(
   };
 }
 
-/** Placeholder that fills the odd slot when a group has an uneven card count. */
-function SkeletonCard({ showStats = true }: { showStats?: boolean }) {
+function SkeletonCard({
+  kind = "configured",
+}: {
+  kind?: "configured" | "empty";
+}) {
+  const isEmpty = kind === "empty";
+
   return (
     <div
-      className={`owt-app-card owt-app-card--skeleton${
-        showStats
-          ? ""
-          : " owt-app-card--skeleton-compact owt-app-card--empty-skeleton"
+      className={`owt-app-card${
+        isEmpty ? " owt-app-card--empty" : ""
+      } owt-app-card--skeleton${
+        isEmpty ? " owt-app-card--empty-skeleton" : ""
       }`}
       aria-hidden="true"
     >
       <div className="owt-app-card__head">
         <div className="owt-app-card__skeleton-icon" />
-        <div className="owt-app-card__titles">
+        <div className="owt-app-card__skeleton-copy">
           <div
             className="owt-app-card__skeleton-line owt-app-card__skeleton-line--lg"
-            style={{ width: "8rem" }}
+            style={{ width: isEmpty ? "36%" : "44%" }}
           />
           <div
             className="owt-app-card__skeleton-line owt-app-card__skeleton-line--sm"
-            style={{ width: "5.5rem", marginTop: "8px" }}
+            style={{ width: isEmpty ? "48%" : "62%" }}
           />
         </div>
         <span className="owt-app-card__spacer" aria-hidden="true" />
         <div className="owt-app-card__skeleton-chip" />
       </div>
 
-      {showStats ? (
-        <div className="owt-app-card__skeleton-active">
-          <div className="owt-app-card__skeleton-mini" />
-          <div className="owt-app-card__active-labels">
-            <div
-              className="owt-app-card__skeleton-line owt-app-card__skeleton-line--xs"
-              style={{ width: "5rem" }}
-            />
-            <div
-              className="owt-app-card__skeleton-line owt-app-card__skeleton-line--md"
-              style={{ width: "8.5rem", marginTop: "8px" }}
-            />
-            <div
-              className="owt-app-card__skeleton-line owt-app-card__skeleton-line--sm"
-              style={{ width: "6.5rem", marginTop: "6px" }}
-            />
-          </div>
-        </div>
-      ) : (
+      {isEmpty ? (
         <div className="owt-app-card__skeleton-empty-cta">
-          <div className="owt-app-card__skeleton-line owt-app-card__skeleton-line--sm" />
           <div
             className="owt-app-card__skeleton-line owt-app-card__skeleton-line--sm"
-            style={{ width: "7rem" }}
+            style={{ width: "52%", maxWidth: "220px" }}
+          />
+          <div
+            className="owt-app-card__skeleton-line owt-app-card__skeleton-line--sm"
+            style={{ width: "108px" }}
           />
         </div>
-      )}
-
-      {showStats ? (
-        <div className="owt-app-card__skeleton-usage">
-          {Array.from({ length: 3 }, (_, index) => (
-            <div className="owt-app-card__skeleton-usage-cell" key={index}>
+      ) : (
+        <>
+          <div className="owt-app-card__skeleton-active">
+            <div className="owt-app-card__skeleton-mini" />
+            <div className="owt-app-card__skeleton-active-body">
               <div
                 className="owt-app-card__skeleton-line owt-app-card__skeleton-line--xs"
-                style={{ width: "3rem" }}
+                style={{ width: "30%" }}
+              />
+              <div
+                className="owt-app-card__skeleton-line owt-app-card__skeleton-line--sm"
+                style={{ width: "58%" }}
+              />
+              <div
+                className="owt-app-card__skeleton-line owt-app-card__skeleton-line--xs"
+                style={{ width: "44%" }}
+              />
+            </div>
+          </div>
+          <div className="owt-app-card__skeleton-usage">
+            <div className="owt-app-card__skeleton-usage-cell">
+              <div
+                className="owt-app-card__skeleton-line owt-app-card__skeleton-line--xs"
+                style={{ width: "54%" }}
               />
               <div
                 className="owt-app-card__skeleton-line owt-app-card__skeleton-line--md"
-                style={{ width: "4rem", marginTop: "8px" }}
+                style={{ width: "38%" }}
               />
             </div>
-          ))}
-        </div>
-      ) : null}
+            <div className="owt-app-card__skeleton-usage-cell">
+              <div
+                className="owt-app-card__skeleton-line owt-app-card__skeleton-line--xs"
+                style={{ width: "62%" }}
+              />
+              <div
+                className="owt-app-card__skeleton-line owt-app-card__skeleton-line--md"
+                style={{ width: "44%" }}
+              />
+            </div>
+            <div className="owt-app-card__skeleton-usage-cell">
+              <div
+                className="owt-app-card__skeleton-line owt-app-card__skeleton-line--xs"
+                style={{ width: "50%" }}
+              />
+              <div
+                className="owt-app-card__skeleton-line owt-app-card__skeleton-line--md"
+                style={{ width: "36%" }}
+              />
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -351,10 +376,10 @@ export function AppsGrid({
 
   const hostState = options.shell.getHostState();
   const serviceRunning = options.shell.getServiceStatus().isRunning;
-
-  // Split into configured vs unconfigured groups, preserving APP_OPTIONS order.
-  const configured = cards.filter(isConfigured);
-  const unconfigured = cards.filter((card) => !isConfigured(card));
+  const loadingCards = cards.filter((card) => card.loading && !card.providerState);
+  const settledCards = cards.filter((card) => !card.loading || card.providerState);
+  const configured = settledCards.filter(isConfigured);
+  const unconfigured = settledCards.filter((card) => !isConfigured(card));
 
   const renderCard = (card: AppGridData) => {
     const activeProviderId =
@@ -386,6 +411,14 @@ export function AppsGrid({
 
   return (
     <div className="owt-apps-grid">
+      {loadingCards.length > 0 && (
+        <div className="owt-group-grid">
+          {loadingCards.map((card) => (
+            <SkeletonCard key={`${card.appId}-loading`} />
+          ))}
+        </div>
+      )}
+
       {configured.length > 0 && (
         <div className="owt-group-grid">
           {configured.map(renderCard)}
@@ -398,7 +431,7 @@ export function AppsGrid({
           <GroupHeader label="Not configured" />
           <div className="owt-group-grid owt-group-grid--unconfigured">
             {unconfigured.map(renderCard)}
-            {unconfigured.length % 2 === 1 && <SkeletonCard showStats={false} />}
+            {unconfigured.length % 2 === 1 && <SkeletonCard kind="empty" />}
           </div>
         </>
       )}
