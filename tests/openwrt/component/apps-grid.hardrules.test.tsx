@@ -53,7 +53,7 @@ function AppsGridSurfaceHarness({
 }
 
 function expectForbiddenSurfaces(container: HTMLElement) {
-  expect(screen.queryByText("Failover")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Failover" })).toBeNull();
   expect(screen.queryByText("OpenClaw")).not.toBeInTheDocument();
   expect(screen.queryByText("Hermes")).not.toBeInTheDocument();
   expect(
@@ -66,6 +66,12 @@ function expectForbiddenSurfaces(container: HTMLElement) {
   expect(
     container.querySelector('.owt-app-card[data-app="hermes"]'),
   ).toBeNull();
+  expect(
+    container.querySelector('[data-placeholder-tab="failover"]'),
+  ).toHaveAttribute("hidden");
+  expect(
+    container.querySelector('[data-placeholder-panel="failover"]'),
+  ).toHaveAttribute("hidden");
 }
 
 describe("AppsGrid hard rules", () => {
