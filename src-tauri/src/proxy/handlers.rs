@@ -1253,7 +1253,7 @@ mod tests {
         .expect("save passthrough provider");
         save_claude_auth_for_provider(
             "claude-oauth",
-            &sample_claude_auth_json(chrono::Utc::now().timestamp_millis() + 60_000),
+            &sample_claude_auth_json(chrono::Utc::now().timestamp_millis() + 10 * 60_000),
         )
         .expect("save uploaded auth");
 
