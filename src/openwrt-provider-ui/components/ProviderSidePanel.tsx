@@ -124,6 +124,24 @@ function formatProviderIdChipLabel(providerId: string): string {
   return `${providerId.slice(0, 10)}...${providerId.slice(-4)}`;
 }
 
+function sortProvidersForRail(
+  providers: SharedProviderView[],
+): SharedProviderView[] {
+  return providers
+    .map((provider, index) => ({
+      provider,
+      index,
+    }))
+    .sort((left, right) => {
+      if (left.provider.active === right.provider.active) {
+        return left.index - right.index;
+      }
+
+      return left.provider.active ? -1 : 1;
+    })
+    .map(({ provider }) => provider);
+}
+
 function getFocusableElements(container: HTMLElement | null): HTMLElement[] {
   if (!container) {
     return [];
@@ -185,6 +203,7 @@ export function ProviderSidePanel({
       ? draft.name.trim() || "New provider"
       : selectedProvider?.name.trim()) || "Provider";
   const detailProviderId = selectedProvider?.providerId ?? null;
+  const railProviders = sortProvidersForRail(filteredProviders);
   const panelRef = useRef<HTMLElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const copyFeedbackTimeoutRef = useRef<number | null>(null);
@@ -408,7 +427,7 @@ export function ProviderSidePanel({
                   No providers match “{search.trim()}”.
                 </div>
               ) : (
-                filteredProviders.map((provider) => (
+                railProviders.map((provider) => (
                   <button
                     type="button"
                     key={provider.providerId || provider.name}
@@ -439,14 +458,6 @@ export function ProviderSidePanel({
                       <div className="owt-provider-panel__provider-name">
                         {provider.name || provider.providerId || "Provider"}
                       </div>
-                      <div className="owt-provider-panel__rail-url">
-                        {provider.baseUrl || "No base URL saved"}
-                      </div>
-                      {provider.providerId ? (
-                        <div className="owt-provider-panel__rail-id">
-                          {provider.providerId}
-                        </div>
-                      ) : null}
                     </div>
                     {provider.active ? (
                       <span className="owt-status-pill" data-tone="success">

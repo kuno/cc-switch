@@ -157,7 +157,7 @@ describe("ProviderSidePanel", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders rail metadata parity, keeps delete in the header, and supports copying the provider id", async () => {
+  it("renders compact rail rows, keeps the active provider first, and supports copying the provider id", async () => {
     vi.useFakeTimers();
     const activeProvider = createProviderView("claude", {
       active: true,
@@ -209,20 +209,21 @@ describe("ProviderSidePanel", () => {
     expect(detailCopy).not.toBeNull();
     expect(detailMeta).not.toBeNull();
 
-    expect(within(activeRow!).getByText("https://api.anthropic.com")).toHaveClass(
-      "owt-provider-panel__rail-url",
-    );
-    expect(within(activeRow!).getByText("claude-primary")).toHaveClass(
-      "owt-provider-panel__rail-id",
-    );
+    expect(rows[0]).toBe(activeRow);
+    expect(within(activeRow!).getByText("Claude Primary")).toBeInTheDocument();
     expect(within(activeRow!).getByText("Active")).toHaveClass(
       "owt-status-pill",
     );
     expect(
-      within(selectedRow!).getByText("provider_wg88tuk8z9y0p4q1"),
-    ).toHaveClass(
-      "owt-provider-panel__rail-id",
-    );
+      within(activeRow!).queryByText("https://api.anthropic.com"),
+    ).toBeNull();
+    expect(within(activeRow!).queryByText("claude-primary")).toBeNull();
+    expect(
+      within(selectedRow!).queryByText("https://api.deepseek.com/anthropic"),
+    ).toBeNull();
+    expect(
+      within(selectedRow!).queryByText("provider_wg88tuk8z9y0p4q1"),
+    ).toBeNull();
     expect(
       within(detailHead!).getByRole("button", { name: "Delete provider" }),
     ).toBeInTheDocument();
