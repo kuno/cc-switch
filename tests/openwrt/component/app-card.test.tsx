@@ -108,4 +108,20 @@ describe("AppCard", () => {
       container.querySelector(".owt-app-card__mini-icon svg title")?.textContent,
     ).toBe("DeepSeek");
   });
+
+  it("renders the mockup unconfigured placeholder CTA with a neutral dot chip", () => {
+    const { container } = renderAppCard(
+      createSharedProviderState("claude", {
+        active: false,
+        configured: false,
+      }),
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Add a Claude provider" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("No provider configured yet")).toBeInTheDocument();
+    expect(screen.getByText("Add a provider →")).toBeInTheDocument();
+    expect(container.querySelector(".owt-chip.owt-chip--dot")).not.toBeNull();
+  });
 });
