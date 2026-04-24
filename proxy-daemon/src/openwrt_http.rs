@@ -134,6 +134,7 @@ struct OpenWrtClaudeAuthUploadPayload {
 struct OpenWrtRequestLogsQuery {
     page: Option<u32>,
     page_size: Option<u32>,
+    provider_id: Option<String>,
     provider_name: Option<String>,
     model: Option<String>,
     status_code: Option<u16>,
@@ -266,6 +267,7 @@ async fn openwrt_get_request_logs(
     State(state): State<ProxyState>,
 ) -> (StatusCode, Json<Value>) {
     let filters = LogFilters {
+        provider_id: normalize_optional_query_filter(query.provider_id),
         provider_name: normalize_optional_query_filter(query.provider_name),
         model: normalize_optional_query_filter(query.model),
         status_code: query.status_code,
@@ -813,6 +815,53 @@ mod tests {
         assert_eq!(
             body["data"][0]["requestId"],
             Value::String("req-claude".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn openwrt_get_request_logs_accepts_provider_id_filter() {
+        let state = test_proxy_state();
+        insert_request_log(
+            state.db.as_ref(),
+            "req-claude-a",
+            "provider-a",
+            "claude",
+            "claude-sonnet",
+            200,
+            100,
+        );
+        insert_request_log(
+            state.db.as_ref(),
+            "req-claude-b",
+            "provider-b",
+            "claude",
+            "claude-opus",
+            200,
+            200,
+        );
+
+        let (status, body) = openwrt_get_request_logs(
+            Path("claude".to_string()),
+            Query(OpenWrtRequestLogsQuery {
+                page: Some(0),
+                page_size: Some(20),
+                provider_id: Some("provider-b".to_string()),
+                ..Default::default()
+            }),
+            State(state),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["ok"], Value::Bool(true));
+        assert_eq!(body["total"], Value::from(1));
+        assert_eq!(
+            body["data"][0]["requestId"],
+            Value::String("req-claude-b".to_string())
+        );
+        assert_eq!(
+            body["data"][0]["providerId"],
+            Value::String("provider-b".to_string())
         );
     }
 

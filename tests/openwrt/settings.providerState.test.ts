@@ -612,11 +612,14 @@ describe("OpenWrt settings shared-provider shell", () => {
         (spec) =>
           spec.object === "ccswitch" &&
           spec.method === "get_request_logs" &&
-          JSON.stringify(spec.params) === JSON.stringify(["app", "page", "page_size"]),
+          JSON.stringify(spec.params) ===
+            JSON.stringify(["app", "page", "page_size", "provider_id"]),
       ),
     ).toBe(true);
     expect(source).toContain("/request-logs");
-    expect(source).toContain("getRequestLogs: async function (appId, page, pageSize)");
+    expect(source).toContain(
+      "getRequestLogs: async function (appId, page, pageSize, providerId)",
+    );
     expect(source).toContain("getRequestDetail: async function (appId, requestId)");
   });
 

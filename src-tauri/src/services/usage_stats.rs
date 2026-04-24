@@ -104,6 +104,7 @@ pub struct ModelStats {
 #[serde(rename_all = "camelCase")]
 pub struct LogFilters {
     pub app_type: Option<String>,
+    pub provider_id: Option<String>,
     pub provider_name: Option<String>,
     pub model: Option<String>,
     pub status_code: Option<u16>,
@@ -1577,6 +1578,10 @@ impl Database {
             // 详情面板据此展示真实入口（路由接管账单审计需要）。
             conditions.push(format!("{} = ?", folded_app_type_sql("l.app_type")));
             params.push(Box::new(app_type.clone()));
+        }
+        if let Some(ref provider_id) = filters.provider_id {
+            conditions.push("l.provider_id = ?");
+            params.push(Box::new(provider_id.clone()));
         }
         // 与 Dashboard 顶部下拉筛选同口径：Provider 按展示名精确匹配（会话占位
         // 行如 "Claude (Session)" 也能命中），模型按有效计价模型匹配。
