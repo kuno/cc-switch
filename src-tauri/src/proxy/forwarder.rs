@@ -3089,6 +3089,38 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
+    async fn claude_oauth_forwarding_falls_back_to_inbound_when_legacy_key_present() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let _env = ScopedDataDirEnv::set(temp.path());
+        let (base_url, seen_auth, server) = spawn_test_upstream().await;
+        let mut provider = claude_oauth_provider("claude-oauth-legacy-key", &base_url);
+        provider.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"] = json!("sk-ant-legacy-key");
+
+        let forwarder = build_test_forwarder();
+        let result = expect_forward_success(
+            forwarder
+                .forward_with_retry(
+                    &AppType::Claude,
+                    "/v1/messages",
+                    claude_request_body(),
+                    claude_request_headers(Some("Bearer client-fallback-token")),
+                    Extensions::new(),
+                    vec![provider],
+                )
+                .await,
+        );
+
+        assert_eq!(result.response.status(), http::StatusCode::OK);
+        assert_eq!(
+            seen_auth.lock().expect("lock seen auth").as_slice(),
+            &[Some("Bearer client-fallback-token".to_string())]
+        );
+
+        server.abort();
+    }
+
+    #[tokio::test]
     async fn claude_api_key_forwarding_is_unchanged() {
         let (base_url, seen_auth, server) = spawn_test_upstream().await;
         let provider = claude_api_key_provider(&base_url);
