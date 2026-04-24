@@ -352,9 +352,24 @@ export function createShellStub(
     async getRequestDetail(appId, requestId) {
       return options.requestDetails?.[appId]?.[requestId] ?? null;
     },
-    async getRequestLogs(appId, page = 0, pageSize = 20) {
+    async getRequestLogs(appId, page = 0, pageSize = 20, providerId) {
       return (
-        options.requestLogs?.[appId] ?? {
+        providerId
+          ? {
+              ...(options.requestLogs?.[appId] ?? {
+                data: [],
+                total: 0,
+                page,
+                pageSize,
+              }),
+              data: (options.requestLogs?.[appId]?.data ?? []).filter(
+                (entry) => entry.providerId === providerId,
+              ),
+              total: (options.requestLogs?.[appId]?.data ?? []).filter(
+                (entry) => entry.providerId === providerId,
+              ).length,
+            }
+          : options.requestLogs?.[appId] ?? {
           data: [],
           total: 0,
           page,
