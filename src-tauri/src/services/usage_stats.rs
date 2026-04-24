@@ -101,6 +101,7 @@ pub struct ModelStats {
 #[serde(rename_all = "camelCase")]
 pub struct LogFilters {
     pub app_type: Option<String>,
+    pub provider_id: Option<String>,
     pub provider_name: Option<String>,
     pub model: Option<String>,
     pub status_code: Option<u16>,
@@ -1239,6 +1240,10 @@ impl Database {
         if let Some(ref app_type) = filters.app_type {
             conditions.push("l.app_type = ?".to_string());
             params.push(Box::new(app_type.clone()));
+        }
+        if let Some(ref provider_id) = filters.provider_id {
+            conditions.push("l.provider_id = ?");
+            params.push(Box::new(provider_id.clone()));
         }
         if let Some(ref provider_name) = filters.provider_name {
             conditions.push("p.name LIKE ?".to_string());
