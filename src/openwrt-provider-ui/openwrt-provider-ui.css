@@ -193,6 +193,42 @@
   padding-bottom: 28px;
 }
 
+.owt-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.owt-page__title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin: 4px 4px 22px;
+}
+
+.owt-page__title {
+  margin: 0;
+  font-size: 34px;
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.owt-page__section-divider {
+  height: 1px;
+  margin: 34px 0 22px;
+  border: 0;
+  background: var(--line);
+}
+
 /* Shared provider/runtime surfaces mounted inside the provider-ui host. */
 .ccswitch-openwrt-provider-ui-host [data-ccswitch-layout="embedded-stack"] {
   display: flex;
@@ -361,7 +397,7 @@
  * ===================================================================== */
 .owt-app-card {
   position: relative;
-  padding: 8px 24px;
+  padding: 22px 24px 20px;
   border-radius: var(--radius-panel);
   background: var(--panel);
   box-shadow: 0 24px 60px -34px rgba(50, 72, 103, 0.28);
@@ -386,8 +422,8 @@
 }
 
 .owt-app-card--empty {
-  border-style: solid;
-  border-color: var(--line);
+  border-style: dashed;
+  border-color: var(--line-strong);
   background: transparent;
   box-shadow: none;
   min-height: auto;
@@ -402,7 +438,7 @@
   display: flex;
   align-items: center;
   gap: 14px;
-  margin-bottom: 10px;
+  margin-bottom: 22px;
 }
 
 .owt-app-card__icon {
@@ -495,7 +531,7 @@
 .owt-app-card__active {
   display: flex;
   flex-direction: column;
-  padding: 12px 14px;
+  padding: 14px 16px;
   border-radius: var(--radius-control);
   background: var(--panel-soft);
   border: 1px solid var(--line);
@@ -689,8 +725,8 @@
 }
 
 .owt-app-card__empty-cta {
-  margin-top: 0;
-  padding: 8px 14px;
+  margin-top: 18px;
+  padding: 16px 14px;
   border-radius: var(--radius-control);
   border: 1px dashed var(--line-strong);
   background: var(--panel-soft);
@@ -1323,7 +1359,7 @@
   top: 0;
   right: 0;
   display: flex;
-  width: min(820px, 92vw);
+  width: min(1040px, 96vw);
   height: 100dvh;
   flex-direction: column;
   border-left: 1px solid var(--line);
@@ -1350,7 +1386,7 @@
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 20px 22px;
+  padding: 22px 26px 16px;
 }
 
 .owt-provider-panel__header {
@@ -1363,9 +1399,9 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  border-radius: var(--radius-icon);
-  border: 1px solid color-mix(in srgb, var(--line-strong) 92%, transparent);
-  background: color-mix(in srgb, var(--panel-strong) 88%, transparent);
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--panel-strong);
 }
 
 .owt-provider-panel__app-badge {
@@ -1391,45 +1427,6 @@
   letter-spacing: 0.04em;
 }
 
-.owt-provider-panel__provider-mark[data-app="claude"] {
-  color: #b85d2f;
-  background: color-mix(in srgb, #ffddb7 56%, var(--panel-strong));
-}
-
-.owt-provider-panel__provider-mark[data-app="codex"] {
-  color: #1d7a60;
-  background: color-mix(in srgb, #c7f1e1 58%, var(--panel-strong));
-}
-
-.owt-provider-panel__provider-mark[data-app="gemini"] {
-  color: #3262c5;
-  background: color-mix(in srgb, #d7e7ff 56%, var(--panel-strong));
-}
-
-:host([data-ccswitch-theme="dark"])
-  .owt-provider-panel__provider-mark[data-app="claude"],
-.ccswitch-openwrt-provider-ui-host[data-ccswitch-theme="dark"]
-  .owt-provider-panel__provider-mark[data-app="claude"] {
-  background: color-mix(in srgb, #7a4a2c 42%, var(--panel-strong));
-  color: #ffd9c1;
-}
-
-:host([data-ccswitch-theme="dark"])
-  .owt-provider-panel__provider-mark[data-app="codex"],
-.ccswitch-openwrt-provider-ui-host[data-ccswitch-theme="dark"]
-  .owt-provider-panel__provider-mark[data-app="codex"] {
-  background: color-mix(in srgb, #165f4c 42%, var(--panel-strong));
-  color: #c6ffeb;
-}
-
-:host([data-ccswitch-theme="dark"])
-  .owt-provider-panel__provider-mark[data-app="gemini"],
-.ccswitch-openwrt-provider-ui-host[data-ccswitch-theme="dark"]
-  .owt-provider-panel__provider-mark[data-app="gemini"] {
-  background: color-mix(in srgb, #284f97 42%, var(--panel-strong));
-  color: #d8e6ff;
-}
-
 .owt-provider-panel__header-copy {
   min-width: 0;
   flex: 1 1 auto;
@@ -1437,16 +1434,16 @@
 
 .owt-provider-panel__title {
   margin: 0;
-  font-size: 1.18rem;
+  font-size: 22px;
   line-height: 1.1;
-  letter-spacing: -0.025em;
-  font-weight: 760;
+  letter-spacing: -0.02em;
+  font-weight: 720;
 }
 
 .owt-provider-panel__subtitle {
-  margin-top: 5px;
+  margin-top: 2px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12.5px;
 }
 
 .owt-provider-panel__close {
@@ -1458,18 +1455,16 @@
   flex-shrink: 0;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--panel-strong) 86%, transparent);
+  background: var(--button);
   color: var(--text);
   transition:
     border-color 160ms ease-out,
-    background-color 160ms ease-out,
-    transform 160ms ease-out;
+    background-color 160ms ease-out;
 }
 
 .owt-provider-panel__close:hover {
   border-color: var(--line-strong);
-  background: var(--panel-strong);
-  transform: translateY(-1px);
+  background: var(--button);
 }
 
 .owt-provider-panel__body {
@@ -1484,7 +1479,7 @@
   min-height: 0;
   flex-direction: column;
   gap: 14px;
-  padding: 18px;
+  padding: 18px 14px;
   border-right: 1px solid color-mix(in srgb, var(--line) 90%, transparent);
   background: color-mix(in srgb, var(--panel-soft) 88%, transparent);
 }
@@ -1493,11 +1488,11 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 42px;
-  padding: 0 14px;
+  min-height: 34px;
+  padding: 0 12px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--panel-strong) 88%, transparent);
+  background: var(--panel-soft);
   color: var(--muted);
 }
 
@@ -1528,32 +1523,27 @@
 .owt-provider-panel__provider-row {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr) auto;
-  align-items: start;
+  align-items: center;
   width: 100%;
   gap: 10px;
-  padding: 12px 10px;
+  padding: 10px;
+  margin-bottom: 4px;
   border: 1px solid transparent;
-  border-radius: 18px;
+  border-radius: var(--radius-control);
   background: transparent;
   text-align: left;
   transition:
     border-color 160ms ease-out,
-    background-color 160ms ease-out,
-    transform 160ms ease-out;
+    background-color 160ms ease-out;
 }
 
-.owt-provider-panel__provider-row + .owt-provider-panel__provider-row {
-  margin-top: 8px;
-}
-
-.owt-provider-panel__provider-row:hover,
-.owt-provider-panel__provider-row[data-active="true"] {
-  border-color: color-mix(in srgb, var(--accent) 18%, var(--line));
-  background: color-mix(in srgb, var(--panel-strong) 78%, transparent);
+.owt-provider-panel__provider-row:hover {
+  background: var(--panel-soft);
 }
 
 .owt-provider-panel__provider-row[data-active="true"] {
-  transform: translateX(2px);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  background: var(--row-active);
 }
 
 .owt-provider-panel__provider-copy {
@@ -1574,7 +1564,7 @@
 .owt-provider-panel__rail-url {
   margin-top: 4px;
   color: var(--accent-text);
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.45;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   white-space: nowrap;
@@ -1585,7 +1575,7 @@
 .owt-provider-panel__rail-id {
   margin-top: 4px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 10.5px;
   line-height: 1.45;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   white-space: nowrap;
@@ -1639,28 +1629,39 @@
 }
 
 .owt-provider-panel__rail-foot {
-  padding-top: 4px;
+  margin-top: 10px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line);
 }
 
 .owt-provider-panel__detail {
   display: flex;
   min-height: 0;
   flex-direction: column;
-  gap: 16px;
-  padding: 18px 20px 20px;
+  padding: 22px 26px 26px;
+  overflow: hidden;
+}
+
+.owt-provider-panel__detail-shell {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 18px;
 }
 
 .owt-provider-panel__detail-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 14px;
+  gap: 12px;
 }
 
 .owt-provider-panel__detail-identity {
   display: flex;
+  flex: 1 1 auto;
   min-width: 0;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
 }
 
@@ -1675,18 +1676,19 @@
 }
 
 .owt-provider-panel__detail-title {
-  font-size: 1.05rem;
-  line-height: 1.15;
-  letter-spacing: -0.022em;
-  font-weight: 740;
+  font-size: 22px;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-weight: 720;
   color: var(--text);
 }
 
 .owt-provider-panel__detail-url {
-  margin-top: 5px;
-  color: var(--muted);
-  font-size: 13px;
+  margin-top: 3px;
+  color: var(--accent-text);
+  font-size: 12.5px;
   line-height: 1.45;
+  font-weight: 600;
   word-break: break-all;
 }
 
@@ -1710,7 +1712,7 @@
 }
 
 .owt-provider-panel__detail[data-panel-mode="preset-picker"] {
-  gap: 18px;
+  padding-bottom: 22px;
 }
 
 .owt-provider-panel__picker-actions {
@@ -1776,7 +1778,7 @@
 }
 
 .owt-provider-panel__preset-intro {
-  padding: 0 2px;
+  padding-bottom: 8px;
 }
 
 .owt-provider-panel__eyebrow,
@@ -1785,80 +1787,75 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--soft);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
 .owt-provider-panel__preset-lead {
-  margin: 8px 0 0;
-  padding: 14px 15px;
-  border: 1px solid color-mix(in srgb, var(--line) 92%, transparent);
-  border-radius: 18px;
-  background: color-mix(in srgb, var(--panel-soft) 86%, transparent);
-  color: var(--text);
-  font-size: 14px;
-  line-height: 1.5;
+  margin: 0;
+  padding: 18px 20px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: #1b2533;
+  color: #d8e2ef;
+  font-size: 14.5px;
+  line-height: 1.45;
+  font-weight: 500;
+}
+
+:host([data-ccswitch-theme="dark"]) .owt-provider-panel__preset-lead,
+.ccswitch-openwrt-provider-ui-host[data-ccswitch-theme="dark"]
+  .owt-provider-panel__preset-lead {
+  background: #0b1017;
+  color: #cbd6e5;
 }
 
 .owt-provider-panel__preset-subtext,
 .owt-provider-panel__preset-group-hint {
-  margin-top: 8px;
+  margin-top: 10px;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.5;
 }
 
 .owt-provider-panel__preset-grid {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   margin-top: 10px;
 }
 
 .owt-provider-panel__preset-card {
   display: block;
   width: 100%;
-  padding: 14px 15px;
-  border: 1px solid color-mix(in srgb, var(--line) 92%, transparent);
-  border-radius: 18px;
-  background: color-mix(in srgb, var(--panel-strong) 84%, transparent);
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--panel-strong);
   text-align: left;
   transition:
     border-color 160ms ease-out,
     background-color 160ms ease-out,
-    box-shadow 160ms ease-out,
-    transform 160ms ease-out;
+    box-shadow 160ms ease-out;
 }
 
 .owt-provider-panel__preset-card:hover {
   border-color: var(--line-strong);
-  background: var(--panel-strong);
-  transform: translateY(-1px);
 }
 
 .owt-provider-panel__preset-card[data-selected="true"] {
-  border-color: color-mix(in srgb, var(--accent) 44%, transparent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
 .owt-provider-panel__preset-head {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
+  display: block;
 }
 
 .owt-provider-panel__preset-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  width: 32px;
-  height: 32px;
-  border-radius: 11px;
-  border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
-  background: color-mix(in srgb, var(--panel-soft) 84%, transparent);
+  display: none;
 }
 
 .owt-provider-panel__preset-icon img {
@@ -1872,21 +1869,21 @@
 
 .owt-provider-panel__preset-title {
   color: var(--text);
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 720;
+  margin-bottom: 4px;
 }
 
 .owt-provider-panel__preset-description {
-  margin-top: 5px;
   color: var(--muted);
-  font-size: 12.5px;
-  line-height: 1.48;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .owt-provider-panel__preset-meta {
   margin-top: 10px;
-  color: var(--soft);
-  font-size: 12px;
+  color: var(--soft-text);
+  font-size: 12.5px;
   line-height: 1.45;
   word-break: break-all;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
@@ -2306,6 +2303,45 @@ select.owt-provider-panel__input {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 18px 24px;
+}
+
+.owt-daemon-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  color: var(--text-dim);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+}
+
+.owt-daemon-card__footer-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.owt-daemon-card__footer-sep {
+  color: var(--text-dim);
+  opacity: 0.4;
+}
+
+.owt-daemon-card__footer-label {
+  color: var(--text-dim);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+.owt-daemon-card__footer-version {
+  color: var(--text);
+  font-family: var(--owt-mono);
+  font-size: 11.5px;
+  opacity: 0.7;
 }
 
 .owt-daemon-field {
@@ -2739,13 +2775,13 @@ select.owt-provider-panel__input {
 /* Skeleton filler card (fills the odd slot when a group has 1 or 3 apps) */
 .owt-app-card--skeleton {
   cursor: default;
-  border-style: dashed;
   border-color: var(--line);
-  background: transparent;
+  background: var(--panel);
   box-shadow: none;
   min-height: 248px;
   pointer-events: none;
   animation: none;
+  opacity: 0.92;
 }
 
 .owt-app-card--skeleton-compact {
@@ -2754,16 +2790,19 @@ select.owt-provider-panel__input {
 .owt-app-card--skeleton:hover {
   transform: none;
   border-color: var(--line);
-  background: transparent;
+  background: var(--panel);
 }
 
 .owt-app-card--empty-skeleton {
   min-height: auto;
+  border-style: dashed;
   border-color: var(--line-strong);
+  background: transparent;
 }
 
 .owt-app-card--empty-skeleton:hover {
   border-color: var(--line-strong);
+  background: transparent;
 }
 
 .owt-app-card__skeleton-icon,
@@ -2788,8 +2827,8 @@ select.owt-provider-panel__input {
 }
 
 .owt-app-card__skeleton-chip {
-  width: 68px;
-  height: 24px;
+  width: 76px;
+  height: 22px;
   border-radius: 999px;
   flex: 0 0 auto;
 }
@@ -2823,9 +2862,9 @@ select.owt-provider-panel__input {
   gap: 12px;
   padding: 12px 14px;
   border-radius: var(--radius-control);
-  background: var(--panel-softer);
+  background: var(--panel-soft);
   border: 1px solid var(--line);
-  margin-bottom: 18px;
+  margin: 16px 0 14px;
 }
 
 .owt-app-card--skeleton-compact .owt-app-card__skeleton-active {
@@ -2837,8 +2876,8 @@ select.owt-provider-panel__input {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 12px;
-  padding: 12px 14px;
+  margin-top: 18px;
+  padding: 16px 14px;
 }
 
 .owt-app-card--empty-skeleton .owt-app-card__skeleton-empty-cta {
@@ -2871,26 +2910,10 @@ select.owt-provider-panel__input {
   border-left: 0;
 }
 
-@keyframes owt-sk-shimmer {
-  0% {
-    opacity: 0.6;
+@media (max-width: 640px) {
+  .owt-page__title {
+    font-size: 28px;
   }
-
-  50% {
-    opacity: 1;
-  }
-
-  100% {
-    opacity: 0.6;
-  }
-}
-
-.owt-app-card--skeleton .owt-app-card__skeleton-icon,
-.owt-app-card--skeleton .owt-app-card__skeleton-chip,
-.owt-app-card--skeleton .owt-app-card__skeleton-mini,
-.owt-app-card--skeleton .owt-app-card__skeleton-line,
-.owt-app-card--skeleton .owt-app-card__skeleton-active {
-  animation: owt-sk-shimmer 2.4s ease-in-out infinite;
 }
 
 /* =====================================================================
@@ -3018,7 +3041,7 @@ select.owt-provider-panel__input {
 }
 
 /* =====================================================================
- * THEME TOGGLE — icon-based, sits in the Apps section head
+ * THEME TOGGLE — icon-based, sits in the page title row
  * ===================================================================== */
 .owt-theme-toggle {
   width: 36px;

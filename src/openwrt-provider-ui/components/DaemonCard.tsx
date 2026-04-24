@@ -7,8 +7,11 @@ import type {
 } from "../pageTypes";
 
 const DEFAULT_LOG_LEVELS = ["error", "warn", "info", "debug", "trace"];
+const DAEMON_FALLBACK_VERSION = "v0.4.2";
 
 export interface DaemonCardProps {
+  appVersion?: string;
+  daemonVersion?: string;
   host: OpenWrtHostState;
   draft: OpenWrtHostConfigPayload;
   isRunning: boolean;
@@ -24,6 +27,15 @@ export interface DaemonCardProps {
   ) => void;
   onSave: () => void;
   onRestart: () => void;
+}
+
+function formatVersion(
+  raw: string | null | undefined,
+  fallback: string,
+): string {
+  const trimmed = (raw ?? "").trim();
+  if (!trimmed) return fallback;
+  return trimmed.startsWith("v") ? trimmed : `v${trimmed}`;
 }
 
 function getHealthTone(health: OpenWrtHostState["health"]): string {
@@ -89,6 +101,8 @@ function DaemonField({
 
 export function DaemonCard({
   host,
+  appVersion = "unknown",
+  daemonVersion,
   draft,
   isRunning,
   isDirty,
@@ -104,6 +118,8 @@ export function DaemonCard({
   const healthLabel = getHealthLabel(host.health);
   const healthTone = getHealthTone(host.health);
   const logLevelOptions = getLogLevelOptions(draft.logLevel);
+  const resolvedDaemonVersion =
+    daemonVersion ?? formatVersion(host.version, DAEMON_FALLBACK_VERSION);
 
   return (
     <div
@@ -231,6 +247,34 @@ export function DaemonCard({
           />
         </DaemonField>
       </div>
+
+      <footer className="owt-daemon-card__footer">
+        <span className="owt-daemon-card__footer-item">
+          <span className="owt-daemon-card__footer-label">
+            luci-app-ccswitch
+          </span>
+          <span
+            className="owt-daemon-card__footer-version"
+            title="luci-app-ccswitch version"
+          >
+            {appVersion}
+          </span>
+        </span>
+        <span className="owt-daemon-card__footer-sep" aria-hidden="true">
+          ·
+        </span>
+        <span className="owt-daemon-card__footer-item">
+          <span className="owt-daemon-card__footer-label">
+            ccswitch daemon
+          </span>
+          <span
+            className="owt-daemon-card__footer-version"
+            title="ccswitch daemon version"
+          >
+            {resolvedDaemonVersion}
+          </span>
+        </span>
+      </footer>
     </div>
   );
 }

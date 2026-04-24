@@ -453,125 +453,132 @@ export function ProviderSidePanel({
             className="owt-provider-panel__detail"
             data-panel-mode={resolvedPanelMode}
           >
-            {resolvedPanelMode === "detail" ? (
-              <>
-                <div className="owt-provider-panel__detail-head">
-                  <div className="owt-provider-panel__detail-identity">
-                    <div
-                      className="owt-provider-panel__provider-mark owt-provider-panel__provider-mark--detail"
-                      data-app={appId}
-                    >
-                      <OpenWrtProviderIcon
-                        appId={appId}
-                        name={providerName}
-                        size={22}
-                        source={selectedProvider ?? draft}
-                      />
-                    </div>
-                    <div className="owt-provider-panel__detail-copy">
-                      <div className="owt-provider-panel__detail-title">
-                        {providerName}
-                      </div>
-                      <div className="owt-provider-panel__detail-url">
-                        {draft.baseUrl || "Not saved yet"}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="owt-provider-panel__detail-meta">
-                    {detailProviderId ? (
-                      <button
-                        type="button"
-                        className="owt-provider-panel__id-chip"
-                        data-copied={copiedProviderId === detailProviderId}
-                        aria-label={`Copy provider ID ${detailProviderId}`}
-                        title={
-                          copiedProviderId === detailProviderId
-                            ? "Copied"
-                            : `Copy provider ID ${detailProviderId}`
-                        }
-                        onClick={() => void handleCopyProviderId(detailProviderId)}
+            <div className="owt-provider-panel__detail-shell">
+              {resolvedPanelMode === "detail" ? (
+                <>
+                  <div className="owt-provider-panel__detail-head">
+                    <div className="owt-provider-panel__detail-identity">
+                      <div
+                        className="owt-provider-panel__provider-mark owt-provider-panel__provider-mark--detail"
+                        data-app={appId}
                       >
-                        {copiedProviderId === detailProviderId
-                          ? "Copied"
-                          : detailProviderId}
-                      </button>
-                    ) : null}
-                    <span
-                      className="owt-status-pill"
-                      data-tone={getStatusTone(mode, selectedProvider)}
-                    >
-                      <span className="owt-status-pill__dot" aria-hidden="true" />
-                      {getStatusLabel(mode, selectedProvider)}
-                    </span>
+                        <OpenWrtProviderIcon
+                          appId={appId}
+                          name={providerName}
+                          size={22}
+                          source={selectedProvider ?? draft}
+                        />
+                      </div>
+                      <div className="owt-provider-panel__detail-copy">
+                        <div className="owt-provider-panel__detail-title">
+                          {providerName}
+                        </div>
+                        <div className="owt-provider-panel__detail-url">
+                          {draft.baseUrl || "Not saved yet"}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="owt-provider-panel__detail-meta">
+                      {detailProviderId ? (
+                        <button
+                          type="button"
+                          className="owt-provider-panel__id-chip"
+                          data-copied={copiedProviderId === detailProviderId}
+                          aria-label={`Copy provider ID ${detailProviderId}`}
+                          title={
+                            copiedProviderId === detailProviderId
+                              ? "Copied"
+                              : `Copy provider ID ${detailProviderId}`
+                          }
+                          onClick={() =>
+                            void handleCopyProviderId(detailProviderId)
+                          }
+                        >
+                          {copiedProviderId === detailProviderId
+                            ? "Copied"
+                            : detailProviderId}
+                        </button>
+                      ) : null}
+                      <span
+                        className="owt-status-pill"
+                        data-tone={getStatusTone(mode, selectedProvider)}
+                      >
+                        <span
+                          className="owt-status-pill__dot"
+                          aria-hidden="true"
+                        />
+                        {getStatusLabel(mode, selectedProvider)}
+                      </span>
+                    </div>
                   </div>
-                </div>
 
-                <div className="owt-provider-panel__tabs" role="tablist">
-                  {(["general", "credentials"] as const).map((value) => (
-                    <button
-                      key={value}
-                      type="button"
-                      className="owt-provider-panel__tab"
-                      data-active={tab === value}
-                      onClick={() => onTabChange(value)}
-                    >
-                      {value === "general" ? "General" : "Credentials"}
-                    </button>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <div className="owt-provider-panel__picker-actions">
-                <button
-                  type="button"
-                  className="owt-provider-panel__button owt-provider-panel__button--ghost"
-                  onClick={onPresetCancel ?? onCancel}
-                >
-                  Cancel
-                </button>
-              </div>
-            )}
-
-            <div className="owt-provider-panel__content">
-              {loading ? (
-                <div className="owt-provider-panel__state">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Loading provider workspace…
-                </div>
-              ) : error ? (
-                <div className="owt-provider-panel__state owt-provider-panel__state--error">
-                  {error}
-                </div>
-              ) : resolvedPanelMode === "preset-picker" ? (
-                <ProviderSidePanelPresetTab
-                  groups={presetGroups}
-                  selectedPresetId={selectedPresetId}
-                  onPresetSelect={onPresetSelect}
-                />
-              ) : tab === "general" ? (
-                <ProviderSidePanelGeneralTab
-                  draft={draft}
-                  website={website}
-                  onDraftChange={onDraftChange}
-                  onWebsiteChange={onWebsiteChange}
-                />
+                  <div className="owt-provider-panel__tabs" role="tablist">
+                    {(["general", "credentials"] as const).map((value) => (
+                      <button
+                        key={value}
+                        type="button"
+                        className="owt-provider-panel__tab"
+                        data-active={tab === value}
+                        onClick={() => onTabChange(value)}
+                      >
+                        {value === "general" ? "General" : "Credentials"}
+                      </button>
+                    ))}
+                  </div>
+                </>
               ) : (
-                <ProviderSidePanelCredentialsTab
-                  appId={appId}
-                  draft={draft}
-                  provider={selectedProvider}
-                  selectedFileName={selectedFileName}
-                  authPending={authPending}
-                  tokenFieldOptions={tokenFieldOptions}
-                  onDraftChange={onDraftChange}
-                  onFileSelect={onFileSelect}
-                  onUploadCodexAuth={onUploadCodexAuth}
-                  onRemoveCodexAuth={onRemoveCodexAuth}
-                  onUploadClaudeAuth={onUploadClaudeAuth}
-                  onRemoveClaudeAuth={onRemoveClaudeAuth}
-                />
+                <div className="owt-provider-panel__picker-actions">
+                  <button
+                    type="button"
+                    className="owt-provider-panel__button owt-provider-panel__button--ghost"
+                    onClick={onPresetCancel ?? onCancel}
+                  >
+                    Cancel
+                  </button>
+                </div>
               )}
+
+              <div className="owt-provider-panel__content">
+                {loading ? (
+                  <div className="owt-provider-panel__state">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading provider workspace…
+                  </div>
+                ) : error ? (
+                  <div className="owt-provider-panel__state owt-provider-panel__state--error">
+                    {error}
+                  </div>
+                ) : resolvedPanelMode === "preset-picker" ? (
+                  <ProviderSidePanelPresetTab
+                    groups={presetGroups}
+                    selectedPresetId={selectedPresetId}
+                    onPresetSelect={onPresetSelect}
+                  />
+                ) : tab === "general" ? (
+                  <ProviderSidePanelGeneralTab
+                    draft={draft}
+                    website={website}
+                    onDraftChange={onDraftChange}
+                    onWebsiteChange={onWebsiteChange}
+                  />
+                ) : (
+                  <ProviderSidePanelCredentialsTab
+                    appId={appId}
+                    draft={draft}
+                    provider={selectedProvider}
+                    selectedFileName={selectedFileName}
+                    authPending={authPending}
+                    tokenFieldOptions={tokenFieldOptions}
+                    onDraftChange={onDraftChange}
+                    onFileSelect={onFileSelect}
+                    onUploadCodexAuth={onUploadCodexAuth}
+                    onRemoveCodexAuth={onRemoveCodexAuth}
+                    onUploadClaudeAuth={onUploadClaudeAuth}
+                    onRemoveClaudeAuth={onRemoveClaudeAuth}
+                  />
+                )}
+              </div>
             </div>
           </section>
         </div>
