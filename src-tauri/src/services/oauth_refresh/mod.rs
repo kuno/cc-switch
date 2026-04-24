@@ -5,7 +5,7 @@ use reqwest::Client;
 use serde::Deserialize;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tokio::sync::{Mutex, OwnedMutexGuard, RwLock};
 
 use crate::proxy::providers::codex_oauth_auth::{
@@ -15,6 +15,7 @@ use crate::proxy::providers::codex_oauth_auth::{
 const MIN_PLAUSIBLE_EXPIRES_AT_MS: i64 = 1_000_000_000_000;
 const MAX_PLAUSIBLE_EXPIRES_AT_MS: i64 = 9_999_999_999_999;
 const MIN_REFRESHED_LIFETIME_MS: i64 = 30_000;
+const OAUTH_REFRESH_EXPIRING_SOON_SKEW_MS: i64 = 5 * 60 * 1000;
 
 /// Claude Code CLI OAuth client ID.
 /// Source: @anthropic-ai/claude-code@1.0.119 cli.js (function NjA).
@@ -78,6 +79,11 @@ impl OAuthRefreshLockManager {
         Self::default()
     }
 
+    pub fn shared() -> Self {
+        static SHARED: OnceLock<OAuthRefreshLockManager> = OnceLock::new();
+        SHARED.get_or_init(Self::default).clone()
+    }
+
     pub async fn lock_for_provider(&self, provider_key: &str) -> OwnedMutexGuard<()> {
         let lock = {
             let locks = self.locks.read().await;
@@ -109,19 +115,19 @@ where
     T: StoredOAuthCredential,
     Load: Fn() -> anyhow::Result<Option<T>>,
     Save: Fn(&T, &RefreshedCredentials) -> anyhow::Result<T>,
-    R: OAuthTokenRefresher,
+    R: OAuthTokenRefresher + ?Sized,
 {
     let Some(stored) = load_with_warn(provider_label, provider_id, &load) else {
         return None;
     };
 
-    if !is_expired(&stored) {
+    if !should_refresh(&stored) {
         return Some(stored);
     }
 
     if stored.refresh_token().is_none() {
         log::warn!(
-            "[Quota] stored {provider_label} auth for {provider_id} is expired and has no refresh token; skipping live quota refresh"
+            "[OAuthRefresh] stored {provider_label} auth for {provider_id} is expired or expiring soon and has no refresh token; skipping refresh"
         );
         return None;
     }
@@ -132,9 +138,9 @@ where
         return None;
     };
 
-    if !is_expired(&stored) {
+    if !should_refresh(&stored) {
         log::info!(
-            "[Quota] expired {provider_label} auth for {provider_id} was refreshed by another request"
+            "[OAuthRefresh] {provider_label} auth for {provider_id} was refreshed by another request"
         );
         return Some(stored);
     }
@@ -145,24 +151,26 @@ where
         .filter(|value| !value.is_empty())
     else {
         log::warn!(
-            "[Quota] stored {provider_label} auth for {provider_id} is expired and has no refresh token; skipping live quota refresh"
+            "[OAuthRefresh] stored {provider_label} auth for {provider_id} is expired or expiring soon and has no refresh token; skipping refresh"
         );
         return None;
     };
 
-    log::info!("[Quota] refreshing expired {provider_label} auth for {provider_id}");
+    log::info!(
+        "[OAuthRefresh] refreshing {provider_label} auth for {provider_id} because it is expired or expiring soon"
+    );
 
     let refreshed = match refresher.refresh(refresh_token).await {
         Ok(refreshed) => refreshed,
         Err(OAuthRefreshError::ClientIdInvalid) => {
             log::error!(
-                "[Quota] failed to refresh expired {provider_label} auth for {provider_id}; error_kind=client_id_invalid; client_id may have been rotated by upstream"
+                "[OAuthRefresh] failed to refresh {provider_label} auth for {provider_id}; error_kind=client_id_invalid; client_id may have been rotated by upstream"
             );
             return None;
         }
         Err(error) => {
             log::warn!(
-                "[Quota] failed to refresh expired {provider_label} auth for {provider_id}; error_kind={}",
+                "[OAuthRefresh] failed to refresh {provider_label} auth for {provider_id}; error_kind={}",
                 error.kind()
             );
             return None;
@@ -172,17 +180,17 @@ where
     match save(&stored, &refreshed) {
         Ok(updated) => {
             log::info!(
-                "[Quota] refreshed expired {provider_label} auth for {provider_id}; rotated_refresh_token={}",
+                "[OAuthRefresh] refreshed {provider_label} auth for {provider_id}; rotated_refresh_token={}",
                 refreshed.refresh_token.is_some()
             );
             Some(updated)
         }
         Err(error) => {
             log::warn!(
-                "[Quota] failed to persist refreshed {provider_label} auth for {provider_id}; error_kind=storage_update_failed"
+                "[OAuthRefresh] failed to persist refreshed {provider_label} auth for {provider_id}; error_kind=storage_update_failed"
             );
             log::debug!(
-                "[Quota] storage update failure for {provider_label} {provider_id}: {error}"
+                "[OAuthRefresh] storage update failure for {provider_label} {provider_id}: {error}"
             );
             None
         }
@@ -351,19 +359,21 @@ where
         Ok(value) => value,
         Err(error) => {
             log::warn!(
-                "[Quota] failed to load {provider_label} auth for {provider_id}; error_kind=storage_read_failed"
+                "[OAuthRefresh] failed to load {provider_label} auth for {provider_id}; error_kind=storage_read_failed"
             );
-            log::debug!("[Quota] auth load failure for {provider_label} {provider_id}: {error}");
+            log::debug!(
+                "[OAuthRefresh] auth load failure for {provider_label} {provider_id}: {error}"
+            );
             None
         }
     }
 }
 
-fn is_expired<T: StoredOAuthCredential>(stored: &T) -> bool {
+fn should_refresh<T: StoredOAuthCredential>(stored: &T) -> bool {
     let now_ms = chrono::Utc::now().timestamp_millis();
-    stored
-        .expires_at_ms()
-        .is_some_and(|expires_at_ms| expires_at_ms <= now_ms)
+    stored.expires_at_ms().is_some_and(|expires_at_ms| {
+        expires_at_ms <= now_ms.saturating_add(OAUTH_REFRESH_EXPIRING_SOON_SKEW_MS)
+    })
 }
 
 fn validate_refreshed_expires_at_ms(
@@ -494,6 +504,7 @@ mod tests {
     use axum::{extract::State, routing::post, Json, Router};
     use serde_json::json;
     use std::sync::{Arc, Mutex};
+    use tokio::sync::Notify;
 
     #[derive(Clone)]
     struct TestStoredAuth {
@@ -547,7 +558,7 @@ mod tests {
         let stored = TestStoredAuth {
             access_token: "current-access".to_string(),
             refresh_token: Some("current-refresh".to_string()),
-            expires_at_ms: Some(chrono::Utc::now().timestamp_millis() + 60_000),
+            expires_at_ms: Some(chrono::Utc::now().timestamp_millis() + 10 * 60_000),
         };
 
         let refreshed = load_or_refresh_oauth_credentials(
@@ -564,6 +575,182 @@ mod tests {
 
         assert_eq!(refreshed.access_token, "current-access");
         assert_eq!(*calls.lock().expect("lock calls"), 0);
+    }
+
+    #[tokio::test]
+    async fn load_or_refresh_refreshes_expiring_soon_auth_and_saves_it() {
+        let stored = Arc::new(Mutex::new(TestStoredAuth {
+            access_token: "current-access".to_string(),
+            refresh_token: Some("current-refresh".to_string()),
+            expires_at_ms: Some(chrono::Utc::now().timestamp_millis() + 60_000),
+        }));
+
+        let calls = Arc::new(Mutex::new(0usize));
+        let refresher = TestRefresher {
+            calls: calls.clone(),
+            result: RefreshedCredentials {
+                access_token: "new-access".to_string(),
+                expires_at_ms: chrono::Utc::now().timestamp_millis() + 3_600_000,
+                refresh_token: Some("new-refresh".to_string()),
+                extra: Value::Null,
+            },
+        };
+
+        let refreshed = load_or_refresh_oauth_credentials(
+            "Claude",
+            "provider-1",
+            "claude:provider-1",
+            &refresher,
+            &OAuthRefreshLockManager::new(),
+            {
+                let stored = stored.clone();
+                move || Ok(Some(stored.lock().expect("lock stored auth").clone()))
+            },
+            {
+                let stored = stored.clone();
+                move |_current, refreshed| {
+                    let mut state = stored.lock().expect("lock stored auth");
+                    *state = TestStoredAuth {
+                        access_token: refreshed.access_token.clone(),
+                        refresh_token: refreshed.refresh_token.clone(),
+                        expires_at_ms: Some(refreshed.expires_at_ms),
+                    };
+                    Ok(state.clone())
+                }
+            },
+        )
+        .await
+        .expect("refreshed auth should be returned");
+
+        assert_eq!(refreshed.access_token, "new-access");
+        assert_eq!(refreshed.refresh_token.as_deref(), Some("new-refresh"));
+        assert_eq!(*calls.lock().expect("lock calls"), 1);
+    }
+
+    #[derive(Clone)]
+    struct BlockingRefresher {
+        calls: Arc<Mutex<usize>>,
+        entered: Arc<Notify>,
+        release: Arc<Notify>,
+        result: RefreshedCredentials,
+    }
+
+    #[async_trait]
+    impl OAuthTokenRefresher for BlockingRefresher {
+        async fn refresh(
+            &self,
+            _refresh_token: &str,
+        ) -> Result<RefreshedCredentials, OAuthRefreshError> {
+            *self.calls.lock().expect("lock refresher calls") += 1;
+            self.entered.notify_waiters();
+            self.release.notified().await;
+            Ok(self.result.clone())
+        }
+    }
+
+    #[tokio::test]
+    async fn load_or_refresh_uses_single_refresh_under_concurrency() {
+        let stored = Arc::new(Mutex::new(TestStoredAuth {
+            access_token: "expiring-access".to_string(),
+            refresh_token: Some("current-refresh".to_string()),
+            expires_at_ms: Some(chrono::Utc::now().timestamp_millis() + 60_000),
+        }));
+        let calls = Arc::new(Mutex::new(0usize));
+        let entered = Arc::new(Notify::new());
+        let release = Arc::new(Notify::new());
+        let lock_manager = OAuthRefreshLockManager::new();
+        let refresher = BlockingRefresher {
+            calls: calls.clone(),
+            entered: entered.clone(),
+            release: release.clone(),
+            result: RefreshedCredentials {
+                access_token: "new-access".to_string(),
+                expires_at_ms: chrono::Utc::now().timestamp_millis() + 3_600_000,
+                refresh_token: Some("new-refresh".to_string()),
+                extra: Value::Null,
+            },
+        };
+
+        let first = tokio::spawn({
+            let stored = stored.clone();
+            let lock_manager = lock_manager.clone();
+            let refresher = refresher.clone();
+            async move {
+                load_or_refresh_oauth_credentials(
+                    "Claude",
+                    "provider-1",
+                    "claude:provider-1",
+                    &refresher,
+                    &lock_manager,
+                    {
+                        let stored = stored.clone();
+                        move || Ok(Some(stored.lock().expect("lock stored auth").clone()))
+                    },
+                    {
+                        let stored = stored.clone();
+                        move |_current, refreshed| {
+                            let mut state = stored.lock().expect("lock stored auth");
+                            *state = TestStoredAuth {
+                                access_token: refreshed.access_token.clone(),
+                                refresh_token: refreshed.refresh_token.clone(),
+                                expires_at_ms: Some(refreshed.expires_at_ms),
+                            };
+                            Ok(state.clone())
+                        }
+                    },
+                )
+                .await
+            }
+        });
+
+        entered.notified().await;
+
+        let second = tokio::spawn({
+            let stored = stored.clone();
+            let lock_manager = lock_manager.clone();
+            let refresher = refresher.clone();
+            async move {
+                load_or_refresh_oauth_credentials(
+                    "Claude",
+                    "provider-1",
+                    "claude:provider-1",
+                    &refresher,
+                    &lock_manager,
+                    {
+                        let stored = stored.clone();
+                        move || Ok(Some(stored.lock().expect("lock stored auth").clone()))
+                    },
+                    {
+                        let stored = stored.clone();
+                        move |_current, refreshed| {
+                            let mut state = stored.lock().expect("lock stored auth");
+                            *state = TestStoredAuth {
+                                access_token: refreshed.access_token.clone(),
+                                refresh_token: refreshed.refresh_token.clone(),
+                                expires_at_ms: Some(refreshed.expires_at_ms),
+                            };
+                            Ok(state.clone())
+                        }
+                    },
+                )
+                .await
+            }
+        });
+
+        release.notify_waiters();
+
+        let first = first
+            .await
+            .expect("first task should finish")
+            .expect("first task should return auth");
+        let second = second
+            .await
+            .expect("second task should finish")
+            .expect("second task should return auth");
+
+        assert_eq!(first.access_token, "new-access");
+        assert_eq!(second.access_token, "new-access");
+        assert_eq!(*calls.lock().expect("lock calls"), 1);
     }
 
     #[tokio::test]
