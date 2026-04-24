@@ -114,6 +114,54 @@ const CODEX_LEGACY_CLIENT_PASSTHROUGH_AUTH_MODE: &str = "client_passthrough";
 const CLAUDE_OAUTH_AUTH_MODE: &str = "claude_oauth";
 const CLAUDE_CODE_BETA: &str = "claude-code-20250219";
 const CLAUDE_OAUTH_BETA: &str = "oauth-2025-04-20";
+const PROXY_MANAGED_SENTINEL: &str = "PROXY_MANAGED";
+
+fn is_proxy_managed_bearer_sentinel(value: &http::HeaderValue) -> bool {
+    let Ok(value) = value.to_str() else {
+        return false;
+    };
+    let mut parts = value.split_whitespace();
+    matches!(
+        (parts.next(), parts.next(), parts.next()),
+        (Some(scheme), Some(token), None)
+            if scheme.eq_ignore_ascii_case("Bearer") && token == PROXY_MANAGED_SENTINEL
+    )
+}
+
+fn is_proxy_managed_api_key_sentinel(value: &http::HeaderValue) -> bool {
+    value.to_str().ok().map(str::trim) == Some(PROXY_MANAGED_SENTINEL)
+}
+
+fn strip_proxy_managed_inbound_auth_headers(mut headers: http::HeaderMap) -> http::HeaderMap {
+    let mut stripped = false;
+
+    if headers
+        .get(http::header::AUTHORIZATION)
+        .is_some_and(is_proxy_managed_bearer_sentinel)
+    {
+        headers.remove(http::header::AUTHORIZATION);
+        stripped = true;
+    }
+
+    for header_name in [
+        http::HeaderName::from_static("x-api-key"),
+        http::HeaderName::from_static("x-goog-api-key"),
+    ] {
+        if headers
+            .get(&header_name)
+            .is_some_and(is_proxy_managed_api_key_sentinel)
+        {
+            headers.remove(&header_name);
+            stripped = true;
+        }
+    }
+
+    if stripped {
+        log::debug!("[sentinel] inbound PROXY_MANAGED detected, stripping");
+    }
+
+    headers
+}
 
 fn is_codex_oauth_upload_eligible(app_type_str: &str, provider: &Provider, base_url: &str) -> bool {
     app_type_str == AppType::Codex.as_str()
@@ -302,6 +350,7 @@ impl RequestForwarder {
         // 获取适配器
         let adapter = get_adapter(app_type);
         let app_type_str = app_type.as_str();
+        let headers = strip_proxy_managed_inbound_auth_headers(headers);
 
         if providers.is_empty() {
             return Err(ForwardError {
@@ -2943,6 +2992,19 @@ mod tests {
         );
     }
 
+    #[test]
+    fn inbound_x_api_key_sentinel_stripped() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            http::HeaderName::from_static("x-api-key"),
+            HeaderValue::from_static(PROXY_MANAGED_SENTINEL),
+        );
+
+        let stripped = strip_proxy_managed_inbound_auth_headers(headers);
+
+        assert!(!stripped.contains_key("x-api-key"));
+    }
+
     #[tokio::test]
     #[serial]
     async fn claude_oauth_forwarding_prefers_valid_stored_auth_over_inbound_authorization() {
@@ -2968,6 +3030,46 @@ mod tests {
                     "/v1/messages",
                     claude_request_body(),
                     claude_request_headers(Some("Bearer inbound-token")),
+                    Extensions::new(),
+                    vec![provider],
+                )
+                .await,
+        );
+
+        assert_eq!(result.response.status(), http::StatusCode::OK);
+        assert_eq!(
+            seen_auth.lock().expect("lock seen auth").as_slice(),
+            &[Some("Bearer stored-token".to_string())]
+        );
+
+        server.abort();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn claude_oauth_inject_triggered_when_inbound_is_proxy_managed_sentinel() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let _env = ScopedDataDirEnv::set(temp.path());
+        let (base_url, seen_auth, server) = spawn_test_upstream().await;
+        let provider = claude_oauth_provider("claude-oauth-sentinel-inject", &base_url);
+        crate::proxy::providers::claude_oauth_store::save_claude_auth_for_provider(
+            &provider.id,
+            &sample_claude_auth_json(
+                "stored-token",
+                Some("refresh-token"),
+                chrono::Utc::now().timestamp_millis() + 10 * 60_000,
+            ),
+        )
+        .expect("save stored auth");
+
+        let forwarder = build_test_forwarder();
+        let result = expect_forward_success(
+            forwarder
+                .forward_with_retry(
+                    &AppType::Claude,
+                    "/v1/messages",
+                    claude_request_body(),
+                    claude_request_headers(Some("Bearer PROXY_MANAGED")),
                     Extensions::new(),
                     vec![provider],
                 )
@@ -3126,6 +3228,43 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn claude_oauth_passthrough_fallback_when_sentinel_and_no_stored() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let _env = ScopedDataDirEnv::set(temp.path());
+        let (base_url, seen_auth, server) = spawn_test_upstream().await;
+        let provider = claude_oauth_provider("claude-oauth-sentinel-missing", &base_url);
+
+        let forwarder = build_test_forwarder();
+        let error = expect_forward_error(
+            forwarder
+                .forward_with_retry(
+                    &AppType::Claude,
+                    "/v1/messages",
+                    claude_request_body(),
+                    claude_request_headers(Some("Bearer PROXY_MANAGED")),
+                    Extensions::new(),
+                    vec![provider],
+                )
+                .await,
+        );
+
+        assert!(matches!(
+            error.error,
+            ProxyError::UpstreamError {
+                status: 401,
+                body: _
+            }
+        ));
+        assert_eq!(
+            seen_auth.lock().expect("lock seen auth").as_slice(),
+            &[None]
+        );
+
+        server.abort();
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn claude_oauth_passthrough_fallback_preserves_client_beta() {
         let temp = tempfile::tempdir().expect("tempdir");
         let _env = ScopedDataDirEnv::set(temp.path());
@@ -3164,6 +3303,37 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
+    async fn real_bearer_still_passes_through_when_not_proxy_managed() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let _env = ScopedDataDirEnv::set(temp.path());
+        let (base_url, seen_auth, server) = spawn_test_upstream().await;
+        let provider = claude_oauth_provider("claude-oauth-real-bearer", &base_url);
+
+        let forwarder = build_test_forwarder();
+        let result = expect_forward_success(
+            forwarder
+                .forward_with_retry(
+                    &AppType::Claude,
+                    "/v1/messages",
+                    claude_request_body(),
+                    claude_request_headers(Some("Bearer sk-ant-oat01-valid")),
+                    Extensions::new(),
+                    vec![provider],
+                )
+                .await,
+        );
+
+        assert_eq!(result.response.status(), http::StatusCode::OK);
+        assert_eq!(
+            seen_auth.lock().expect("lock seen auth").as_slice(),
+            &[Some("Bearer sk-ant-oat01-valid".to_string())]
+        );
+
+        server.abort();
+    }
+
+    #[tokio::test]
     async fn claude_api_key_provider_unchanged() {
         let (base_url, seen_auth, seen_beta, server) =
             spawn_test_upstream_with_beta_capture().await;
@@ -3176,6 +3346,38 @@ mod tests {
                     "/v1/messages",
                     claude_request_body(),
                     claude_request_headers(Some("Bearer inbound-token")),
+                    Extensions::new(),
+                    vec![provider],
+                )
+                .await,
+        );
+
+        assert_eq!(result.response.status(), http::StatusCode::OK);
+        assert_eq!(
+            seen_auth.lock().expect("lock seen auth").as_slice(),
+            &[Some("Bearer sk-ant-provider-key".to_string())]
+        );
+        assert_eq!(
+            seen_beta.lock().expect("lock seen beta").as_slice(),
+            &[Some(CLAUDE_CODE_BETA.to_string())]
+        );
+
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn claude_api_key_provider_with_real_client_auth_unchanged() {
+        let (base_url, seen_auth, seen_beta, server) =
+            spawn_test_upstream_with_beta_capture().await;
+        let provider = claude_api_key_provider(&base_url);
+        let forwarder = build_test_forwarder();
+        let result = expect_forward_success(
+            forwarder
+                .forward_with_retry(
+                    &AppType::Claude,
+                    "/v1/messages",
+                    claude_request_body(),
+                    claude_request_headers(Some("Bearer sk-ant-oat01-valid")),
                     Extensions::new(),
                     vec![provider],
                 )
