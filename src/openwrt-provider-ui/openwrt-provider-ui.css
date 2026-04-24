@@ -2584,6 +2584,12 @@ select.owt-provider-panel__input {
   color: #a53a3a;
 }
 
+.owt-provider-panel__icon-button--accent {
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--line));
+  background: color-mix(in srgb, var(--row-active) 78%, var(--panel-strong));
+  color: var(--accent);
+}
+
 .owt-provider-panel__footer {
   justify-content: space-between;
   border-top: 1px solid color-mix(in srgb, var(--line) 90%, transparent);
