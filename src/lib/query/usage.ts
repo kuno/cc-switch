@@ -28,6 +28,7 @@ type RequestLogsKey = {
   customEndDate?: number;
   liveEndTime?: boolean;
   appType?: string;
+  providerId?: string;
   providerName?: string;
   model?: string;
   statusCode?: number;
@@ -134,6 +135,7 @@ export const usageKeys = {
       key.customEndDate ?? 0,
       key.liveEndTime ?? false,
       key.appType ?? "",
+      key.providerId ?? "",
       key.providerName ?? "",
       key.model ?? "",
       key.statusCode ?? -1,
@@ -315,6 +317,7 @@ export function useRequestLogs({
     customEndDate: range.customEndDate,
     liveEndTime: range.liveEndTime,
     appType: filters.appType,
+    providerId: filters.providerId,
     providerName: filters.providerName,
     model: filters.model,
     statusCode: filters.statusCode,

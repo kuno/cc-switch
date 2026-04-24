@@ -150,6 +150,7 @@ export function emptySharedProviderEditorPayload(
     token: "",
     model: "",
     notes: "",
+    authContent: null,
   };
 }
 

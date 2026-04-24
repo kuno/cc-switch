@@ -396,7 +396,7 @@ function getQuota() {
 	return runDaemonGetJson('/api/quota');
 }
 
-function getRequestLogs(app, page, pageSize) {
+function getRequestLogs(app, page, pageSize, providerId) {
 	let normalizedApp = normalizeApp(app);
 	let path, sep;
 
@@ -411,8 +411,13 @@ function getRequestLogs(app, page, pageSize) {
 		sep = '&';
 	}
 
-	if (pageSize != null && pageSize !== '')
+	if (pageSize != null && pageSize !== '') {
 		path += sep + 'pageSize=' + pageSize;
+		sep = '&';
+	}
+
+	if (providerId != null && providerId !== '')
+		path += sep + 'providerId=' + percentEncodePath(providerId);
 
 	return runAdminGetJson(path);
 }
@@ -795,17 +800,18 @@ return {
 			}
 		},
 
-		get_request_logs: {
-			args: {
-				app: 'claude',
-				page: 0,
-				page_size: 20
-			},
+			get_request_logs: {
+				args: {
+					app: 'claude',
+					page: 0,
+					page_size: 20,
+					provider_id: 'provider-id'
+				},
 
-			call: function(request) {
-				return getRequestLogs(request.args.app, request.args.page, request.args.page_size);
-			}
-		},
+				call: function(request) {
+					return getRequestLogs(request.args.app, request.args.page, request.args.page_size, request.args.provider_id);
+				}
+			},
 
 		get_request_detail: {
 			args: {

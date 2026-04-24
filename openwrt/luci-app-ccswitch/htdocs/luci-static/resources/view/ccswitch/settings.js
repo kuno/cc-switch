@@ -395,7 +395,7 @@ var callGetQuota = rpc.declare({
 var callGetRequestLogs = rpc.declare({
 	object: 'ccswitch',
 	method: 'get_request_logs',
-	params: ['app', 'page', 'page_size'],
+	params: ['app', 'page', 'page_size', 'provider_id'],
 	expect: { '': {} }
 });
 
@@ -562,25 +562,27 @@ function normalizeOptionalNonNegativeInteger(value, fallbackValue) {
 	return fallbackValue;
 }
 
-function buildRequestLogsQuery(page, pageSize) {
+function buildRequestLogsQuery(page, pageSize, providerId) {
 	var query = [];
 
 	if (page != null)
 		query.push('page=' + encodeURIComponent(String(page)));
 	if (pageSize != null)
 		query.push('pageSize=' + encodeURIComponent(String(pageSize)));
+	if (providerId != null && providerId !== '')
+		query.push('providerId=' + encodeURIComponent(String(providerId)));
 
 	return query.length ? ('?' + query.join('&')) : '';
 }
 
-function callOpenWrtRequestLogs(appId, page, pageSize) {
+function callOpenWrtRequestLogs(appId, page, pageSize, providerId) {
 	var normalizedPage = normalizeOptionalNonNegativeInteger(page, 0);
 	var normalizedPageSize = normalizeOptionalNonNegativeInteger(pageSize, 20);
 
 	return daemonAdminOrFallback(function () {
-		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/request-logs' + buildRequestLogsQuery(normalizedPage, normalizedPageSize));
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/request-logs' + buildRequestLogsQuery(normalizedPage, normalizedPageSize, providerId));
 	}, function () {
-		return L.resolveDefault(callGetRequestLogs(appId, normalizedPage, normalizedPageSize), { ok: false });
+		return L.resolveDefault(callGetRequestLogs(appId, normalizedPage, normalizedPageSize, providerId), { ok: false });
 	});
 }
 
@@ -923,7 +925,8 @@ return view.extend({
 			tokenField: appMeta.tokenFieldChoices[0],
 			token: '',
 			model: '',
-			notes: ''
+			notes: '',
+			authContent: null
 		};
 	},
 
@@ -1445,17 +1448,17 @@ return view.extend({
 		}, this));
 	},
 
-	loadNativeRequestLogs: function (appId, page, pageSize) {
-		var selectedApp = this.isSupportedApp(appId) ? appId : this.getSelectedApp();
-		var normalizedPage = normalizeOptionalNonNegativeInteger(page, 0);
-		var normalizedPageSize = normalizeOptionalNonNegativeInteger(pageSize, 20);
+		loadNativeRequestLogs: function (appId, page, pageSize, providerId) {
+			var selectedApp = this.isSupportedApp(appId) ? appId : this.getSelectedApp();
+			var normalizedPage = normalizeOptionalNonNegativeInteger(page, 0);
+			var normalizedPageSize = normalizeOptionalNonNegativeInteger(pageSize, 20);
 
-		return L.resolveDefault(callOpenWrtRequestLogs(selectedApp, normalizedPage, normalizedPageSize), { ok: false }).then(L.bind(function (response) {
-			if (!this.isRpcSuccess(response))
-				throw new Error(this.rpcFailureMessage(response) || _('Failed to load request logs.'));
+			return L.resolveDefault(callOpenWrtRequestLogs(selectedApp, normalizedPage, normalizedPageSize, providerId), { ok: false }).then(L.bind(function (response) {
+				if (!this.isRpcSuccess(response))
+					throw new Error(this.rpcFailureMessage(response) || _('Failed to load request logs.'));
 
-			return this.normalizeRequestLogs(response);
-		}, this));
+				return this.normalizeRequestLogs(response);
+			}, this));
 	},
 
 	loadNativeRequestDetail: function (appId, requestId) {
@@ -2123,6 +2126,7 @@ return view.extend({
 		payload.model = provider.model || '';
 		payload.notes = provider.notes || '';
 		payload.authMode = provider.authMode || undefined;
+		payload.authContent = null;
 
 		return payload;
 	},
@@ -2750,9 +2754,9 @@ return view.extend({
 			getQuota: async function () {
 				return self.loadNativeQuota();
 			},
-			getRequestLogs: async function (appId, page, pageSize) {
-				return self.loadNativeRequestLogs(appId || uiState.selectedApp, page, pageSize);
-			},
+				getRequestLogs: async function (appId, page, pageSize, providerId) {
+					return self.loadNativeRequestLogs(appId || uiState.selectedApp, page, pageSize, providerId);
+				},
 			getRequestDetail: async function (appId, requestId) {
 				return self.loadNativeRequestDetail(appId || uiState.selectedApp, requestId);
 			},

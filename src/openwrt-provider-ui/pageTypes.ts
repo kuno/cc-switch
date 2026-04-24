@@ -177,6 +177,7 @@ export interface OpenWrtSharedPageShellApi
     appId: SharedProviderAppId,
     page?: number,
     pageSize?: number,
+    providerId?: string,
   ): Promise<OpenWrtPaginatedRequestLogs>;
   getRecentActivity(
     appId: SharedProviderAppId,
