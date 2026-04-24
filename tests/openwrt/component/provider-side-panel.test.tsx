@@ -227,6 +227,9 @@ describe("ProviderSidePanel", () => {
     expect(
       within(detailHead!).getByRole("button", { name: "Delete provider" }),
     ).toBeInTheDocument();
+    expect(
+      within(detailHead!).getByRole("button", { name: "Set active" }),
+    ).toBeInTheDocument();
 
     const copyChip = within(detailCopy!).getByRole("button", {
       name: "Copy provider ID provider_wg88tuk8z9y0p4q1",
