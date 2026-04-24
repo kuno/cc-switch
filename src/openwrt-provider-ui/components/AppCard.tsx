@@ -333,12 +333,12 @@ export function AppCard({
         aria-label={`Add a ${appCopy.label} provider`}
       >
         <div className="owt-app-card__head">
-        <div
-          className="owt-app-card__icon owt-app-card__icon--muted"
-          aria-hidden="true"
-        >
-          <img src={appIconUrl} alt="" />
-        </div>
+          <div
+            className="owt-app-card__icon owt-app-card__icon--muted"
+            aria-hidden="true"
+          >
+            <img src={appIconUrl} alt="" />
+          </div>
           <div className="owt-app-card__titles">
             <h3 className="owt-app-card__title owt-app-card__title--muted">
               {appCopy.label}
@@ -346,8 +346,7 @@ export function AppCard({
             <p className="owt-app-card__subtitle">{appCopy.subtitle}</p>
           </div>
           <span className="owt-app-card__spacer" aria-hidden="true" />
-          <span className="owt-status-pill" data-tone="neutral">
-            <span className="owt-status-pill__dot" aria-hidden="true" />
+          <span className="owt-chip owt-chip--dot">
             Not configured
           </span>
         </div>
