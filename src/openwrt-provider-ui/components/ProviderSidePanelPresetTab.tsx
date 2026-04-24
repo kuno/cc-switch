@@ -69,17 +69,6 @@ export function ProviderSidePanelPresetTab({
 }: ProviderSidePanelPresetTabProps) {
   return (
     <div className="owt-provider-panel__tab-stack">
-      <div className="owt-provider-panel__preset-intro">
-        <div className="owt-provider-panel__eyebrow">Preset browser</div>
-        <p className="owt-provider-panel__preset-lead">
-          Start from an official endpoint, a platform template, or a compatible
-          gateway.
-        </p>
-        <p className="owt-provider-panel__preset-subtext">
-          Presets speed up setup but never save automatically.
-        </p>
-      </div>
-
       <section className="owt-provider-panel__preset-group">
         <div className="owt-provider-panel__preset-group-label">Custom</div>
         <PresetCard
