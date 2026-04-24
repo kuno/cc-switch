@@ -217,6 +217,25 @@ describe("ProviderSidePanelHost", () => {
     expect(detailMeta).not.toBeNull();
     expect(within(detailMeta as HTMLElement).queryByText("Active")).toBeNull();
 
+    await user.click(
+      within(savedDialog).getByRole("button", { name: "Configure" }),
+    );
+    expect(
+      within(savedDialog).getByRole("button", { name: "Configure" }),
+    ).toHaveAttribute("data-active", "true");
+
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Claude providers" }),
+      ).not.toBeInTheDocument(),
+    );
+
+    const reopenedSavedDialog = await openPanel();
+    expect(
+      within(reopenedSavedDialog).getByRole("button", { name: "Activities" }),
+    ).toHaveAttribute("data-active", "true");
+
     await user.keyboard("{Escape}");
     await waitFor(() =>
       expect(
