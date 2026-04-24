@@ -719,6 +719,7 @@ mod tests {
             failover_manager: Arc::new(FailoverSwitchManager::new(db, current_providers)),
             rate_limits: new_rate_limit_store(),
             quota_snapshot_cache: RateLimitSnapshotCache::new(),
+            claude_uploaded_auth: crate::services::oauth_refresh::ClaudeUploadedAuthManager::new(),
             oauth_refresh_locks: crate::services::oauth_refresh::OAuthRefreshLockManager::new(),
             #[cfg(feature = "tauri-desktop")]
             app_handle: None,
