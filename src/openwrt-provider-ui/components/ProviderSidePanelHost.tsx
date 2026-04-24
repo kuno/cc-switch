@@ -330,6 +330,7 @@ const ProviderSidePanelHostComponent = forwardRef<
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savePending, setSavePending] = useState(false);
+  const [activatePending, setActivatePending] = useState(false);
   const [deletePending, setDeletePending] = useState(false);
   const loadRequestIdRef = useRef(0);
   const unlockBodyScrollRef = useRef<(() => void) | null>(null);
@@ -364,6 +365,12 @@ const ProviderSidePanelHostComponent = forwardRef<
   const canDelete =
     mode === "edit" &&
     Boolean(selectedProvider?.providerId) &&
+    Boolean(providerState?.phase2Available);
+  const canActivate =
+    mode === "edit" &&
+    !editing &&
+    Boolean(selectedProvider?.providerId) &&
+    !selectedProvider?.active &&
     Boolean(providerState?.phase2Available);
 
   const providerAdapter = useMemo(
@@ -679,6 +686,39 @@ const ProviderSidePanelHostComponent = forwardRef<
     }
   }
 
+  async function handleActivate() {
+    if (
+      !selectedProvider?.providerId ||
+      !canActivate ||
+      activatePending ||
+      savePending ||
+      deletePending ||
+      loading
+    ) {
+      return;
+    }
+
+    setActivatePending(true);
+    try {
+      await providerAdapter.activateProvider(appId, selectedProvider.providerId);
+      await refreshSelectionAfterMutation(
+        appId,
+        "edit",
+        selectedProvider.providerId,
+        draft,
+      );
+    } catch (activateError) {
+      shell.showMessage(
+        "error",
+        activateError instanceof Error
+          ? activateError.message
+          : String(activateError),
+      );
+    } finally {
+      setActivatePending(false);
+    }
+  }
+
   function handleCancel() {
     if (panelMode === "preset-picker") {
       handlePresetCancel();
@@ -743,7 +783,9 @@ const ProviderSidePanelHostComponent = forwardRef<
       presetGroups={presetGroups}
       tokenFieldOptions={tokenFieldOptions}
       savePending={savePending}
+      activatePending={activatePending}
       deletePending={deletePending}
+      canActivate={Boolean(canActivate)}
       canDelete={Boolean(canDelete)}
       canSave={canSave}
       saveIdle={saveIdle}
@@ -766,6 +808,9 @@ const ProviderSidePanelHostComponent = forwardRef<
           ...currentDraft,
           authContent: "",
         }));
+      }}
+      onActivate={() => {
+        void handleActivate();
       }}
       onDelete={() => {
         void handleDelete();

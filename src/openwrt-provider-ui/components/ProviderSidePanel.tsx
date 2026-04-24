@@ -1,4 +1,4 @@
-import { Copy, Loader2, Plus, Search, Trash2, X } from "lucide-react";
+import { Copy, Loader2, Plus, Search, Trash2, X, Zap } from "lucide-react";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   useEffect,
@@ -52,7 +52,9 @@ interface ProviderSidePanelProps {
     label: string;
   }>;
   savePending: boolean;
+  activatePending: boolean;
   deletePending: boolean;
+  canActivate: boolean;
   canDelete: boolean;
   canSave: boolean;
   saveIdle: boolean;
@@ -68,6 +70,7 @@ interface ProviderSidePanelProps {
   onEdit: () => void;
   onPasteAuth: () => void;
   onClearAuth: () => void;
+  onActivate: () => void;
   onDelete: () => void;
   onCancel: () => void;
   onSave: () => void;
@@ -177,7 +180,9 @@ export function ProviderSidePanel({
   presetGroups,
   tokenFieldOptions,
   savePending,
+  activatePending,
   deletePending,
+  canActivate,
   canDelete,
   canSave,
   saveIdle,
@@ -194,6 +199,7 @@ export function ProviderSidePanel({
   onEdit,
   onPasteAuth,
   onClearAuth,
+  onActivate,
   onDelete,
   onCancel,
   onSave,
@@ -549,6 +555,21 @@ export function ProviderSidePanel({
                         />
                         {getStatusLabel(mode, selectedProvider)}
                       </span>
+                      {canActivate ? (
+                        <button
+                          type="button"
+                          className="owt-provider-panel__icon-button owt-provider-panel__icon-button--accent"
+                          aria-label="Set active"
+                          disabled={activatePending || deletePending || savePending}
+                          onClick={onActivate}
+                        >
+                          {activatePending ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Zap className="h-4 w-4" />
+                          )}
+                        </button>
+                      ) : null}
                       {canDelete ? (
                         <button
                           type="button"

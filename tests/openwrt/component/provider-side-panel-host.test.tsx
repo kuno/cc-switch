@@ -488,6 +488,59 @@ describe("ProviderSidePanelHost", () => {
     );
   });
 
+  it("sets the selected saved provider active from the header action", async () => {
+    const user = userEvent.setup();
+    const shell = createBridgeFixture({ selectedApp: "claude" });
+    const primaryProvider = createProviderView("claude", {
+      active: true,
+      name: "Claude Primary",
+      providerId: "claude-primary",
+    });
+    const backupProvider = createProviderView("claude", {
+      active: false,
+      name: "Claude Backup",
+      providerId: "claude-backup",
+    });
+    const { transport } = createProviderTransportFixture({
+      claude: createProviderState("claude", [primaryProvider, backupProvider]),
+    });
+
+    render(
+      <HostHarness
+        providerId="claude-backup"
+        shell={shell}
+        transport={transport}
+      />,
+    );
+
+    const dialog = await openPanel();
+
+    await user.click(
+      within(dialog).getByRole("button", { name: "Set active" }),
+    );
+
+    await waitFor(() =>
+      expect(transport.activateProviderByProviderId).toHaveBeenCalledWith(
+        "claude",
+        "claude-backup",
+      ),
+    );
+    await waitFor(() =>
+      expect(
+        within(dialog).queryByRole("button", { name: "Set active" }),
+      ).toBeNull(),
+    );
+
+    const rows = Array.from(
+      dialog.querySelectorAll<HTMLButtonElement>(
+        ".owt-provider-panel__provider-row",
+      ),
+    );
+
+    expect(rows[0]).toHaveTextContent("Claude Backup");
+    expect(within(rows[0]).getByText("Active")).toBeInTheDocument();
+  });
+
   it("keeps forward tab navigation inside the panel when mounted in a shadow root", async () => {
     const user = userEvent.setup();
     const shell = createBridgeFixture({
