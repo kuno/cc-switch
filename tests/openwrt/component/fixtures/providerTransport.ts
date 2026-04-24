@@ -114,9 +114,31 @@ export function createProviderTransportFixture(
     providerId: string,
     currentProvider: SharedProviderView | null,
   ): SharedProviderView {
-    const nextTokenConfigured = draft.token.trim()
-      ? true
-      : currentProvider?.tokenConfigured ?? false;
+    const nextCodexAuth =
+      appId !== "codex"
+        ? currentProvider?.codexAuth
+        : draft.authContent === ""
+          ? undefined
+          : typeof draft.authContent === "string"
+            ? createCodexAuthSummary()
+            : currentProvider?.codexAuth;
+    const nextClaudeAuth =
+      appId !== "claude"
+        ? currentProvider?.claudeAuth
+        : draft.authContent === ""
+          ? undefined
+          : typeof draft.authContent === "string"
+            ? createClaudeAuthSummary()
+            : currentProvider?.claudeAuth;
+    const nextTokenConfigured =
+      Boolean(draft.token.trim()) ||
+      Boolean(nextCodexAuth) ||
+      Boolean(nextClaudeAuth) ||
+      Boolean(
+        currentProvider?.tokenConfigured &&
+          !currentProvider.codexAuth &&
+          !currentProvider.claudeAuth,
+      );
 
     return createProviderView(appId, {
       ...currentProvider,
@@ -130,8 +152,8 @@ export function createProviderTransportFixture(
       notes: draft.notes,
       active: currentProvider?.active ?? false,
       authMode: draft.authMode ?? currentProvider?.authMode,
-      claudeAuth: currentProvider?.claudeAuth,
-      codexAuth: currentProvider?.codexAuth,
+      claudeAuth: nextClaudeAuth,
+      codexAuth: nextCodexAuth,
     });
   }
 

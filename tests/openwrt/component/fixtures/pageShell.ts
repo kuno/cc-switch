@@ -738,8 +738,15 @@ export function createPlainPageShellBridge(
     async getRequestDetail(appId, requestId) {
       return requestDetails[appId]?.[requestId] ?? null;
     },
-    async getRequestLogs(appId, page, pageSize) {
-      return paginateLogs(requestLogs[appId] ?? [], page, pageSize);
+    async getRequestLogs(appId, page, pageSize, providerId) {
+      const entries = requestLogs[appId] ?? [];
+      return paginateLogs(
+        providerId
+          ? entries.filter((entry) => entry.providerId === providerId)
+          : entries,
+        page,
+        pageSize,
+      );
     },
     async getRecentActivity(appId) {
       return recentActivity[appId] ?? [];

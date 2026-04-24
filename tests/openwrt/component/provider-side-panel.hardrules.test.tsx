@@ -9,20 +9,14 @@ import {
 } from "../provider-panel-fixtures";
 
 const FORBIDDEN_TEXT = [
-  "failover",
   "openclaw",
   "hermes",
-  "autofailover",
-  "maxretries",
-  "queue",
   "configure routes and provider details",
   "sharedprovidermanager",
 ] as const;
 
-const FORBIDDEN_ATTR_FRAGMENTS = ["failover", "queue"] as const;
-
-function renderTab(tab: "preset" | "general" | "credentials") {
-  const appId = tab === "credentials" ? "codex" : "claude";
+function renderTab(tab: "preset-picker" | "activities" | "configure") {
+  const appId = tab === "configure" ? "codex" : "claude";
   const selectedProvider = createProviderView(appId, {
     active: true,
     authMode: appId === "codex" ? "codex_oauth" : undefined,
@@ -44,18 +38,19 @@ function renderTab(tab: "preset" | "general" | "credentials") {
           model: selectedProvider.model,
           name: selectedProvider.name,
         }),
+        panelMode: tab === "preset-picker" ? "preset-picker" : "detail",
         selectedProvider,
         selectedProviderId: selectedProvider.providerId,
-        tab,
+        tab: tab === "configure" ? "configure" : "activities",
       })}
     />,
   );
 }
 
 describe("ProviderSidePanel hard rules", () => {
-  it.each(["preset", "general", "credentials"] as const)(
-    "%s tab does not leak forbidden failover or legacy surfaces",
-    (tab) => {
+  it.each(["preset-picker", "activities", "configure"] as const)(
+    "%s state does not leak forbidden legacy surfaces",
+    async (tab) => {
       const { container } = renderTab(tab);
       const text = (container.textContent ?? "").toLowerCase();
 
@@ -65,29 +60,27 @@ describe("ProviderSidePanel hard rules", () => {
 
       expect(container.querySelector(".owt-legacy-preserved")).toBeNull();
 
-      for (const element of Array.from(container.querySelectorAll<HTMLElement>("*"))) {
-        const idValue = element.id.toLowerCase();
-        const testIdValue = (element.dataset.testid ?? "").toLowerCase();
-        const classValue = element.className.toString().toLowerCase();
-
-        for (const fragment of FORBIDDEN_ATTR_FRAGMENTS) {
-          expect(idValue).not.toContain(fragment);
-          expect(testIdValue).not.toContain(fragment);
-          expect(classValue).not.toContain(fragment);
-        }
-      }
-
-      if (tab === "preset") {
+      if (tab === "preset-picker") {
         expect(screen.queryByRole("tablist")).toBeNull();
         expect(screen.getByText("Preset browser")).toBeInTheDocument();
       } else {
+        if (tab === "activities") {
+          expect(await screen.findByText("No recent activity")).toBeInTheDocument();
+        }
+
         const tablist = screen.getByRole("tablist");
         const labels = within(tablist)
-          .getAllByRole("button")
+          .getAllByRole("button", { hidden: false })
           .map((button) => button.textContent?.trim());
 
-        expect(labels).toEqual(["General", "Credentials"]);
+        expect(labels).toEqual(["Activities", "Configure"]);
         expect(labels).toHaveLength(2);
+        expect(
+          container.querySelector('[data-placeholder-tab="failover"]'),
+        ).not.toBeNull();
+        expect(
+          container.querySelector('[data-placeholder-panel="failover"]'),
+        ).not.toBeNull();
       }
     },
   );

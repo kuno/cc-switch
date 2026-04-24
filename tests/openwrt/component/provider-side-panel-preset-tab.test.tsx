@@ -103,17 +103,12 @@ describe("ProviderSidePanelPresetTab", () => {
         name: /OpenAI Official/i,
       }),
     );
-    await user.click(
-      screen.getByRole("button", {
-        name: "Credentials",
-      }),
-    );
 
     expect(screen.getByLabelText("Base URL")).toHaveValue(
       "https://api.openai.com/v1",
     );
     expect(
-      screen.getByLabelText("Authentication mode"),
+      screen.getByLabelText("Auth mode"),
     ).toHaveValue("codex_oauth");
 
     await user.click(
@@ -124,6 +119,7 @@ describe("ProviderSidePanelPresetTab", () => {
 
     await waitFor(() =>
       expect(transport.upsertProvider).toHaveBeenCalledWith("codex", {
+        authContent: null,
         authMode: "codex_oauth",
         baseUrl: "https://api.openai.com/v1",
         model: "gpt-5.4",

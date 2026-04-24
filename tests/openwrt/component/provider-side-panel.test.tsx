@@ -1,15 +1,16 @@
 import { useState } from "react";
-import {
-  act,
-  fireEvent,
-  render,
-  screen,
-  within,
-} from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ProviderSidePanel, type ProviderSidePanelTab } from "@/openwrt-provider-ui/components/ProviderSidePanel";
-import { createProviderSidePanelProps, createProviderView } from "../provider-panel-fixtures";
+import {
+  ProviderSidePanel,
+  type ProviderSidePanelTab,
+} from "@/openwrt-provider-ui/components/ProviderSidePanel";
+import { createBridgeFixture } from "./fixtures/bridge";
+import {
+  createProviderSidePanelProps,
+  createProviderView,
+} from "../provider-panel-fixtures";
 
 const { copyTextMock } = vi.hoisted(() => ({
   copyTextMock: vi.fn(),
@@ -20,7 +21,7 @@ vi.mock("@/lib/clipboard", () => ({
 }));
 
 function StatefulProviderSidePanel({
-  initialTab = "general",
+  initialTab = "activities",
 }: {
   initialTab?: ProviderSidePanelTab;
 }) {
@@ -48,7 +49,7 @@ describe("ProviderSidePanel", () => {
     vi.useRealTimers();
   });
 
-  it("renders the shell, header, footer, and exactly three supported tabs", () => {
+  it("renders the shell with Activities and Configure tabs, plus a hidden Failover placeholder", async () => {
     const onClose = vi.fn();
     const onTabChange = vi.fn();
     const provider = createProviderView("claude", {
@@ -62,6 +63,7 @@ describe("ProviderSidePanel", () => {
           providers: [provider],
           selectedProvider: provider,
           selectedProviderId: provider.providerId,
+          tab: "activities",
           callbacks: {
             onClose,
             onTabChange,
@@ -74,26 +76,28 @@ describe("ProviderSidePanel", () => {
       name: "Claude providers",
     });
     const tablist = screen.getByRole("tablist");
-    const tabButtons = within(tablist).getAllByRole("button");
+    const tabButtons = within(tablist).getAllByRole("button", {
+      hidden: false,
+    });
+    const failoverTab = container.querySelector(
+      '[data-placeholder-tab="failover"]',
+    );
+    const failoverPanel = container.querySelector(
+      '[data-placeholder-panel="failover"]',
+    );
+
+    expect(await screen.findByText("No recent activity")).toBeInTheDocument();
 
     expect(dialog).toHaveAttribute("aria-modal", "true");
     expect(tabButtons.map((button) => button.textContent?.trim())).toEqual([
-      "General",
-      "Credentials",
+      "Activities",
+      "Configure",
     ]);
-    expect(
-      within(dialog).getByRole("button", { name: "General" }),
-    ).toHaveAttribute("data-active", "true");
-    expect(
-      within(dialog).getByRole("button", { name: "Close provider panel" }),
-    ).toBeInTheDocument();
-    expect(
-      within(dialog).getByText("Anthropic · Claude Code"),
-    ).toBeInTheDocument();
-    expect(
-      within(dialog).getByRole("button", { name: "Save" }),
-    ).toBeEnabled();
-    expect(container.querySelector(".owt-provider-panel__scrim")).not.toBeNull();
+    expect(failoverTab).not.toBeNull();
+    expect(failoverTab).toHaveAttribute("hidden");
+    expect(failoverPanel).not.toBeNull();
+    expect(failoverPanel).toHaveAttribute("hidden");
+    expect(within(dialog).queryByRole("button", { name: "Set active" })).toBeNull();
 
     fireEvent.click(container.querySelector(".owt-provider-panel__scrim")!);
     expect(onClose).toHaveBeenCalledTimes(1);
@@ -103,31 +107,29 @@ describe("ProviderSidePanel", () => {
     );
     expect(onClose).toHaveBeenCalledTimes(2);
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "Credentials" }));
-    expect(onTabChange).toHaveBeenCalledWith("credentials");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Configure" }));
+    expect(onTabChange).toHaveBeenCalledWith("configure");
   });
 
-  it("switches visible content when the tab state changes", async () => {
+  it("switches visible content between Activities and Configure", async () => {
     const user = userEvent.setup();
 
-    const view = render(<StatefulProviderSidePanel />);
+    render(
+      <StatefulProviderSidePanel
+        initialTab="activities"
+      />,
+    );
 
-    expect(screen.getByLabelText("Provider name")).toBeInTheDocument();
+    expect(await screen.findByText("No recent activity")).toBeInTheDocument();
 
     await user.click(
       screen.getByRole("button", {
-        name: "Credentials",
+        name: "Configure",
       }),
     );
-    expect(screen.getByLabelText("Base URL")).toBeInTheDocument();
 
-    view.unmount();
-    render(<StatefulProviderSidePanel initialTab="preset" />);
-    expect(
-      screen.getByRole("button", {
-        name: /Custom draft/i,
-      }),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Provider name")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
   });
 
   it("renders loading and error state content when requested", () => {
@@ -155,7 +157,7 @@ describe("ProviderSidePanel", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders rail metadata parity and keeps activate action in the footer", async () => {
+  it("renders rail metadata parity, keeps delete in the header, and supports copying the provider id", async () => {
     vi.useFakeTimers();
     const activeProvider = createProviderView("claude", {
       active: true,
@@ -172,10 +174,10 @@ describe("ProviderSidePanel", () => {
     const { container } = render(
       <ProviderSidePanel
         {...createProviderSidePanelProps({
+          canDelete: true,
           providers: [activeProvider, selectedProvider],
           selectedProvider,
           selectedProviderId: selectedProvider.providerId,
-          canActivate: true,
         })}
       />,
     );
@@ -194,14 +196,10 @@ describe("ProviderSidePanel", () => {
     const detailHead = container.querySelector<HTMLElement>(
       ".owt-provider-panel__detail-head",
     );
-    const footerActions = container.querySelector<HTMLElement>(
-      ".owt-provider-panel__footer-actions",
-    );
 
     expect(activeRow).not.toBeNull();
     expect(selectedRow).not.toBeNull();
     expect(detailHead).not.toBeNull();
-    expect(footerActions).not.toBeNull();
 
     expect(within(activeRow!).getByText("https://api.anthropic.com")).toHaveClass(
       "owt-provider-panel__rail-url",
@@ -216,20 +214,7 @@ describe("ProviderSidePanel", () => {
       "owt-provider-panel__rail-id",
     );
     expect(
-      selectedRow!.querySelector(".owt-provider-panel__provider-mark svg title")
-        ?.textContent,
-    ).toBe("DeepSeek");
-    expect(
-      detailHead!.querySelector(
-        ".owt-provider-panel__provider-mark svg title",
-      )?.textContent,
-    ).toBe("DeepSeek");
-    expect(within(selectedRow!).queryByText("Saved")).toBeNull();
-    expect(
-      within(detailHead!).queryByRole("button", { name: "Set active" }),
-    ).toBeNull();
-    expect(
-      within(footerActions!).getByRole("button", { name: "Set active" }),
+      within(detailHead!).getByRole("button", { name: "Delete provider" }),
     ).toBeInTheDocument();
 
     const copyChip = screen.getByRole("button", {
@@ -249,5 +234,54 @@ describe("ProviderSidePanel", () => {
       await Promise.resolve();
     });
     expect(copyChip).toHaveTextContent("claude-backup");
+  });
+
+  it("shows server-scoped activities for the selected provider", async () => {
+    render(
+      <ProviderSidePanel
+        {...createProviderSidePanelProps({
+          shell: createBridgeFixture({
+            requestLogs: {
+              claude: {
+                data: [
+                  {
+                    appType: "claude",
+                    cacheCreationCostUsd: "0",
+                    cacheCreationTokens: 0,
+                    cacheReadCostUsd: "0",
+                    cacheReadTokens: 0,
+                    costMultiplier: "1",
+                    createdAt: Date.now(),
+                    inputCostUsd: "0.01",
+                    inputTokens: 100,
+                    isStreaming: false,
+                    latencyMs: 320,
+                    model: "claude-sonnet-4-5",
+                    outputCostUsd: "0.02",
+                    outputTokens: 140,
+                    providerId: "claude-primary",
+                    providerName: "Claude Primary",
+                    requestId: "req-1",
+                    statusCode: 200,
+                    totalCostUsd: "0.03",
+                  },
+                ],
+                total: 1,
+                page: 0,
+                pageSize: 20,
+              },
+            },
+          }),
+          tab: "activities",
+        })}
+      />,
+    );
+
+    const activityStatus = await screen.findByText("HTTP 200");
+    const activityRow = activityStatus.closest(".owt-provider-panel__activity-row");
+
+    expect(activityRow).not.toBeNull();
+    expect(within(activityRow as HTMLElement).getByText("Claude Primary")).toBeInTheDocument();
+    expect(within(activityRow as HTMLElement).getByText(/0\.03/)).toBeInTheDocument();
   });
 });

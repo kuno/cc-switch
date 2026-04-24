@@ -50,18 +50,6 @@ export interface ProviderSidePanelHandle {
   openForApp: (appId: SharedProviderAppId, providerId?: string) => void;
 }
 
-function getAppLabel(appId: SharedProviderAppId): string {
-  if (appId === "claude") {
-    return "Claude";
-  }
-
-  if (appId === "codex") {
-    return "Codex";
-  }
-
-  return "Gemini";
-}
-
 function getProviderName(
   providerId: string | null,
   providerState: SharedProviderState,
@@ -125,25 +113,27 @@ function createDraftFromProvider(
   provider: SharedProviderView,
 ): SharedProviderEditorPayload {
   return {
-    name: provider.name,
-    baseUrl: provider.baseUrl,
-    tokenField: provider.tokenField,
-    token: "",
-    model: provider.model,
-    notes: provider.notes,
+    authContent: null,
     authMode: provider.authMode,
+    baseUrl: provider.baseUrl,
+    model: provider.model,
+    name: provider.name,
+    notes: provider.notes,
+    token: "",
+    tokenField: provider.tokenField,
   };
 }
 
 function normalizeDraftForCompare(draft: SharedProviderEditorPayload) {
   return {
-    name: draft.name,
-    baseUrl: draft.baseUrl,
-    tokenField: draft.tokenField,
-    token: draft.token,
-    model: draft.model,
-    notes: draft.notes,
+    authContent: draft.authContent ?? null,
     authMode: draft.authMode || "",
+    baseUrl: draft.baseUrl,
+    model: draft.model,
+    name: draft.name,
+    notes: draft.notes,
+    token: draft.token,
+    tokenField: draft.tokenField,
   };
 }
 
@@ -161,7 +151,8 @@ function areDraftsEqual(
     normalizedLeft.token === normalizedRight.token &&
     normalizedLeft.model === normalizedRight.model &&
     normalizedLeft.notes === normalizedRight.notes &&
-    normalizedLeft.authMode === normalizedRight.authMode
+    normalizedLeft.authMode === normalizedRight.authMode &&
+    normalizedLeft.authContent === normalizedRight.authContent
   );
 }
 
@@ -247,6 +238,19 @@ function getSaveValidity(
   return mode === "edit" && Boolean(provider?.tokenConfigured);
 }
 
+function hasInvalidAuthJson(authContent: string | null | undefined): boolean {
+  if (!authContent || authContent === "") {
+    return false;
+  }
+
+  try {
+    JSON.parse(authContent);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
 function filterProviders(
   providers: SharedProviderView[],
   query: string,
@@ -278,6 +282,26 @@ function buildPresetGroups(
   }));
 }
 
+function getFooterText(
+  mode: ProviderSidePanelMode,
+  editing: boolean,
+  saveIdle: boolean,
+): string {
+  if (mode === "new") {
+    return "New provider · not saved";
+  }
+
+  if (!editing) {
+    return "";
+  }
+
+  return saveIdle ? "Editing" : "Unsaved changes";
+}
+
+function normalizeAuthContentInput(value: string): string | null {
+  return value.trim() ? value : null;
+}
+
 const ProviderSidePanelHostComponent = forwardRef<
   ProviderSidePanelHandle,
   ProviderSidePanelHostProps
@@ -295,12 +319,11 @@ const ProviderSidePanelHostComponent = forwardRef<
   );
   const [baselineDraft, setBaselineDraft] =
     useState<SharedProviderEditorPayload | null>(null);
-  const [website, setWebsite] = useState("");
-  const [tab, setTab] = useState<ProviderSidePanelTab>("general");
+  const [editing, setEditing] = useState(false);
+  const [tab, setTab] = useState<ProviderSidePanelTab>("configure");
   const [panelMode, setPanelMode] =
     useState<ProviderSidePanelViewMode>("detail");
   const [search, setSearch] = useState("");
-  const [selectedAuthFile, setSelectedAuthFile] = useState<File | null>(null);
   const [pickerSelectedPresetId, setPickerSelectedPresetId] = useState<
     string | null
   >(null);
@@ -308,8 +331,6 @@ const ProviderSidePanelHostComponent = forwardRef<
   const [error, setError] = useState<string | null>(null);
   const [savePending, setSavePending] = useState(false);
   const [deletePending, setDeletePending] = useState(false);
-  const [activatePending, setActivatePending] = useState(false);
-  const [authPending, setAuthPending] = useState(false);
   const loadRequestIdRef = useRef(0);
   const unlockBodyScrollRef = useRef<(() => void) | null>(null);
   const deferredSearch = useDeferredValue(search);
@@ -333,16 +354,16 @@ const ProviderSidePanelHostComponent = forwardRef<
       tokenField: draft.tokenField,
     });
   }, [appId, draft.baseUrl, draft.tokenField]);
-  const canSave = getSaveValidity(mode, selectedProvider, draft);
+  const website = deriveWebsite(draft.baseUrl);
+  const canSave =
+    getSaveValidity(mode, selectedProvider, draft) &&
+    !hasInvalidAuthJson(draft.authContent);
   const saveIdle =
     mode === "edit" && baselineDraft ? areDraftsEqual(draft, baselineDraft) : false;
   const canDelete =
-    mode === "edit" && Boolean(selectedProvider?.providerId) && providerState?.phase2Available;
-  const canActivate =
     mode === "edit" &&
     Boolean(selectedProvider?.providerId) &&
-    Boolean(providerState?.phase2Available) &&
-    !selectedProvider?.active;
+    Boolean(providerState?.phase2Available);
 
   const providerAdapter = useMemo(
     () =>
@@ -387,11 +408,10 @@ const ProviderSidePanelHostComponent = forwardRef<
         setSelectedProviderId(provider.providerId);
         setDraft(nextDraft);
         setBaselineDraft(nextDraft);
-        setWebsite(deriveWebsite(provider.baseUrl));
-        setSelectedAuthFile(null);
+        setEditing(false);
         setPanelMode("detail");
         setPickerSelectedPresetId(null);
-        setTab("general");
+        setTab("activities");
         return;
       }
     }
@@ -402,11 +422,10 @@ const ProviderSidePanelHostComponent = forwardRef<
     setSelectedProviderId(null);
     setDraft(createNewDraft(nextAppId));
     setBaselineDraft(null);
-    setWebsite("");
-    setSelectedAuthFile(null);
+    setEditing(false);
     setPanelMode("preset-picker");
     setPickerSelectedPresetId(null);
-    setTab("general");
+    setTab("configure");
   }
 
   async function loadWorkspace(
@@ -453,10 +472,10 @@ const ProviderSidePanelHostComponent = forwardRef<
 
   function closePanel() {
     setOpen(false);
-    setSelectedAuthFile(null);
     setSearch("");
     setPanelMode("detail");
     setPickerSelectedPresetId(null);
+    setEditing(false);
   }
 
   function openForApp(nextAppId: SharedProviderAppId, providerId?: string) {
@@ -514,8 +533,9 @@ const ProviderSidePanelHostComponent = forwardRef<
     setPickerSelectedPresetId(
       mode === "new" && !selectedProviderId ? draftPresetId : null,
     );
+    setEditing(false);
     setPanelMode("preset-picker");
-    setTab("general");
+    setTab("configure");
   }
 
   function handleSelectProvider(providerId: string) {
@@ -534,40 +554,46 @@ const ProviderSidePanelHostComponent = forwardRef<
       setMode("new");
       setSelectedProviderId(null);
       setDraft(nextDraftBase);
-      setBaselineDraft(null);
-      setWebsite("");
-      setSelectedAuthFile(null);
+      setBaselineDraft(nextDraftBase);
+      setEditing(true);
       setPanelMode("detail");
       setPickerSelectedPresetId(null);
-      setTab("general");
+      setTab("configure");
       return;
     }
 
     const nextDraft: SharedProviderEditorPayload = {
       ...nextDraftBase,
-      name: preset.providerName,
-      baseUrl: preset.baseUrl,
-      tokenField: preset.tokenField,
-      model: preset.model,
       authMode: preset.authMode,
+      baseUrl: preset.baseUrl,
+      model: preset.model,
+      name: preset.providerName,
       token: "",
+      tokenField: preset.tokenField,
     };
 
     setMode("new");
     setSelectedProviderId(null);
     setDraft(nextDraft);
-    setBaselineDraft(null);
-    setWebsite(deriveWebsite(preset.baseUrl));
-    setSelectedAuthFile(null);
+    setBaselineDraft(nextDraft);
+    setEditing(true);
     setPanelMode("detail");
     setPickerSelectedPresetId(null);
-    setTab("general");
+    setTab("configure");
   }
 
   function handlePresetCancel() {
-    setPanelMode("detail");
-    setPickerSelectedPresetId(null);
-    setTab("general");
+    if (providerState?.providers.length) {
+      syncSelectionFromState(
+        appId,
+        providerState,
+        "edit",
+        selectedProviderId ?? getDefaultProviderId(providerState),
+      );
+      return;
+    }
+
+    closePanel();
   }
 
   async function refreshSelectionAfterMutation(
@@ -652,170 +678,53 @@ const ProviderSidePanelHostComponent = forwardRef<
     }
   }
 
-  async function handleActivate() {
-    if (!selectedProvider?.providerId || !canActivate || activatePending) {
+  function handleCancel() {
+    if (panelMode === "preset-picker") {
+      handlePresetCancel();
       return;
     }
 
-    setActivatePending(true);
-    try {
-      await providerAdapter.activateProvider(appId, selectedProvider.providerId);
-      await refreshSelectionAfterMutation(
-        appId,
-        "edit",
-        selectedProvider.providerId,
-        draft,
-      );
-    } catch (activateError) {
-      shell.showMessage(
-        "error",
-        activateError instanceof Error
-          ? activateError.message
-          : String(activateError),
-      );
-    } finally {
-      setActivatePending(false);
-    }
-  }
-
-  async function handleUploadCodexAuth() {
-    if (
-      authPending ||
-      !selectedProvider?.providerId ||
-      !selectedAuthFile ||
-      !providerAdapter.uploadCodexAuth
-    ) {
+    if (mode === "edit" && editing && baselineDraft) {
+      setDraft(baselineDraft);
+      setEditing(false);
       return;
     }
 
-    setAuthPending(true);
-    try {
-      await providerAdapter.uploadCodexAuth(
-        appId,
-        selectedProvider.providerId,
-        await selectedAuthFile.text(),
-      );
-      await refreshSelectionAfterMutation(
-        appId,
-        "edit",
-        selectedProvider.providerId,
-        draft,
-      );
-      setSelectedAuthFile(null);
-    } catch (uploadError) {
-      shell.showMessage(
-        "error",
-        uploadError instanceof Error ? uploadError.message : String(uploadError),
-      );
-    } finally {
-      setAuthPending(false);
-    }
+    closePanel();
   }
 
-  async function handleRemoveCodexAuth() {
-    if (
-      authPending ||
-      !selectedProvider?.providerId ||
-      !providerAdapter.removeCodexAuth
-    ) {
-      return;
-    }
+  function handlePasteAuth() {
+    void navigator.clipboard
+      .readText()
+      .then((text) => {
+        if (!text) {
+          return;
+        }
 
-    setAuthPending(true);
-    try {
-      await providerAdapter.removeCodexAuth(appId, selectedProvider.providerId);
-      await refreshSelectionAfterMutation(
-        appId,
-        "edit",
-        selectedProvider.providerId,
-        draft,
-      );
-      setSelectedAuthFile(null);
-    } catch (removeError) {
-      shell.showMessage(
-        "error",
-        removeError instanceof Error ? removeError.message : String(removeError),
-      );
-    } finally {
-      setAuthPending(false);
-    }
+        let nextValue = text;
+
+        try {
+          nextValue = JSON.stringify(JSON.parse(text), null, 2);
+        } catch {
+          // Keep the pasted text as-is when it is not valid JSON yet.
+        }
+
+        setDraft((currentDraft) => ({
+          ...currentDraft,
+          authContent: normalizeAuthContentInput(nextValue),
+        }));
+      })
+      .catch(() => undefined);
   }
 
-  async function handleUploadClaudeAuth() {
-    if (
-      authPending ||
-      !selectedProvider?.providerId ||
-      !selectedAuthFile ||
-      !providerAdapter.uploadClaudeAuth
-    ) {
-      return;
-    }
-
-    setAuthPending(true);
-    try {
-      await providerAdapter.uploadClaudeAuth(
-        appId,
-        selectedProvider.providerId,
-        await selectedAuthFile.text(),
-      );
-      await refreshSelectionAfterMutation(
-        appId,
-        "edit",
-        selectedProvider.providerId,
-        draft,
-      );
-      setSelectedAuthFile(null);
-    } catch (uploadError) {
-      shell.showMessage(
-        "error",
-        uploadError instanceof Error ? uploadError.message : String(uploadError),
-      );
-    } finally {
-      setAuthPending(false);
-    }
-  }
-
-  async function handleRemoveClaudeAuth() {
-    if (
-      authPending ||
-      !selectedProvider?.providerId ||
-      !providerAdapter.removeClaudeAuth
-    ) {
-      return;
-    }
-
-    setAuthPending(true);
-    try {
-      await providerAdapter.removeClaudeAuth(appId, selectedProvider.providerId);
-      await refreshSelectionAfterMutation(
-        appId,
-        "edit",
-        selectedProvider.providerId,
-        draft,
-      );
-      setSelectedAuthFile(null);
-    } catch (removeError) {
-      shell.showMessage(
-        "error",
-        removeError instanceof Error ? removeError.message : String(removeError),
-      );
-    } finally {
-      setAuthPending(false);
-    }
-  }
-
-  const footerText =
-    mode === "new"
-      ? `Create a new ${getAppLabel(appId)} route from this draft.`
-      : selectedProvider?.active
-        ? "Editing the active provider route."
-        : `Editing ${selectedProvider?.name || selectedProvider?.providerId || "saved provider"}.`;
+  const footerText = getFooterText(mode, editing, saveIdle);
 
   return (
     <ProviderSidePanel
       appId={appId}
       open={open}
       showScrim={false}
+      shell={shell}
       loading={loading}
       error={error}
       mode={mode}
@@ -825,18 +734,15 @@ const ProviderSidePanelHostComponent = forwardRef<
       selectedProviderId={selectedProviderId}
       selectedProvider={selectedProvider}
       draft={draft}
+      editing={editing || mode === "new"}
       website={website}
       tab={tab}
       search={search}
       selectedPresetId={pickerSelectedPresetId}
       presetGroups={presetGroups}
       tokenFieldOptions={tokenFieldOptions}
-      selectedFileName={selectedAuthFile?.name ?? ""}
-      authPending={authPending}
       savePending={savePending}
       deletePending={deletePending}
-      activatePending={activatePending}
-      canActivate={canActivate}
       canDelete={Boolean(canDelete)}
       canSave={canSave}
       saveIdle={saveIdle}
@@ -849,27 +755,21 @@ const ProviderSidePanelHostComponent = forwardRef<
       onPresetSelect={handlePresetSelect}
       onPresetCancel={handlePresetCancel}
       onDraftChange={setDraft}
-      onWebsiteChange={setWebsite}
-      onFileSelect={setSelectedAuthFile}
-      onUploadCodexAuth={() => {
-        void handleUploadCodexAuth();
+      onEdit={() => {
+        setTab("configure");
+        setEditing(true);
       }}
-      onRemoveCodexAuth={() => {
-        void handleRemoveCodexAuth();
-      }}
-      onUploadClaudeAuth={() => {
-        void handleUploadClaudeAuth();
-      }}
-      onRemoveClaudeAuth={() => {
-        void handleRemoveClaudeAuth();
-      }}
-      onActivate={() => {
-        void handleActivate();
+      onPasteAuth={handlePasteAuth}
+      onClearAuth={() => {
+        setDraft((currentDraft) => ({
+          ...currentDraft,
+          authContent: "",
+        }));
       }}
       onDelete={() => {
         void handleDelete();
       }}
-      onCancel={closePanel}
+      onCancel={handleCancel}
       onSave={() => {
         void handleSave();
       }}

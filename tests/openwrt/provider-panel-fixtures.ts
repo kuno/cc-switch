@@ -15,7 +15,9 @@ import {
   SHARED_PROVIDER_TOKEN_FIELD_OPTIONS,
 } from "@/shared/providers/ui/presentation";
 import type { ProviderSidePanelTab } from "@/openwrt-provider-ui/components/ProviderSidePanel";
+import type { OpenWrtSharedPageShellApi } from "@/openwrt-provider-ui/pageTypes";
 import type { ProviderSidePanelPresetGroup } from "@/openwrt-provider-ui/components/ProviderSidePanelPresetTab";
+import { createBridgeFixture } from "./component/fixtures/bridge";
 
 const APP_LABELS: Record<SharedProviderAppId, string> = {
   claude: "Claude",
@@ -43,13 +45,9 @@ type ProviderSidePanelCallbacks = {
   onTabChange: (tab: ProviderSidePanelTab) => void;
   onPresetSelect: (presetId: string) => void;
   onDraftChange: (draft: SharedProviderEditorPayload) => void;
-  onWebsiteChange: (website: string) => void;
-  onFileSelect: (file: File | null) => void;
-  onUploadCodexAuth: () => void;
-  onRemoveCodexAuth: () => void;
-  onUploadClaudeAuth: () => void;
-  onRemoveClaudeAuth: () => void;
-  onActivate: () => void;
+  onEdit: () => void;
+  onPasteAuth: () => void;
+  onClearAuth: () => void;
   onDelete: () => void;
   onCancel: () => void;
   onSave: () => void;
@@ -61,26 +59,25 @@ export interface ProviderSidePanelFixtureOptions {
   loading?: boolean;
   error?: string | null;
   mode?: "new" | "edit";
+  editing?: boolean;
+  panelMode?: "detail" | "preset-picker";
   providers?: SharedProviderView[];
   filteredProviders?: SharedProviderView[];
   selectedProviderId?: string | null;
   selectedProvider?: SharedProviderView | null;
   draft?: SharedProviderEditorPayload;
+  shell?: OpenWrtSharedPageShellApi;
   website?: string;
   tab?: ProviderSidePanelTab;
   search?: string;
-  selectedPresetId?: string;
+  selectedPresetId?: string | null;
   presetGroups?: ProviderSidePanelPresetGroup[];
   tokenFieldOptions?: Array<{
     value: SharedProviderTokenField;
     label: string;
   }>;
-  selectedFileName?: string;
-  authPending?: boolean;
   savePending?: boolean;
   deletePending?: boolean;
-  activatePending?: boolean;
-  canActivate?: boolean;
   canDelete?: boolean;
   canSave?: boolean;
   saveIdle?: boolean;
@@ -92,6 +89,7 @@ function buildDraftFromProvider(
   provider: SharedProviderView,
 ): SharedProviderEditorPayload {
   return {
+    authContent: null,
     name: provider.name,
     baseUrl: provider.baseUrl,
     tokenField: provider.tokenField,
@@ -250,13 +248,9 @@ export function createProviderSidePanelProps(
     onTabChange: () => {},
     onPresetSelect: () => {},
     onDraftChange: () => {},
-    onWebsiteChange: () => {},
-    onFileSelect: () => {},
-    onUploadCodexAuth: () => {},
-    onRemoveCodexAuth: () => {},
-    onUploadClaudeAuth: () => {},
-    onRemoveClaudeAuth: () => {},
-    onActivate: () => {},
+    onEdit: () => {},
+    onPasteAuth: () => {},
+    onClearAuth: () => {},
     onDelete: () => {},
     onCancel: () => {},
     onSave: () => {},
@@ -269,9 +263,12 @@ export function createProviderSidePanelProps(
   return {
     appId,
     open: options.open ?? true,
+    shell: options.shell ?? createBridgeFixture({ selectedApp: appId }),
     loading: options.loading ?? false,
     error: options.error ?? null,
     mode,
+    editing: options.editing ?? mode === "new",
+    panelMode: options.panelMode ?? "detail",
     providers,
     filteredProviders: options.filteredProviders ?? providers,
     selectedProviderId: Object.prototype.hasOwnProperty.call(
@@ -283,28 +280,20 @@ export function createProviderSidePanelProps(
     selectedProvider,
     draft,
     website: options.website ?? deriveWebsite(draft.baseUrl),
-    tab: options.tab ?? "general",
+    tab: options.tab ?? (mode === "edit" ? "configure" : "configure"),
     search: options.search ?? "",
     selectedPresetId: options.selectedPresetId ?? "custom",
     presetGroups: options.presetGroups ?? createPresetGroups(appId),
     tokenFieldOptions:
       options.tokenFieldOptions ?? [...SHARED_PROVIDER_TOKEN_FIELD_OPTIONS[appId]],
-    selectedFileName: options.selectedFileName ?? "",
-    authPending: options.authPending ?? false,
     savePending: options.savePending ?? false,
     deletePending: options.deletePending ?? false,
-    activatePending: options.activatePending ?? false,
-    canActivate: options.canActivate ?? false,
     canDelete: options.canDelete ?? (mode === "edit" && Boolean(selectedProvider)),
     canSave: options.canSave ?? true,
     saveIdle: options.saveIdle ?? false,
     footerText:
       options.footerText ??
-      (mode === "new"
-        ? `Create a new ${APP_LABELS[appId]} route from this draft.`
-        : selectedProvider?.active
-          ? "Editing the active provider route."
-          : `Editing ${selectedProvider?.name || selectedProvider?.providerId || "saved provider"}.`),
+      (mode === "new" ? "New provider · not saved" : "Unsaved changes"),
     ...callbacks,
   };
 }
