@@ -2818,7 +2818,7 @@ select.owt-provider-panel__input {
   align-items: stretch;
 }
 .owt-group-grid--unconfigured {
-  align-items: start;
+  align-items: stretch;
 }
 @media (max-width: 960px) {
   .owt-group-grid {
