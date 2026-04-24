@@ -320,7 +320,7 @@ const ProviderSidePanelHostComponent = forwardRef<
   const [baselineDraft, setBaselineDraft] =
     useState<SharedProviderEditorPayload | null>(null);
   const [editing, setEditing] = useState(false);
-  const [tab, setTab] = useState<ProviderSidePanelTab>("configure");
+  const [tab, setTab] = useState<ProviderSidePanelTab>("activities");
   const [panelMode, setPanelMode] =
     useState<ProviderSidePanelViewMode>("detail");
   const [search, setSearch] = useState("");
@@ -484,6 +484,7 @@ const ProviderSidePanelHostComponent = forwardRef<
     setPanelMode("detail");
     setPickerSelectedPresetId(null);
     setEditing(false);
+    setTab("activities");
   }
 
   function openForApp(nextAppId: SharedProviderAppId, providerId?: string) {
@@ -491,6 +492,7 @@ const ProviderSidePanelHostComponent = forwardRef<
     setSearch("");
     setPanelMode("detail");
     setPickerSelectedPresetId(null);
+    setTab("activities");
     void loadWorkspace(nextAppId, providerId ?? null, providerId ? "edit" : null);
   }
 
