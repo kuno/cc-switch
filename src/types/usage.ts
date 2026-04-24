@@ -104,6 +104,7 @@ export interface ModelStats {
 
 export interface LogFilters {
   appType?: string;
+  providerId?: string;
   providerName?: string;
   model?: string;
   statusCode?: number;

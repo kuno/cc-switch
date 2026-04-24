@@ -132,6 +132,7 @@ export interface SharedProviderEditorPayload {
   model: string;
   notes: string;
   authMode?: SharedProviderAuthMode;
+  authContent?: string | null;
 }
 
 export interface SharedProviderCapabilities {

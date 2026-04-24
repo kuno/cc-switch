@@ -4,12 +4,13 @@ use crate::database::Database;
 use crate::provider::Provider;
 use crate::proxy::providers::{
     claude_oauth_store::{
-        delete_claude_auth_for_provider, load_claude_auth_summary_for_provider,
-        save_claude_auth_for_provider, ClaudeSavedAuthSummary,
+        claude_auth_upload_limit_bytes, delete_claude_auth_for_provider,
+        load_claude_auth_summary_for_provider, save_claude_auth_for_provider,
+        ClaudeSavedAuthSummary,
     },
     codex_oauth_store::{
-        delete_codex_auth_for_provider, load_codex_auth_summary_for_provider,
-        save_codex_auth_for_provider, SavedAuthSummary,
+        codex_auth_upload_limit_bytes, delete_codex_auth_for_provider,
+        load_codex_auth_summary_for_provider, save_codex_auth_for_provider, SavedAuthSummary,
     },
 };
 use crate::proxy::server::populate_status_active_targets;
@@ -74,6 +75,8 @@ pub struct OpenWrtProviderPayload {
     pub notes: String,
     #[serde(default)]
     pub auth_mode: Option<String>,
+    #[serde(default)]
+    pub auth_content: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -409,6 +412,74 @@ pub fn remove_claude_auth(
         provider_id: provider.id,
         removed: true,
     })
+}
+
+fn apply_stored_auth_content(
+    profile: OpenWrtAppProfile,
+    provider_id: &str,
+    auth_content: Option<&str>,
+) -> anyhow::Result<()> {
+    let Some(auth_content) = auth_content else {
+        return Ok(());
+    };
+
+    match profile.app_id {
+        CLAUDE_APP_ID => {
+            if auth_content.is_empty() {
+                return delete_claude_auth_for_provider(provider_id);
+            }
+
+            let raw_bytes = auth_content.as_bytes();
+            if raw_bytes.len() > claude_auth_upload_limit_bytes() {
+                return Err(anyhow!(
+                    "authContent exceeds {} KiB limit",
+                    claude_auth_upload_limit_bytes() / 1024
+                ));
+            }
+
+            save_claude_auth_for_provider(provider_id, raw_bytes).map(|_| ())
+        }
+        CODEX_APP_ID => {
+            if auth_content.is_empty() {
+                return delete_codex_auth_for_provider(provider_id);
+            }
+
+            let raw_bytes = auth_content.as_bytes();
+            if raw_bytes.len() > codex_auth_upload_limit_bytes() {
+                return Err(anyhow!(
+                    "authContent exceeds {} KiB limit",
+                    codex_auth_upload_limit_bytes() / 1024
+                ));
+            }
+
+            save_codex_auth_for_provider(provider_id, raw_bytes).map(|_| ())
+        }
+        _ if auth_content.is_empty() => Ok(()),
+        _ => Err(anyhow!(
+            "authContent is only supported for Claude and Codex providers"
+        )),
+    }
+}
+
+fn rollback_provider_upsert(
+    db: &Database,
+    profile: OpenWrtAppProfile,
+    provider_id: &str,
+    previous_provider: Option<&Provider>,
+) -> anyhow::Result<()> {
+    match previous_provider {
+        Some(previous_provider) => db
+            .save_provider(profile.app_id, previous_provider)
+            .map_err(|e| anyhow!("failed to roll back {} provider save: {e}", profile.app_id)),
+        None => db
+            .delete_provider(profile.app_id, provider_id)
+            .map_err(|e| {
+                anyhow!(
+                    "failed to roll back {} provider create: {e}",
+                    profile.app_id
+                )
+            }),
+    }
 }
 
 pub async fn get_provider_failover(
@@ -1046,6 +1117,7 @@ fn upsert_provider_with_payload(
     payload: OpenWrtProviderPayload,
 ) -> anyhow::Result<OpenWrtProviderView> {
     let profile = openwrt_app_profile(app_type)?;
+    let requested_auth_content = payload.auth_content.clone();
     let payload_provider_id = normalize_requested_provider_id(payload.provider_id.as_deref())?;
     let requested_provider_id = normalize_requested_provider_id(requested_provider_id)?;
     ensure_matching_provider_ids(
@@ -1064,11 +1136,7 @@ fn upsert_provider_with_payload(
                 profile.app_id
             )
         })?;
-    let previous_auth_mode = existing
-        .as_ref()
-        .and_then(|provider| provider.settings_config.get("auth_mode"))
-        .and_then(Value::as_str)
-        .map(str::to_string);
+    let previous_provider = existing.clone();
     let provider = build_provider(
         app_type,
         profile,
@@ -1079,18 +1147,16 @@ fn upsert_provider_with_payload(
 
     db.save_provider(profile.app_id, &provider)
         .map_err(|e| anyhow!("failed to save {} provider: {e}", profile.app_id))?;
-    maybe_cleanup_stored_claude_auth_after_save(
-        profile,
-        &provider.id,
-        previous_auth_mode.as_deref(),
-        &provider,
-    );
-    maybe_cleanup_stored_codex_auth_after_save(
-        profile,
-        &provider.id,
-        previous_auth_mode.as_deref(),
-        &provider,
-    );
+    if let Err(auth_error) =
+        apply_stored_auth_content(profile, &provider.id, requested_auth_content.as_deref())
+    {
+        rollback_provider_upsert(db, profile, &provider.id, previous_provider.as_ref()).map_err(
+            |rollback_error| {
+                anyhow!("{auth_error}; provider rollback also failed: {rollback_error}")
+            },
+        )?;
+        return Err(auth_error);
+    }
 
     let active_provider_id = resolve_active_provider_id_for_read(db, app_type, profile)?;
     Ok(provider_to_view(
@@ -1108,6 +1174,7 @@ fn upsert_active_provider_with_payload(
 ) -> anyhow::Result<OpenWrtProviderView> {
     let profile = openwrt_app_profile(app_type)?;
     let active_provider_id = resolve_active_provider_id(db, app_type)?;
+    let requested_auth_content = payload.auth_content.clone();
     let payload_provider_id = normalize_requested_provider_id(payload.provider_id.as_deref())?;
 
     if let (Some(active_provider_id), Some(payload_provider_id)) = (
@@ -1131,11 +1198,7 @@ fn upsert_active_provider_with_payload(
                 profile.app_id
             )
         })?;
-    let previous_auth_mode = existing
-        .as_ref()
-        .and_then(|provider| provider.settings_config.get("auth_mode"))
-        .and_then(Value::as_str)
-        .map(str::to_string);
+    let previous_provider = existing.clone();
     let provider = build_provider(
         app_type,
         profile,
@@ -1146,18 +1209,16 @@ fn upsert_active_provider_with_payload(
 
     db.save_provider(profile.app_id, &provider)
         .map_err(|e| anyhow!("failed to save {} provider: {e}", profile.app_id))?;
-    maybe_cleanup_stored_claude_auth_after_save(
-        profile,
-        &provider.id,
-        previous_auth_mode.as_deref(),
-        &provider,
-    );
-    maybe_cleanup_stored_codex_auth_after_save(
-        profile,
-        &provider.id,
-        previous_auth_mode.as_deref(),
-        &provider,
-    );
+    if let Err(auth_error) =
+        apply_stored_auth_content(profile, &provider.id, requested_auth_content.as_deref())
+    {
+        rollback_provider_upsert(db, profile, &provider.id, previous_provider.as_ref()).map_err(
+            |rollback_error| {
+                anyhow!("{auth_error}; provider rollback also failed: {rollback_error}")
+            },
+        )?;
+        return Err(auth_error);
+    }
     set_active_provider_id(db, app_type, profile, Some(&provider.id))?;
 
     Ok(provider_to_view(
@@ -1166,62 +1227,6 @@ fn upsert_active_provider_with_payload(
         &provider,
         Some(&provider.id),
     ))
-}
-
-fn maybe_cleanup_stored_codex_auth_after_save(
-    profile: OpenWrtAppProfile,
-    provider_id: &str,
-    previous_auth_mode: Option<&str>,
-    provider: &Provider,
-) {
-    if profile.app_id != CODEX_APP_ID {
-        return;
-    }
-
-    let next_auth_mode = provider
-        .settings_config
-        .get("auth_mode")
-        .and_then(Value::as_str);
-    let switched_from_oauth =
-        is_codex_oauth_auth_mode(previous_auth_mode) && next_auth_mode == Some("api_key");
-
-    if switched_from_oauth {
-        if let Err(error) = delete_codex_auth_for_provider(provider_id) {
-            log::warn!(
-                "failed to remove stored codex auth after switching provider {} to api_key: {}",
-                provider_id,
-                error
-            );
-        }
-    }
-}
-
-fn maybe_cleanup_stored_claude_auth_after_save(
-    profile: OpenWrtAppProfile,
-    provider_id: &str,
-    previous_auth_mode: Option<&str>,
-    provider: &Provider,
-) {
-    if profile.app_id != CLAUDE_APP_ID {
-        return;
-    }
-
-    let next_auth_mode = provider
-        .settings_config
-        .get("auth_mode")
-        .and_then(Value::as_str);
-    let switched_from_oauth =
-        is_claude_oauth_auth_mode(previous_auth_mode) && !is_claude_oauth_auth_mode(next_auth_mode);
-
-    if switched_from_oauth {
-        if let Err(error) = delete_claude_auth_for_provider(provider_id) {
-            log::warn!(
-                "failed to remove stored Claude auth after switching provider {} away from claude_oauth: {}",
-                provider_id,
-                error
-            );
-        }
-    }
 }
 
 fn openwrt_app_profile(app_type: &AppType) -> anyhow::Result<OpenWrtAppProfile> {
@@ -2521,6 +2526,7 @@ mod tests {
             model: "claude-sonnet".to_string(),
             notes: "notes".to_string(),
             auth_mode: None,
+            auth_content: None,
         }
     }
 
@@ -2534,6 +2540,7 @@ mod tests {
             model: "gpt-5.4".to_string(),
             notes: "codex".to_string(),
             auth_mode: auth_mode.map(str::to_string),
+            auth_content: None,
         }
     }
 
@@ -2781,6 +2788,49 @@ mod tests {
 
     #[test]
     #[serial]
+    fn get_request_logs_can_filter_by_provider_id() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+
+        insert_request_log(
+            &db,
+            "req-claude-a",
+            "provider-a",
+            "claude",
+            "claude-sonnet",
+            200,
+            100,
+        );
+        insert_request_log(
+            &db,
+            "req-claude-b",
+            "provider-b",
+            "claude",
+            "claude-opus",
+            200,
+            200,
+        );
+
+        let page = get_request_logs(
+            &db,
+            &AppType::Claude,
+            Some(0),
+            Some(20),
+            LogFilters {
+                provider_id: Some("provider-b".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("provider-filtered request logs");
+
+        assert_eq!(page.total, 1);
+        assert_eq!(page.data.len(), 1);
+        assert_eq!(page.data[0].request_id, "req-claude-b");
+        assert_eq!(page.data[0].provider_id, "provider-b");
+    }
+
+    #[test]
+    #[serial]
     fn get_request_detail_rejects_cross_app_lookup() {
         let _env = TestEnv::new();
         let db = Database::memory().expect("db");
@@ -2948,6 +2998,7 @@ mod tests {
                 model: String::new(),
                 notes: String::new(),
                 auth_mode: Some("claude_oauth".to_string()),
+                auth_content: None,
             },
         )
         .expect("create claude oauth provider");
@@ -2966,7 +3017,7 @@ mod tests {
 
     #[test]
     #[serial]
-    fn switching_codex_provider_to_api_key_removes_stored_auth_file() {
+    fn switching_codex_provider_to_api_key_preserves_stored_auth_file_without_auth_content() {
         let env = TestEnv::new();
         let db = Database::memory().expect("db");
 
@@ -2994,12 +3045,13 @@ mod tests {
         )
         .expect("switch to api_key");
 
-        assert!(!codex_auth_path(&env, "provider-codex").exists());
+        assert!(codex_auth_path(&env, "provider-codex").exists());
     }
 
     #[test]
     #[serial]
-    fn switching_claude_provider_away_from_claude_oauth_removes_stored_auth_file() {
+    fn switching_claude_provider_away_from_claude_oauth_preserves_stored_auth_file_without_auth_content(
+    ) {
         let env = TestEnv::new();
         let db = Database::memory().expect("db");
 
@@ -3016,6 +3068,7 @@ mod tests {
                 model: String::new(),
                 notes: String::new(),
                 auth_mode: Some("claude_oauth".to_string()),
+                auth_content: None,
             },
         )
         .expect("create claude oauth provider");
@@ -3036,7 +3089,108 @@ mod tests {
         )
         .expect("switch away from claude_oauth");
 
-        assert!(!claude_auth_path(&env, "provider-claude").exists());
+        assert!(claude_auth_path(&env, "provider-claude").exists());
+    }
+
+    #[test]
+    #[serial]
+    fn codex_auth_content_replace_clear_and_preserve_behave_as_requested() {
+        let env = TestEnv::new();
+        let db = Database::memory().expect("db");
+        let initial_auth =
+            String::from_utf8(sample_codex_auth_json()).expect("sample codex auth should be utf8");
+        let replacement_auth = format!(
+            r#"{{"OPENAI_API_KEY":"sk-replaced","refresh_token":"refresh-two","account_id":"acct-two","expires_at":1791000000}}"#
+        );
+
+        let mut create_payload = codex_payload("Codex", "", Some("codex_oauth"));
+        create_payload.auth_content = Some(initial_auth.clone());
+        upsert_provider_with_payload(&db, &AppType::Codex, Some("provider-codex"), create_payload)
+            .expect("create codex provider with auth");
+        assert_eq!(
+            std::fs::read_to_string(codex_auth_path(&env, "provider-codex"))
+                .expect("read initial auth"),
+            initial_auth
+        );
+
+        let mut replace_payload = codex_payload("Codex Updated", "", Some("codex_oauth"));
+        replace_payload.auth_content = Some(replacement_auth.clone());
+        upsert_provider_with_payload(
+            &db,
+            &AppType::Codex,
+            Some("provider-codex"),
+            replace_payload,
+        )
+        .expect("replace stored auth");
+        assert_eq!(
+            std::fs::read_to_string(codex_auth_path(&env, "provider-codex"))
+                .expect("read replaced auth"),
+            replacement_auth
+        );
+
+        upsert_provider_with_payload(
+            &db,
+            &AppType::Codex,
+            Some("provider-codex"),
+            codex_payload("Codex Preserve", "", Some("api_key")),
+        )
+        .expect("preserve stored auth");
+        assert_eq!(
+            std::fs::read_to_string(codex_auth_path(&env, "provider-codex"))
+                .expect("read preserved auth"),
+            replacement_auth
+        );
+
+        let mut clear_payload = codex_payload("Codex Cleared", "", Some("api_key"));
+        clear_payload.auth_content = Some(String::new());
+        upsert_provider_with_payload(&db, &AppType::Codex, Some("provider-codex"), clear_payload)
+            .expect("clear stored auth");
+        assert!(!codex_auth_path(&env, "provider-codex").exists());
+    }
+
+    #[test]
+    #[serial]
+    fn provider_upsert_rolls_back_when_auth_content_save_fails() {
+        let env = TestEnv::new();
+        let db = Database::memory().expect("db");
+        let initial_auth =
+            String::from_utf8(sample_codex_auth_json()).expect("sample codex auth should be utf8");
+
+        let mut initial_payload = codex_payload("Codex Stable", "", Some("codex_oauth"));
+        initial_payload.auth_content = Some(initial_auth.clone());
+        upsert_provider_with_payload(
+            &db,
+            &AppType::Codex,
+            Some("provider-codex"),
+            initial_payload,
+        )
+        .expect("create baseline provider");
+
+        let oversized_auth = "x".repeat(codex_auth_upload_limit_bytes() + 1);
+        let mut failing_payload = codex_payload("Codex Broken", "sk-broken", Some("api_key"));
+        failing_payload.base_url = "https://broken.example/v1".to_string();
+        failing_payload.model = "gpt-5.5".to_string();
+        failing_payload.auth_content = Some(oversized_auth);
+
+        let error = upsert_provider_with_payload(
+            &db,
+            &AppType::Codex,
+            Some("provider-codex"),
+            failing_payload,
+        )
+        .expect_err("oversized auth should fail");
+        assert!(error.to_string().contains("authContent exceeds"));
+
+        let reloaded = get_provider(&db, &AppType::Codex, "provider-codex")
+            .expect("reload provider after rollback");
+        assert_eq!(reloaded.name, "Codex Stable");
+        assert_eq!(reloaded.base_url, "https://api.openai.com/v1");
+        assert_eq!(reloaded.model, "gpt-5.4");
+        assert_eq!(
+            std::fs::read_to_string(codex_auth_path(&env, "provider-codex"))
+                .expect("read auth after rollback"),
+            initial_auth
+        );
     }
 
     #[test]
@@ -3393,6 +3547,7 @@ mod tests {
             model: "gpt-5.4".to_string(),
             notes: "codex-notes".to_string(),
             auth_mode: None,
+            auth_content: None,
         };
 
         let created = upsert_provider_with_payload(&db, &AppType::Codex, Some("codex-a"), payload)
@@ -3445,6 +3600,7 @@ mod tests {
             model: String::new(),
             notes: String::new(),
             auth_mode: Some("client_passthrough".to_string()),
+            auth_content: None,
         };
 
         let created =
@@ -3474,6 +3630,7 @@ mod tests {
             model: String::new(),
             notes: String::new(),
             auth_mode: Some("claude_oauth".to_string()),
+            auth_content: None,
         };
 
         let created =
@@ -3511,6 +3668,7 @@ mod tests {
             model: String::new(),
             notes: String::new(),
             auth_mode: Some("claude_oauth".to_string()),
+            auth_content: None,
         };
         upsert_provider_with_payload(&db, &AppType::Claude, Some("claude-oauth"), payload)
             .expect("create claude oauth provider");
@@ -3585,6 +3743,7 @@ mod tests {
             model: "gpt-5.4".to_string(),
             notes: String::new(),
             auth_mode: Some("codex_oauth".to_string()),
+            auth_content: None,
         };
 
         let created =
@@ -3655,6 +3814,7 @@ mod tests {
             model: "DeepSeek-V3.2".to_string(),
             notes: String::new(),
             auth_mode: None,
+            auth_content: None,
         };
 
         let result = upsert_provider_with_payload(&db, &AppType::Claude, None, payload);
@@ -3679,6 +3839,7 @@ mod tests {
             model: "gemini-3.1-pro".to_string(),
             notes: String::new(),
             auth_mode: None,
+            auth_content: None,
         };
         let payload_b = OpenWrtProviderPayload {
             provider_id: None,
@@ -3689,6 +3850,7 @@ mod tests {
             model: "gemini-3.1-pro".to_string(),
             notes: String::new(),
             auth_mode: None,
+            auth_content: None,
         };
 
         upsert_provider_with_payload(&db, &AppType::Gemini, Some("gemini-a"), payload_a)
@@ -3747,6 +3909,7 @@ mod tests {
             model: "gpt-5.4".to_string(),
             notes: String::new(),
             auth_mode: None,
+            auth_content: None,
         };
 
         upsert_provider_with_payload(&db, &AppType::Codex, Some("shared-id"), payload)
