@@ -1,12 +1,4 @@
-import {
-  CheckCircle2,
-  Loader2,
-  Plus,
-  Search,
-  Trash2,
-  X,
-  Zap,
-} from "lucide-react";
+import { Loader2, Plus, Search, Trash2, X } from "lucide-react";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   useEffect,
@@ -20,24 +12,26 @@ import type {
   SharedProviderTokenField,
   SharedProviderView,
 } from "@/shared/providers/domain";
+import type { OpenWrtSharedPageShellApi } from "../pageTypes";
 import {
   getOpenWrtAppIconUrl,
   OpenWrtProviderIcon,
 } from "../providerIcons";
-import { ProviderSidePanelCredentialsTab } from "./ProviderSidePanelCredentialsTab";
-import { ProviderSidePanelGeneralTab } from "./ProviderSidePanelGeneralTab";
+import { ProviderSidePanelActivitiesTab } from "./ProviderSidePanelActivitiesTab";
+import { ProviderSidePanelConfigureTab } from "./ProviderSidePanelConfigureTab";
+import { getActiveElementInTree } from "./focusTree";
 import {
   ProviderSidePanelPresetTab,
   type ProviderSidePanelPresetGroup,
 } from "./ProviderSidePanelPresetTab";
-import { getActiveElementInTree } from "./focusTree";
 
-export type ProviderSidePanelTab = "preset" | "general" | "credentials";
+export type ProviderSidePanelTab = "activities" | "configure";
 
 interface ProviderSidePanelProps {
   appId: SharedProviderAppId;
   open: boolean;
   showScrim?: boolean;
+  shell: OpenWrtSharedPageShellApi;
   loading: boolean;
   error: string | null;
   mode: "new" | "edit";
@@ -47,6 +41,7 @@ interface ProviderSidePanelProps {
   selectedProviderId: string | null;
   selectedProvider: SharedProviderView | null;
   draft: SharedProviderEditorPayload;
+  editing: boolean;
   website: string;
   tab: ProviderSidePanelTab;
   search: string;
@@ -56,12 +51,8 @@ interface ProviderSidePanelProps {
     value: SharedProviderTokenField;
     label: string;
   }>;
-  selectedFileName: string;
-  authPending: boolean;
   savePending: boolean;
   deletePending: boolean;
-  activatePending: boolean;
-  canActivate: boolean;
   canDelete: boolean;
   canSave: boolean;
   saveIdle: boolean;
@@ -74,13 +65,9 @@ interface ProviderSidePanelProps {
   onPresetSelect: (presetId: string) => void;
   onPresetCancel?: () => void;
   onDraftChange: (draft: SharedProviderEditorPayload) => void;
-  onWebsiteChange: (website: string) => void;
-  onFileSelect: (file: File | null) => void;
-  onUploadCodexAuth: () => void;
-  onRemoveCodexAuth: () => void;
-  onUploadClaudeAuth: () => void;
-  onRemoveClaudeAuth: () => void;
-  onActivate: () => void;
+  onEdit: () => void;
+  onPasteAuth: () => void;
+  onClearAuth: () => void;
   onDelete: () => void;
   onCancel: () => void;
   onSave: () => void;
@@ -106,12 +93,6 @@ const FOCUSABLE_SELECTOR = [
   "textarea:not([disabled])",
   '[tabindex]:not([tabindex="-1"])',
 ].join(", ");
-
-function getPanelSubtitle(
-  appId: SharedProviderAppId,
-): string {
-  return APP_SUBTITLES[appId];
-}
 
 function getStatusLabel(
   mode: "new" | "edit",
@@ -152,27 +133,25 @@ function getFocusableElements(container: HTMLElement | null): HTMLElement[] {
 export function ProviderSidePanel({
   appId,
   open,
+  shell,
   loading,
   error,
   mode,
-  panelMode,
+  panelMode = "detail",
   providers,
   filteredProviders,
   selectedProviderId,
   selectedProvider,
   draft,
+  editing,
   website,
   tab,
   search,
   selectedPresetId,
   presetGroups,
   tokenFieldOptions,
-  selectedFileName,
-  authPending,
   savePending,
   deletePending,
-  activatePending,
-  canActivate,
   canDelete,
   canSave,
   saveIdle,
@@ -186,19 +165,13 @@ export function ProviderSidePanel({
   onPresetSelect,
   onPresetCancel,
   onDraftChange,
-  onWebsiteChange,
-  onFileSelect,
-  onUploadCodexAuth,
-  onRemoveCodexAuth,
-  onUploadClaudeAuth,
-  onRemoveClaudeAuth,
-  onActivate,
+  onEdit,
+  onPasteAuth,
+  onClearAuth,
   onDelete,
   onCancel,
   onSave,
 }: ProviderSidePanelProps) {
-  const resolvedPanelMode =
-    panelMode ?? (tab === "preset" ? "preset-picker" : "detail");
   const providerName =
     (mode === "new"
       ? draft.name.trim() || "New provider"
@@ -289,6 +262,18 @@ export function ProviderSidePanel({
     previousSavePendingRef.current = false;
   }, [saveIdle, savePending]);
 
+  useEffect(() => {
+    if (!showSaveFlash || (!editing && saveIdle)) {
+      return;
+    }
+
+    setShowSaveFlash(false);
+    if (saveFlashTimeoutRef.current !== null) {
+      window.clearTimeout(saveFlashTimeoutRef.current);
+      saveFlashTimeoutRef.current = null;
+    }
+  }, [editing, saveIdle, showSaveFlash]);
+
   function handleTrapFocus(event: ReactKeyboardEvent<HTMLElement>) {
     if (!open || event.key !== "Tab") {
       return;
@@ -341,7 +326,7 @@ export function ProviderSidePanel({
         copyFeedbackTimeoutRef.current = null;
       }, 1600);
     } catch {
-      // Copy failures should leave the current chip label untouched.
+      // Ignore clipboard failures and leave the chip unchanged.
     }
   }
 
@@ -363,7 +348,7 @@ export function ProviderSidePanel({
 
       <aside
         className="owt-provider-panel"
-        data-panel-mode={resolvedPanelMode}
+        data-panel-mode={panelMode}
         aria-hidden={!open}
         aria-label={`${APP_LABELS[appId]} providers`}
         aria-modal="true"
@@ -379,7 +364,7 @@ export function ProviderSidePanel({
           <div className="owt-provider-panel__header-copy">
             <h3 className="owt-provider-panel__title">{APP_LABELS[appId]}</h3>
             <div className="owt-provider-panel__subtitle">
-              {getPanelSubtitle(appId)}
+              {APP_SUBTITLES[appId]}
             </div>
           </div>
           <button
@@ -394,10 +379,7 @@ export function ProviderSidePanel({
         </header>
 
         <div className="owt-provider-panel__body">
-          <nav
-            className="owt-provider-panel__rail"
-            aria-label="Saved providers"
-          >
+          <nav className="owt-provider-panel__rail" aria-label="Saved providers">
             <label className="owt-provider-panel__search">
               <Search className="h-4 w-4" />
               <input
@@ -486,10 +468,10 @@ export function ProviderSidePanel({
 
           <section
             className="owt-provider-panel__detail"
-            data-panel-mode={resolvedPanelMode}
+            data-panel-mode={panelMode}
           >
             <div className="owt-provider-panel__detail-shell">
-              {resolvedPanelMode === "detail" ? (
+              {panelMode === "detail" ? (
                 <>
                   <div className="owt-provider-panel__detail-head">
                     <div className="owt-provider-panel__detail-identity">
@@ -545,21 +527,52 @@ export function ProviderSidePanel({
                         />
                         {getStatusLabel(mode, selectedProvider)}
                       </span>
+                      {canDelete ? (
+                        <button
+                          type="button"
+                          className="owt-provider-panel__icon-button owt-provider-panel__icon-button--danger"
+                          aria-label="Delete provider"
+                          disabled={deletePending}
+                          onClick={onDelete}
+                        >
+                          {deletePending ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                        </button>
+                      ) : null}
                     </div>
                   </div>
 
                   <div className="owt-provider-panel__tabs" role="tablist">
-                    {(["general", "credentials"] as const).map((value) => (
-                      <button
-                        key={value}
-                        type="button"
-                        className="owt-provider-panel__tab"
-                        data-active={tab === value}
-                        onClick={() => onTabChange(value)}
-                      >
-                        {value === "general" ? "General" : "Credentials"}
-                      </button>
-                    ))}
+                    <button
+                      type="button"
+                      className="owt-provider-panel__tab"
+                      data-active={tab === "activities"}
+                      onClick={() => onTabChange("activities")}
+                    >
+                      Activities
+                    </button>
+                    <button
+                      type="button"
+                      className="owt-provider-panel__tab"
+                      data-active={tab === "configure"}
+                      onClick={() => onTabChange("configure")}
+                    >
+                      Configure
+                    </button>
+                    <button
+                      type="button"
+                      className="owt-provider-panel__tab"
+                      data-active="false"
+                      data-placeholder-tab="failover"
+                      hidden
+                      aria-hidden="true"
+                      tabIndex={-1}
+                    >
+                      Failover
+                    </button>
                   </div>
                 </>
               ) : (
@@ -584,103 +597,72 @@ export function ProviderSidePanel({
                   <div className="owt-provider-panel__state owt-provider-panel__state--error">
                     {error}
                   </div>
-                ) : resolvedPanelMode === "preset-picker" ? (
+                ) : panelMode === "preset-picker" ? (
                   <ProviderSidePanelPresetTab
                     groups={presetGroups}
                     selectedPresetId={selectedPresetId}
                     onPresetSelect={onPresetSelect}
                   />
-                ) : tab === "general" ? (
-                  <ProviderSidePanelGeneralTab
-                    draft={draft}
-                    website={website}
-                    onDraftChange={onDraftChange}
-                    onWebsiteChange={onWebsiteChange}
+                ) : tab === "activities" ? (
+                  <ProviderSidePanelActivitiesTab
+                    appId={appId}
+                    providerId={selectedProvider?.providerId ?? null}
+                    providerName={
+                      selectedProvider?.name ||
+                      selectedProvider?.providerId ||
+                      providerName
+                    }
+                    shell={shell}
                   />
                 ) : (
-                  <ProviderSidePanelCredentialsTab
+                  <ProviderSidePanelConfigureTab
                     appId={appId}
                     draft={draft}
+                    editing={editing}
+                    footerText={footerText}
+                    mode={mode}
                     provider={selectedProvider}
-                    selectedFileName={selectedFileName}
-                    authPending={authPending}
+                    saveIdle={saveIdle}
+                    savePending={savePending}
+                    showSaveFlash={showSaveFlash}
                     tokenFieldOptions={tokenFieldOptions}
+                    website={website}
+                    canSave={canSave}
+                    onCancel={onCancel}
+                    onClearAuth={onClearAuth}
                     onDraftChange={onDraftChange}
-                    onFileSelect={onFileSelect}
-                    onUploadCodexAuth={onUploadCodexAuth}
-                    onRemoveCodexAuth={onRemoveCodexAuth}
-                    onUploadClaudeAuth={onUploadClaudeAuth}
-                    onRemoveClaudeAuth={onRemoveClaudeAuth}
+                    onEdit={onEdit}
+                    onPasteAuth={onPasteAuth}
+                    onSave={onSave}
                   />
                 )}
+
+                {panelMode === "detail" ? (
+                  <div
+                    className="owt-provider-panel__failover-placeholder"
+                    data-placeholder-panel="failover"
+                    hidden
+                    aria-hidden="true"
+                  >
+                    <div className="owt-provider-panel__config-group">
+                      <div className="owt-provider-panel__config-group-title">
+                        Failover
+                      </div>
+                      <div className="owt-provider-panel__config-row">
+                        <div className="owt-provider-panel__config-label">
+                          Auto failover
+                        </div>
+                        <div className="owt-provider-panel__config-value">
+                          —
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </div>
           </section>
         </div>
-
-        {resolvedPanelMode === "detail" ? (
-          <footer className="owt-provider-panel__footer">
-            <div className="owt-provider-panel__footer-copy">
-              <CheckCircle2 className="h-4 w-4" />
-              <span>{footerText}</span>
-            </div>
-
-            <div className="owt-provider-panel__footer-actions">
-              {canDelete ? (
-                <button
-                  type="button"
-                  className="owt-provider-panel__button owt-provider-panel__button--danger"
-                  disabled={deletePending}
-                  onClick={onDelete}
-                >
-                  {deletePending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Trash2 className="h-4 w-4" />
-                  )}
-                  Delete
-                </button>
-              ) : null}
-              {canActivate ? (
-                <button
-                  type="button"
-                  className="owt-provider-panel__button owt-provider-panel__button--ghost"
-                  disabled={activatePending}
-                  onClick={onActivate}
-                >
-                  {activatePending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Zap className="h-4 w-4" />
-                  )}
-                  Set active
-                </button>
-              ) : null}
-              <button
-                type="button"
-                className="owt-provider-panel__button"
-                onClick={onCancel}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="owt-provider-panel__button owt-provider-panel__button--primary"
-                data-idle={saveIdle && !showSaveFlash ? "true" : "false"}
-                data-saved={showSaveFlash ? "true" : "false"}
-                disabled={!canSave || savePending || loading}
-                onClick={onSave}
-              >
-                {savePending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : showSaveFlash ? (
-                  <CheckCircle2 className="h-4 w-4" />
-                ) : null}
-                {savePending ? "Saving…" : showSaveFlash ? "Saved" : "Save"}
-              </button>
-            </div>
-          </footer>
-        ) : null}
       </aside>
     </div>
   );

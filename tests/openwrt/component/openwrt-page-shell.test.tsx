@@ -170,6 +170,8 @@ describe("OpenWrtPageShell", () => {
     });
     listProviders.mockClear();
 
+    await user.click(within(dialog).getByRole("button", { name: "Configure" }));
+    await user.click(within(dialog).getByRole("button", { name: "Edit" }));
     await user.click(within(dialog).getByRole("button", { name: "Save" }));
 
     await waitFor(() => {

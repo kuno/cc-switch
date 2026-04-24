@@ -1,5 +1,5 @@
 import { type ReactElement, useRef } from "react";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import {
@@ -11,6 +11,7 @@ import type { OpenWrtProviderTransport } from "@/platform/openwrt/providers";
 import { createBridgeFixture } from "./fixtures/bridge";
 import { createProviderTransportFixture } from "./fixtures/providerTransport";
 import {
+  createCodexAuthSummary,
   createProviderState,
   createProviderView,
 } from "../provider-panel-fixtures";
@@ -105,6 +106,18 @@ function mockScrollbarWidth(width: number) {
   };
 }
 
+async function openPanel() {
+  await userEvent.setup().click(
+    screen.getByRole("button", {
+      name: "Open provider panel",
+    }),
+  );
+
+  return screen.findByRole("dialog", {
+    name: /providers$/,
+  });
+}
+
 describe("ProviderSidePanelHost", () => {
   it("opens as a modal, traps focus, closes on Escape, and restores focus", async () => {
     const user = userEvent.setup();
@@ -155,16 +168,9 @@ describe("ProviderSidePanelHost", () => {
       expect(document.body.style.overflow).toBe("hidden");
       expect(document.body.style.paddingRight).toBe("15px");
 
-      const saveButton = within(dialog).getByRole("button", {
-        name: "Save",
-      });
-
-      saveButton.focus();
-      await user.tab();
-      expect(closeButton).toHaveFocus();
+      closeButton.focus();
       await user.tab({ shift: true });
-      expect(saveButton).toHaveFocus();
-
+      expect(closeButton).not.toHaveFocus();
       await user.keyboard("{Escape}");
 
       await waitFor(() =>
@@ -182,54 +188,263 @@ describe("ProviderSidePanelHost", () => {
     }
   });
 
-  it("opens into a new-provider preset workflow when no providers exist", async () => {
+  it("opens saved providers on Activities and new drafts on Configure in edit mode", async () => {
     const user = userEvent.setup();
-    const shell = createBridgeFixture({
-      selectedApp: "gemini",
+    const savedShell = createBridgeFixture();
+    const primaryProvider = createProviderView("claude", {
+      active: true,
+      name: "Claude Primary",
+      providerId: "claude-primary",
     });
-    const { transport } = createProviderTransportFixture({
-      gemini: createProviderState("gemini", [], null),
-    });
+    const savedTransport = createProviderTransportFixture({
+      claude: createProviderState("claude", [primaryProvider]),
+    }).transport;
+
+    render(<HostHarness shell={savedShell} transport={savedTransport} />);
+
+    const savedDialog = await openPanel();
+    expect(
+      within(await savedDialog).getByRole("button", { name: "Activities" }),
+    ).toHaveAttribute("data-active", "true");
+    expect(screen.getByText("No recent activity")).toBeInTheDocument();
+    expect(
+      within(await savedDialog).queryByRole("button", { name: "Save" }),
+    ).toBeNull();
+
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Claude providers" }),
+      ).not.toBeInTheDocument(),
+    );
+
+    const draftShell = createBridgeFixture({ selectedApp: "codex" });
+    const draftTransport = createProviderTransportFixture({
+      codex: createProviderState("codex", [], null),
+    }).transport;
 
     render(
-      <HostHarness selectedApp="gemini" shell={shell} transport={transport} />,
+      <HostHarness
+        selectedApp="codex"
+        shell={draftShell}
+        transport={draftTransport}
+      />,
     );
 
     await user.click(
-      screen.getByRole("button", {
+      screen.getAllByRole("button", {
         name: "Open provider panel",
+      })[1],
+    );
+
+    const draftDialog = await screen.findByRole("dialog", {
+      name: "Codex providers",
+    });
+    await user.click(
+      within(draftDialog).getByRole("button", {
+        name: /Custom draft/i,
       }),
     );
 
-    const dialog = await screen.findByRole("dialog", {
-      name: "Gemini providers",
+    expect(
+      within(draftDialog).getByRole("button", { name: "Configure" }),
+    ).toHaveAttribute("data-active", "true");
+    expect(within(draftDialog).getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+    expect(within(draftDialog).getByRole("button", { name: "Save" })).toBeInTheDocument();
+    expect(
+      within(draftDialog).queryByRole("button", { name: "Edit" }),
+    ).toBeNull();
+  });
+
+  it("reverts unsaved field edits and auth textarea contents on Cancel", async () => {
+    const user = userEvent.setup();
+    const shell = createBridgeFixture({ selectedApp: "codex" });
+    const codexProvider = createProviderView("codex", {
+      active: true,
+      authMode: "codex_oauth",
+      codexAuth: createCodexAuthSummary(),
+      model: "gpt-5.4",
+      name: "OpenAI Official",
+      providerId: "codex-primary",
+    });
+    const { transport } = createProviderTransportFixture({
+      codex: createProviderState("codex", [codexProvider]),
     });
 
-    expect(
-      within(dialog).getByText(
-        "No providers yet. Create one from a preset or a custom draft.",
+    render(
+      <HostHarness
+        selectedApp="codex"
+        shell={shell}
+        transport={transport}
+      />,
+    );
+
+    const dialog = await openPanel();
+    await user.click(within(await dialog).getByRole("button", { name: "Configure" }));
+    await user.click(within(await dialog).getByRole("button", { name: "Edit" }));
+
+    const nameInput = within(await dialog).getByLabelText("Provider name");
+    const authTextarea = within(await dialog).getByLabelText("auth.json");
+
+    await user.clear(nameInput);
+    await user.type(nameInput, "Temporary Name");
+    fireEvent.change(authTextarea, {
+      target: {
+        value: '{"token":"temp"}',
+      },
+    });
+    await user.click(within(await dialog).getByRole("button", { name: "Cancel" }));
+    await user.click(within(await dialog).getByRole("button", { name: "Edit" }));
+
+    expect(within(await dialog).getByLabelText("Provider name")).toHaveValue(
+      "OpenAI Official",
+    );
+    expect(within(await dialog).getByLabelText("auth.json")).toHaveValue("");
+  });
+
+  it("sends authContent null for untouched saved auth textareas and empty-string when cleared", async () => {
+    const user = userEvent.setup();
+    const shell = createBridgeFixture({ selectedApp: "codex" });
+    const codexProvider = createProviderView("codex", {
+      active: true,
+      authMode: "codex_oauth",
+      codexAuth: createCodexAuthSummary(),
+      name: "OpenAI Official",
+      providerId: "codex-primary",
+    });
+    const { transport } = createProviderTransportFixture({
+      codex: createProviderState("codex", [codexProvider]),
+    });
+
+    render(
+      <HostHarness
+        selectedApp="codex"
+        shell={shell}
+        transport={transport}
+      />,
+    );
+
+    const dialog = await openPanel();
+    await user.click(within(await dialog).getByRole("button", { name: "Configure" }));
+    await user.click(within(await dialog).getByRole("button", { name: "Edit" }));
+    await user.click(within(await dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(transport.upsertProviderByProviderId).toHaveBeenCalledTimes(1),
+    );
+    expect(transport.upsertProviderByProviderId).toHaveBeenLastCalledWith(
+      "codex",
+      "codex-primary",
+      expect.objectContaining({
+        authContent: null,
+      }),
+    );
+
+    await user.click(within(await dialog).getByRole("button", { name: "Configure" }));
+    await user.click(within(await dialog).getByRole("button", { name: "Edit" }));
+    await user.click(within(await dialog).getByRole("button", { name: "Clear auth" }));
+    await user.click(within(await dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(transport.upsertProviderByProviderId).toHaveBeenCalledTimes(2),
+    );
+    expect(transport.upsertProviderByProviderId).toHaveBeenLastCalledWith(
+      "codex",
+      "codex-primary",
+      expect.objectContaining({
+        authContent: "",
+      }),
+    );
+  });
+
+  it("includes pasted authContent when saving a new oauth draft", async () => {
+    const user = userEvent.setup();
+    const shell = createBridgeFixture({ selectedApp: "codex" });
+    const { transport } = createProviderTransportFixture({
+      codex: createProviderState("codex", [], null),
+    });
+
+    render(
+      <HostHarness
+        selectedApp="codex"
+        shell={shell}
+        transport={transport}
+      />,
+    );
+
+    const dialog = await openPanel();
+    await user.click(
+      within(await dialog).getByRole("button", { name: /OpenAI Official/i }),
+    );
+    fireEvent.change(within(await dialog).getByLabelText("auth.json"), {
+      target: {
+        value: '{"refresh_token":"new-token"}',
+      },
+    });
+    await user.click(within(await dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(transport.upsertProvider).toHaveBeenCalledTimes(1));
+    expect(transport.upsertProvider).toHaveBeenLastCalledWith(
+      "codex",
+      expect.objectContaining({
+        authContent: expect.stringContaining('"refresh_token":"new-token"'),
+      }),
+    );
+  });
+
+  it("requests activities with the selected provider id", async () => {
+    const user = userEvent.setup();
+    const shell = createBridgeFixture({
+      requestLogs: {
+        claude: {
+          data: [],
+          total: 0,
+          page: 0,
+          pageSize: 20,
+        },
+      },
+      selectedApp: "claude",
+    });
+    const primaryProvider = createProviderView("claude", {
+      active: true,
+      name: "Claude Primary",
+      providerId: "claude-primary",
+    });
+    const backupProvider = createProviderView("claude", {
+      active: false,
+      name: "Claude Backup",
+      providerId: "claude-backup",
+    });
+    const { transport } = createProviderTransportFixture({
+      claude: createProviderState("claude", [primaryProvider, backupProvider]),
+    });
+
+    render(
+      <HostHarness shell={shell} transport={transport} />,
+    );
+
+    const dialog = await openPanel();
+
+    await waitFor(() =>
+      expect(shell.getRequestLogs).toHaveBeenCalledWith(
+        "claude",
+        0,
+        20,
+        "claude-primary",
       ),
-    ).toBeInTheDocument();
-    expect(dialog).toHaveAttribute("data-panel-mode", "preset-picker");
-    expect(within(dialog).queryByRole("tablist")).toBeNull();
-    expect(within(dialog).getByText("Preset browser")).toBeInTheDocument();
-    expect(
-      within(dialog).getByRole("button", {
-        name: /Custom draft/i,
-      }),
-    ).toBeInTheDocument();
-    expect(
-      within(dialog).getByRole("button", {
-        name: "Cancel",
-      }),
-    ).toBeEnabled();
-    expect(
-      within(dialog).queryByRole("button", {
-        name: "Save",
-      }),
-    ).toBeNull();
-    expect(dialog).toHaveTextContent(
-      "Presets speed up setup but never save automatically.",
+    );
+
+    await user.click(
+      within(await dialog).getByRole("button", { name: /Claude Backup/ }),
+    );
+
+    await waitFor(() =>
+      expect(shell.getRequestLogs).toHaveBeenLastCalledWith(
+        "claude",
+        0,
+        20,
+        "claude-backup",
+      ),
     );
   });
 
