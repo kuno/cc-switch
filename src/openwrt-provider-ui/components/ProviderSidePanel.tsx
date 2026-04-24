@@ -1,4 +1,4 @@
-import { Loader2, Plus, Search, Trash2, X } from "lucide-react";
+import { Copy, Loader2, Plus, Search, Trash2, X } from "lucide-react";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   useEffect,
@@ -114,6 +114,14 @@ function getStatusTone(
   }
 
   return provider?.active ? "success" : "neutral";
+}
+
+function formatProviderIdChipLabel(providerId: string): string {
+  if (providerId.length <= 15) {
+    return providerId;
+  }
+
+  return `${providerId.slice(0, 10)}...${providerId.slice(-4)}`;
 }
 
 function getFocusableElements(container: HTMLElement | null): HTMLElement[] {
@@ -493,30 +501,33 @@ export function ProviderSidePanel({
                         <div className="owt-provider-panel__detail-url">
                           {draft.baseUrl || "Not saved yet"}
                         </div>
+                        {detailProviderId ? (
+                          <button
+                            type="button"
+                            className="owt-provider-panel__id-chip"
+                            data-copied={copiedProviderId === detailProviderId}
+                            aria-label={`Copy provider ID ${detailProviderId}`}
+                            title={
+                              copiedProviderId === detailProviderId
+                                ? "Copied"
+                                : detailProviderId
+                            }
+                            onClick={() =>
+                              void handleCopyProviderId(detailProviderId)
+                            }
+                          >
+                            <Copy className="h-3 w-3" aria-hidden="true" />
+                            <span className="owt-provider-panel__id-chip-text">
+                              {copiedProviderId === detailProviderId
+                                ? "Copied"
+                                : formatProviderIdChipLabel(detailProviderId)}
+                            </span>
+                          </button>
+                        ) : null}
                       </div>
                     </div>
 
                     <div className="owt-provider-panel__detail-meta">
-                      {detailProviderId ? (
-                        <button
-                          type="button"
-                          className="owt-provider-panel__id-chip"
-                          data-copied={copiedProviderId === detailProviderId}
-                          aria-label={`Copy provider ID ${detailProviderId}`}
-                          title={
-                            copiedProviderId === detailProviderId
-                              ? "Copied"
-                              : `Copy provider ID ${detailProviderId}`
-                          }
-                          onClick={() =>
-                            void handleCopyProviderId(detailProviderId)
-                          }
-                        >
-                          {copiedProviderId === detailProviderId
-                            ? "Copied"
-                            : detailProviderId}
-                        </button>
-                      ) : null}
                       <span
                         className="owt-status-pill"
                         data-tone={getStatusTone(mode, selectedProvider)}

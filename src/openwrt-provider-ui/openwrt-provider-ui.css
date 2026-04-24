@@ -1634,24 +1634,34 @@
 .owt-provider-panel__id-chip {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  min-height: 28px;
-  max-width: 100%;
-  padding: 0 12px;
-  overflow: hidden;
+  align-self: flex-start;
+  gap: 5px;
+  min-height: 0;
+  max-width: min(100%, 17rem);
+  margin-top: 6px;
+  padding: 3px 8px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--panel-strong) 84%, transparent);
-  color: var(--muted);
+  background: var(--panel-strong);
+  color: var(--soft-text);
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.02em;
   text-transform: none;
-  white-space: nowrap;
-  text-overflow: ellipsis;
   cursor: pointer;
   transition: background 120ms, color 120ms, border-color 120ms;
+}
+
+.owt-provider-panel__id-chip svg {
+  flex: 0 0 auto;
+  opacity: 0.72;
+}
+
+.owt-provider-panel__id-chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .owt-provider-panel__id-chip:hover {
@@ -1709,6 +1719,9 @@
 }
 
 .owt-provider-panel__detail-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   min-width: 0;
 }
 
