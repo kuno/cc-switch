@@ -4,6 +4,7 @@ import {
   getSharedProviderPresets,
   type SharedProviderAppId,
 } from "@/shared/providers/domain";
+import { createBridgeFixture } from "../../component/fixtures/bridge";
 import {
   createCodexAuthSummary,
   createProviderDraft,
@@ -42,9 +43,7 @@ const CODEX_PRIMARY = createProviderView("codex", {
   active: true,
   authMode: "codex_oauth",
   baseUrl: "https://api.openai.com/v1",
-  codexAuth: createCodexAuthSummary({
-    accountId: "acct-codex",
-  }),
+  codexAuth: createCodexAuthSummary(),
   model: "gpt-5.4",
   name: "OpenAI Official",
   providerId: "codex-primary",
@@ -63,6 +62,44 @@ const PROVIDERS_BY_APP: Record<SharedProviderAppId, ReturnType<typeof createProv
   codex: [CODEX_PRIMARY],
   gemini: [GEMINI_PRIMARY],
 };
+
+function createActivityShell(appId: SharedProviderAppId, providerId: string) {
+  return createBridgeFixture({
+    requestLogs: {
+      [appId]: {
+        data: [
+          {
+            appType: appId,
+            cacheCreationCostUsd: "0",
+            cacheCreationTokens: 0,
+            cacheReadCostUsd: "0",
+            cacheReadTokens: 0,
+            costMultiplier: "1",
+            createdAt: Date.now(),
+            inputCostUsd: "0.01",
+            inputTokens: 120,
+            isStreaming: false,
+            latencyMs: 240,
+            model: appId === "codex" ? "gpt-5.4" : "claude-sonnet-4-5",
+            outputCostUsd: "0.02",
+            outputTokens: 180,
+            providerId,
+            providerName:
+              PROVIDERS_BY_APP[appId].find((provider) => provider.providerId === providerId)
+                ?.name ?? providerId,
+            requestId: `${providerId}-req-1`,
+            statusCode: 200,
+            totalCostUsd: "0.03",
+          },
+        ],
+        total: 1,
+        page: 0,
+        pageSize: 20,
+      },
+    },
+    selectedApp: appId,
+  });
+}
 
 function getOfficialPreset(appId: SharedProviderAppId) {
   return getSharedProviderPresets(appId)[0];
@@ -105,15 +142,14 @@ export const PROVIDER_SIDE_PANEL_HARNESSES: Record<
         providers: PROVIDERS_BY_APP.claude,
         selectedProvider: CLAUDE_PRIMARY,
         selectedProviderId: CLAUDE_PRIMARY.providerId,
-        tab: "general",
+        tab: "activities",
       }),
   },
-  "preset-tab": {
+  "preset-picker": {
     canvasClassName: PANEL_CANVAS_CLASS,
     render: () =>
       renderPanel({
         appId: "claude",
-        canActivate: false,
         canDelete: false,
         canSave: false,
         draft: createProviderDraft("claude", {
@@ -122,170 +158,52 @@ export const PROVIDER_SIDE_PANEL_HARNESSES: Record<
           name: "",
           notes: "",
         }),
-        footerText: "Create a new Claude route from this draft.",
         mode: "new",
+        panelMode: "preset-picker",
         providers: PROVIDERS_BY_APP.claude,
         selectedProvider: null,
         selectedProviderId: null,
         selectedPresetId: "custom",
-        tab: "preset",
-        website: "",
       }),
   },
-  "claude-presets": {
-    canvasClassName: PANEL_CANVAS_CLASS,
-    render: () => {
-      const preset = getOfficialPreset("claude");
-
-      return renderPanel({
-        appId: "claude",
-        canActivate: false,
-        canDelete: false,
-        canSave: true,
-        draft: createDraftFromPreset("claude"),
-        footerText: "Create a new Claude route from this draft.",
-        mode: "new",
-        providers: PROVIDERS_BY_APP.claude,
-        selectedProvider: null,
-        selectedProviderId: null,
-        selectedPresetId: preset.id,
-        tab: "preset",
-      });
-    },
-  },
-  "codex-presets": {
-    canvasClassName: PANEL_CANVAS_CLASS,
-    render: () => {
-      const preset = getOfficialPreset("codex");
-
-      return renderPanel({
-        appId: "codex",
-        canActivate: false,
-        canDelete: false,
-        canSave: true,
-        draft: createDraftFromPreset("codex"),
-        footerText: "Create a new Codex route from this draft.",
-        mode: "new",
-        providers: PROVIDERS_BY_APP.codex,
-        selectedProvider: null,
-        selectedProviderId: null,
-        selectedPresetId: preset.id,
-        tab: "preset",
-      });
-    },
-  },
-  "gemini-presets": {
-    canvasClassName: PANEL_CANVAS_CLASS,
-    render: () => {
-      const preset = getOfficialPreset("gemini");
-
-      return renderPanel({
-        appId: "gemini",
-        canActivate: false,
-        canDelete: false,
-        canSave: false,
-        draft: createDraftFromPreset("gemini"),
-        footerText: "Create a new Gemini route from this draft.",
-        mode: "new",
-        providers: PROVIDERS_BY_APP.gemini,
-        selectedProvider: null,
-        selectedProviderId: null,
-        selectedPresetId: preset.id,
-        tab: "preset",
-      });
-    },
-  },
-  "general-empty": {
-    canvasClassName: PANEL_CANVAS_CLASS,
-    render: () =>
-      renderPanel({
-        appId: "gemini",
-        canActivate: false,
-        canDelete: false,
-        canSave: false,
-        draft: createProviderDraft("gemini", {
-          baseUrl: "",
-          model: "",
-          name: "",
-          notes: "",
-        }),
-        footerText: "Create a new Gemini route from this draft.",
-        mode: "new",
-        providers: PROVIDERS_BY_APP.gemini,
-        selectedProvider: null,
-        selectedProviderId: null,
-        tab: "general",
-        website: "",
-      }),
-  },
-  "general-filled": {
+  activities: {
     canvasClassName: PANEL_CANVAS_CLASS,
     render: () =>
       renderPanel({
         appId: "claude",
-        draft: createProviderDraft("claude", {
-          authMode: CLAUDE_PRIMARY.authMode,
-          baseUrl: CLAUDE_PRIMARY.baseUrl,
-          model: CLAUDE_PRIMARY.model,
-          name: CLAUDE_PRIMARY.name,
-          notes: CLAUDE_PRIMARY.notes,
-        }),
         providers: PROVIDERS_BY_APP.claude,
         selectedProvider: CLAUDE_PRIMARY,
         selectedProviderId: CLAUDE_PRIMARY.providerId,
-        tab: "general",
-        website: "https://docs.anthropic.com",
+        shell: createActivityShell("claude", "claude-primary"),
+        tab: "activities",
       }),
   },
-  "credentials-empty": {
+  "configure-read": {
     canvasClassName: PANEL_CANVAS_CLASS,
     render: () =>
       renderPanel({
         appId: "claude",
-        canActivate: false,
-        canDelete: false,
-        canSave: false,
-        draft: createProviderDraft("claude", {
-          baseUrl: "",
-          model: "",
-          name: "",
-          notes: "",
-          token: "",
-        }),
-        footerText: "Create a new Claude route from this draft.",
-        mode: "new",
+        editing: false,
         providers: PROVIDERS_BY_APP.claude,
-        selectedProvider: null,
-        selectedProviderId: null,
-        tab: "credentials",
-        website: "",
+        selectedProvider: CLAUDE_PRIMARY,
+        selectedProviderId: CLAUDE_PRIMARY.providerId,
+        tab: "configure",
       }),
   },
-  "credentials-partial": {
+  "configure-edit": {
     canvasClassName: PANEL_CANVAS_CLASS,
     render: () =>
       renderPanel({
         appId: "claude",
-        canActivate: false,
-        canDelete: false,
-        canSave: false,
-        draft: createProviderDraft("claude", {
-          baseUrl: "https://api.deepseek.com/anthropic",
-          model: "DeepSeek-V3.2",
-          name: "Claude Backup",
-          notes: "",
-          token: "",
-          tokenField: "ANTHROPIC_API_KEY",
-        }),
-        footerText: "Create a new Claude route from this draft.",
-        mode: "new",
+        editing: true,
+        footerText: "Unsaved changes",
         providers: PROVIDERS_BY_APP.claude,
-        selectedProvider: null,
-        selectedProviderId: null,
-        tab: "credentials",
+        selectedProvider: CLAUDE_PRIMARY,
+        selectedProviderId: CLAUDE_PRIMARY.providerId,
+        tab: "configure",
       }),
   },
-  "credentials-auth-json": {
+  "configure-authjson": {
     canvasClassName: PANEL_CANVAS_CLASS,
     render: () =>
       renderPanel({
@@ -296,46 +214,27 @@ export const PROVIDER_SIDE_PANEL_HARNESSES: Record<
           model: CODEX_PRIMARY.model,
           name: CODEX_PRIMARY.name,
         }),
+        editing: true,
+        footerText: "Unsaved changes",
         providers: PROVIDERS_BY_APP.codex,
-        selectedFileName: "auth.json",
         selectedProvider: CODEX_PRIMARY,
         selectedProviderId: CODEX_PRIMARY.providerId,
-        tab: "credentials",
+        tab: "configure",
       }),
   },
-  "credentials-save-pending": {
+  "new-draft": {
     canvasClassName: PANEL_CANVAS_CLASS,
     render: () =>
       renderPanel({
-        appId: "codex",
-        draft: createProviderDraft("codex", {
-          authMode: "api_key",
-          baseUrl: "https://proxy.example.com/v1",
-          model: "gpt-5.4",
-          name: "OpenAI Official",
-          token: "sk-provider-secret",
-        }),
-        providers: [
-          createProviderView("codex", {
-            active: true,
-            authMode: "api_key",
-            baseUrl: "https://api.openai.com/v1",
-            model: "gpt-5.4",
-            name: "OpenAI Official",
-            providerId: "codex-primary",
-          }),
-        ],
-        savePending: true,
-        selectedProvider: createProviderView("codex", {
-          active: true,
-          authMode: "api_key",
-          baseUrl: "https://api.openai.com/v1",
-          model: "gpt-5.4",
-          name: "OpenAI Official",
-          providerId: "codex-primary",
-        }),
-        selectedProviderId: "codex-primary",
-        tab: "credentials",
+        appId: "gemini",
+        draft: createDraftFromPreset("gemini"),
+        editing: true,
+        footerText: "New provider · not saved",
+        mode: "new",
+        providers: PROVIDERS_BY_APP.gemini,
+        selectedProvider: null,
+        selectedProviderId: null,
+        tab: "configure",
       }),
   },
   error: {
@@ -347,7 +246,7 @@ export const PROVIDER_SIDE_PANEL_HARNESSES: Record<
         providers: PROVIDERS_BY_APP.claude,
         selectedProvider: CLAUDE_PRIMARY,
         selectedProviderId: CLAUDE_PRIMARY.providerId,
-        tab: "general",
+        tab: "configure",
       }),
   },
 };
