@@ -2827,7 +2827,7 @@ select.owt-provider-panel__input {
   }
 }
 
-/* Skeleton filler card (fills the odd slot when a group has 1 or 3 apps) */
+/* Skeleton cards — mirrors the revised prototype's configured and empty variants. */
 .owt-app-card--skeleton {
   cursor: default;
   border-color: var(--line);
@@ -2839,9 +2839,6 @@ select.owt-provider-panel__input {
   opacity: 0.92;
 }
 
-.owt-app-card--skeleton-compact {
-  min-height: 196px;
-}
 .owt-app-card--skeleton:hover {
   transform: none;
   border-color: var(--line);
@@ -2862,11 +2859,22 @@ select.owt-provider-panel__input {
 
 .owt-app-card__skeleton-icon,
 .owt-app-card__skeleton-chip,
-.owt-app-card__skeleton-mini,
-.owt-app-card__skeleton-line,
-.owt-app-card__skeleton-active {
+.owt-app-card__skeleton-mini {
   background: var(--panel-softer);
   border-radius: 6px;
+}
+
+.owt-app-card__skeleton-line {
+  display: block;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel-softer) 80%, var(--text) 6%);
+}
+
+.owt-app-card__skeleton-copy {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 8px;
 }
 
 .owt-app-card__skeleton-icon {
@@ -2877,6 +2885,11 @@ select.owt-provider-panel__input {
 }
 
 .owt-app-card--empty-skeleton .owt-app-card__skeleton-icon {
+  background: transparent;
+  border: 1px dashed var(--line-strong);
+}
+
+.owt-app-card--empty-skeleton .owt-app-card__skeleton-chip {
   background: transparent;
   border: 1px dashed var(--line-strong);
 }
@@ -2896,19 +2909,19 @@ select.owt-provider-panel__input {
 }
 
 .owt-app-card__skeleton-line--xs {
-  height: 8px;
+  height: 7px;
 }
 
 .owt-app-card__skeleton-line--sm {
-  height: 10px;
+  height: 9px;
 }
 
 .owt-app-card__skeleton-line--md {
-  height: 16px;
+  height: 13px;
 }
 
 .owt-app-card__skeleton-line--lg {
-  height: 18px;
+  height: 16px;
 }
 
 .owt-app-card__skeleton-active {
@@ -2922,8 +2935,11 @@ select.owt-provider-panel__input {
   margin: 16px 0 14px;
 }
 
-.owt-app-card--skeleton-compact .owt-app-card__skeleton-active {
-  margin-bottom: 0;
+.owt-app-card__skeleton-active-body {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 7px;
 }
 
 .owt-app-card__skeleton-empty-cta {
@@ -2956,8 +2972,11 @@ select.owt-provider-panel__input {
 }
 
 .owt-app-card__skeleton-usage-cell {
+  background: transparent;
   padding: 2px 14px;
   border-left: 1px solid var(--line);
+  display: grid;
+  gap: 8px;
 }
 
 .owt-app-card__skeleton-usage-cell:first-child {
