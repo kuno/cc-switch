@@ -61,6 +61,11 @@ describe("ProviderSidePanelPresetTab", () => {
     ).toHaveAttribute("data-selected", "true");
     expect(
       screen
+        .getByRole("button", { name: /Custom draft/i })
+        .querySelector(".owt-provider-panel__preset-icon img"),
+    ).not.toBeNull();
+    expect(
+      screen
         .getByRole("button", { name: /OpenAI Official/i })
         .querySelector(".owt-provider-panel__preset-icon svg title")
         ?.textContent,
