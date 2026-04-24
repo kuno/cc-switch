@@ -1,4 +1,5 @@
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { OPENWRT_PAGE_FIXED_NOW } from "./fixtures/pageShell";
 import { renderOpenWrtPageShell } from "./fixtures/renderPageShell";
@@ -52,5 +53,52 @@ describe("OpenWrtPageShell hard rules", () => {
       ),
     ).toBeNull();
     expect(renderedAppCards).toEqual(["claude", "codex", "gemini"]);
+  });
+
+  it("uses one shared scrim and keeps the shell drawers mutually exclusive", async () => {
+    const user = userEvent.setup();
+    const { container } = renderOpenWrtPageShell();
+
+    const claudeCard = await screen.findByRole("button", {
+      name: "Open Claude providers",
+    });
+
+    await user.click(claudeCard);
+    await screen.findByRole("dialog", {
+      name: "Claude providers",
+    });
+
+    expect(
+      container.querySelector('.owt-overlay-scrim[data-open="true"]'),
+    ).not.toBeNull();
+    expect(container.querySelector(".owt-provider-panel__scrim")).toBeNull();
+    expect(container.querySelector(".owt-activity-drawer__scrim")).toBeNull();
+
+    await user.click(within(claudeCard).getByTitle("Show recent requests"));
+
+    await screen.findByRole("dialog", {
+      name: "Recent activity",
+    });
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Claude providers" }),
+      ).not.toBeInTheDocument(),
+    );
+
+    const sharedScrim = container.querySelector<HTMLButtonElement>(
+      '.owt-overlay-scrim[data-open="true"]',
+    );
+
+    expect(sharedScrim).not.toBeNull();
+    fireEvent.click(sharedScrim!);
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Recent activity" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(
+      container.querySelector('.owt-overlay-scrim[data-open="true"]'),
+    ).toBeNull();
   });
 });

@@ -189,6 +189,8 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
   const previousHostDraftRef = useRef(createHostDraft(shell.getHostState()));
   const activityHostRef = useRef<ActivityDrawerHostHandle | null>(null);
   const providerPanelRef = useRef<ProviderSidePanelHandle | null>(null);
+  const [activityDrawerOpen, setActivityDrawerOpen] = useState(false);
+  const [providerPanelOpen, setProviderPanelOpen] = useState(false);
 
   useEffect(() => {
     applyTheme(options.target, theme);
@@ -244,12 +246,25 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
 
   function handleOpenActivity(appId: SharedProviderAppId) {
     shell.setSelectedApp(appId);
+    setProviderPanelOpen(false);
+    setActivityDrawerOpen(true);
+    providerPanelRef.current?.close();
     activityHostRef.current?.openForApp(appId);
   }
 
   function handleOpenProviderPanel(appId: SharedProviderAppId) {
     shell.setSelectedApp(appId);
+    setActivityDrawerOpen(false);
+    setProviderPanelOpen(true);
+    activityHostRef.current?.close();
     providerPanelRef.current?.openForApp(appId);
+  }
+
+  function handleCloseOverlay() {
+    setActivityDrawerOpen(false);
+    setProviderPanelOpen(false);
+    activityHostRef.current?.close();
+    providerPanelRef.current?.close();
   }
 
   const handleProviderMutation = useCallback(() => {
@@ -340,12 +355,26 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
         </section>
       </main>
 
-      <ActivityDrawerHost shell={shell} shellRef={activityHostRef} />
+      <button
+        type="button"
+        className="owt-overlay-scrim"
+        data-open={activityDrawerOpen || providerPanelOpen ? "true" : "false"}
+        tabIndex={activityDrawerOpen || providerPanelOpen ? 0 : -1}
+        aria-label="Close open drawer"
+        onClick={handleCloseOverlay}
+      />
+
+      <ActivityDrawerHost
+        shell={shell}
+        shellRef={activityHostRef}
+        onOpenChange={setActivityDrawerOpen}
+      />
       <ProviderSidePanelHost
         ref={providerPanelRef}
         selectedApp={snapshot.host.app}
         shell={shell}
         transport={options.transport}
+        onOpenChange={setProviderPanelOpen}
         onProviderMutation={handleProviderMutation}
       />
     </div>

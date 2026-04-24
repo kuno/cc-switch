@@ -11,11 +11,13 @@ export interface ActivityDrawerHostHandle {
 export interface ActivityDrawerHostProps {
   shell: OpenWrtSharedPageShellApi;
   shellRef?: MutableRefObject<ActivityDrawerHostHandle | null>;
+  onOpenChange?: (open: boolean) => void;
 }
 
 export function ActivityDrawerHost({
   shell,
   shellRef,
+  onOpenChange,
 }: ActivityDrawerHostProps) {
   const [open, setOpen] = useState(false);
   const [appId, setAppId] = useState<string | null>(null);
@@ -31,6 +33,10 @@ export function ActivityDrawerHost({
     }),
     [],
   );
+
+  useEffect(() => {
+    onOpenChange?.(open);
+  }, [onOpenChange, open]);
 
   useEffect(() => {
     if (!shellRef) {
@@ -50,6 +56,7 @@ export function ActivityDrawerHost({
     <ActivitySidePanel
       open={open}
       appId={appId}
+      showScrim={false}
       onClose={() => {
         setOpen(false);
       }}

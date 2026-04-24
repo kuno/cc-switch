@@ -39,6 +39,7 @@ export interface ActivitySidePanelProps {
   appId: string | null;
   onClose: () => void;
   shell: OpenWrtSharedPageShellApi;
+  showScrim?: boolean;
 }
 
 const APP_LABELS: Record<SharedProviderAppId, string> = {
@@ -96,6 +97,16 @@ function formatRelativeTime(value: number): string {
     hour: "numeric",
     minute: "2-digit",
   }).format(new Date(epochMs));
+}
+
+function formatUpdatedLabel(value: number | null): string {
+  if (!value) {
+    return "Waiting for data";
+  }
+
+  const relativeLabel = formatRelativeTime(value);
+
+  return `Updated ${relativeLabel === "Just now" ? "just now" : relativeLabel}`;
 }
 
 function formatCount(value: number): string {
@@ -270,6 +281,7 @@ export function ActivitySidePanel({
   appId,
   onClose,
   shell,
+  showScrim = true,
 }: ActivitySidePanelProps) {
   const titleId = useId();
   const descriptionId = useId();
@@ -312,19 +324,13 @@ export function ActivitySidePanel({
   const subtitle = requestLogsState.loading
     ? `${activeFilterLabel} · loading recent requests`
     : requestLogsState.total
-      ? `${activeFilterLabel} · ${windowStart}-${windowEnd} of ${formatCount(requestLogsState.total)}`
+      ? `${activeFilterLabel} · last ${formatCount(requestLogsState.data.length)} requests`
       : `${activeFilterLabel} · no requests yet`;
-  const updatedLabel = lastLoadedAt
-    ? `Updated ${formatRelativeTime(lastLoadedAt)}`
-    : "Waiting for data";
-  const filterSummary =
-    filterMode === "all"
-      ? "Showing all apps"
-      : `Showing ${APP_LABELS[activeAppId]}`;
+  const updatedLabel = formatUpdatedLabel(lastLoadedAt);
   const requestSummary =
     windowStart && windowEnd
-      ? `${windowStart}-${windowEnd} of ${formatCount(requestLogsState.total)} requests`
-      : "0 requests";
+      ? `Showing ${windowStart}-${windowEnd} of ${formatCount(requestLogsState.total)}`
+      : "Showing 0 of 0";
 
   useEffect(() => {
     if (!open) {
@@ -486,15 +492,18 @@ export function ActivitySidePanel({
     <div
       className="owt-activity-drawer"
       data-open={open ? "true" : "false"}
+      data-has-scrim={showScrim ? "true" : "false"}
       aria-hidden={open ? "false" : "true"}
     >
-      <button
-        type="button"
-        className="owt-activity-drawer__scrim"
-        tabIndex={open ? 0 : -1}
-        aria-label="Close recent activity drawer"
-        onClick={onClose}
-      />
+      {showScrim ? (
+        <button
+          type="button"
+          className="owt-activity-drawer__scrim"
+          tabIndex={open ? 0 : -1}
+          aria-label="Close recent activity drawer"
+          onClick={onClose}
+        />
+      ) : null}
 
       <div
         ref={panelRef}
@@ -581,10 +590,8 @@ export function ActivitySidePanel({
         <div className="owt-activity-drawer__foot">
           <div className="owt-activity-drawer__foot-meta">
             <div className="owt-activity-drawer__foot-copy">
-              <span>{filterSummary}</span>
-              <span>
-                {requestSummary} · {updatedLabel}
-              </span>
+              <span>{requestSummary}</span>
+              <span>{updatedLabel}</span>
             </div>
 
             <button
