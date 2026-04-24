@@ -169,7 +169,7 @@ describe("ProviderSidePanel", () => {
       active: false,
       baseUrl: "https://api.deepseek.com/anthropic",
       name: "Claude Backup",
-      providerId: "claude-backup",
+      providerId: "provider_wg88tuk8z9y0p4q1",
     });
     const { container } = render(
       <ProviderSidePanel
@@ -196,10 +196,18 @@ describe("ProviderSidePanel", () => {
     const detailHead = container.querySelector<HTMLElement>(
       ".owt-provider-panel__detail-head",
     );
+    const detailCopy = container.querySelector<HTMLElement>(
+      ".owt-provider-panel__detail-copy",
+    );
+    const detailMeta = container.querySelector<HTMLElement>(
+      ".owt-provider-panel__detail-meta",
+    );
 
     expect(activeRow).not.toBeNull();
     expect(selectedRow).not.toBeNull();
     expect(detailHead).not.toBeNull();
+    expect(detailCopy).not.toBeNull();
+    expect(detailMeta).not.toBeNull();
 
     expect(within(activeRow!).getByText("https://api.anthropic.com")).toHaveClass(
       "owt-provider-panel__rail-url",
@@ -210,30 +218,40 @@ describe("ProviderSidePanel", () => {
     expect(within(activeRow!).getByText("Active")).toHaveClass(
       "owt-status-pill",
     );
-    expect(within(selectedRow!).getByText("claude-backup")).toHaveClass(
+    expect(
+      within(selectedRow!).getByText("provider_wg88tuk8z9y0p4q1"),
+    ).toHaveClass(
       "owt-provider-panel__rail-id",
     );
     expect(
       within(detailHead!).getByRole("button", { name: "Delete provider" }),
     ).toBeInTheDocument();
 
-    const copyChip = screen.getByRole("button", {
-      name: "Copy provider ID claude-backup",
+    const copyChip = within(detailCopy!).getByRole("button", {
+      name: "Copy provider ID provider_wg88tuk8z9y0p4q1",
     });
+    expect(
+      within(detailMeta!).queryByRole("button", {
+        name: "Copy provider ID provider_wg88tuk8z9y0p4q1",
+      }),
+    ).toBeNull();
+    expect(copyChip.textContent?.length ?? 0).toBeLessThan(
+      selectedProvider.providerId!.length,
+    );
 
     await act(async () => {
       fireEvent.click(copyChip);
       await Promise.resolve();
     });
 
-    expect(copyTextMock).toHaveBeenCalledWith("claude-backup");
+    expect(copyTextMock).toHaveBeenCalledWith("provider_wg88tuk8z9y0p4q1");
     expect(copyChip).toHaveTextContent("Copied");
 
     await act(async () => {
       vi.advanceTimersByTime(1600);
       await Promise.resolve();
     });
-    expect(copyChip).toHaveTextContent("claude-backup");
+    expect(copyChip).not.toHaveTextContent("provider_wg88tuk8z9y0p4q1");
   });
 
   it("shows server-scoped activities for the selected provider", async () => {
