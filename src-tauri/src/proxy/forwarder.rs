@@ -110,6 +110,8 @@ const CODEX_OFFICIAL_PROVIDER_ID: &str = "codex-official";
 const CODEX_OAUTH_AUTH_MODE: &str = "codex_oauth";
 const CODEX_LEGACY_CLIENT_PASSTHROUGH_AUTH_MODE: &str = "client_passthrough";
 const CLAUDE_OAUTH_AUTH_MODE: &str = "claude_oauth";
+const CLAUDE_CODE_BETA: &str = "claude-code-20250219";
+const CLAUDE_OAUTH_BETA: &str = "oauth-2025-04-20";
 
 fn is_codex_oauth_upload_eligible(app_type_str: &str, provider: &Provider, base_url: &str) -> bool {
     app_type_str == AppType::Codex.as_str()
@@ -147,6 +149,29 @@ fn apply_codex_oauth_body_contract(body: &mut Value) {
         includes.push(json!(CODEX_REASONING_ENCRYPTED_CONTENT));
     }
     obj.insert("include".to_string(), json!(includes));
+}
+
+fn build_claude_oauth_anthropic_beta_value(existing_beta: Option<&http::HeaderValue>) -> String {
+    let mut beta_values = existing_beta
+        .and_then(|value| value.to_str().ok())
+        .map(|value| {
+            value
+                .split(',')
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    if !beta_values
+        .iter()
+        .any(|value| value.eq_ignore_ascii_case(CLAUDE_OAUTH_BETA))
+    {
+        beta_values.push(CLAUDE_OAUTH_BETA.to_string());
+    }
+
+    beta_values.join(",")
 }
 
 fn is_claude_oauth_provider(provider: &Provider) -> bool {
@@ -1408,10 +1433,19 @@ impl RequestForwarder {
 
         let should_send_anthropic_headers = adapter.name() == "Claude"
             && matches!(resolved_claude_api_format.as_deref(), Some("anthropic"));
+        let should_inject_stored_claude_oauth_beta = should_send_anthropic_headers
+            && is_claude_oauth_provider(provider)
+            && stored_claude_oauth_auth.is_some();
+        let should_preserve_claude_oauth_client_beta = should_send_anthropic_headers
+            && is_claude_oauth_provider(provider)
+            && stored_claude_oauth_auth.is_none();
 
         // 预计算 anthropic-beta 值（仅 Claude）
-        let anthropic_beta_value = if should_send_anthropic_headers {
-            const CLAUDE_CODE_BETA: &str = "claude-code-20250219";
+        let anthropic_beta_value = if should_inject_stored_claude_oauth_beta {
+            Some(build_claude_oauth_anthropic_beta_value(
+                headers.get("anthropic-beta"),
+            ))
+        } else if should_send_anthropic_headers && !is_claude_oauth_provider(provider) {
             Some(if let Some(beta) = headers.get("anthropic-beta") {
                 if let Ok(beta_str) = beta.to_str() {
                     if beta_str.contains(CLAUDE_CODE_BETA) {
@@ -1524,11 +1558,13 @@ impl RequestForwarder {
                 continue;
             }
 
-            // --- anthropic-beta — 用重建值替换（确保含 claude-code 标记） ---
+            // --- anthropic-beta — 根据当前 Claude 转发模式重建或保留 ---
             if key_str.eq_ignore_ascii_case("anthropic-beta") {
                 if !saw_anthropic_beta {
                     saw_anthropic_beta = true;
-                    if let Some(ref beta_val) = anthropic_beta_value {
+                    if should_preserve_claude_oauth_client_beta {
+                        ordered_headers.append(key.clone(), value.clone());
+                    } else if let Some(ref beta_val) = anthropic_beta_value {
                         if let Ok(hv) = http::HeaderValue::from_str(beta_val) {
                             ordered_headers.append("anthropic-beta", hv);
                         }
@@ -2115,6 +2151,7 @@ mod tests {
     #[derive(Clone)]
     struct TestUpstreamState {
         seen_auth: Arc<Mutex<Vec<Option<String>>>>,
+        seen_beta: Arc<Mutex<Vec<Option<String>>>>,
     }
 
     #[derive(Clone)]
@@ -2142,11 +2179,16 @@ mod tests {
             .get(http::header::AUTHORIZATION)
             .and_then(|value| value.to_str().ok())
             .map(ToString::to_string);
+        let beta = headers
+            .get("anthropic-beta")
+            .and_then(|value| value.to_str().ok())
+            .map(ToString::to_string);
         state
             .seen_auth
             .lock()
             .expect("lock seen auth")
             .push(auth.clone());
+        state.seen_beta.lock().expect("lock seen beta").push(beta);
 
         match auth {
             Some(auth) => (http::StatusCode::OK, Json(json!({ "authorization": auth }))),
@@ -2162,7 +2204,19 @@ mod tests {
         Arc<Mutex<Vec<Option<String>>>>,
         tokio::task::JoinHandle<()>,
     ) {
+        let (base_url, seen_auth, _seen_beta, server) =
+            spawn_test_upstream_with_beta_capture().await;
+        (base_url, seen_auth, server)
+    }
+
+    async fn spawn_test_upstream_with_beta_capture() -> (
+        String,
+        Arc<Mutex<Vec<Option<String>>>>,
+        Arc<Mutex<Vec<Option<String>>>>,
+        tokio::task::JoinHandle<()>,
+    ) {
         let seen_auth = Arc::new(Mutex::new(Vec::new()));
+        let seen_beta = Arc::new(Mutex::new(Vec::new()));
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
             .await
             .expect("bind test listener");
@@ -2171,6 +2225,7 @@ mod tests {
             .route("/v1/messages", post(capture_upstream_auth))
             .with_state(TestUpstreamState {
                 seen_auth: seen_auth.clone(),
+                seen_beta: seen_beta.clone(),
             });
         let server = tokio::spawn(async move {
             axum::serve(listener, app)
@@ -2178,7 +2233,12 @@ mod tests {
                 .expect("serve test upstream");
         });
 
-        (format!("http://127.0.0.1:{port}"), seen_auth, server)
+        (
+            format!("http://127.0.0.1:{port}"),
+            seen_auth,
+            seen_beta,
+            server,
+        )
     }
 
     fn install_rustls_crypto_provider_for_tests() {
@@ -2261,6 +2321,13 @@ mod tests {
     }
 
     fn claude_request_headers(inbound_auth: Option<&str>) -> HeaderMap {
+        claude_request_headers_with_beta(inbound_auth, None)
+    }
+
+    fn claude_request_headers_with_beta(
+        inbound_auth: Option<&str>,
+        anthropic_beta: Option<&str>,
+    ) -> HeaderMap {
         let mut headers = HeaderMap::new();
         headers.insert(
             http::header::CONTENT_TYPE,
@@ -2270,6 +2337,12 @@ mod tests {
             headers.insert(
                 http::header::AUTHORIZATION,
                 HeaderValue::from_str(inbound_auth).expect("valid authorization header"),
+            );
+        }
+        if let Some(anthropic_beta) = anthropic_beta {
+            headers.insert(
+                http::HeaderName::from_static("anthropic-beta"),
+                HeaderValue::from_str(anthropic_beta).expect("valid anthropic-beta header"),
             );
         }
         headers
@@ -2847,6 +2920,218 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn claude_oauth_inject_adds_oauth_beta_when_missing() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let _env = ScopedDataDirEnv::set(temp.path());
+        let (base_url, seen_auth, seen_beta, server) =
+            spawn_test_upstream_with_beta_capture().await;
+        let provider = claude_oauth_provider("claude-oauth-beta-missing", &base_url);
+        crate::proxy::providers::claude_oauth_store::save_claude_auth_for_provider(
+            &provider.id,
+            &sample_claude_auth_json(
+                "stored-token",
+                Some("refresh-token"),
+                chrono::Utc::now().timestamp_millis() + 10 * 60_000,
+            ),
+        )
+        .expect("save stored auth");
+
+        let forwarder = build_test_forwarder();
+        let result = expect_forward_success(
+            forwarder
+                .forward_with_retry(
+                    &AppType::Claude,
+                    "/v1/messages",
+                    claude_request_body(),
+                    claude_request_headers_with_beta(
+                        Some("Bearer inbound-token"),
+                        Some(CLAUDE_CODE_BETA),
+                    ),
+                    Extensions::new(),
+                    vec![provider],
+                )
+                .await,
+        );
+
+        assert_eq!(result.response.status(), http::StatusCode::OK);
+        assert_eq!(
+            seen_auth.lock().expect("lock seen auth").as_slice(),
+            &[Some("Bearer stored-token".to_string())]
+        );
+        assert_eq!(
+            seen_beta.lock().expect("lock seen beta").as_slice(),
+            &[Some(format!("{CLAUDE_CODE_BETA},{CLAUDE_OAUTH_BETA}"))]
+        );
+
+        server.abort();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn claude_oauth_inject_preserves_existing_oauth_beta() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let _env = ScopedDataDirEnv::set(temp.path());
+        let (base_url, seen_auth, seen_beta, server) =
+            spawn_test_upstream_with_beta_capture().await;
+        let provider = claude_oauth_provider("claude-oauth-beta-existing", &base_url);
+        crate::proxy::providers::claude_oauth_store::save_claude_auth_for_provider(
+            &provider.id,
+            &sample_claude_auth_json(
+                "stored-token",
+                Some("refresh-token"),
+                chrono::Utc::now().timestamp_millis() + 10 * 60_000,
+            ),
+        )
+        .expect("save stored auth");
+
+        let forwarder = build_test_forwarder();
+        let result = expect_forward_success(
+            forwarder
+                .forward_with_retry(
+                    &AppType::Claude,
+                    "/v1/messages",
+                    claude_request_body(),
+                    claude_request_headers_with_beta(
+                        Some("Bearer inbound-token"),
+                        Some(&format!("{CLAUDE_OAUTH_BETA},{CLAUDE_CODE_BETA}")),
+                    ),
+                    Extensions::new(),
+                    vec![provider],
+                )
+                .await,
+        );
+
+        assert_eq!(result.response.status(), http::StatusCode::OK);
+        assert_eq!(
+            seen_auth.lock().expect("lock seen auth").as_slice(),
+            &[Some("Bearer stored-token".to_string())]
+        );
+        assert_eq!(
+            seen_beta.lock().expect("lock seen beta").as_slice(),
+            &[Some(format!("{CLAUDE_OAUTH_BETA},{CLAUDE_CODE_BETA}"))]
+        );
+
+        server.abort();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn claude_oauth_inject_adds_oauth_beta_when_no_beta_header() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let _env = ScopedDataDirEnv::set(temp.path());
+        let (base_url, seen_auth, seen_beta, server) =
+            spawn_test_upstream_with_beta_capture().await;
+        let provider = claude_oauth_provider("claude-oauth-beta-none", &base_url);
+        crate::proxy::providers::claude_oauth_store::save_claude_auth_for_provider(
+            &provider.id,
+            &sample_claude_auth_json(
+                "stored-token",
+                Some("refresh-token"),
+                chrono::Utc::now().timestamp_millis() + 10 * 60_000,
+            ),
+        )
+        .expect("save stored auth");
+
+        let forwarder = build_test_forwarder();
+        let result = expect_forward_success(
+            forwarder
+                .forward_with_retry(
+                    &AppType::Claude,
+                    "/v1/messages",
+                    claude_request_body(),
+                    claude_request_headers(Some("Bearer inbound-token")),
+                    Extensions::new(),
+                    vec![provider],
+                )
+                .await,
+        );
+
+        assert_eq!(result.response.status(), http::StatusCode::OK);
+        assert_eq!(
+            seen_auth.lock().expect("lock seen auth").as_slice(),
+            &[Some("Bearer stored-token".to_string())]
+        );
+        assert_eq!(
+            seen_beta.lock().expect("lock seen beta").as_slice(),
+            &[Some(CLAUDE_OAUTH_BETA.to_string())]
+        );
+
+        server.abort();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn claude_oauth_passthrough_fallback_preserves_client_beta() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let _env = ScopedDataDirEnv::set(temp.path());
+        let (base_url, seen_auth, seen_beta, server) =
+            spawn_test_upstream_with_beta_capture().await;
+        let provider = claude_oauth_provider("claude-oauth-beta-fallback", &base_url);
+
+        let forwarder = build_test_forwarder();
+        let result = expect_forward_success(
+            forwarder
+                .forward_with_retry(
+                    &AppType::Claude,
+                    "/v1/messages",
+                    claude_request_body(),
+                    claude_request_headers_with_beta(
+                        Some("Bearer inbound-token"),
+                        Some("custom-flag"),
+                    ),
+                    Extensions::new(),
+                    vec![provider],
+                )
+                .await,
+        );
+
+        assert_eq!(result.response.status(), http::StatusCode::OK);
+        assert_eq!(
+            seen_auth.lock().expect("lock seen auth").as_slice(),
+            &[Some("Bearer inbound-token".to_string())]
+        );
+        assert_eq!(
+            seen_beta.lock().expect("lock seen beta").as_slice(),
+            &[Some("custom-flag".to_string())]
+        );
+
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn claude_api_key_provider_unchanged() {
+        let (base_url, seen_auth, seen_beta, server) =
+            spawn_test_upstream_with_beta_capture().await;
+        let provider = claude_api_key_provider(&base_url);
+        let forwarder = build_test_forwarder();
+        let result = expect_forward_success(
+            forwarder
+                .forward_with_retry(
+                    &AppType::Claude,
+                    "/v1/messages",
+                    claude_request_body(),
+                    claude_request_headers(Some("Bearer inbound-token")),
+                    Extensions::new(),
+                    vec![provider],
+                )
+                .await,
+        );
+
+        assert_eq!(result.response.status(), http::StatusCode::OK);
+        assert_eq!(
+            seen_auth.lock().expect("lock seen auth").as_slice(),
+            &[Some("Bearer sk-ant-provider-key".to_string())]
+        );
+        assert_eq!(
+            seen_beta.lock().expect("lock seen beta").as_slice(),
+            &[Some(CLAUDE_CODE_BETA.to_string())]
+        );
+
+        server.abort();
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn claude_oauth_forwarding_uses_refreshed_auth_when_stored_token_is_expired() {
         let temp = tempfile::tempdir().expect("tempdir");
         let _env = ScopedDataDirEnv::set(temp.path());
@@ -3050,33 +3335,6 @@ mod tests {
         assert_eq!(
             seen_auth.lock().expect("lock seen auth").as_slice(),
             &[Some("Bearer client-fallback-token".to_string())]
-        );
-
-        server.abort();
-    }
-
-    #[tokio::test]
-    async fn claude_api_key_forwarding_is_unchanged() {
-        let (base_url, seen_auth, server) = spawn_test_upstream().await;
-        let provider = claude_api_key_provider(&base_url);
-        let forwarder = build_test_forwarder();
-        let result = expect_forward_success(
-            forwarder
-                .forward_with_retry(
-                    &AppType::Claude,
-                    "/v1/messages",
-                    claude_request_body(),
-                    claude_request_headers(Some("Bearer inbound-token")),
-                    Extensions::new(),
-                    vec![provider],
-                )
-                .await,
-        );
-
-        assert_eq!(result.response.status(), http::StatusCode::OK);
-        assert_eq!(
-            seen_auth.lock().expect("lock seen auth").as_slice(),
-            &[Some("Bearer sk-ant-provider-key".to_string())]
         );
 
         server.abort();
