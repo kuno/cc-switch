@@ -93,12 +93,27 @@ describe("AppsGrid", () => {
     const { container } = renderAppsGrid();
 
     expect(container.querySelectorAll(".owt-app-card--skeleton")).toHaveLength(
-      OPENWRT_APP_IDS.length,
+      OPENWRT_APP_IDS.length + 1,
     );
     expect(
       container.querySelectorAll(".owt-app-card__skeleton-active"),
-    ).toHaveLength(OPENWRT_APP_IDS.length);
+    ).toHaveLength(OPENWRT_APP_IDS.length + 1);
     expect(screen.queryByText("Not configured")).toBeNull();
+  });
+
+  it("pads the configured grid to an even tile count after the initial load settles", async () => {
+    const { container } = renderAppsGrid();
+
+    await screen.findAllByRole("button", {
+      name: /Open (Claude|Codex|Gemini) providers/,
+    });
+
+    expect(container.querySelectorAll(".owt-app-card")).toHaveLength(
+      OPENWRT_APP_IDS.length + 1,
+    );
+    expect(container.querySelectorAll(".owt-app-card--skeleton")).toHaveLength(
+      1,
+    );
   });
 
   it("keeps tab and shift-tab order aligned with the three card surfaces", async () => {

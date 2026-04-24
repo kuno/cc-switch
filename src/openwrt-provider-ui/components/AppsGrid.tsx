@@ -416,6 +416,9 @@ export function AppsGrid({
           {loadingCards.map((card) => (
             <SkeletonCard key={`${card.appId}-loading`} />
           ))}
+          {loadingCards.length % 2 === 1 && (
+            <SkeletonCard key="loading-pad" />
+          )}
         </div>
       )}
 
