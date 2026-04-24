@@ -38,6 +38,7 @@ type ProviderSidePanelMode = "new" | "edit";
 type ProviderSidePanelViewMode = "detail" | "preset-picker";
 
 type ProviderSidePanelHostProps = {
+  onOpenChange?: (open: boolean) => void;
   onProviderMutation?: () => void;
   shell: OpenWrtSharedPageShellApi;
   transport: OpenWrtProviderTransport;
@@ -281,7 +282,7 @@ const ProviderSidePanelHostComponent = forwardRef<
   ProviderSidePanelHandle,
   ProviderSidePanelHostProps
 >(function ProviderSidePanelHost(
-  { onProviderMutation, shell, transport, selectedApp },
+  { onOpenChange, onProviderMutation, shell, transport, selectedApp },
   ref,
 ) {
   const [open, setOpen] = useState(false);
@@ -470,6 +471,10 @@ const ProviderSidePanelHostComponent = forwardRef<
     close: closePanel,
     openForApp,
   }));
+
+  useEffect(() => {
+    onOpenChange?.(open);
+  }, [onOpenChange, open]);
 
   useEffect(() => {
     if (!open) {
@@ -810,6 +815,7 @@ const ProviderSidePanelHostComponent = forwardRef<
     <ProviderSidePanel
       appId={appId}
       open={open}
+      showScrim={false}
       loading={loading}
       error={error}
       mode={mode}

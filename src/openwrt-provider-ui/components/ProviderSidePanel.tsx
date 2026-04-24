@@ -37,6 +37,7 @@ export type ProviderSidePanelTab = "preset" | "general" | "credentials";
 interface ProviderSidePanelProps {
   appId: SharedProviderAppId;
   open: boolean;
+  showScrim?: boolean;
   loading: boolean;
   error: string | null;
   mode: "new" | "edit";
@@ -176,6 +177,7 @@ export function ProviderSidePanel({
   canSave,
   saveIdle,
   footerText,
+  showScrim = true,
   onClose,
   onSearchChange,
   onSelectProvider,
@@ -205,9 +207,12 @@ export function ProviderSidePanel({
   const panelRef = useRef<HTMLElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const copyFeedbackTimeoutRef = useRef<number | null>(null);
+  const saveFlashTimeoutRef = useRef<number | null>(null);
+  const previousSavePendingRef = useRef(savePending);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
   const wasOpenRef = useRef(open);
   const [copiedProviderId, setCopiedProviderId] = useState<string | null>(null);
+  const [showSaveFlash, setShowSaveFlash] = useState(false);
 
   useEffect(() => {
     if (open && !wasOpenRef.current) {
@@ -256,9 +261,33 @@ export function ProviderSidePanel({
       if (copyFeedbackTimeoutRef.current !== null) {
         window.clearTimeout(copyFeedbackTimeoutRef.current);
       }
+      if (saveFlashTimeoutRef.current !== null) {
+        window.clearTimeout(saveFlashTimeoutRef.current);
+      }
     },
     [],
   );
+
+  useEffect(() => {
+    if (savePending) {
+      setShowSaveFlash(false);
+      previousSavePendingRef.current = true;
+      return;
+    }
+
+    if (previousSavePendingRef.current && saveIdle) {
+      setShowSaveFlash(true);
+      if (saveFlashTimeoutRef.current !== null) {
+        window.clearTimeout(saveFlashTimeoutRef.current);
+      }
+      saveFlashTimeoutRef.current = window.setTimeout(() => {
+        setShowSaveFlash(false);
+        saveFlashTimeoutRef.current = null;
+      }, 1400);
+    }
+
+    previousSavePendingRef.current = false;
+  }, [saveIdle, savePending]);
 
   function handleTrapFocus(event: ReactKeyboardEvent<HTMLElement>) {
     if (!open || event.key !== "Tab") {
@@ -317,14 +346,20 @@ export function ProviderSidePanel({
   }
 
   return (
-    <div className="owt-provider-panel-shell" data-open={open}>
-      <button
-        type="button"
-        className="owt-provider-panel__scrim"
-        aria-hidden={!open}
-        tabIndex={open ? 0 : -1}
-        onClick={onClose}
-      />
+    <div
+      className="owt-provider-panel-shell"
+      data-open={open}
+      data-has-scrim={showScrim ? "true" : "false"}
+    >
+      {showScrim ? (
+        <button
+          type="button"
+          className="owt-provider-panel__scrim"
+          aria-hidden={!open}
+          tabIndex={open ? 0 : -1}
+          onClick={onClose}
+        />
+      ) : null}
 
       <aside
         className="owt-provider-panel"
@@ -631,14 +666,17 @@ export function ProviderSidePanel({
               <button
                 type="button"
                 className="owt-provider-panel__button owt-provider-panel__button--primary"
-                data-idle={saveIdle}
+                data-idle={saveIdle && !showSaveFlash ? "true" : "false"}
+                data-saved={showSaveFlash ? "true" : "false"}
                 disabled={!canSave || savePending || loading}
                 onClick={onSave}
               >
                 {savePending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
+                ) : showSaveFlash ? (
+                  <CheckCircle2 className="h-4 w-4" />
                 ) : null}
-                Save
+                {savePending ? "Saving…" : showSaveFlash ? "Saved" : "Save"}
               </button>
             </div>
           </footer>
