@@ -2232,11 +2232,21 @@ select.owt-provider-panel__config-input {
 }
 
 .owt-provider-panel__preset-head {
-  display: block;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
 }
 
 .owt-provider-panel__preset-icon {
-  display: none;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 11px;
+  border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
+  background: color-mix(in srgb, var(--panel-soft) 84%, transparent);
 }
 
 .owt-provider-panel__preset-icon img {
