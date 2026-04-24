@@ -302,6 +302,45 @@ describe("ProviderSidePanelHost", () => {
     expect(within(await dialog).getByLabelText("auth.json")).toHaveValue("");
   });
 
+  it("keeps Save disabled for unchanged saved providers until a real edit is made", async () => {
+    const user = userEvent.setup();
+    const shell = createBridgeFixture({ selectedApp: "codex" });
+    const codexProvider = createProviderView("codex", {
+      active: true,
+      authMode: "codex_oauth",
+      codexAuth: createCodexAuthSummary(),
+      name: "OpenAI Official",
+      providerId: "codex-primary",
+    });
+    const { transport } = createProviderTransportFixture({
+      codex: createProviderState("codex", [codexProvider]),
+    });
+
+    render(
+      <HostHarness
+        selectedApp="codex"
+        shell={shell}
+        transport={transport}
+      />,
+    );
+
+    const dialog = await openPanel();
+    await user.click(within(await dialog).getByRole("button", { name: "Configure" }));
+    await user.click(within(await dialog).getByRole("button", { name: "Edit" }));
+
+    const saveButton = within(await dialog).getByRole("button", { name: "Save" });
+    const notesInput = within(await dialog).getByLabelText("Notes");
+
+    expect(saveButton).toBeDisabled();
+
+    await user.type(notesInput, " updated");
+    expect(saveButton).toBeEnabled();
+
+    await user.clear(notesInput);
+    expect(saveButton).toBeDisabled();
+    expect(transport.upsertProviderByProviderId).not.toHaveBeenCalled();
+  });
+
   it("sends authContent null for untouched saved auth textareas and empty-string when cleared", async () => {
     const user = userEvent.setup();
     const shell = createBridgeFixture({ selectedApp: "codex" });
@@ -327,6 +366,7 @@ describe("ProviderSidePanelHost", () => {
     const dialog = await openPanel();
     await user.click(within(await dialog).getByRole("button", { name: "Configure" }));
     await user.click(within(await dialog).getByRole("button", { name: "Edit" }));
+    await user.type(within(await dialog).getByLabelText("Notes"), " updated");
     await user.click(within(await dialog).getByRole("button", { name: "Save" }));
 
     await waitFor(() =>

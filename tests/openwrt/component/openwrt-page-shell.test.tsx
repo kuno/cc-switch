@@ -172,6 +172,7 @@ describe("OpenWrtPageShell", () => {
 
     await user.click(within(dialog).getByRole("button", { name: "Configure" }));
     await user.click(within(dialog).getByRole("button", { name: "Edit" }));
+    await user.type(within(dialog).getByLabelText("Notes"), " updated");
     await user.click(within(dialog).getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
