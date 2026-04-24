@@ -2390,6 +2390,7 @@ mod tests {
             RectifierConfig::default(),
             OptimizerConfig::default(),
             CopilotOptimizerConfig::default(),
+            false,
             crate::proxy::rate_limit::new_rate_limit_store(),
             #[cfg(feature = "tauri-desktop")]
             None,
