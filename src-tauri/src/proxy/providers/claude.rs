@@ -464,8 +464,14 @@ impl ProviderAdapter for ClaudeAdapter {
             ));
         }
 
-        let allow_missing_provider_key =
-            self.allows_inbound_auth_passthrough(provider) || self.is_claude_oauth(provider);
+        if self.is_claude_oauth(provider) {
+            log::debug!(
+                "[Claude OAuth] 跳过 provider key 提取，交由 forwarder 注入存储 OAuth 或回退到入站 Authorization"
+            );
+            return None;
+        }
+
+        let allow_missing_provider_key = self.allows_inbound_auth_passthrough(provider);
         let key = self.extract_key(provider, !allow_missing_provider_key);
 
         if key.is_none() && allow_missing_provider_key {
