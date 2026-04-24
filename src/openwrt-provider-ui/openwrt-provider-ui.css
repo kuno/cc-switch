@@ -616,7 +616,8 @@
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 0;
-  margin-top: 4px;
+  margin-top: auto;
+  padding-top: 4px;
 }
 
 .owt-app-card__usage-cell {
