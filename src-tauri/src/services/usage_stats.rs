@@ -3224,6 +3224,27 @@ mod tests {
             .expect("未知日期后缀应回退到 claude-sonnet-4-6");
         assert_eq!(result.model_id, "claude-sonnet-4-6");
 
+        // GPT-5.5 系列：精确、日期后缀和 provider 前缀都应命中 base seed
+        let result =
+            resolve_model_pricing_with_fallback(&conn, "gpt-5.5")?.expect("应该能精确匹配 gpt-5.5");
+        assert_eq!(result.model_id, "gpt-5.5");
+        assert_eq!(result.input_cost_per_million, "5");
+        assert_eq!(result.output_cost_per_million, "30");
+        assert_eq!(result.cache_read_cost_per_million, "0.50");
+
+        let result = resolve_model_pricing_with_fallback(&conn, "gpt-5.5-2026-01-15")?
+            .expect("带日期后缀的 gpt-5.5 应回退到 base seed");
+        assert_eq!(result.model_id, "gpt-5.5");
+
+        let result = resolve_model_pricing_with_fallback(&conn, "openai/gpt-5.5")?
+            .expect("带 provider 前缀的 gpt-5.5 应清洗后命中 base seed");
+        assert_eq!(result.model_id, "gpt-5.5");
+
+        // @ 会先标准化为 -；seed 中显式提供 low alias，避免修改模糊匹配算法。
+        let result = resolve_model_pricing_with_fallback(&conn, "gpt-5.5@low")?
+            .expect("gpt-5.5@low 应标准化并匹配到 gpt-5.5-low");
+        assert_eq!(result.model_id, "gpt-5.5-low");
+
         // 测试精确匹配（seed_model_pricing 已预置 claude-sonnet-4-5-20250929）
         let result = find_model_pricing_row(&conn, "claude-sonnet-4-5-20250929")?;
         assert!(
