@@ -2161,11 +2161,6 @@ select.owt-provider-panel__config-input {
   justify-content: flex-end;
 }
 
-.owt-provider-panel__preset-intro {
-  padding-bottom: 8px;
-}
-
-.owt-provider-panel__eyebrow,
 .owt-provider-panel__label,
 .owt-provider-panel__preset-group-label {
   display: inline-flex;
@@ -2178,26 +2173,6 @@ select.owt-provider-panel__config-input {
   text-transform: uppercase;
 }
 
-.owt-provider-panel__preset-lead {
-  margin: 0;
-  padding: 18px 20px;
-  border: 0;
-  border-radius: var(--radius-control);
-  background: #1b2533;
-  color: #d8e2ef;
-  font-size: 14.5px;
-  line-height: 1.45;
-  font-weight: 500;
-}
-
-:host([data-ccswitch-theme="dark"]) .owt-provider-panel__preset-lead,
-.ccswitch-openwrt-provider-ui-host[data-ccswitch-theme="dark"]
-  .owt-provider-panel__preset-lead {
-  background: #0b1017;
-  color: #cbd6e5;
-}
-
-.owt-provider-panel__preset-subtext,
 .owt-provider-panel__preset-group-hint {
   margin-top: 10px;
   color: var(--muted);

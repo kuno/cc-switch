@@ -50,7 +50,7 @@ describe("ProviderSidePanelPresetTab", () => {
       />,
     );
 
-    expect(screen.getByText("Preset browser")).toBeInTheDocument();
+    expect(screen.queryByText("Preset browser")).not.toBeInTheDocument();
     expect(screen.getByText("Official")).toBeInTheDocument();
     expect(screen.getByText("Platform templates")).toBeInTheDocument();
     expect(screen.getByText("Compatible gateways")).toBeInTheDocument();
