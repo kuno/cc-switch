@@ -14,17 +14,17 @@ import type {
   ProviderQuotaSnapshot,
   QuotaWindow,
 } from "../types/quota";
-import {
-  getOpenWrtAppIconUrl,
-  OpenWrtProviderIcon,
-} from "../providerIcons";
+import { getOpenWrtAppIconUrl, OpenWrtProviderIcon } from "../providerIcons";
 import { formatResetDelta } from "../utils/formatResetDelta";
 
+type InertHomeAppId = "opencode" | "openclaw";
+type AppCardAppId = SharedProviderAppId | InertHomeAppId;
+
 const APP_COPY: Record<
-  SharedProviderAppId,
+  AppCardAppId,
   {
     label: string;
-    subtitle: string;
+    subtitle?: string;
   }
 > = {
   claude: {
@@ -39,7 +39,17 @@ const APP_COPY: Record<
     label: "Gemini",
     subtitle: "Google · Gemini CLI",
   },
+  opencode: {
+    label: "OpenCode",
+  },
+  openclaw: {
+    label: "OpenClaw",
+  },
 };
+
+function isInertHomeAppId(appId: AppCardAppId): appId is InertHomeAppId {
+  return appId === "opencode" || appId === "openclaw";
+}
 
 type StatusTone = "success" | "accent" | "neutral" | "fail";
 
@@ -193,9 +203,7 @@ function WindowRow({ window: w }: { window: QuotaWindow }) {
           <span className="owt-quota-row__pct">{remainingPct}% remaining</span>
         )}
         {resetLabel && (
-          <span className="owt-quota-row__reset">
-            resets {resetLabel}
-          </span>
+          <span className="owt-quota-row__reset">resets {resetLabel}</span>
         )}
       </div>
       {remainingWidth != null && (
@@ -215,9 +223,9 @@ function BalanceRow({ balance }: { balance: BalanceSnapshot }) {
   const remaining = balance.remaining ?? 0;
   const isInvalid = balance.is_valid === false || remaining <= 0;
   const formattedRemaining = formatBalanceAmount(remaining, currency);
-  const hasTotal =
-    balance.total != null && balance.total > 0;
-  const usedAmount = balance.used ?? (hasTotal ? (balance.total ?? 0) - remaining : null);
+  const hasTotal = balance.total != null && balance.total > 0;
+  const usedAmount =
+    balance.used ?? (hasTotal ? (balance.total ?? 0) - remaining : null);
   const fillPct =
     hasTotal && balance.total != null && balance.total > 0
       ? Math.min(100, Math.round(((usedAmount ?? 0) / balance.total) * 100))
@@ -255,7 +263,13 @@ function BalanceRow({ balance }: { balance: BalanceSnapshot }) {
   );
 }
 
-function QuotaBand({ snapshot, hideLabel }: { snapshot: ProviderQuotaSnapshot; hideLabel?: boolean }) {
+function QuotaBand({
+  snapshot,
+  hideLabel,
+}: {
+  snapshot: ProviderQuotaSnapshot;
+  hideLabel?: boolean;
+}) {
   const hasWindows = snapshot.windows.length > 0;
   const activeBalances = snapshot.balances?.filter(
     (b) => b.remaining != null || b.total != null,
@@ -271,15 +285,13 @@ function QuotaBand({ snapshot, hideLabel }: { snapshot: ProviderQuotaSnapshot; h
         ? snapshot.windows.map((w, i) => (
             <WindowRow key={`${w.name}-${i}`} window={w} />
           ))
-        : activeBalances!.map((b, i) => (
-            <BalanceRow key={i} balance={b} />
-          ))}
+        : activeBalances!.map((b, i) => <BalanceRow key={i} balance={b} />)}
     </div>
   );
 }
 
 export interface AppCardProps {
-  appId: SharedProviderAppId;
+  appId: AppCardAppId;
   hostState: OpenWrtHostState;
   serviceRunning: boolean;
   providerState: SharedProviderState | null;
@@ -307,30 +319,37 @@ export function AppCard({
   onOpenProviderPanel,
 }: AppCardProps) {
   const appCopy = APP_COPY[appId];
+  const isInert = isInertHomeAppId(appId);
   const providerCount = providerState?.providers.length ?? 0;
   const activeProvider = providerState?.activeProvider.configured
     ? providerState.activeProvider
     : null;
-  const status = getStatus({
-    appId,
-    hostState,
-    loading,
-    error,
-    providerState,
-    serviceRunning,
-    recentActivity,
-  });
-
   const appIconUrl = getOpenWrtAppIconUrl(appId);
 
   if (!activeProvider) {
+    const handleEmptyCardClick: MouseEventHandler<HTMLButtonElement> = () => {
+      if (isInertHomeAppId(appId)) {
+        return;
+      }
+
+      onOpenProviderPanel(appId);
+    };
+
     return (
       <button
         type="button"
-        className="owt-app-card owt-app-card--empty"
+        className={`owt-app-card owt-app-card--empty${
+          isInert ? " owt-app-card--inert" : ""
+        }`}
         data-app={appId}
-        onClick={() => onOpenProviderPanel(appId)}
-        aria-label={`Add a ${appCopy.label} provider`}
+        disabled={isInert}
+        aria-disabled={isInert ? "true" : undefined}
+        onClick={handleEmptyCardClick}
+        aria-label={
+          isInert
+            ? `${appCopy.label} not configured`
+            : `Add a ${appCopy.label} provider`
+        }
       >
         <div className="owt-app-card__head">
           <div
@@ -343,12 +362,10 @@ export function AppCard({
             <h3 className="owt-app-card__title owt-app-card__title--muted">
               {appCopy.label}
             </h3>
-            <p className="owt-app-card__subtitle">{appCopy.subtitle}</p>
+            <p className="owt-app-card__subtitle">{appCopy.subtitle ?? ""}</p>
           </div>
           <span className="owt-app-card__spacer" aria-hidden="true" />
-          <span className="owt-chip owt-chip--dot">
-            Not configured
-          </span>
+          <span className="owt-chip owt-chip--dot">Not configured</span>
         </div>
         <div className="owt-app-card__empty-cta">
           <span>No provider configured yet</span>
@@ -357,6 +374,20 @@ export function AppCard({
       </button>
     );
   }
+
+  if (isInertHomeAppId(appId)) {
+    return null;
+  }
+
+  const status = getStatus({
+    appId,
+    hostState,
+    loading,
+    error,
+    providerState,
+    serviceRunning,
+    recentActivity,
+  });
 
   const tokensValue = formatCompactCount(sumTokenCounts(summary));
   const requestsValue = formatCompactCount(summary?.totalRequests ?? 0);
@@ -458,7 +489,9 @@ export function AppCard({
             </div>
           </div>
         </div>
-        {quotaSnapshot ? <QuotaBand snapshot={quotaSnapshot} hideLabel /> : null}
+        {quotaSnapshot ? (
+          <QuotaBand snapshot={quotaSnapshot} hideLabel />
+        ) : null}
       </div>
 
       <div className="owt-app-card__usage">
@@ -478,7 +511,6 @@ export function AppCard({
           </div>
         </div>
       </div>
-
 
       {error ? <p className="owt-app-card__telemetry-note">{error}</p> : null}
     </div>

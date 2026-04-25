@@ -54,7 +54,6 @@ function AppsGridSurfaceHarness({
 
 function expectForbiddenSurfaces(container: HTMLElement) {
   expect(screen.queryByRole("button", { name: "Failover" })).toBeNull();
-  expect(screen.queryByText("OpenClaw")).not.toBeInTheDocument();
   expect(screen.queryByText("Hermes")).not.toBeInTheDocument();
   expect(
     screen.queryByText("Configure routes and provider details"),
@@ -62,10 +61,13 @@ function expectForbiddenSurfaces(container: HTMLElement) {
   expect(container.querySelector(".owt-legacy-preserved")).toBeNull();
   expect(
     container.querySelector('.owt-app-card[data-app="openclaw"]'),
-  ).toBeNull();
+  ).not.toBeNull();
   expect(
     container.querySelector('.owt-app-card[data-app="hermes"]'),
   ).toBeNull();
+  expect(
+    screen.queryByRole("dialog", { name: "OpenClaw providers" }),
+  ).not.toBeInTheDocument();
   expect(
     container.querySelector('[data-placeholder-tab="failover"]'),
   ).toHaveAttribute("hidden");
@@ -75,7 +77,7 @@ function expectForbiddenSurfaces(container: HTMLElement) {
 }
 
 describe("AppsGrid hard rules", () => {
-  it("never exposes legacy failover or unsupported app surfaces across the grid, provider panel, and activity drawer", async () => {
+  it("never exposes legacy failover or unsupported backend surfaces across the grid, provider panel, and activity drawer", async () => {
     const requestLog = createRequestLog("claude");
     const bridge = createBridgeFixture({
       requestLogs: {
