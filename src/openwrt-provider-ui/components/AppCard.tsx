@@ -368,7 +368,7 @@ export function AppCard({
           <span className="owt-chip owt-chip--dot">Not configured</span>
         </div>
         <div className="owt-app-card__empty-cta">
-          <span>No provider configured yet</span>
+          <span>{isInert ? "Not supported yet" : "No provider configured yet"}</span>
           {!isInert && (
             <span className="owt-app-card__empty-cta-btn">
               Add a provider →
