@@ -2012,6 +2012,7 @@ impl RequestForwarder {
         // 精确认证材料。实际日志永远不输出这些值。
         let mut log_secrets: Vec<String> = Vec::new();
         let mut auth_headers = if let Some(tmp_auth) = tmp_codex_auth.as_ref() {
+            should_send_codex_oauth_session_headers = true;
             let bearer = format!("Bearer {}", tmp_auth.access_token);
             if !tmp_auth.access_token.is_empty() {
                 log_secrets.push(tmp_auth.access_token.clone());
