@@ -454,6 +454,21 @@
   border-color: var(--accent);
 }
 
+.owt-app-card--inert,
+.owt-app-card--inert:disabled {
+  cursor: default;
+  color: inherit;
+  opacity: 0.68;
+}
+
+.owt-app-card--empty.owt-app-card--inert:hover,
+.owt-app-card--empty.owt-app-card--inert:focus-visible {
+  transform: none;
+  border-color: var(--line-strong);
+  background: transparent;
+  box-shadow: none;
+}
+
 .owt-app-card__head {
   display: flex;
   align-items: center;
@@ -514,6 +529,7 @@
 
 .owt-app-card__subtitle {
   margin: 3px 0 0;
+  min-height: 16px;
   color: var(--muted);
   font-size: 13px;
   font-weight: 500;
@@ -767,6 +783,14 @@
 
 .owt-app-card--empty:hover .owt-app-card__empty-cta-btn {
   text-decoration: underline;
+}
+
+.owt-app-card--inert .owt-app-card__empty-cta-btn {
+  color: var(--muted);
+}
+
+.owt-app-card--inert:hover .owt-app-card__empty-cta-btn {
+  text-decoration: none;
 }
 
 .owt-status-pill[data-tone="fail"] {
