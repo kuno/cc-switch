@@ -2,7 +2,10 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi, type Mock } from "vitest";
 import type { OpenWrtHostState } from "@/openwrt-provider-ui/pageTypes";
-import { AppsGrid } from "@/openwrt-provider-ui/components/AppsGrid";
+import {
+  APP_OPTIONS,
+  AppsGrid,
+} from "@/openwrt-provider-ui/components/AppsGrid";
 import type { SharedProviderAppId } from "@/shared/providers/domain";
 import {
   createProviderListResponse,
@@ -12,11 +15,21 @@ import {
 } from "../fixtures/openwrtProviderUi";
 import { createBridgeFixture, DEFAULT_HOST_STATE } from "./fixtures/bridge";
 
-function renderAppsGrid({
-  bridge = createBridgeFixture(),
-  transport = createProviderTransportFixture(),
-  providerMutationVersion = 0,
-} = {}) {
+type RenderAppsGridOptions = {
+  bridge?: ReturnType<typeof createBridgeFixture>;
+  onOpenActivity?: (appId: SharedProviderAppId) => void;
+  onOpenProviderPanel?: (appId: SharedProviderAppId) => void;
+  providerMutationVersion?: number;
+  transport?: ReturnType<typeof createProviderTransportFixture>;
+};
+
+function renderAppsGrid(options: RenderAppsGridOptions = {}) {
+  const bridge = options.bridge ?? createBridgeFixture();
+  const transport = options.transport ?? createProviderTransportFixture();
+  const providerMutationVersion = options.providerMutationVersion ?? 0;
+  const onOpenActivity = options.onOpenActivity ?? bridge.setSelectedApp;
+  const onOpenProviderPanel =
+    options.onOpenProviderPanel ?? bridge.setSelectedApp;
   const user = userEvent.setup();
   const props = {
     options: {
@@ -24,15 +37,12 @@ function renderAppsGrid({
       shell: bridge,
       transport,
     },
-    onOpenActivity: bridge.setSelectedApp,
-    onOpenProviderPanel: bridge.setSelectedApp,
+    onOpenActivity,
+    onOpenProviderPanel,
   } as const;
 
   const renderResult = render(
-    <AppsGrid
-      {...props}
-      providerMutationVersion={providerMutationVersion}
-    />,
+    <AppsGrid {...props} providerMutationVersion={providerMutationVersion} />,
   );
 
   return {
@@ -51,8 +61,10 @@ function renderAppsGrid({
   };
 }
 
-function getAppCard(container: HTMLElement, appId: SharedProviderAppId) {
-  const card = container.querySelector<HTMLElement>(`.owt-app-card[data-app="${appId}"]`);
+function getAppCard(container: HTMLElement, appId: string) {
+  const card = container.querySelector<HTMLElement>(
+    `.owt-app-card[data-app="${appId}"]`,
+  );
 
   if (!card) {
     throw new Error(`Missing ${appId} card`);
@@ -61,7 +73,13 @@ function getAppCard(container: HTMLElement, appId: SharedProviderAppId) {
   return card;
 }
 
-function mockVisibilityState(initialState: DocumentVisibilityState = "visible") {
+function padToEven(count: number): number {
+  return count % 2 === 1 ? count + 1 : count;
+}
+
+function mockVisibilityState(
+  initialState: DocumentVisibilityState = "visible",
+) {
   let visibilityState = initialState;
   const restore = vi
     .spyOn(document, "visibilityState", "get")
@@ -89,15 +107,24 @@ afterEach(() => {
 });
 
 describe("AppsGrid", () => {
+  it("defines five home app options", () => {
+    expect(APP_OPTIONS).toHaveLength(5);
+    expect([...APP_OPTIONS]).toEqual([
+      ...OPENWRT_APP_IDS,
+      "opencode",
+      "openclaw",
+    ]);
+  });
+
   it("renders configured skeleton cards while the initial app data is loading", () => {
     const { container } = renderAppsGrid();
 
     expect(container.querySelectorAll(".owt-app-card--skeleton")).toHaveLength(
-      OPENWRT_APP_IDS.length + 1,
+      padToEven(APP_OPTIONS.length),
     );
     expect(
       container.querySelectorAll(".owt-app-card__skeleton-active"),
-    ).toHaveLength(OPENWRT_APP_IDS.length + 1);
+    ).toHaveLength(padToEven(APP_OPTIONS.length));
     expect(screen.queryByText("Not configured")).toBeNull();
   });
 
@@ -109,7 +136,8 @@ describe("AppsGrid", () => {
     });
 
     expect(container.querySelectorAll(".owt-app-card")).toHaveLength(
-      OPENWRT_APP_IDS.length + 1,
+      padToEven(OPENWRT_APP_IDS.length) +
+        (APP_OPTIONS.length - OPENWRT_APP_IDS.length),
     );
     expect(container.querySelectorAll(".owt-app-card--skeleton")).toHaveLength(
       1,
@@ -151,7 +179,7 @@ describe("AppsGrid", () => {
     expect(setSelectedApp).toHaveBeenCalledWith("codex");
   });
 
-  it("still renders only the supported three cards when the bridge exposes unusual app data", async () => {
+  it("renders five home cards while still fetching only the supported three backend apps", async () => {
     const transport = createProviderTransportFixture();
     const listProvidersSpy = vi.spyOn(transport, "listProviders");
     const weirdHostState = {
@@ -178,6 +206,12 @@ describe("AppsGrid", () => {
         name: /Open (Claude|Codex|Gemini) providers/,
       }),
     ).toHaveLength(OPENWRT_APP_IDS.length);
+    expect(
+      screen.getByRole("button", { name: "OpenCode not configured" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "OpenClaw not configured" }),
+    ).toBeDisabled();
     expect(listProvidersSpy.mock.calls.map(([appId]) => appId)).toEqual(
       OPENWRT_APP_IDS,
     );
@@ -185,7 +219,101 @@ describe("AppsGrid", () => {
       Array.from(
         container.querySelectorAll<HTMLElement>(".owt-app-card[data-app]"),
       ).map((card) => card.dataset.app),
-    ).toEqual(OPENWRT_APP_IDS);
+    ).toEqual([...APP_OPTIONS]);
+  });
+
+  it("renders OpenCode and OpenClaw as unconfigured inert cards", async () => {
+    const { container } = renderAppsGrid();
+
+    await screen.findByRole("button", {
+      name: "OpenCode not configured",
+    });
+
+    const unconfiguredGroup = container.querySelector<HTMLElement>(
+      ".owt-group-grid--unconfigured",
+    );
+
+    expect(unconfiguredGroup).not.toBeNull();
+    expect(
+      within(unconfiguredGroup!).getByText("OpenCode"),
+    ).toBeInTheDocument();
+    expect(
+      within(unconfiguredGroup!).getByText("OpenClaw"),
+    ).toBeInTheDocument();
+    const opencodeCard = getAppCard(container, "opencode");
+    const openclawCard = getAppCard(container, "openclaw");
+
+    expect(opencodeCard).toHaveClass(
+      "owt-app-card--empty",
+      "owt-app-card--inert",
+    );
+    expect(openclawCard).toHaveClass(
+      "owt-app-card--empty",
+      "owt-app-card--inert",
+    );
+    expect(
+      within(opencodeCard).queryByText("Add a provider →"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(openclawCard).queryByText("Add a provider →"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("synthesizes inert card data without backend calls for OpenCode and OpenClaw", async () => {
+    const bridge = createBridgeFixture();
+    const transport = createProviderTransportFixture();
+    const listProvidersSpy = vi.spyOn(transport, "listProviders");
+    const listSavedProvidersSpy = vi.spyOn(transport, "listSavedProviders");
+    const getActiveProviderSpy = vi.spyOn(transport, "getActiveProvider");
+    const getUsageSummary = bridge.getUsageSummary as unknown as Mock;
+    const getProviderStats = bridge.getProviderStats as unknown as Mock;
+    const getRecentActivity = bridge.getRecentActivity as unknown as Mock;
+
+    renderAppsGrid({ bridge, transport });
+
+    await waitFor(() => {
+      expect(listProvidersSpy).toHaveBeenCalledTimes(OPENWRT_APP_IDS.length);
+    });
+
+    expect(listProvidersSpy.mock.calls.map(([appId]) => appId)).toEqual(
+      OPENWRT_APP_IDS,
+    );
+    expect(listSavedProvidersSpy.mock.calls.map(([appId]) => appId)).toEqual(
+      OPENWRT_APP_IDS,
+    );
+    expect(getActiveProviderSpy.mock.calls.map(([appId]) => appId)).toEqual(
+      OPENWRT_APP_IDS,
+    );
+    expect(getUsageSummary.mock.calls.map(([appId]) => appId)).toEqual(
+      OPENWRT_APP_IDS,
+    );
+    expect(getProviderStats.mock.calls.map(([appId]) => appId)).toEqual(
+      OPENWRT_APP_IDS,
+    );
+    expect(getRecentActivity.mock.calls.map(([appId]) => appId)).toEqual(
+      OPENWRT_APP_IDS,
+    );
+  });
+
+  it("does not open the provider panel from inert placeholder card clicks", async () => {
+    const onOpenProviderPanel = vi.fn();
+    const { user } = renderAppsGrid({ onOpenProviderPanel });
+    const opencodeButton = await screen.findByRole("button", {
+      name: "OpenCode not configured",
+    });
+    const openclawButton = screen.getByRole("button", {
+      name: "OpenClaw not configured",
+    });
+
+    expect(opencodeButton).toBeDisabled();
+    expect(opencodeButton).toHaveAttribute("aria-disabled", "true");
+    expect(openclawButton).toBeDisabled();
+    expect(openclawButton).toHaveAttribute("aria-disabled", "true");
+
+    await user.click(opencodeButton);
+    await user.click(openclawButton);
+
+    expect(onOpenProviderPanel).not.toHaveBeenCalled();
   });
 
   it("polls usage summaries once per app every 10 seconds", async () => {
@@ -277,7 +405,10 @@ describe("AppsGrid", () => {
       claude: createUsageSummary({ totalRequests: 101 }),
       codex: createUsageSummary({ totalRequests: 202 }),
       gemini: createUsageSummary({ totalRequests: 303 }),
-    } satisfies Record<SharedProviderAppId, ReturnType<typeof createUsageSummary>>;
+    } satisfies Record<
+      SharedProviderAppId,
+      ReturnType<typeof createUsageSummary>
+    >;
     const secondPoll = {
       claude: createUsageSummary({ totalRequests: 111 }),
       codex: new Error("Transient summary failure"),
@@ -351,12 +482,17 @@ describe("AppsGrid", () => {
       name: "Open Claude providers",
     });
 
-    expect(container.querySelector(".owt-group-label")).toBeNull();
+    expect(
+      within(
+        container.querySelector<HTMLElement>(".owt-group-grid--unconfigured")!,
+      ).queryByText("Claude"),
+    ).not.toBeInTheDocument();
 
-    vi.spyOn(transport, "listSavedProviders").mockImplementation(async (appId) =>
-      appId === "claude"
-        ? Promise.reject(new Error("Transient saved-provider failure"))
-        : createProviderListResponse(appId),
+    vi.spyOn(transport, "listSavedProviders").mockImplementation(
+      async (appId) =>
+        appId === "claude"
+          ? Promise.reject(new Error("Transient saved-provider failure"))
+          : createProviderListResponse(appId),
     );
 
     rerenderAppsGrid(1);
@@ -367,7 +503,11 @@ describe("AppsGrid", () => {
       ).toBeInTheDocument();
     });
 
-    expect(container.querySelector(".owt-group-label")).toBeNull();
+    expect(
+      within(
+        container.querySelector<HTMLElement>(".owt-group-grid--unconfigured")!,
+      ).queryByText("Claude"),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Add a Claude provider" }),
     ).not.toBeInTheDocument();

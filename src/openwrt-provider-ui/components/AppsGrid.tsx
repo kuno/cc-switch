@@ -10,13 +10,24 @@ import type {
 import type { ProviderQuotaSnapshot } from "../types/quota";
 import { AppCard } from "./AppCard";
 
+type InertHomeAppId = "opencode" | "openclaw";
+export type OpenWrtHomeAppId = SharedProviderAppId | InertHomeAppId;
 
-const APP_OPTIONS: SharedProviderAppId[] = ["claude", "codex", "gemini"];
+export const APP_OPTIONS = [
+  "claude",
+  "codex",
+  "gemini",
+  "opencode",
+  "openclaw",
+] as const satisfies readonly OpenWrtHomeAppId[];
+const BACKEND_APP_OPTIONS = APP_OPTIONS.filter(
+  (appId): appId is SharedProviderAppId => !isInertHomeAppId(appId),
+);
 const POLL_INTERVAL_MS = 10_000;
 const POLL_INTERVAL_BACKGROUND_MS = 0;
 
 type AppGridData = {
-  appId: SharedProviderAppId;
+  appId: OpenWrtHomeAppId;
   loading: boolean;
   error: string | null;
   providerState: Awaited<
@@ -29,7 +40,11 @@ type AppGridData = {
   recentActivity: OpenWrtRecentActivityItem[];
 };
 
-function createInitialCard(appId: SharedProviderAppId): AppGridData {
+function isInertHomeAppId(appId: OpenWrtHomeAppId): appId is InertHomeAppId {
+  return appId === "opencode" || appId === "openclaw";
+}
+
+function createInitialCard(appId: OpenWrtHomeAppId): AppGridData {
   return {
     appId,
     loading: true,
@@ -55,8 +70,20 @@ function sortRecentActivity(
 
 async function loadCardData(
   options: OpenWrtSharedPageMountOptions,
-  appId: SharedProviderAppId,
+  appId: OpenWrtHomeAppId,
 ): Promise<AppGridData> {
+  if (isInertHomeAppId(appId)) {
+    return {
+      appId,
+      loading: false,
+      error: null,
+      providerState: null,
+      summary: null,
+      providerStats: [],
+      recentActivity: [],
+    };
+  }
+
   const adapter = createOpenWrtProviderAdapter(options.transport);
   const [
     providerStateResult,
@@ -218,7 +245,7 @@ async function loadUsageSummaries(
   shell: OpenWrtSharedPageMountOptions["shell"],
 ): Promise<Partial<Record<SharedProviderAppId, OpenWrtUsageSummary>>> {
   const results = await Promise.allSettled(
-    APP_OPTIONS.map(async (appId) => ({
+    BACKEND_APP_OPTIONS.map(async (appId) => ({
       appId,
       summary: await shell.getUsageSummary(appId),
     })),
@@ -323,6 +350,10 @@ export function AppsGrid({
 
       setCards((prev) =>
         prev.map((card) => {
+          if (isInertHomeAppId(card.appId)) {
+            return card;
+          }
+
           const nextSummary = newSummaryByApp[card.appId];
 
           return nextSummary !== undefined
@@ -376,16 +407,19 @@ export function AppsGrid({
 
   const hostState = options.shell.getHostState();
   const serviceRunning = options.shell.getServiceStatus().isRunning;
-  const loadingCards = cards.filter((card) => card.loading && !card.providerState);
-  const settledCards = cards.filter((card) => !card.loading || card.providerState);
+  const loadingCards = cards.filter(
+    (card) => card.loading && !card.providerState,
+  );
+  const settledCards = cards.filter(
+    (card) => !card.loading || card.providerState,
+  );
   const configured = settledCards.filter(isConfigured);
   const unconfigured = settledCards.filter((card) => !isConfigured(card));
 
   const renderCard = (card: AppGridData) => {
-    const activeProviderId =
-      card.providerState?.activeProvider.configured
-        ? card.providerState.activeProvider.providerId
-        : undefined;
+    const activeProviderId = card.providerState?.activeProvider.configured
+      ? card.providerState.activeProvider.providerId
+      : undefined;
     const quotaSnapshot = activeProviderId
       ? quotaByProviderId[activeProviderId]
       : undefined;
@@ -416,9 +450,7 @@ export function AppsGrid({
           {loadingCards.map((card) => (
             <SkeletonCard key={`${card.appId}-loading`} />
           ))}
-          {loadingCards.length % 2 === 1 && (
-            <SkeletonCard key="loading-pad" />
-          )}
+          {loadingCards.length % 2 === 1 && <SkeletonCard key="loading-pad" />}
         </div>
       )}
 
