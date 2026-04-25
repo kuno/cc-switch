@@ -369,7 +369,11 @@ export function AppCard({
         </div>
         <div className="owt-app-card__empty-cta">
           <span>No provider configured yet</span>
-          <span className="owt-app-card__empty-cta-btn">Add a provider →</span>
+          {!isInert && (
+            <span className="owt-app-card__empty-cta-btn">
+              Add a provider →
+            </span>
+          )}
         </div>
       </button>
     );

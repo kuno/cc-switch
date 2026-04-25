@@ -240,14 +240,23 @@ describe("AppsGrid", () => {
     expect(
       within(unconfiguredGroup!).getByText("OpenClaw"),
     ).toBeInTheDocument();
-    expect(getAppCard(container, "opencode")).toHaveClass(
+    const opencodeCard = getAppCard(container, "opencode");
+    const openclawCard = getAppCard(container, "openclaw");
+
+    expect(opencodeCard).toHaveClass(
       "owt-app-card--empty",
       "owt-app-card--inert",
     );
-    expect(getAppCard(container, "openclaw")).toHaveClass(
+    expect(openclawCard).toHaveClass(
       "owt-app-card--empty",
       "owt-app-card--inert",
     );
+    expect(
+      within(opencodeCard).queryByText("Add a provider →"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(openclawCard).queryByText("Add a provider →"),
+    ).not.toBeInTheDocument();
   });
 
   it("synthesizes inert card data without backend calls for OpenCode and OpenClaw", async () => {
