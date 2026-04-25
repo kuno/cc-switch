@@ -6,7 +6,6 @@ import { renderOpenWrtPageShell } from "./fixtures/renderPageShell";
 
 const FORBIDDEN_TEXT = [
   "Configure routes and provider details",
-  "OpenClaw",
   "Hermes",
   "autoFailover",
   "maxRetries",
@@ -53,12 +52,21 @@ describe("OpenWrtPageShell hard rules", () => {
     ).toBeNull();
     expect(screen.queryByRole("button", { name: "Failover" })).toBeNull();
     expect(
+      screen.getByRole("button", { name: "OpenClaw not configured" }),
+    ).toBeDisabled();
+    expect(
       container.querySelector('[data-placeholder-tab="failover"]'),
     ).toHaveAttribute("hidden");
     expect(
       container.querySelector('[data-placeholder-panel="failover"]'),
     ).toHaveAttribute("hidden");
-    expect(renderedAppCards).toEqual(["claude", "codex", "gemini"]);
+    expect(renderedAppCards).toEqual([
+      "claude",
+      "codex",
+      "gemini",
+      "opencode",
+      "openclaw",
+    ]);
   });
 
   it("uses one shared scrim and keeps the shell drawers mutually exclusive", async () => {

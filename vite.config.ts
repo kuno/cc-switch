@@ -14,6 +14,10 @@ const openWrtProviderUiOutDir = path.resolve(
   "openwrt/provider-ui-dist",
 );
 const extractedIconDir = path.resolve(__dirname, "src/icons/extracted");
+const openWrtProviderUiIconDir = path.resolve(
+  __dirname,
+  "src/openwrt-provider-ui/icons",
+);
 const openWrtVisualHarnessRoot = path.resolve(
   __dirname,
   "tests/openwrt/visual/harness",
@@ -48,11 +52,11 @@ export default defineConfig(({ command }) => {
     ),
     ...(isOpenWrtProviderUiBuild
       ? {
-        "process.env.NODE_ENV": JSON.stringify("production"),
-        "process.env.CCSWITCH_USE_SHADOW_DOM": JSON.stringify(
-          process.env.CCSWITCH_USE_SHADOW_DOM ?? "",
-        ),
-      }
+          "process.env.NODE_ENV": JSON.stringify("production"),
+          "process.env.CCSWITCH_USE_SHADOW_DOM": JSON.stringify(
+            process.env.CCSWITCH_USE_SHADOW_DOM ?? "",
+          ),
+        }
       : {}),
   };
 
@@ -72,6 +76,7 @@ export default defineConfig(({ command }) => {
             "pipellm.png",
             "shengsuanyun.svg",
           ]);
+          const emittedIconFiles = new Set(emittedByImports);
 
           for (const iconFile of fs.readdirSync(extractedIconDir)) {
             if (!/\.(svg|png)$/i.test(iconFile)) {
@@ -87,6 +92,30 @@ export default defineConfig(({ command }) => {
               fileName: `icons/${iconFile}`,
               source: fs.readFileSync(path.join(extractedIconDir, iconFile)),
             });
+            emittedIconFiles.add(iconFile);
+          }
+
+          if (!fs.existsSync(openWrtProviderUiIconDir)) {
+            return;
+          }
+
+          for (const iconFile of fs.readdirSync(openWrtProviderUiIconDir)) {
+            if (!/\.(svg|png)$/i.test(iconFile)) {
+              continue;
+            }
+
+            if (emittedIconFiles.has(iconFile)) {
+              continue;
+            }
+
+            this.emitFile({
+              type: "asset",
+              fileName: `icons/${iconFile}`,
+              source: fs.readFileSync(
+                path.join(openWrtProviderUiIconDir, iconFile),
+              ),
+            });
+            emittedIconFiles.add(iconFile);
           }
         },
       },

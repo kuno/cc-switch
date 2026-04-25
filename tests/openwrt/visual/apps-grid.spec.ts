@@ -121,12 +121,12 @@ test("@visual @app-card renders focus-visible state", async ({
   await expect(card).toHaveScreenshot("app-card-focus-visible.png");
 });
 
-test("@visual @apps-grid renders exactly three cards", async ({
+test("@visual @apps-grid renders exactly five home cards", async ({
   page,
 }, testInfo) => {
   const theme = getTheme(testInfo.project.name);
 
   await page.goto(`/?component=AppsGrid&state=claude-active&theme=${theme}`);
 
-  await expect(page.locator(".owt-app-card")).toHaveCount(3);
+  await expect(page.locator(".owt-app-card")).toHaveCount(5);
 });

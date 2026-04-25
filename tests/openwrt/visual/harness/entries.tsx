@@ -177,13 +177,22 @@ function createHarnessOptions({
   };
 }
 
+type AppCardScenarioAppId = ComponentProps<typeof AppCard>["appId"];
+
+function isSharedProviderAppId(
+  appId: AppCardScenarioAppId,
+): appId is SharedProviderAppId {
+  return appId === "claude" || appId === "codex" || appId === "gemini";
+}
+
 function createAppCardScenario(
   props: Partial<ComponentProps<typeof AppCard>> = {},
 ): HarnessScenario {
   const appId = props.appId ?? "claude";
+  const fixtureAppId = isSharedProviderAppId(appId) ? appId : "claude";
   const providerState =
     props.providerState === undefined
-      ? createSharedProviderState(appId)
+      ? createSharedProviderState(fixtureAppId)
       : props.providerState;
 
   return {
@@ -196,10 +205,12 @@ function createAppCardScenario(
         summary={props.summary ?? createUsageSummary()}
         providerStats={
           props.providerStats ?? [
-            createProviderStat(appId, { successRate: 98.9 }),
+            createProviderStat(fixtureAppId, { successRate: 98.9 }),
           ]
         }
-        recentActivity={props.recentActivity ?? [createRecentActivity(appId)]}
+        recentActivity={
+          props.recentActivity ?? [createRecentActivity(fixtureAppId)]
+        }
         loading={props.loading ?? false}
         error={props.error ?? null}
         onOpenActivity={props.onOpenActivity ?? (() => {})}

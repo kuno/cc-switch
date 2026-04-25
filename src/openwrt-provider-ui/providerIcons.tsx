@@ -12,10 +12,15 @@ import {
 export const OPENWRT_PROVIDER_UI_ICON_BASE_URL =
   "/luci-static/resources/ccswitch/provider-ui/icons";
 
-const APP_ICON_FILENAMES: Record<SharedProviderAppId, string> = {
+const APP_ICON_FILENAMES: Record<
+  SharedProviderAppId | "opencode" | "openclaw",
+  string
+> = {
   claude: "claude.svg",
   codex: "openai.svg",
   gemini: "gemini.svg",
+  opencode: "opencode.svg",
+  openclaw: "openclaw.svg",
 };
 
 type OpenWrtProviderIconSource = Partial<
@@ -50,7 +55,9 @@ function createResolvedIcon(
   };
 }
 
-export function getOpenWrtAppIconUrl(appId: SharedProviderAppId): string {
+export function getOpenWrtAppIconUrl(
+  appId: keyof typeof APP_ICON_FILENAMES,
+): string {
   return `${OPENWRT_PROVIDER_UI_ICON_BASE_URL}/${APP_ICON_FILENAMES[appId]}`;
 }
 
