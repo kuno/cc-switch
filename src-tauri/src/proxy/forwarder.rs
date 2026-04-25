@@ -1497,6 +1497,7 @@ impl RequestForwarder {
 
         // 获取认证头（提前准备，用于内联替换）
         let mut auth_headers = if let Some(tmp_auth) = tmp_codex_auth.as_ref() {
+            should_send_codex_oauth_session_headers = true;
             let bearer = format!("Bearer {}", tmp_auth.access_token);
             let mut headers = vec![
                 (
