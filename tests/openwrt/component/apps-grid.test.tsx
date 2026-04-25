@@ -1,7 +1,12 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { Profiler, type ProfilerOnRenderCallback } from "react";
 import { afterEach, describe, expect, it, vi, type Mock } from "vitest";
-import type { OpenWrtHostState } from "@/openwrt-provider-ui/pageTypes";
+import type {
+  OpenWrtHostState,
+  ProviderQuotaSnapshot,
+  QuotaResponse,
+} from "@/openwrt-provider-ui/pageTypes";
 import {
   APP_OPTIONS,
   AppsGrid,
@@ -19,6 +24,7 @@ type RenderAppsGridOptions = {
   bridge?: ReturnType<typeof createBridgeFixture>;
   onOpenActivity?: (appId: SharedProviderAppId) => void;
   onOpenProviderPanel?: (appId: SharedProviderAppId) => void;
+  onRender?: ProfilerOnRenderCallback;
   providerMutationVersion?: number;
   transport?: ReturnType<typeof createProviderTransportFixture>;
 };
@@ -40,20 +46,29 @@ function renderAppsGrid(options: RenderAppsGridOptions = {}) {
     onOpenActivity,
     onOpenProviderPanel,
   } as const;
+  const buildTree = (nextProviderMutationVersion: number) => {
+    const grid = (
+      <AppsGrid
+        {...props}
+        providerMutationVersion={nextProviderMutationVersion}
+      />
+    );
 
-  const renderResult = render(
-    <AppsGrid {...props} providerMutationVersion={providerMutationVersion} />,
-  );
+    return options.onRender ? (
+      <Profiler id="apps-grid" onRender={options.onRender}>
+        {grid}
+      </Profiler>
+    ) : (
+      grid
+    );
+  };
+
+  const renderResult = render(buildTree(providerMutationVersion));
 
   return {
     bridge,
     rerenderAppsGrid(nextProviderMutationVersion: number) {
-      renderResult.rerender(
-        <AppsGrid
-          {...props}
-          providerMutationVersion={nextProviderMutationVersion}
-        />,
-      );
+      renderResult.rerender(buildTree(nextProviderMutationVersion));
     },
     transport,
     user,
@@ -71,6 +86,37 @@ function getAppCard(container: HTMLElement, appId: string) {
   }
 
   return card;
+}
+
+function createQuotaSnapshot(
+  overrides: Partial<ProviderQuotaSnapshot> = {},
+): ProviderQuotaSnapshot {
+  return {
+    app_type: "claude",
+    provider_id: "claude-primary",
+    provider_name: "Claude Primary",
+    source: "subscription_quota",
+    status: "ok",
+    windows: [
+      {
+        name: "Weekly cap",
+        utilization: 0.5,
+        reset: 1_725_000_000,
+      },
+    ],
+    balances: [],
+    captured_at: 1_725_000_000,
+    ...overrides,
+  };
+}
+
+function createQuotaResponse(
+  providers: ProviderQuotaSnapshot[],
+): QuotaResponse {
+  return {
+    providers,
+    timestamp: "2026-04-22T00:00:00.000Z",
+  };
 }
 
 function padToEven(count: number): number {
@@ -338,6 +384,112 @@ describe("AppsGrid", () => {
     expect(getUsageSummary.mock.calls.map(([appId]) => appId)).toEqual(
       OPENWRT_APP_IDS,
     );
+  });
+
+  it("does not commit a render for consecutive summary polls with identical data", async () => {
+    vi.useFakeTimers();
+    const bridge = createBridgeFixture({
+      usageSummary: {
+        claude: createUsageSummary({ totalRequests: 10 }),
+        codex: createUsageSummary({ totalRequests: 20 }),
+        gemini: createUsageSummary({ totalRequests: 30 }),
+      },
+    });
+    const onRender = vi.fn();
+    renderAppsGrid({ bridge, onRender });
+
+    await flushMicrotasks();
+    expect(
+      screen.getByRole("button", { name: "Open Claude providers" }),
+    ).toBeInTheDocument();
+
+    const getUsageSummary = bridge.getUsageSummary as unknown as Mock;
+    getUsageSummary.mockClear();
+    onRender.mockClear();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    await flushMicrotasks();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    await flushMicrotasks();
+
+    expect(getUsageSummary).toHaveBeenCalledTimes(OPENWRT_APP_IDS.length * 2);
+    expect(onRender).not.toHaveBeenCalled();
+  });
+
+  it("keeps the previous quota map when a populated map is followed by an empty poll", async () => {
+    vi.useFakeTimers();
+    const getQuota = vi
+      .fn()
+      .mockResolvedValueOnce(createQuotaResponse([createQuotaSnapshot()]))
+      .mockResolvedValueOnce(createQuotaResponse([]));
+    const bridge = createBridgeFixture({
+      overrides: {
+        getQuota,
+      },
+    });
+    const { container } = renderAppsGrid({ bridge });
+
+    await flushMicrotasks();
+    expect(
+      within(getAppCard(container, "claude")).getByText("Weekly cap"),
+    ).toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    await flushMicrotasks();
+
+    expect(getQuota).toHaveBeenCalledTimes(2);
+    expect(
+      within(getAppCard(container, "claude")).getByText("Weekly cap"),
+    ).toBeInTheDocument();
+  });
+
+  it("commits a render when a summary poll changes card data", async () => {
+    vi.useFakeTimers();
+    const bridge = createBridgeFixture({
+      usageSummary: {
+        claude: createUsageSummary({ totalRequests: 10 }),
+        codex: createUsageSummary({ totalRequests: 20 }),
+        gemini: createUsageSummary({ totalRequests: 30 }),
+      },
+    });
+    const onRender = vi.fn();
+    const { container } = renderAppsGrid({ bridge, onRender });
+
+    await flushMicrotasks();
+    expect(
+      within(getAppCard(container, "claude")).getByText("10"),
+    ).toBeInTheDocument();
+
+    const changedSummaries = {
+      claude: createUsageSummary({ totalRequests: 11 }),
+      codex: createUsageSummary({ totalRequests: 20 }),
+      gemini: createUsageSummary({ totalRequests: 30 }),
+    } satisfies Record<
+      SharedProviderAppId,
+      ReturnType<typeof createUsageSummary>
+    >;
+    const getUsageSummary = bridge.getUsageSummary as unknown as Mock;
+    getUsageSummary.mockImplementation(async (appId: SharedProviderAppId) => {
+      return changedSummaries[appId];
+    });
+    onRender.mockClear();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    await flushMicrotasks();
+
+    expect(onRender).toHaveBeenCalled();
+    expect(
+      within(getAppCard(container, "claude")).getByText("11"),
+    ).toBeInTheDocument();
   });
 
   it("pauses polling while the page is hidden and refetches immediately when visible again", async () => {

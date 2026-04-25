@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createOpenWrtProviderAdapter } from "@/platform/openwrt/providers";
 import type { SharedProviderAppId } from "@/shared/providers/domain";
 import type {
@@ -39,6 +39,101 @@ type AppGridData = {
   providerStats: OpenWrtProviderStat[];
   recentActivity: OpenWrtRecentActivityItem[];
 };
+
+function isJsonEqual(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function areCardsEqual(left: AppGridData, right: AppGridData): boolean {
+  return (
+    left.appId === right.appId &&
+    left.loading === right.loading &&
+    left.error === right.error &&
+    isJsonEqual(
+      [
+        left.providerState,
+        left.summary,
+        left.providerStats,
+        left.recentActivity,
+      ],
+      [
+        right.providerState,
+        right.summary,
+        right.providerStats,
+        right.recentActivity,
+      ],
+    )
+  );
+}
+
+function mapCardsPreservingEqual(
+  cards: AppGridData[],
+  mapCard: (card: AppGridData) => AppGridData,
+): AppGridData[] {
+  let changed = false;
+  const nextCards = cards.map((card) => {
+    const nextCard = mapCard(card);
+
+    if (areCardsEqual(card, nextCard)) {
+      return card;
+    }
+
+    changed = true;
+    return nextCard;
+  });
+
+  return changed ? nextCards : cards;
+}
+
+function replaceCardsPreservingEqual(
+  current: AppGridData[],
+  next: AppGridData[],
+): AppGridData[] {
+  let changed = current.length !== next.length;
+  const nextCards = next.map((nextCard, index) => {
+    const currentCard = current[index];
+
+    if (currentCard && areCardsEqual(currentCard, nextCard)) {
+      return currentCard;
+    }
+
+    changed = true;
+    return nextCard;
+  });
+
+  return changed ? nextCards : current;
+}
+
+function areQuotaMapsEqual(
+  left: Record<string, ProviderQuotaSnapshot>,
+  right: Record<string, ProviderQuotaSnapshot>,
+): boolean {
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+
+  if (leftKeys.length !== rightKeys.length) {
+    return false;
+  }
+
+  return leftKeys.every(
+    (key) => key in right && isJsonEqual(left[key], right[key]),
+  );
+}
+
+function mergeQuotaByProviderId(
+  current: Record<string, ProviderQuotaSnapshot>,
+  next: Record<string, ProviderQuotaSnapshot>,
+): Record<string, ProviderQuotaSnapshot> {
+  if (Object.keys(next).length === 0 && Object.keys(current).length > 0) {
+    return current;
+  }
+
+  if (areQuotaMapsEqual(current, next)) {
+    return current;
+  }
+
+  return next;
+}
 
 function isInertHomeAppId(appId: OpenWrtHomeAppId): appId is InertHomeAppId {
   return appId === "opencode" || appId === "openclaw";
@@ -302,15 +397,19 @@ export function AppsGrid({
   useEffect(() => {
     let cancelled = false;
 
-    setCards((current) => current.map((card) => ({ ...card, loading: true })));
+    setCards((current) =>
+      mapCardsPreservingEqual(current, (card) => ({ ...card, loading: true })),
+    );
 
     void Promise.all([
       Promise.all(APP_OPTIONS.map((appId) => loadCardData(options, appId))),
       loadQuotaByProviderId(options.shell),
     ]).then(([nextCards, quotaMap]) => {
       if (cancelled) return;
-      setCards(nextCards);
-      setQuotaByProviderId(quotaMap);
+      setCards((current) => replaceCardsPreservingEqual(current, nextCards));
+      setQuotaByProviderId((current) =>
+        mergeQuotaByProviderId(current, quotaMap),
+      );
     });
 
     return () => {
@@ -349,7 +448,7 @@ export function AppsGrid({
       }
 
       setCards((prev) =>
-        prev.map((card) => {
+        mapCardsPreservingEqual(prev, (card) => {
           if (isInertHomeAppId(card.appId)) {
             return card;
           }
@@ -390,7 +489,7 @@ export function AppsGrid({
     const quotaIntervalId = window.setInterval(async () => {
       const map = await loadQuotaByProviderId(options.shell);
       if (!cancelled) {
-        setQuotaByProviderId(map);
+        setQuotaByProviderId((current) => mergeQuotaByProviderId(current, map));
       }
     }, QUOTA_POLL_INTERVAL_MS);
 
@@ -405,7 +504,23 @@ export function AppsGrid({
     };
   }, [options.shell]);
 
-  const hostState = options.shell.getHostState();
+  const latestHostState = options.shell.getHostState();
+  const hostState = useMemo(
+    () => latestHostState,
+    [
+      latestHostState.app,
+      latestHostState.status,
+      latestHostState.health,
+      latestHostState.listenAddr,
+      latestHostState.listenPort,
+      latestHostState.version,
+      latestHostState.serviceLabel,
+      latestHostState.httpProxy,
+      latestHostState.httpsProxy,
+      latestHostState.proxyEnabled,
+      latestHostState.logLevel,
+    ],
+  );
   const serviceRunning = options.shell.getServiceStatus().isRunning;
   const loadingCards = cards.filter(
     (card) => card.loading && !card.providerState,

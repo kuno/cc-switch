@@ -1,4 +1,4 @@
-import type { KeyboardEventHandler, MouseEventHandler } from "react";
+import { memo, type KeyboardEventHandler, type MouseEventHandler } from "react";
 import type {
   SharedProviderAppId,
   SharedProviderState,
@@ -305,7 +305,31 @@ export interface AppCardProps {
   onOpenProviderPanel: (appId: SharedProviderAppId) => void;
 }
 
-export function AppCard({
+function isJsonEqual(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function areAppCardPropsEqual(
+  previous: AppCardProps,
+  next: AppCardProps,
+): boolean {
+  return (
+    previous.appId === next.appId &&
+    previous.loading === next.loading &&
+    previous.error === next.error &&
+    previous.serviceRunning === next.serviceRunning &&
+    previous.onOpenActivity === next.onOpenActivity &&
+    previous.onOpenProviderPanel === next.onOpenProviderPanel &&
+    isJsonEqual(previous.hostState, next.hostState) &&
+    isJsonEqual(previous.providerState, next.providerState) &&
+    isJsonEqual(previous.summary, next.summary) &&
+    isJsonEqual(previous.providerStats, next.providerStats) &&
+    isJsonEqual(previous.recentActivity, next.recentActivity) &&
+    isJsonEqual(previous.quotaSnapshot, next.quotaSnapshot)
+  );
+}
+
+function AppCardComponent({
   appId,
   hostState,
   serviceRunning,
@@ -368,7 +392,9 @@ export function AppCard({
           <span className="owt-chip owt-chip--dot">Not configured</span>
         </div>
         <div className="owt-app-card__empty-cta">
-          <span>{isInert ? "Not supported yet" : "No provider configured yet"}</span>
+          <span>
+            {isInert ? "Not supported yet" : "No provider configured yet"}
+          </span>
           {!isInert && (
             <span className="owt-app-card__empty-cta-btn">
               Add a provider →
@@ -520,3 +546,6 @@ export function AppCard({
     </div>
   );
 }
+
+export const AppCard = memo(AppCardComponent, areAppCardPropsEqual);
+AppCard.displayName = "AppCard";
