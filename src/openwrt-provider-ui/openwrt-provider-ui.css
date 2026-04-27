@@ -2231,10 +2231,10 @@ select.owt-provider-panel__config-input {
   position: relative;
   display: flex;
   width: 100%;
-  min-height: 128px;
+  min-height: 112px;
   align-items: flex-start;
   gap: 12px;
-  padding: 15px 42px 15px 15px;
+  padding: 14px 42px 14px 14px;
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
   background: var(--panel-strong);
@@ -2327,27 +2327,10 @@ select.owt-provider-panel__config-input {
 }
 
 .owt-provider-panel__preset-description {
-  margin-top: 5px;
+  margin-top: 4px;
   color: var(--muted);
   font-size: 13px;
   line-height: 1.45;
-}
-
-.owt-provider-panel__preset-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  margin-top: 11px;
-}
-
-.owt-provider-panel__preset-badges .owt-status-pill {
-  min-height: 26px;
-}
-
-.owt-provider-panel__preset-badges .owt-status-pill[data-tone="warn"] {
-  border-color: var(--warn-line);
-  background: var(--warn-soft);
-  color: var(--warn);
 }
 
 .owt-provider-panel__preset-feature-icon {
@@ -2360,7 +2343,7 @@ select.owt-provider-panel__config-input {
 }
 
 .owt-provider-panel__preset-meta {
-  margin-top: 10px;
+  margin-top: 8px;
   color: var(--soft-text);
   font-family: var(--owt-mono);
   font-size: 12px;

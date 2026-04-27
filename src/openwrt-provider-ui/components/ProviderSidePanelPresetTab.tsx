@@ -132,7 +132,6 @@ function PresetCard({
   setCardRef: (index: number, element: HTMLButtonElement | null) => void;
 }) {
   const descriptionId = `owt-preset-${card.id}-description`;
-  const badgesId = `owt-preset-${card.id}-badges`;
   const metaId = `owt-preset-${card.id}-meta`;
   const showPartnerFeature = card.uiMeta.variant === "partner" && !selected;
 
@@ -144,7 +143,7 @@ function PresetCard({
       data-variant={card.uiMeta.variant}
       role="radio"
       aria-checked={selected}
-      aria-describedby={`${descriptionId} ${badgesId} ${metaId}`}
+      aria-describedby={`${descriptionId} ${metaId}`}
       onClick={() => onStage(card.id)}
       onKeyDown={(event) => onKeyDown(event, cardIndex, card.id)}
       ref={(element) => setCardRef(cardIndex, element)}
@@ -172,17 +171,6 @@ function PresetCard({
           id={descriptionId}
         >
           {card.description}
-        </span>
-        <span className="owt-provider-panel__preset-badges" id={badgesId}>
-          {card.uiMeta.badges.map((badge) => (
-            <span
-              className="owt-status-pill"
-              data-tone={badge.tone}
-              key={`${card.id}-${badge.label}`}
-            >
-              {badge.label}
-            </span>
-          ))}
         </span>
         <span className="owt-provider-panel__preset-meta" id={metaId}>
           {card.meta}

@@ -216,6 +216,22 @@ describe("ProviderSidePanelPresetTab", () => {
     ).toBeInTheDocument();
   });
 
+  it("does not render inline badge pills inside preset cards", () => {
+    renderPresetTab();
+
+    const presetGrid = screen.getByRole("radiogroup", {
+      name: "Provider presets",
+    });
+    const cards = within(presetGrid).getAllByRole("radio");
+
+    expect(
+      presetGrid.querySelector(".owt-provider-panel__preset-badges"),
+    ).toBeNull();
+    cards.forEach((card) => {
+      expect(card.querySelector(".owt-status-pill")).toBeNull();
+    });
+  });
+
   it("marks the custom card with the custom variant", () => {
     const removeCssRule = installCssRule(CUSTOM_PRESET_CARD_SELECTOR);
 
