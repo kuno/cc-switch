@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { useRef } from "react";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -16,6 +18,13 @@ import {
   createPresetGroups,
   createProviderState,
 } from "../provider-panel-fixtures";
+
+const CUSTOM_PRESET_CARD_SELECTOR =
+  '.owt-provider-panel__preset-card[data-variant="custom"][data-selected="false"]';
+const providerUiCss = readFileSync(
+  resolve(process.cwd(), "src/openwrt-provider-ui/openwrt-provider-ui.css"),
+  "utf8",
+);
 
 function HostHarness({
   shell,
@@ -63,6 +72,26 @@ function renderPresetTab({
   );
 
   return { onCancel, onPresetSelect };
+}
+
+function extractCssRule(selector: string): string {
+  const selectorIndex = providerUiCss.indexOf(selector);
+  expect(selectorIndex).toBeGreaterThanOrEqual(0);
+
+  const openBraceIndex = providerUiCss.indexOf("{", selectorIndex);
+  const closeBraceIndex = providerUiCss.indexOf("}", openBraceIndex);
+  expect(openBraceIndex).toBeGreaterThan(selectorIndex);
+  expect(closeBraceIndex).toBeGreaterThan(openBraceIndex);
+
+  return providerUiCss.slice(selectorIndex, closeBraceIndex + 1);
+}
+
+function installCssRule(selector: string): () => void {
+  const style = document.createElement("style");
+  style.textContent = extractCssRule(selector);
+  document.head.append(style);
+
+  return () => style.remove();
 }
 
 describe("ProviderSidePanelPresetTab", () => {
@@ -157,14 +186,64 @@ describe("ProviderSidePanelPresetTab", () => {
     ).toBeInTheDocument();
   });
 
-  it("marks the custom card with the custom variant", () => {
+  it("filters Custom chip by custom tag only", async () => {
+    const user = userEvent.setup();
     renderPresetTab();
+
+    const filterGroup = screen.getByRole("radiogroup", {
+      name: "Preset category filter",
+    });
+    await user.click(
+      within(filterGroup).getByRole("radio", { name: "Custom" }),
+    );
+
+    expect(
+      screen.getByRole("radio", { name: /Custom Configuration/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("radio", { name: /OpenAI Official/i }),
+    ).toBeNull();
+  });
+
+  it("finds the custom card through fallback search words", async () => {
+    const user = userEvent.setup();
+    renderPresetTab();
+
+    await user.type(screen.getByRole("searchbox"), "manual");
+
+    expect(
+      screen.getByRole("radio", { name: /Custom Configuration/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("marks the custom card with the custom variant", () => {
+    const removeCssRule = installCssRule(CUSTOM_PRESET_CARD_SELECTOR);
+
+    try {
+      renderPresetTab();
+
+      const customCard = screen.getByRole("radio", {
+        name: /Custom Configuration/i,
+      });
+
+      expect(customCard).toHaveAttribute("data-variant", "custom");
+      expect(getComputedStyle(customCard).borderStyle).toBe("dashed");
+    } finally {
+      removeCssRule();
+    }
+  });
+
+  it("searches non-custom presets independently of the Custom chip", async () => {
+    const user = userEvent.setup();
+    renderPresetTab();
+
+    await user.type(screen.getByRole("searchbox"), "endpoint");
 
     expect(
       screen.getByRole("radio", {
-        name: /Custom Configuration/i,
+        name: /OpenAI Official/i,
       }),
-    ).toHaveAttribute("data-variant", "custom");
+    ).toBeInTheDocument();
   });
 
   it("shows only the selected adornment when a partner preset is selected", () => {

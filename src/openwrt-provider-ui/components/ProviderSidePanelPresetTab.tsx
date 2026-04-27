@@ -51,13 +51,6 @@ const PRESET_FILTERS: Array<{ id: PresetFilterId; label: string }> = [
   { id: "custom", label: "Custom" },
 ];
 
-const CUSTOM_FILTER_FALLBACKS = [
-  "manual",
-  "configuration",
-  "endpoint",
-  "token",
-];
-
 function normalizeSearchValue(value: string): string {
   return value.trim().toLowerCase();
 }
@@ -268,12 +261,7 @@ export function ProviderSidePanelPresetTab({
   const normalizedSearch = normalizeSearchValue(search);
   const visibleCards = cards.filter((card) => {
     const matchesFilter =
-      activeFilter === "all" ||
-      card.uiMeta.tags.includes(activeFilter) ||
-      (activeFilter === "custom" &&
-        CUSTOM_FILTER_FALLBACKS.some((fallback) =>
-          card.searchText.includes(fallback),
-        ));
+      activeFilter === "all" || card.uiMeta.tags.includes(activeFilter);
     const matchesSearch =
       normalizedSearch.length === 0 ||
       card.searchText.includes(normalizedSearch);
