@@ -42,13 +42,13 @@ type PresetCardModel = {
 };
 
 const PRESET_FILTERS: Array<{ id: PresetFilterId; label: string }> = [
-  { id: "all", label: "All" },
   { id: "official", label: "Official" },
   { id: "open_source", label: "Open-source" },
   { id: "aggregator", label: "Aggregator" },
   { id: "third_party", label: "Third Party" },
   { id: "universal", label: "Universal" },
   { id: "custom", label: "Custom" },
+  { id: "all", label: "All" },
 ];
 
 function normalizeSearchValue(value: string): string {

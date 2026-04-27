@@ -95,6 +95,29 @@ function installCssRule(selector: string): () => void {
 }
 
 describe("ProviderSidePanelPresetTab", () => {
+  it("renders category filters with All last and selected by default", () => {
+    renderPresetTab();
+
+    const filterGroup = screen.getByRole("radiogroup", {
+      name: "Preset category filter",
+    });
+    const filters = within(filterGroup).getAllByRole("radio");
+
+    expect(filters.map((filter) => filter.textContent)).toEqual([
+      "Official",
+      "Open-source",
+      "Aggregator",
+      "Third Party",
+      "Universal",
+      "Custom",
+      "All",
+    ]);
+    expect(filters[filters.length - 1]).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+  });
+
   it("stages a preset card click without applying it", async () => {
     const user = userEvent.setup();
     const onPresetSelect = vi.fn();
