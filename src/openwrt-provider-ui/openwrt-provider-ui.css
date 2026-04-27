@@ -1768,11 +1768,6 @@
   padding-bottom: 22px;
 }
 
-.owt-provider-panel__picker-actions {
-  display: flex;
-  justify-content: flex-end;
-}
-
 .owt-provider-panel__tab {
   position: relative;
   min-height: 40px;
@@ -2185,92 +2180,131 @@ select.owt-provider-panel__config-input {
   justify-content: flex-end;
 }
 
-.owt-provider-panel__preset-intro {
-  padding-bottom: 8px;
+.owt-provider-panel[data-panel-mode="preset-picker"] .owt-provider-panel__body {
+  grid-template-columns: minmax(0, 1fr);
 }
 
-.owt-provider-panel__eyebrow,
-.owt-provider-panel__label,
-.owt-provider-panel__preset-group-label {
-  display: inline-flex;
+.owt-provider-panel[data-panel-mode="preset-picker"] .owt-provider-panel__rail {
+  display: none;
+}
+
+.owt-provider-panel__preset-picker {
+  min-height: 100%;
+}
+
+.owt-provider-panel__preset-picker-head {
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.owt-provider-panel__preset-search {
+  flex: 0 1 360px;
+  width: min(360px, 100%);
+}
+
+.owt-provider-panel__preset-filters {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  color: var(--muted);
-  font-size: 10.5px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  gap: 8px;
 }
 
-.owt-provider-panel__preset-lead {
-  margin: 0;
-  padding: 18px 20px;
-  border: 0;
-  border-radius: var(--radius-control);
-  background: #1b2533;
-  color: #d8e2ef;
-  font-size: 14.5px;
-  line-height: 1.45;
-  font-weight: 500;
+.owt-provider-panel__preset-filters .owt-activity-drawer__filter-button {
+  border: 1px solid transparent;
+  background: var(--button);
 }
 
-:host([data-ccswitch-theme="dark"]) .owt-provider-panel__preset-lead,
-.ccswitch-openwrt-provider-ui-host[data-ccswitch-theme="dark"]
-  .owt-provider-panel__preset-lead {
-  background: #0b1017;
-  color: #cbd6e5;
-}
-
-.owt-provider-panel__preset-subtext,
-.owt-provider-panel__preset-group-hint {
-  margin-top: 10px;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.5;
+.owt-provider-panel__preset-filters
+  .owt-activity-drawer__filter-button[data-active="true"] {
+  border-color: color-mix(in srgb, var(--accent) 18%, var(--line));
+  background: var(--accent-soft);
+  color: var(--accent-text);
 }
 
 .owt-provider-panel__preset-grid {
   display: grid;
-  gap: 10px;
-  margin-top: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .owt-provider-panel__preset-card {
-  display: block;
+  position: relative;
+  display: flex;
   width: 100%;
-  padding: 14px 16px;
+  min-height: 128px;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 15px 42px 15px 15px;
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
   background: var(--panel-strong);
+  color: var(--text);
   text-align: left;
-  transition: border-color 140ms, background 140ms;
+  cursor: pointer;
+  transition:
+    border-color 160ms,
+    background 160ms,
+    box-shadow 160ms,
+    transform 160ms;
 }
 
 .owt-provider-panel__preset-card:hover {
   border-color: var(--line-strong);
 }
 
-.owt-provider-panel__preset-card[data-selected="true"] {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
+.owt-provider-panel__preset-card:active {
+  transform: none;
 }
 
-.owt-provider-panel__preset-head {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
+.owt-provider-panel__preset-card[data-variant="partner"][data-selected="false"] {
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 58%, var(--panel-strong));
+}
+
+.owt-provider-panel__preset-card[data-variant="universal"][data-selected="false"] {
+  border-color: var(--success-line);
+  background: color-mix(in srgb, var(--success-soft) 68%, var(--panel-strong));
+}
+
+.owt-provider-panel__preset-card[data-variant="custom"][data-selected="false"] {
+  border-color: var(--line-strong);
+  border-style: dashed;
+  background: var(--panel-soft);
+}
+
+.owt-provider-panel__preset-card[data-selected="true"] {
+  border-color: var(--warn-line);
+  border-style: solid;
+  background: var(--warn-soft);
+  box-shadow: var(--shadow-soft);
 }
 
 .owt-provider-panel__preset-icon {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 11px;
-  border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-icon);
   background: color-mix(in srgb, var(--panel-soft) 84%, transparent);
+}
+
+.owt-provider-panel__preset-icon[data-tone="warn"] {
+  border-color: var(--warn-line);
+  background: var(--warn-soft);
+}
+
+.owt-provider-panel__preset-icon[data-tone="accent"] {
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--line));
+  background: var(--accent-soft);
+}
+
+.owt-provider-panel__preset-icon[data-tone="success"] {
+  border-color: var(--success-line);
+  background: var(--success-soft);
+}
+
+.owt-provider-panel__preset-icon[data-tone="neutral"] {
+  border-color: var(--line);
+  background: var(--panel-softer);
+  color: var(--muted);
 }
 
 .owt-provider-panel__preset-icon img {
@@ -2278,30 +2312,64 @@ select.owt-provider-panel__config-input {
 }
 
 .owt-provider-panel__preset-copy {
+  display: flex;
   min-width: 0;
   flex: 1 1 auto;
+  flex-direction: column;
+  align-items: flex-start;
 }
 
 .owt-provider-panel__preset-title {
   color: var(--text);
   font-size: 15px;
   font-weight: 720;
-  margin-bottom: 4px;
+  line-height: 1.25;
 }
 
 .owt-provider-panel__preset-description {
+  margin-top: 5px;
   color: var(--muted);
   font-size: 13px;
   line-height: 1.45;
 }
 
+.owt-provider-panel__preset-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 11px;
+}
+
+.owt-provider-panel__preset-badges .owt-status-pill {
+  min-height: 26px;
+}
+
+.owt-provider-panel__preset-badges .owt-status-pill[data-tone="warn"] {
+  border-color: var(--warn-line);
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.owt-provider-panel__preset-feature-icon {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 20px;
+  height: 20px;
+  color: var(--warn);
+}
+
 .owt-provider-panel__preset-meta {
   margin-top: 10px;
   color: var(--soft-text);
-  font-size: 12.5px;
+  font-family: var(--owt-mono);
+  font-size: 12px;
   line-height: 1.45;
   word-break: break-all;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+.owt-provider-panel__preset-actions-row {
+  margin-top: auto;
 }
 
 .owt-provider-panel__fields {
@@ -2650,17 +2718,38 @@ select.owt-provider-panel__input {
 .owt-provider-panel__icon-button:focus-visible,
 .owt-provider-panel__id-chip:focus-visible,
 .owt-provider-panel__provider-row:focus-visible,
-.owt-provider-panel__preset-card:focus-visible,
 .owt-status-pill--button:focus-visible {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
+.owt-provider-panel__preset-card:focus-visible {
+  outline: none;
+  box-shadow:
+    var(--shadow-soft),
+    0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.owt-provider-panel__preset-card:focus-visible:not([data-selected="true"]) {
+  border-color: var(--accent);
+}
+
 .owt-provider-panel__tab:focus-visible,
 .owt-provider-panel__segment-button:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent) 56%, transparent);
   outline-offset: 2px;
+}
+
+@media (max-width: 940px) {
+  .owt-provider-panel__preset-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .owt-provider-panel__preset-search {
+    flex-basis: 100%;
+    width: 100%;
+  }
 }
 
 @media (max-width: 860px) {

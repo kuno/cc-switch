@@ -266,8 +266,13 @@ describe("ProviderSidePanelHost", () => {
       name: "Codex providers",
     });
     await user.click(
+      within(draftDialog).getByRole("radio", {
+        name: /Custom Configuration/i,
+      }),
+    );
+    await user.click(
       within(draftDialog).getByRole("button", {
-        name: /Custom draft/i,
+        name: "Select preset",
       }),
     );
 
@@ -439,7 +444,10 @@ describe("ProviderSidePanelHost", () => {
 
     const dialog = await openPanel();
     await user.click(
-      within(await dialog).getByRole("button", { name: /OpenAI Official/i }),
+      within(await dialog).getByRole("radio", { name: /OpenAI Official/i }),
+    );
+    await user.click(
+      within(await dialog).getByRole("button", { name: "Select preset" }),
     );
     fireEvent.change(within(await dialog).getByLabelText("auth.json"), {
       target: {
