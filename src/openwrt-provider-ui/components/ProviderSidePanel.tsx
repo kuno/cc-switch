@@ -586,17 +586,7 @@ export function ProviderSidePanel({
                     </button>
                   </div>
                 </>
-              ) : (
-                <div className="owt-provider-panel__picker-actions">
-                  <button
-                    type="button"
-                    className="owt-provider-panel__button owt-provider-panel__button--ghost"
-                    onClick={onPresetCancel ?? onCancel}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              )}
+              ) : null}
 
               <div className="owt-provider-panel__content">
                 {loading ? (
@@ -613,6 +603,7 @@ export function ProviderSidePanel({
                     groups={presetGroups}
                     selectedPresetId={selectedPresetId}
                     onPresetSelect={onPresetSelect}
+                    onCancel={onPresetCancel ?? onCancel}
                   />
                 ) : tab === "activities" ? (
                   <ProviderSidePanelActivitiesTab

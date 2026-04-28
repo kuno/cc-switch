@@ -62,7 +62,7 @@ describe("ProviderSidePanel hard rules", () => {
 
       if (tab === "preset-picker") {
         expect(screen.queryByRole("tablist")).toBeNull();
-        expect(screen.getByText("Preset browser")).toBeInTheDocument();
+        expect(screen.getByText("Provider Preset")).toBeInTheDocument();
       } else {
         if (tab === "activities") {
           expect(await screen.findByText("No recent activity")).toBeInTheDocument();
