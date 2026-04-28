@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { useRef } from "react";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -19,6 +21,10 @@ import {
 
 const CUSTOM_PRESET_CARD_SELECTOR =
   '.owt-provider-panel__preset-card[data-variant="custom"][data-selected="false"]';
+const providerUiCss = readFileSync(
+  resolve(process.cwd(), "src/openwrt-provider-ui/openwrt-provider-ui.css"),
+  "utf8",
+);
 
 function HostHarness({
   shell,
@@ -68,9 +74,21 @@ function renderPresetTab({
   return { onCancel, onPresetSelect };
 }
 
+function extractCssRule(selector: string): string {
+  const selectorIndex = providerUiCss.indexOf(selector);
+  expect(selectorIndex).toBeGreaterThanOrEqual(0);
+
+  const openBraceIndex = providerUiCss.indexOf("{", selectorIndex);
+  const closeBraceIndex = providerUiCss.indexOf("}", openBraceIndex);
+  expect(openBraceIndex).toBeGreaterThan(selectorIndex);
+  expect(closeBraceIndex).toBeGreaterThan(openBraceIndex);
+
+  return providerUiCss.slice(selectorIndex, closeBraceIndex + 1);
+}
+
 function installCssRule(selector: string): () => void {
   const style = document.createElement("style");
-  style.textContent = `${selector} { border-style: dashed; }`;
+  style.textContent = extractCssRule(selector);
   document.head.append(style);
 
   return () => style.remove();
