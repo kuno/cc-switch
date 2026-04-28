@@ -1,0 +1,7 @@
+{
+  "worktree": {
+    "setup": [
+      "pnpm install --frozen-lockfile"
+    ]
+  }
+}
