@@ -50,6 +50,7 @@ const PRESET_FILTERS: Array<{ id: PresetFilterId; label: string }> = [
   { id: "custom", label: "Custom" },
   { id: "all", label: "All" },
 ];
+const DEFAULT_PRESET_FILTER_ID: PresetFilterId = PRESET_FILTERS[0]?.id ?? "all";
 
 function normalizeSearchValue(value: string): string {
   return value.trim().toLowerCase();
@@ -202,7 +203,9 @@ export function ProviderSidePanelPresetTab({
     selectedPresetId,
   );
   const [search, setSearch] = useState("");
-  const [activeFilter, setActiveFilter] = useState<PresetFilterId>("all");
+  const [activeFilter, setActiveFilter] = useState<PresetFilterId>(
+    DEFAULT_PRESET_FILTER_ID,
+  );
   const filterRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const cardRefs = useRef<Array<HTMLButtonElement | null>>([]);
 

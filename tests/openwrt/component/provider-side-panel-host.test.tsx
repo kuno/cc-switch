@@ -265,6 +265,14 @@ describe("ProviderSidePanelHost", () => {
     const draftDialog = await screen.findByRole("dialog", {
       name: "Codex providers",
     });
+    const filterGroup = within(draftDialog).getByRole("radiogroup", {
+      name: "Preset category filter",
+    });
+    await user.click(
+      within(filterGroup).getByRole("radio", {
+        name: "Custom",
+      }),
+    );
     await user.click(
       within(draftDialog).getByRole("radio", {
         name: /Custom Configuration/i,

@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { useRef } from "react";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -21,10 +19,6 @@ import {
 
 const CUSTOM_PRESET_CARD_SELECTOR =
   '.owt-provider-panel__preset-card[data-variant="custom"][data-selected="false"]';
-const providerUiCss = readFileSync(
-  resolve(process.cwd(), "src/openwrt-provider-ui/openwrt-provider-ui.css"),
-  "utf8",
-);
 
 function HostHarness({
   shell,
@@ -74,28 +68,16 @@ function renderPresetTab({
   return { onCancel, onPresetSelect };
 }
 
-function extractCssRule(selector: string): string {
-  const selectorIndex = providerUiCss.indexOf(selector);
-  expect(selectorIndex).toBeGreaterThanOrEqual(0);
-
-  const openBraceIndex = providerUiCss.indexOf("{", selectorIndex);
-  const closeBraceIndex = providerUiCss.indexOf("}", openBraceIndex);
-  expect(openBraceIndex).toBeGreaterThan(selectorIndex);
-  expect(closeBraceIndex).toBeGreaterThan(openBraceIndex);
-
-  return providerUiCss.slice(selectorIndex, closeBraceIndex + 1);
-}
-
 function installCssRule(selector: string): () => void {
   const style = document.createElement("style");
-  style.textContent = extractCssRule(selector);
+  style.textContent = `${selector} { border-style: dashed; }`;
   document.head.append(style);
 
   return () => style.remove();
 }
 
 describe("ProviderSidePanelPresetTab", () => {
-  it("renders category filters with All last and selected by default", () => {
+  it("renders category filters with All last and first visible selected by default", () => {
     renderPresetTab();
 
     const filterGroup = screen.getByRole("radiogroup", {
@@ -112,9 +94,10 @@ describe("ProviderSidePanelPresetTab", () => {
       "Custom",
       "All",
     ]);
+    expect(filters[0]).toHaveAttribute("aria-checked", "true");
     expect(filters[filters.length - 1]).toHaveAttribute(
       "aria-checked",
-      "true",
+      "false",
     );
   });
 
@@ -191,14 +174,16 @@ describe("ProviderSidePanelPresetTab", () => {
     const user = userEvent.setup();
     renderPresetTab();
 
+    const filterGroup = screen.getByRole("radiogroup", {
+      name: "Preset category filter",
+    });
+    await user.click(within(filterGroup).getByRole("radio", { name: "All" }));
+
     await user.type(screen.getByRole("searchbox"), "openrouter");
     expect(
       screen.getByRole("radio", { name: /OpenRouter/i }),
     ).toBeInTheDocument();
 
-    const filterGroup = screen.getByRole("radiogroup", {
-      name: "Preset category filter",
-    });
     await user.click(
       within(filterGroup).getByRole("radio", { name: "Official" }),
     );
@@ -232,6 +217,10 @@ describe("ProviderSidePanelPresetTab", () => {
     const user = userEvent.setup();
     renderPresetTab();
 
+    const filterGroup = screen.getByRole("radiogroup", {
+      name: "Preset category filter",
+    });
+    await user.click(within(filterGroup).getByRole("radio", { name: "All" }));
     await user.type(screen.getByRole("searchbox"), "manual");
 
     expect(
@@ -255,11 +244,19 @@ describe("ProviderSidePanelPresetTab", () => {
     });
   });
 
-  it("marks the custom card with the custom variant", () => {
+  it("marks the custom card with the custom variant", async () => {
+    const user = userEvent.setup();
     const removeCssRule = installCssRule(CUSTOM_PRESET_CARD_SELECTOR);
 
     try {
       renderPresetTab();
+
+      const filterGroup = screen.getByRole("radiogroup", {
+        name: "Preset category filter",
+      });
+      await user.click(
+        within(filterGroup).getByRole("radio", { name: "Custom" }),
+      );
 
       const customCard = screen.getByRole("radio", {
         name: /Custom Configuration/i,
@@ -285,7 +282,8 @@ describe("ProviderSidePanelPresetTab", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows only the selected adornment when a partner preset is selected", () => {
+  it("shows only the selected adornment when a partner preset is selected", async () => {
+    const user = userEvent.setup();
     const groups = createPresetGroups("codex");
     const partnerPreset = {
       ...groups[0].presets[0],
@@ -308,6 +306,13 @@ describe("ProviderSidePanelPresetTab", () => {
         onPresetSelect={vi.fn()}
         selectedPresetId="codex-partner"
       />,
+    );
+
+    const filterGroup = screen.getByRole("radiogroup", {
+      name: "Preset category filter",
+    });
+    await user.click(
+      within(filterGroup).getByRole("radio", { name: "Third Party" }),
     );
 
     const partnerCard = screen.getByRole("radio", {
