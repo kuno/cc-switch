@@ -97,7 +97,9 @@ describe("ProviderSidePanel", () => {
     expect(failoverTab).toHaveAttribute("hidden");
     expect(failoverPanel).not.toBeNull();
     expect(failoverPanel).toHaveAttribute("hidden");
-    expect(within(dialog).queryByRole("button", { name: "Set active" })).toBeNull();
+    expect(
+      within(dialog).queryByRole("button", { name: "Set active" }),
+    ).toBeNull();
 
     fireEvent.click(container.querySelector(".owt-provider-panel__scrim")!);
     expect(onClose).toHaveBeenCalledTimes(1);
@@ -114,11 +116,7 @@ describe("ProviderSidePanel", () => {
   it("switches visible content between Activities and Configure", async () => {
     const user = userEvent.setup();
 
-    render(
-      <StatefulProviderSidePanel
-        initialTab="activities"
-      />,
-    );
+    render(<StatefulProviderSidePanel initialTab="activities" />);
 
     expect(await screen.findByText("No recent activity")).toBeInTheDocument();
 
@@ -130,6 +128,53 @@ describe("ProviderSidePanel", () => {
 
     expect(screen.getByText("Provider name")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
+  });
+
+  it("renders minimal failover checkboxes beside the app and provider names", () => {
+    const onToggleAppAutoFailover = vi.fn();
+    const onToggleProviderFailoverQueue = vi.fn();
+    const provider = createProviderView("claude", {
+      active: true,
+      name: "Claude Primary",
+      providerId: "claude-primary",
+    });
+
+    render(
+      <ProviderSidePanel
+        {...createProviderSidePanelProps({
+          appAutoFailoverEnabled: true,
+          failoverControlsAvailable: true,
+          failoverControlsReady: true,
+          providerInFailoverQueue: false,
+          providers: [provider],
+          selectedProvider: provider,
+          selectedProviderId: provider.providerId,
+          callbacks: {
+            onToggleAppAutoFailover,
+            onToggleProviderFailoverQueue,
+          },
+        })}
+      />,
+    );
+
+    const dialog = screen.getByRole("dialog", {
+      name: "Claude providers",
+    });
+    const appCheckbox = within(dialog).getByRole("checkbox", {
+      name: "Claude auto-failover",
+    });
+    const providerCheckbox = within(dialog).getByRole("checkbox", {
+      name: "Include Claude Primary in failover queue",
+    });
+
+    expect(appCheckbox).toBeChecked();
+    expect(providerCheckbox).not.toBeChecked();
+
+    fireEvent.click(appCheckbox);
+    fireEvent.click(providerCheckbox);
+
+    expect(onToggleAppAutoFailover).toHaveBeenCalledWith(false);
+    expect(onToggleProviderFailoverQueue).toHaveBeenCalledWith(true);
   });
 
   it("renders loading and error state content when requested", () => {
@@ -302,10 +347,16 @@ describe("ProviderSidePanel", () => {
     );
 
     const activityStatus = await screen.findByText("HTTP 200");
-    const activityRow = activityStatus.closest(".owt-provider-panel__activity-row");
+    const activityRow = activityStatus.closest(
+      ".owt-provider-panel__activity-row",
+    );
 
     expect(activityRow).not.toBeNull();
-    expect(within(activityRow as HTMLElement).getByText("Claude Primary")).toBeInTheDocument();
-    expect(within(activityRow as HTMLElement).getByText(/0\.03/)).toBeInTheDocument();
+    expect(
+      within(activityRow as HTMLElement).getByText("Claude Primary"),
+    ).toBeInTheDocument();
+    expect(
+      within(activityRow as HTMLElement).getByText(/0\.03/),
+    ).toBeInTheDocument();
   });
 });
