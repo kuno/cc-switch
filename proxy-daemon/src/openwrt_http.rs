@@ -78,6 +78,14 @@ pub(crate) fn mount_openwrt_admin_routes(router: Router<ProxyState>) -> Router<P
             get(openwrt_get_provider_failover),
         )
         .route(
+            "/openwrt/admin/apps/:app/providers/:provider_id/circuit-breaker",
+            get(openwrt_get_circuit_breaker_state),
+        )
+        .route(
+            "/openwrt/admin/apps/:app/providers/:provider_id/circuit-breaker/reset",
+            post(openwrt_reset_circuit_breaker),
+        )
+        .route(
             "/openwrt/admin/apps/:app/failover/providers/available",
             get(openwrt_get_available_failover_providers),
         )
@@ -351,6 +359,46 @@ async fn openwrt_get_provider_failover(
                 Err(error) => openwrt_admin_error(error),
             }
         }
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+async fn openwrt_get_circuit_breaker_state(
+    Path((app, provider_id)): Path<(String, String)>,
+    State(state): State<ProxyState>,
+) -> (StatusCode, Json<Value>) {
+    match parse_openwrt_app(&app) {
+        Ok(app_type) => match openwrt_admin::get_circuit_breaker_state(
+            state.db.as_ref(),
+            state.provider_router.as_ref(),
+            &app_type,
+            &provider_id,
+        )
+        .await
+        {
+            Ok(view) => openwrt_admin_ok(view),
+            Err(error) => openwrt_admin_error(error),
+        },
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+async fn openwrt_reset_circuit_breaker(
+    Path((app, provider_id)): Path<(String, String)>,
+    State(state): State<ProxyState>,
+) -> (StatusCode, Json<Value>) {
+    match parse_openwrt_app(&app) {
+        Ok(app_type) => match openwrt_admin::reset_circuit_breaker(
+            state.db.as_ref(),
+            state.provider_router.as_ref(),
+            &app_type,
+            &provider_id,
+        )
+        .await
+        {
+            Ok(view) => openwrt_admin_ok(view),
+            Err(error) => openwrt_admin_error(error),
+        },
         Err(error) => openwrt_admin_error(error),
     }
 }
@@ -709,6 +757,43 @@ mod tests {
         .expect("insert request log");
     }
 
+    async fn seed_open_circuit_provider(state: &ProxyState, app_type: &str, provider_id: &str) {
+        let provider = crate::provider::Provider::with_id(
+            provider_id.to_string(),
+            "Circuit Provider".to_string(),
+            json!({}),
+            None,
+        );
+        state
+            .db
+            .save_provider(app_type, &provider)
+            .expect("save provider");
+
+        let mut config = state
+            .db
+            .get_proxy_config_for_app(app_type)
+            .await
+            .expect("app proxy config");
+        config.circuit_failure_threshold = 1;
+        state
+            .db
+            .update_proxy_config_for_app(config)
+            .await
+            .expect("update app proxy config");
+
+        state
+            .provider_router
+            .record_result(
+                provider_id,
+                app_type,
+                false,
+                false,
+                Some("upstream timeout".to_string()),
+            )
+            .await
+            .expect("record failed provider result");
+    }
+
     #[tokio::test]
     async fn openwrt_upload_codex_auth_rejects_oversized_payload() {
         let state = test_proxy_state();
@@ -890,6 +975,90 @@ mod tests {
             .as_str()
             .expect("error string")
             .contains("request log `req-codex` not found for claude"));
+    }
+
+    #[tokio::test]
+    async fn openwrt_get_circuit_breaker_state_returns_live_stats_and_health() {
+        let state = test_proxy_state();
+        seed_open_circuit_provider(&state, "claude", "provider-a").await;
+
+        let (status, body) = openwrt_get_circuit_breaker_state(
+            Path(("claude".to_string(), "provider-a".to_string())),
+            State(state),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["ok"], Value::Bool(true));
+        assert_eq!(body["app"], Value::String("claude".to_string()));
+        assert_eq!(body["providerId"], Value::String("provider-a".to_string()));
+        assert_eq!(body["liveRuntimeReachable"], Value::Bool(true));
+        assert_eq!(body["source"], Value::String("runtime-router".to_string()));
+        assert_eq!(body["state"], Value::String("open".to_string()));
+        assert_eq!(body["stats"]["state"], Value::String("open".to_string()));
+        assert_eq!(body["stats"]["failedRequests"], Value::from(1));
+        assert_eq!(body["providerHealth"]["observed"], Value::Bool(true));
+        assert_eq!(body["providerHealth"]["healthy"], Value::Bool(false));
+        assert_eq!(
+            body["providerHealth"]["consecutiveFailures"],
+            Value::from(1)
+        );
+        assert_eq!(
+            body["providerHealth"]["lastError"],
+            Value::String("upstream timeout".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn openwrt_reset_circuit_breaker_resets_health_and_live_state() {
+        let state = test_proxy_state();
+        seed_open_circuit_provider(&state, "claude", "provider-a").await;
+
+        let (status, body) = openwrt_reset_circuit_breaker(
+            Path(("claude".to_string(), "provider-a".to_string())),
+            State(state.clone()),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["ok"], Value::Bool(true));
+        assert_eq!(body["providerId"], Value::String("provider-a".to_string()));
+        assert_eq!(body["providerHealth"]["observed"], Value::Bool(true));
+        assert_eq!(body["providerHealth"]["healthy"], Value::Bool(true));
+        assert_eq!(
+            body["providerHealth"]["consecutiveFailures"],
+            Value::from(0)
+        );
+        assert_eq!(body["providerHealth"]["lastError"], Value::Null);
+        assert_eq!(
+            body["circuitBreaker"]["state"],
+            Value::String("closed".to_string())
+        );
+        assert_eq!(
+            body["circuitBreaker"]["stats"]["state"],
+            Value::String("closed".to_string())
+        );
+        assert_eq!(
+            body["circuitBreaker"]["stats"]["failedRequests"],
+            Value::from(0)
+        );
+
+        let persisted_health = state
+            .db
+            .get_provider_health("provider-a", "claude")
+            .await
+            .expect("persisted provider health");
+        assert!(persisted_health.is_healthy);
+        assert_eq!(persisted_health.consecutive_failures, 0);
+        assert_eq!(persisted_health.last_error, None);
+
+        let live_stats = state
+            .provider_router
+            .get_circuit_breaker_stats("provider-a", "claude")
+            .await
+            .expect("live breaker stats");
+        assert_eq!(live_stats.state, crate::proxy::CircuitState::Closed);
+        assert_eq!(live_stats.failed_requests, 0);
     }
 
     #[tokio::test]
