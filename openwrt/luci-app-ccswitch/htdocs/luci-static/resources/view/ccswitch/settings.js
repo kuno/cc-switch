@@ -276,6 +276,13 @@ var callReorderFailoverQueue = rpc.declare({
 	expect: { '': {} }
 });
 
+var callReorderProviders = rpc.declare({
+	object: 'ccswitch',
+	method: 'reorder_providers',
+	params: ['app', 'provider_ids'],
+	expect: { '': {} }
+});
+
 var callSetMaxRetries = rpc.declare({
 	object: 'ccswitch',
 	method: 'set_max_retries',
@@ -755,6 +762,19 @@ function callOpenWrtReorderFailoverQueue(appId, providerIds) {
 		});
 	}, function () {
 		return L.resolveDefault(callReorderFailoverQueue(appId, providerIds), { ok: false });
+	});
+}
+
+function callOpenWrtReorderProviders(appId, providerIds) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/providers/order', {
+			method: 'PUT',
+			body: {
+				providerIds: providerIds
+			}
+		});
+	}, function () {
+		return L.resolveDefault(callReorderProviders(appId, providerIds), { ok: false });
 	});
 }
 
@@ -2657,6 +2677,9 @@ return view.extend({
 			},
 			reorderFailoverQueue: function (appId, providerIds) {
 				return callOpenWrtReorderFailoverQueue(appId, providerIds);
+			},
+			reorderProviders: function (appId, providerIds) {
+				return callOpenWrtReorderProviders(appId, providerIds);
 			},
 			setMaxRetries: function (appId, value) {
 				return callOpenWrtSetMaxRetries(appId, value);

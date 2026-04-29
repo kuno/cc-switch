@@ -229,6 +229,7 @@ fn schema_migration_adds_missing_columns_for_providers() {
     for (table, column) in [
         ("providers", "meta"),
         ("providers", "is_current"),
+        ("providers", "display_sort_index"),
         ("provider_endpoints", "added_at"),
         ("mcp_servers", "enabled_gemini"),
         ("prompts", "updated_at"),
@@ -618,6 +619,7 @@ fn migration_from_v3_8_schema_v1_to_current_schema_v3() {
         "limit_monthly_usd",
         "provider_type",
         "in_failover_queue",
+        "display_sort_index",
     ] {
         assert!(
             Database::has_column(&conn, "providers", column).expect("check column"),

@@ -33,6 +33,7 @@ impl Database {
                 category TEXT,
                 created_at INTEGER,
                 sort_index INTEGER,
+                display_sort_index INTEGER,
                 notes TEXT,
                 icon TEXT,
                 icon_color TEXT,
@@ -390,6 +391,7 @@ impl Database {
             "in_failover_queue",
             "BOOLEAN NOT NULL DEFAULT 0",
         )?;
+        Self::add_column_if_missing(conn, "providers", "display_sort_index", "INTEGER")?;
 
         // 删除旧的 failover_queue 表（如果存在）
         let _ = conn.execute("DROP INDEX IF EXISTS idx_failover_queue_order", []);
@@ -524,6 +526,11 @@ impl Database {
                         Self::migrate_v15_to_v16(conn)?;
                         Self::set_user_version(conn, 16)?;
                     }
+                    16 => {
+                        log::info!("迁移数据库从 v16 到 v17（分离供应商展示排序与故障转移排序）");
+                        Self::migrate_v16_to_v17(conn)?;
+                        Self::set_user_version(conn, 17)?;
+                    }
                     _ => {
                         return Err(AppError::Database(format!(
                             "未知的数据库版本 {version}，无法迁移到 {SCHEMA_VERSION}"
@@ -555,6 +562,7 @@ impl Database {
         Self::add_column_if_missing(conn, "providers", "category", "TEXT")?;
         Self::add_column_if_missing(conn, "providers", "created_at", "INTEGER")?;
         Self::add_column_if_missing(conn, "providers", "sort_index", "INTEGER")?;
+        Self::add_column_if_missing(conn, "providers", "display_sort_index", "INTEGER")?;
         Self::add_column_if_missing(conn, "providers", "notes", "TEXT")?;
         Self::add_column_if_missing(conn, "providers", "icon", "TEXT")?;
         Self::add_column_if_missing(conn, "providers", "icon_color", "TEXT")?;
@@ -1318,6 +1326,7 @@ impl Database {
         Ok(())
     }
 
+<<<<<<< HEAD
     /// v10 -> v11：usage_daily_rollups 增加 request_model 维度（进入主键），
     /// proxy_request_logs 增加 pricing_model 列（写入时的计价基准，回填依据）。
     ///
@@ -1544,6 +1553,23 @@ impl Database {
     fn migrate_v15_to_v16(conn: &Connection) -> Result<(), AppError> {
         let codex_dir = crate::codex_config::get_codex_config_dir();
         crate::services::session_usage_codex::reset_codex_usage_on_conn(conn, &codex_dir)
+    }
+
+    /// v16 -> v17 迁移：分离供应商展示排序与故障转移队列排序
+    fn migrate_v16_to_v17(conn: &Connection) -> Result<(), AppError> {
+        Self::add_column_if_missing(conn, "providers", "display_sort_index", "INTEGER")?;
+        if Self::has_column(conn, "providers", "sort_index")? {
+            conn.execute(
+                "UPDATE providers
+                 SET display_sort_index = sort_index
+                 WHERE display_sort_index IS NULL AND sort_index IS NOT NULL",
+                [],
+            )
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        }
+
+        log::info!("v16 -> v17 迁移完成：已分离供应商展示排序");
+        Ok(())
     }
 
     /// 插入默认模型定价数据

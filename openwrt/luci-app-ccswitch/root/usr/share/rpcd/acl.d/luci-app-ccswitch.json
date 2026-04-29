@@ -38,6 +38,7 @@
 					"remove_from_failover_queue",
 					"set_auto_failover_enabled",
 					"reorder_failover_queue",
+					"reorder_providers",
 					"set_max_retries",
 					"set_host_config",
 					"restart_service",
