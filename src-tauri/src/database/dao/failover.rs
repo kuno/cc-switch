@@ -64,9 +64,38 @@ impl Database {
     pub fn add_to_failover_queue(&self, app_type: &str, provider_id: &str) -> Result<(), AppError> {
         let conn = lock_conn!(self.conn);
 
+        let already_queued = conn
+            .query_row(
+                "SELECT in_failover_queue FROM providers WHERE id = ?1 AND app_type = ?2",
+                rusqlite::params![provider_id, app_type],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    AppError::Database(format!("provider {provider_id} not found for {app_type}"))
+                }
+                e => AppError::Database(e.to_string()),
+            })?;
+
+        if already_queued {
+            return Ok(());
+        }
+
+        let next_sort_index: i64 = conn
+            .query_row(
+                "SELECT COALESCE(MAX(COALESCE(sort_index, 999999)), -1) + 1
+                 FROM providers
+                 WHERE app_type = ?1 AND in_failover_queue = 1",
+                [app_type],
+                |row| row.get(0),
+            )
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
         conn.execute(
-            "UPDATE providers SET in_failover_queue = 1 WHERE id = ?1 AND app_type = ?2",
-            rusqlite::params![provider_id, app_type],
+            "UPDATE providers
+             SET in_failover_queue = 1, sort_index = ?3
+             WHERE id = ?1 AND app_type = ?2",
+            rusqlite::params![provider_id, app_type, next_sort_index],
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
 
@@ -202,5 +231,46 @@ impl Database {
             .collect();
 
         Ok(available)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::database::Database;
+    use serde_json::json;
+
+    fn save_provider(db: &Database, app_type: &str, id: &str, in_failover_queue: bool) {
+        let mut provider = Provider::with_id(
+            id.to_string(),
+            id.to_string(),
+            json!({"base_url": "https://example.test"}),
+            None,
+        );
+        provider.in_failover_queue = in_failover_queue;
+        db.save_provider(app_type, &provider)
+            .expect("save provider");
+    }
+
+    #[test]
+    fn add_to_failover_queue_appends_after_legacy_null_sort_entries() {
+        let db = Database::memory().expect("db");
+        save_provider(&db, "claude", "provider-b", true);
+        save_provider(&db, "claude", "provider-a", false);
+
+        db.add_to_failover_queue("claude", "provider-a")
+            .expect("queue provider a");
+
+        let queue = db.get_failover_queue("claude").expect("queue");
+        let ids = queue
+            .iter()
+            .map(|item| item.provider_id.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(ids, vec!["provider-b", "provider-a"]);
+        assert!(
+            queue[1].sort_index.expect("new provider sort index")
+                > queue[0].sort_index.unwrap_or(999999)
+        );
     }
 }
