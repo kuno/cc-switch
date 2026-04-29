@@ -345,7 +345,7 @@ pub fn list_providers(
     let profile = openwrt_app_profile(app_type)?;
     let active_provider_id = resolve_active_provider_id_for_read(db, app_type, profile)?;
     let providers = db
-        .get_all_providers(profile.app_id)
+        .get_all_providers_by_display_order(profile.app_id)
         .map_err(|e| anyhow!("failed to list {} providers: {e}", profile.app_id))?;
 
     Ok(provider_list_to_view(
@@ -791,12 +791,14 @@ pub fn delete_provider(
         }
     }
 
-    let remaining = db.get_all_providers(profile.app_id).map_err(|e| {
-        anyhow!(
-            "failed to reload {} providers after delete: {e}",
-            profile.app_id
-        )
-    })?;
+    let remaining = db
+        .get_all_providers_by_display_order(profile.app_id)
+        .map_err(|e| {
+            anyhow!(
+                "failed to reload {} providers after delete: {e}",
+                profile.app_id
+            )
+        })?;
     let next_current = select_current_provider_after_delete(
         &remaining,
         &normalized_provider_id,
@@ -2015,7 +2017,12 @@ fn provider_list_to_view(
 ) -> OpenWrtProviderListView {
     let providers = providers
         .values()
-        .map(|provider| provider_to_view(app_type, profile, provider, active_provider_id))
+        .enumerate()
+        .map(|(index, provider)| {
+            let mut view = provider_to_view(app_type, profile, provider, active_provider_id);
+            view.sort_index = Some(index);
+            view
+        })
         .collect();
 
     OpenWrtProviderListView {
@@ -3717,6 +3724,87 @@ mod tests {
             .filter_map(|provider| provider.provider_id.as_deref())
             .collect::<Vec<_>>();
         assert_eq!(reloaded_ids, ids);
+    }
+
+    #[test]
+    #[serial]
+    fn reorder_providers_preserves_failover_queue_priority_for_mixed_provider_list() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+
+        upsert_claude_provider_with_payload(
+            &db,
+            Some("provider-a"),
+            sample_payload("Provider A", "secret-a"),
+        )
+        .expect("create provider a");
+        upsert_claude_provider_with_payload(
+            &db,
+            Some("provider-b"),
+            sample_payload("Provider B", "secret-b"),
+        )
+        .expect("create provider b");
+        upsert_claude_provider_with_payload(
+            &db,
+            Some("provider-c"),
+            sample_payload("Provider C", "secret-c"),
+        )
+        .expect("create provider c");
+        db.add_to_failover_queue(CLAUDE_APP_TYPE, "provider-a")
+            .expect("queue provider a");
+        db.add_to_failover_queue(CLAUDE_APP_TYPE, "provider-c")
+            .expect("queue provider c");
+
+        let display_order_before = list_claude_providers(&db).expect("list before reorder");
+        assert_eq!(
+            display_order_before
+                .providers
+                .iter()
+                .filter_map(|provider| provider.provider_id.as_deref())
+                .collect::<Vec<_>>(),
+            vec!["provider-a", "provider-b", "provider-c"]
+        );
+
+        let queue_before = db
+            .get_failover_queue(CLAUDE_APP_TYPE)
+            .expect("queue before reorder");
+        assert_eq!(
+            queue_before
+                .iter()
+                .map(|entry| entry.provider_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["provider-a", "provider-c"]
+        );
+
+        let reordered = reorder_providers(
+            &db,
+            &AppType::Claude,
+            &[
+                "provider-c".to_string(),
+                "provider-b".to_string(),
+                "provider-a".to_string(),
+            ],
+        )
+        .expect("reorder providers");
+        assert_eq!(
+            reordered
+                .providers
+                .iter()
+                .filter_map(|provider| provider.provider_id.as_deref())
+                .collect::<Vec<_>>(),
+            vec!["provider-c", "provider-b", "provider-a"]
+        );
+
+        let queue_after = db
+            .get_failover_queue(CLAUDE_APP_TYPE)
+            .expect("queue after provider reorder");
+        assert_eq!(
+            queue_after
+                .iter()
+                .map(|entry| (entry.provider_id.as_str(), entry.sort_index))
+                .collect::<Vec<_>>(),
+            vec![("provider-a", Some(0)), ("provider-c", Some(1))]
+        );
     }
 
     #[test]

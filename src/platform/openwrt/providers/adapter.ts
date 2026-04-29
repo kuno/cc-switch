@@ -515,7 +515,7 @@ async function loadProviderFailoverState(
   );
 }
 
-async function runFailoverMutation(
+async function runOpenWrtMutation(
   action: () => Promise<OpenWrtRpcResult | null | undefined>,
   failureMessage: string,
 ): Promise<void> {
@@ -725,7 +725,7 @@ export function createOpenWrtProviderAdapter(
 
   if (typeof transport.addToFailoverQueue === "function") {
     adapter.addToFailoverQueue = async (appId, providerId) =>
-      runFailoverMutation(
+      runOpenWrtMutation(
         () => transport.addToFailoverQueue!(appId, providerId),
         `Failed to add ${providerId} to the ${appId} failover queue.`,
       );
@@ -733,7 +733,7 @@ export function createOpenWrtProviderAdapter(
 
   if (typeof transport.removeFromFailoverQueue === "function") {
     adapter.removeFromFailoverQueue = async (appId, providerId) =>
-      runFailoverMutation(
+      runOpenWrtMutation(
         () => transport.removeFromFailoverQueue!(appId, providerId),
         `Failed to remove ${providerId} from the ${appId} failover queue.`,
       );
@@ -741,7 +741,7 @@ export function createOpenWrtProviderAdapter(
 
   if (typeof transport.setAutoFailoverEnabled === "function") {
     adapter.setAutoFailoverEnabled = async (appId, enabled) =>
-      runFailoverMutation(
+      runOpenWrtMutation(
         () => transport.setAutoFailoverEnabled!(appId, enabled),
         `Failed to update ${appId} auto-failover.`,
       );
@@ -749,7 +749,7 @@ export function createOpenWrtProviderAdapter(
 
   if (typeof transport.reorderFailoverQueue === "function") {
     adapter.reorderFailoverQueue = async (appId, providerIds) =>
-      runFailoverMutation(
+      runOpenWrtMutation(
         () => transport.reorderFailoverQueue!(appId, providerIds),
         `Failed to reorder the ${appId} failover queue.`,
       );
@@ -760,7 +760,7 @@ export function createOpenWrtProviderAdapter(
       appId,
       providerIds,
     ) =>
-      runFailoverMutation(
+      runOpenWrtMutation(
         () => transport.reorderProviders!(appId, providerIds),
         `Failed to reorder ${appId} providers.`,
       );
@@ -768,7 +768,7 @@ export function createOpenWrtProviderAdapter(
 
   if (typeof transport.setMaxRetries === "function") {
     adapter.setMaxRetries = async (appId, value) =>
-      runFailoverMutation(
+      runOpenWrtMutation(
         () => transport.setMaxRetries!(appId, value),
         `Failed to update ${appId} max retries.`,
       );
@@ -779,12 +779,12 @@ export function createOpenWrtProviderAdapter(
     typeof transport.removeCodexAuth === "function"
   ) {
     adapter.uploadCodexAuth = async (appId, providerId, authJsonText) =>
-      runFailoverMutation(
+      runOpenWrtMutation(
         () => transport.uploadCodexAuth!(appId, providerId, authJsonText),
         `Failed to upload auth.json for ${providerId}.`,
       );
     adapter.removeCodexAuth = async (appId, providerId) =>
-      runFailoverMutation(
+      runOpenWrtMutation(
         () => transport.removeCodexAuth!(appId, providerId),
         `Failed to remove auth.json for ${providerId}.`,
       );
@@ -795,12 +795,12 @@ export function createOpenWrtProviderAdapter(
     typeof transport.removeClaudeAuth === "function"
   ) {
     adapter.uploadClaudeAuth = async (appId, providerId, authJsonText) =>
-      runFailoverMutation(
+      runOpenWrtMutation(
         () => transport.uploadClaudeAuth!(appId, providerId, authJsonText),
         `Failed to upload auth.json for ${providerId}.`,
       );
     adapter.removeClaudeAuth = async (appId, providerId) =>
-      runFailoverMutation(
+      runOpenWrtMutation(
         () => transport.removeClaudeAuth!(appId, providerId),
         `Failed to remove auth.json for ${providerId}.`,
       );
@@ -819,6 +819,6 @@ export const __private__ = {
   parseActiveProviderResponse,
   parseStatusPayload,
   rpcFailureMessage,
-  runFailoverMutation,
+  runOpenWrtMutation,
   shouldRequireRestart,
 };

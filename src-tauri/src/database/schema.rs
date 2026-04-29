@@ -33,6 +33,7 @@ impl Database {
                 category TEXT,
                 created_at INTEGER,
                 sort_index INTEGER,
+                display_sort_index INTEGER,
                 notes TEXT,
                 icon TEXT,
                 icon_color TEXT,
@@ -339,6 +340,7 @@ impl Database {
             "in_failover_queue",
             "BOOLEAN NOT NULL DEFAULT 0",
         )?;
+        Self::add_column_if_missing(conn, "providers", "display_sort_index", "INTEGER")?;
 
         // 删除旧的 failover_queue 表（如果存在）
         let _ = conn.execute("DROP INDEX IF EXISTS idx_failover_queue_order", []);
@@ -443,6 +445,11 @@ impl Database {
                         Self::migrate_v9_to_v10(conn)?;
                         Self::set_user_version(conn, 10)?;
                     }
+                    10 => {
+                        log::info!("迁移数据库从 v10 到 v11（分离供应商展示排序与故障转移排序）");
+                        Self::migrate_v10_to_v11(conn)?;
+                        Self::set_user_version(conn, 11)?;
+                    }
                     _ => {
                         return Err(AppError::Database(format!(
                             "未知的数据库版本 {version}，无法迁移到 {SCHEMA_VERSION}"
@@ -474,6 +481,7 @@ impl Database {
         Self::add_column_if_missing(conn, "providers", "category", "TEXT")?;
         Self::add_column_if_missing(conn, "providers", "created_at", "INTEGER")?;
         Self::add_column_if_missing(conn, "providers", "sort_index", "INTEGER")?;
+        Self::add_column_if_missing(conn, "providers", "display_sort_index", "INTEGER")?;
         Self::add_column_if_missing(conn, "providers", "notes", "TEXT")?;
         Self::add_column_if_missing(conn, "providers", "icon", "TEXT")?;
         Self::add_column_if_missing(conn, "providers", "icon_color", "TEXT")?;
@@ -1220,6 +1228,24 @@ impl Database {
         log::info!("v9 -> v10 迁移完成：已添加 Hermes Agent 支持");
         Ok(())
     }
+
+    /// v10 -> v11 迁移：分离供应商展示排序与故障转移队列排序
+    fn migrate_v10_to_v11(conn: &Connection) -> Result<(), AppError> {
+        Self::add_column_if_missing(conn, "providers", "display_sort_index", "INTEGER")?;
+        if Self::has_column(conn, "providers", "sort_index")? {
+            conn.execute(
+                "UPDATE providers
+                 SET display_sort_index = sort_index
+                 WHERE display_sort_index IS NULL AND sort_index IS NOT NULL",
+                [],
+            )
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        }
+
+        log::info!("v10 -> v11 迁移完成：已分离供应商展示排序");
+        Ok(())
+    }
+
     /// 插入默认模型定价数据
     /// 格式: (model_id, display_name, input, output, cache_read, cache_creation)
     /// 注意: model_id 使用短横线格式（如 claude-haiku-4-5），与 API 返回的模型名称标准化后一致

@@ -113,7 +113,7 @@ pub(crate) fn mount_openwrt_admin_routes(router: Router<ProxyState>) -> Router<P
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct OpenWrtReorderQueuePayload {
+struct OpenWrtProviderIdListPayload {
     provider_ids: Vec<String>,
 }
 
@@ -531,7 +531,7 @@ async fn openwrt_activate_provider(
 async fn openwrt_reorder_providers(
     Path(app): Path<String>,
     State(state): State<ProxyState>,
-    Json(payload): Json<OpenWrtReorderQueuePayload>,
+    Json(payload): Json<OpenWrtProviderIdListPayload>,
 ) -> (StatusCode, Json<Value>) {
     match parse_openwrt_app(&app).and_then(|app_type| {
         openwrt_admin::reorder_providers(state.db.as_ref(), &app_type, &payload.provider_ids)
@@ -672,7 +672,7 @@ async fn openwrt_remove_from_failover_queue(
 async fn openwrt_reorder_failover_queue(
     Path(app): Path<String>,
     State(state): State<ProxyState>,
-    Json(payload): Json<OpenWrtReorderQueuePayload>,
+    Json(payload): Json<OpenWrtProviderIdListPayload>,
 ) -> (StatusCode, Json<Value>) {
     match parse_openwrt_app(&app) {
         Ok(app_type) => match openwrt_admin::reorder_failover_queue(
