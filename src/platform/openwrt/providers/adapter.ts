@@ -322,12 +322,6 @@ async function loadProviderState(
       : new Error(String(failure?.reason ?? "Failed to load provider state."));
   }
 
-  if (listResult.status === "rejected") {
-    throw listResult.reason instanceof Error
-      ? listResult.reason
-      : new Error(String(listResult.reason ?? "Failed to load provider state."));
-  }
-
   const listResponse = listResult.status === "fulfilled" ? listResult.value : null;
   const savedResponse = savedResult.status === "fulfilled" ? savedResult.value : [];
   const activeResponse =

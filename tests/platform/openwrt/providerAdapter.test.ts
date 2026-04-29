@@ -175,18 +175,35 @@ describe("OpenWrt provider adapter", () => {
     expect(state.activeProvider.providerId).toBe("openwrt-claude");
   });
 
-  it("surfaces real load RPC failures instead of hiding them behind legacy state", async () => {
+  it("falls back to saved provider state when the list-provider RPC fails", async () => {
     const adapter = createOpenWrtProviderAdapter(
       createTransport({
         listProviders: vi
           .fn()
           .mockResolvedValue({ ok: false, error: "Access denied" }),
+        listSavedProviders: vi.fn().mockResolvedValue(
+          createPhase2ListResponse("provider-b", {
+            "provider-b": {
+              provider_id: "provider-b",
+              name: "Beta",
+              base_url: "https://beta.example.com",
+            },
+          }),
+        ),
+        getActiveProvider: vi.fn().mockResolvedValue({
+          ...createActiveProviderResponse("provider-b"),
+          name: "Beta",
+          baseUrl: "https://beta.example.com",
+          tokenField: "ANTHROPIC_AUTH_TOKEN",
+          tokenMasked: "********beta",
+        }),
       }),
     );
+    const state = await adapter.listProviderState("claude");
 
-    await expect(adapter.listProviderState("claude")).rejects.toThrow(
-      "Access denied",
-    );
+    expect(state.phase2Available).toBe(true);
+    expect(state.activeProviderId).toBe("provider-b");
+    expect(state.activeProvider.name).toBe("Beta");
   });
 
   it("uses provider_id and id compatibility fallbacks for update and activate flows", async () => {
