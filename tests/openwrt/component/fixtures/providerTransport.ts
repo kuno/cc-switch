@@ -13,7 +13,17 @@ import {
   createProviderView,
 } from "../../provider-panel-fixtures";
 
-type ProviderStateMap = Partial<Record<SharedProviderAppId, SharedProviderState>>;
+type ProviderStateMap = Partial<
+  Record<SharedProviderAppId, SharedProviderState>
+>;
+type FailoverFixtureState = {
+  autoFailoverEnabled: boolean;
+  maxRetries: number;
+  queue: string[];
+};
+type FailoverStateMap = Partial<
+  Record<SharedProviderAppId, FailoverFixtureState>
+>;
 
 function toResponseProvider(provider: SharedProviderView) {
   return {
@@ -66,6 +76,7 @@ export function createProviderTransportFixture(
   const providerStates: ProviderStateMap = {
     ...initialProviderStates,
   };
+  const failoverStates: FailoverStateMap = {};
 
   function getProviderState(appId: SharedProviderAppId): SharedProviderState {
     return providerStates[appId] ?? createProviderState(appId, [], null);
@@ -76,6 +87,29 @@ export function createProviderTransportFixture(
     state: SharedProviderState,
   ) {
     providerStates[appId] = state;
+  }
+
+  function getFailoverState(appId: SharedProviderAppId): FailoverFixtureState {
+    failoverStates[appId] ??= {
+      autoFailoverEnabled: false,
+      maxRetries: 3,
+      queue: [],
+    };
+
+    return failoverStates[appId]!;
+  }
+
+  function setFailoverState(
+    appId: SharedProviderAppId,
+    nextState: Partial<FailoverFixtureState>,
+  ) {
+    const currentState = getFailoverState(appId);
+
+    failoverStates[appId] = {
+      ...currentState,
+      ...nextState,
+      queue: nextState.queue ? [...nextState.queue] : [...currentState.queue],
+    };
   }
 
   function createStateResponse(appId: SharedProviderAppId) {
@@ -163,8 +197,7 @@ export function createProviderTransportFixture(
     providerId?: string,
   ) {
     const currentState = getProviderState(appId);
-    const nextProviderId =
-      providerId ?? slugifyProviderId(appId, draft.name);
+    const nextProviderId = providerId ?? slugifyProviderId(appId, draft.name);
     const currentProvider =
       currentState.providers.find(
         (provider) => provider.providerId === nextProviderId,
@@ -203,10 +236,67 @@ export function createProviderTransportFixture(
     );
   }
 
+  function createProviderFailoverResponse(
+    appId: SharedProviderAppId,
+    providerId: string,
+  ) {
+    const providerState = getProviderState(appId);
+    const failoverState = getFailoverState(appId);
+    const queuePosition = failoverState.queue.indexOf(providerId);
+
+    return {
+      ok: true,
+      providerId,
+      proxyEnabled: true,
+      autoFailoverEnabled: failoverState.autoFailoverEnabled,
+      maxRetries: failoverState.maxRetries,
+      activeProviderId: providerState.activeProviderId,
+      inFailoverQueue: queuePosition >= 0,
+      queuePosition: queuePosition >= 0 ? queuePosition : null,
+      sortIndex: queuePosition >= 0 ? queuePosition : null,
+      providerHealth: {
+        providerId,
+        observed: false,
+        healthy: true,
+        consecutiveFailures: 0,
+        lastSuccessAt: null,
+        lastFailureAt: null,
+        lastError: null,
+        updatedAt: null,
+      },
+      failoverQueueDepth: failoverState.queue.length,
+      failoverQueue: failoverState.queue.map((queuedProviderId, index) => {
+        const queuedProvider =
+          providerState.providers.find(
+            (provider) => provider.providerId === queuedProviderId,
+          ) ?? null;
+
+        return {
+          providerId: queuedProviderId,
+          providerName: queuedProvider?.name ?? queuedProviderId,
+          sortIndex: index,
+          active: queuedProviderId === providerState.activeProviderId,
+          health: {
+            providerId: queuedProviderId,
+            observed: false,
+            healthy: true,
+            consecutiveFailures: 0,
+            lastSuccessAt: null,
+            lastFailureAt: null,
+            lastError: null,
+            updatedAt: null,
+          },
+        };
+      }),
+    };
+  }
+
   const transport = {
     listProviders: vi.fn(async (appId) => createStateResponse(appId)),
     listSavedProviders: vi.fn(async (appId) => createStateResponse(appId)),
-    getActiveProvider: vi.fn(async (appId) => createActiveProviderResponse(appId)),
+    getActiveProvider: vi.fn(async (appId) =>
+      createActiveProviderResponse(appId),
+    ),
     upsertProvider: vi.fn(async (appId, provider) => {
       upsertProvider(appId, provider);
 
@@ -240,13 +330,84 @@ export function createProviderTransportFixture(
       );
       const nextActiveProviderId =
         currentState.activeProviderId === providerId
-          ? nextProviders[0]?.providerId ?? null
+          ? (nextProviders[0]?.providerId ?? null)
           : currentState.activeProviderId;
 
       setProviderState(
         appId,
         createProviderState(appId, nextProviders, nextActiveProviderId),
       );
+
+      return {
+        ok: true,
+      };
+    }),
+    getProviderFailoverState: vi.fn(async (appId, providerId) =>
+      createProviderFailoverResponse(appId, providerId),
+    ),
+    addToFailoverQueue: vi.fn(async (appId, providerId) => {
+      const currentFailoverState = getFailoverState(appId);
+
+      if (!currentFailoverState.queue.includes(providerId)) {
+        setFailoverState(appId, {
+          queue: [...currentFailoverState.queue, providerId],
+        });
+      }
+
+      return {
+        ok: true,
+      };
+    }),
+    removeFromFailoverQueue: vi.fn(async (appId, providerId) => {
+      const currentFailoverState = getFailoverState(appId);
+
+      setFailoverState(appId, {
+        queue: currentFailoverState.queue.filter(
+          (queuedProviderId) => queuedProviderId !== providerId,
+        ),
+      });
+
+      return {
+        ok: true,
+      };
+    }),
+    setAutoFailoverEnabled: vi.fn(async (appId, enabled) => {
+      const currentFailoverState = getFailoverState(appId);
+
+      setFailoverState(appId, {
+        autoFailoverEnabled: enabled,
+      });
+
+      if (enabled && currentFailoverState.queue[0]) {
+        const currentState = getProviderState(appId);
+
+        setProviderState(
+          appId,
+          createProviderState(
+            appId,
+            currentState.providers,
+            currentFailoverState.queue[0],
+          ),
+        );
+      }
+
+      return {
+        ok: true,
+      };
+    }),
+    reorderFailoverQueue: vi.fn(async (appId, providerIds) => {
+      setFailoverState(appId, {
+        queue: [...providerIds],
+      });
+
+      return {
+        ok: true,
+      };
+    }),
+    setMaxRetries: vi.fn(async (appId, value) => {
+      setFailoverState(appId, {
+        maxRetries: value,
+      });
 
       return {
         ok: true,
@@ -303,5 +464,7 @@ export function createProviderTransportFixture(
     transport,
     getProviderState,
     setProviderState,
+    getFailoverState,
+    setFailoverState,
   };
 }

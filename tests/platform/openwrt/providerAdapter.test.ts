@@ -139,11 +139,12 @@ describe("OpenWrt provider adapter", () => {
 
     expect(state.activeProvider.icon).toBe("deepseek");
     expect(state.activeProvider.iconColor).toBe("#1E88E5");
-    expect(state.providers.find((provider) => provider.providerId === "provider-b"))
-      .toMatchObject({
-        icon: "deepseek",
-        iconColor: "#1E88E5",
-      });
+    expect(
+      state.providers.find((provider) => provider.providerId === "provider-b"),
+    ).toMatchObject({
+      icon: "deepseek",
+      iconColor: "#1E88E5",
+    });
   });
 
   it("falls back to the phase 1 active-provider bridge when saved-provider RPCs are absent", async () => {
@@ -163,7 +164,9 @@ describe("OpenWrt provider adapter", () => {
           .mockRejectedValue(new Error("method not found: list_providers")),
         listSavedProviders: vi
           .fn()
-          .mockRejectedValue(new Error("method not found: list_saved_providers")),
+          .mockRejectedValue(
+            new Error("method not found: list_saved_providers"),
+          ),
       }),
     );
     const state = await adapter.listProviderState("claude");
@@ -266,10 +269,14 @@ describe("OpenWrt provider adapter", () => {
       "provider-b",
     );
 
-    expect(upsertProviderByProviderId).toHaveBeenCalledWith("codex", "provider-b", {
-      ...SAMPLE_DRAFT,
-      token: "",
-    });
+    expect(upsertProviderByProviderId).toHaveBeenCalledWith(
+      "codex",
+      "provider-b",
+      {
+        ...SAMPLE_DRAFT,
+        token: "",
+      },
+    );
   });
 
   it("reports the full capability surface when phase 2 provider RPCs are available", async () => {
@@ -291,7 +298,9 @@ describe("OpenWrt provider adapter", () => {
         ),
         getActiveProvider: vi
           .fn()
-          .mockResolvedValue(createActiveProviderResponse("provider-b", "codex")),
+          .mockResolvedValue(
+            createActiveProviderResponse("provider-b", "codex"),
+          ),
       }),
     );
 
@@ -357,6 +366,46 @@ describe("OpenWrt provider adapter", () => {
     );
   });
 
+  it("exposes minimal failover controls without requiring reorder or max retries hooks", async () => {
+    const getProviderFailoverState = vi.fn().mockResolvedValue({
+      ok: true,
+      providerId: "provider-b",
+      autoFailoverEnabled: true,
+      inFailoverQueue: false,
+    });
+    const addToFailoverQueue = vi.fn().mockResolvedValue({ ok: true });
+    const removeFromFailoverQueue = vi.fn().mockResolvedValue({ ok: true });
+    const setAutoFailoverEnabled = vi.fn().mockResolvedValue({ ok: true });
+    const adapter = createOpenWrtProviderAdapter(
+      createTransport({
+        getProviderFailoverState,
+        addToFailoverQueue,
+        removeFromFailoverQueue,
+        setAutoFailoverEnabled,
+      }),
+    );
+
+    await expect(
+      adapter.getProviderFailoverState?.("claude", "provider-b"),
+    ).resolves.toMatchObject({
+      providerId: "provider-b",
+      autoFailoverEnabled: true,
+      inFailoverQueue: false,
+    });
+    await adapter.addToFailoverQueue?.("claude", "provider-b");
+    await adapter.removeFromFailoverQueue?.("claude", "provider-b");
+    await adapter.setAutoFailoverEnabled?.("claude", false);
+
+    expect(addToFailoverQueue).toHaveBeenCalledWith("claude", "provider-b");
+    expect(removeFromFailoverQueue).toHaveBeenCalledWith(
+      "claude",
+      "provider-b",
+    );
+    expect(setAutoFailoverEnabled).toHaveBeenCalledWith("claude", false);
+    expect(adapter.reorderFailoverQueue).toBeUndefined();
+    expect(adapter.setMaxRetries).toBeUndefined();
+  });
+
   it("notifies runtime hooks when an active provider edit requires a restart", async () => {
     const onProviderMutation = vi.fn();
     const transport = createTransport({
@@ -382,8 +431,12 @@ describe("OpenWrt provider adapter", () => {
         ),
       getActiveProvider: vi
         .fn()
-        .mockResolvedValueOnce(createActiveProviderResponse("provider-a", "codex"))
-        .mockResolvedValueOnce(createActiveProviderResponse("provider-a", "codex")),
+        .mockResolvedValueOnce(
+          createActiveProviderResponse("provider-a", "codex"),
+        )
+        .mockResolvedValueOnce(
+          createActiveProviderResponse("provider-a", "codex"),
+        ),
       upsertProviderByProviderId: vi.fn().mockResolvedValue({ ok: true }),
     });
     const adapter = createOpenWrtProviderAdapter(transport, {
@@ -447,8 +500,12 @@ describe("OpenWrt provider adapter", () => {
         ),
       getActiveProvider: vi
         .fn()
-        .mockResolvedValueOnce(createActiveProviderResponse("provider-a", "codex"))
-        .mockResolvedValueOnce(createActiveProviderResponse("provider-b", "codex")),
+        .mockResolvedValueOnce(
+          createActiveProviderResponse("provider-a", "codex"),
+        )
+        .mockResolvedValueOnce(
+          createActiveProviderResponse("provider-b", "codex"),
+        ),
       activateProviderByProviderId: vi.fn().mockResolvedValue({ ok: true }),
     });
     const adapter = createOpenWrtProviderAdapter(transport, {

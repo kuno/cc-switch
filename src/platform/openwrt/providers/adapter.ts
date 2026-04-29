@@ -322,6 +322,12 @@ async function loadProviderState(
       : new Error(String(failure?.reason ?? "Failed to load provider state."));
   }
 
+  if (listResult.status === "rejected") {
+    throw listResult.reason instanceof Error
+      ? listResult.reason
+      : new Error(String(listResult.reason ?? "Failed to load provider state."));
+  }
+
   const listResponse = listResult.status === "fulfilled" ? listResult.value : null;
   const savedResponse = savedResult.status === "fulfilled" ? savedResult.value : [];
   const activeResponse =
@@ -712,33 +718,39 @@ export function createOpenWrtProviderAdapter(
     },
   };
 
-  if (
-    typeof transport.addToFailoverQueue === "function" &&
-    typeof transport.removeFromFailoverQueue === "function" &&
-    typeof transport.setAutoFailoverEnabled === "function" &&
-    typeof transport.reorderFailoverQueue === "function" &&
-    typeof transport.setMaxRetries === "function"
-  ) {
+  if (typeof transport.addToFailoverQueue === "function") {
     adapter.addToFailoverQueue = async (appId, providerId) =>
       runFailoverMutation(
         () => transport.addToFailoverQueue!(appId, providerId),
         `Failed to add ${providerId} to the ${appId} failover queue.`,
       );
+  }
+
+  if (typeof transport.removeFromFailoverQueue === "function") {
     adapter.removeFromFailoverQueue = async (appId, providerId) =>
       runFailoverMutation(
         () => transport.removeFromFailoverQueue!(appId, providerId),
         `Failed to remove ${providerId} from the ${appId} failover queue.`,
       );
+  }
+
+  if (typeof transport.setAutoFailoverEnabled === "function") {
     adapter.setAutoFailoverEnabled = async (appId, enabled) =>
       runFailoverMutation(
         () => transport.setAutoFailoverEnabled!(appId, enabled),
         `Failed to update ${appId} auto-failover.`,
       );
+  }
+
+  if (typeof transport.reorderFailoverQueue === "function") {
     adapter.reorderFailoverQueue = async (appId, providerIds) =>
       runFailoverMutation(
         () => transport.reorderFailoverQueue!(appId, providerIds),
         `Failed to reorder the ${appId} failover queue.`,
       );
+  }
+
+  if (typeof transport.setMaxRetries === "function") {
     adapter.setMaxRetries = async (appId, value) =>
       runFailoverMutation(
         () => transport.setMaxRetries!(appId, value),
