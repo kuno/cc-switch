@@ -429,7 +429,14 @@ async fn openwrt_upsert_provider(
     match parse_openwrt_app(&app).and_then(|app_type| {
         openwrt_admin::upsert_provider_from_payload(state.db.as_ref(), &app_type, None, payload)
     }) {
-        Ok(view) => openwrt_admin_ok(view),
+        Ok(view) => {
+            if app == "claude" {
+                if let Some(provider_id) = view.provider_id.as_deref() {
+                    state.claude_uploaded_auth.invalidate(provider_id).await;
+                }
+            }
+            openwrt_admin_ok(view)
+        }
         Err(error) => openwrt_admin_error(error),
     }
 }
@@ -447,7 +454,20 @@ async fn openwrt_upsert_provider_by_id(
             payload,
         )
     }) {
-        Ok(view) => openwrt_admin_ok(view),
+        Ok(view) => {
+            if app == "claude" {
+                state.claude_uploaded_auth.invalidate(&provider_id).await;
+                if let Some(updated_provider_id) = view.provider_id.as_deref() {
+                    if updated_provider_id != provider_id {
+                        state
+                            .claude_uploaded_auth
+                            .invalidate(updated_provider_id)
+                            .await;
+                    }
+                }
+            }
+            openwrt_admin_ok(view)
+        }
         Err(error) => openwrt_admin_error(error),
     }
 }
@@ -460,7 +480,14 @@ async fn openwrt_upsert_active_provider(
     match parse_openwrt_app(&app).and_then(|app_type| {
         openwrt_admin::upsert_active_provider_from_payload(state.db.as_ref(), &app_type, payload)
     }) {
-        Ok(view) => openwrt_admin_ok(view),
+        Ok(view) => {
+            if app == "claude" {
+                if let Some(provider_id) = view.provider_id.as_deref() {
+                    state.claude_uploaded_auth.invalidate(provider_id).await;
+                }
+            }
+            openwrt_admin_ok(view)
+        }
         Err(error) => openwrt_admin_error(error),
     }
 }
@@ -472,7 +499,15 @@ async fn openwrt_delete_provider(
     match parse_openwrt_app(&app).and_then(|app_type| {
         openwrt_admin::delete_provider(state.db.as_ref(), &app_type, &provider_id)
     }) {
-        Ok(view) => openwrt_admin_ok(view),
+        Ok(view) => {
+            if app == "claude" {
+                state
+                    .claude_uploaded_auth
+                    .invalidate(&view.deleted_provider_id)
+                    .await;
+            }
+            openwrt_admin_ok(view)
+        }
         Err(error) => openwrt_admin_error(error),
     }
 }
@@ -558,7 +593,10 @@ async fn openwrt_upload_claude_auth(
             payload.auth_json_text.as_bytes(),
         )
     }) {
-        Ok(view) => openwrt_admin_ok(view),
+        Ok(view) => {
+            state.claude_uploaded_auth.invalidate(&provider_id).await;
+            openwrt_admin_ok(view)
+        }
         Err(error) => openwrt_admin_error(error),
     }
 }
@@ -570,7 +608,10 @@ async fn openwrt_remove_claude_auth(
     match parse_openwrt_app(&app).and_then(|app_type| {
         openwrt_admin::remove_claude_auth(state.db.as_ref(), &app_type, &provider_id)
     }) {
-        Ok(view) => openwrt_admin_ok(view),
+        Ok(view) => {
+            state.claude_uploaded_auth.invalidate(&provider_id).await;
+            openwrt_admin_ok(view)
+        }
         Err(error) => openwrt_admin_error(error),
     }
 }
@@ -719,6 +760,7 @@ mod tests {
             failover_manager: Arc::new(FailoverSwitchManager::new(db, current_providers)),
             rate_limits: new_rate_limit_store(),
             quota_snapshot_cache: RateLimitSnapshotCache::new(),
+            claude_uploaded_auth: crate::services::oauth_refresh::ClaudeUploadedAuthManager::new(),
             oauth_refresh_locks: crate::services::oauth_refresh::OAuthRefreshLockManager::new(),
             #[cfg(feature = "tauri-desktop")]
             app_handle: None,
