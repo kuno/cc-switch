@@ -24,13 +24,8 @@ use super::{
 use crate::proxy::providers::codex_oauth_auth::CodexOAuthManager;
 use crate::proxy::providers::codex_oauth_store::load_codex_auth_for_provider;
 use crate::proxy::providers::copilot_auth::CopilotAuthManager;
-use crate::services::oauth_refresh::storage::{
-    load_claude_refresh_auth_for_provider, save_refreshed_claude_auth_for_provider,
-    StoredClaudeRefreshAuth,
-};
 use crate::services::oauth_refresh::{
-    load_or_refresh_oauth_credentials, ClaudeTokenRefresher, OAuthRefreshLockManager,
-    OAuthTokenRefresher,
+    ClaudeTokenRefresher, ClaudeUploadedAuthManager, OAuthTokenRefresher,
 };
 use crate::{app_config::AppType, provider::Provider};
 use http::Extensions;
@@ -39,6 +34,9 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 const PROXY_AUTH_PLACEHOLDER: &str = "PROXY_MANAGED";
+
+#[cfg(test)]
+use crate::services::oauth_refresh::storage::load_claude_refresh_auth_for_provider;
 
 pub struct ForwardResult {
     pub response: ProxyResponse,
@@ -105,6 +103,8 @@ pub struct RequestForwarder {
     copilot_auth: Option<Arc<RwLock<CopilotAuthManager>>>,
     /// Codex OAuth auth manager（直接注入，无 Tauri 依赖）
     codex_oauth_auth: Option<Arc<RwLock<CodexOAuthManager>>>,
+    /// Shared Claude uploaded-auth cache and refresh coordinator
+    claude_uploaded_auth: ClaudeUploadedAuthManager,
     /// 请求开始时的"当前供应商 ID"（用于判断是否需要同步 UI/托盘）
     current_provider_id_at_start: String,
     /// 代理会话 ID（用于 Gemini Native shadow replay）
@@ -293,27 +293,13 @@ fn is_claude_oauth_provider(provider: &Provider) -> bool {
 }
 
 async fn load_claude_oauth_auth_with_refresher<R: OAuthTokenRefresher + ?Sized>(
+    manager: &ClaudeUploadedAuthManager,
     provider: &Provider,
     refresher: &R,
-) -> Option<StoredClaudeRefreshAuth> {
-    let provider_id = provider.id.clone();
-    let provider_key = format!("claude:{provider_id}");
-    let load_provider_id = provider_id.clone();
-    let save_provider_id = provider_id.clone();
-    let lock_manager = OAuthRefreshLockManager::shared();
-
-    load_or_refresh_oauth_credentials(
-        "Claude",
-        &provider_id,
-        &provider_key,
-        refresher,
-        &lock_manager,
-        move || load_claude_refresh_auth_for_provider(&load_provider_id),
-        move |stored, refreshed| {
-            save_refreshed_claude_auth_for_provider(&save_provider_id, stored, refreshed)
-        },
-    )
-    .await
+) -> Option<String> {
+    manager
+        .get_valid_access_token(&provider.id, refresher)
+        .await
 }
 
 impl RequestForwarder {
@@ -328,6 +314,7 @@ impl RequestForwarder {
         failover_manager: Arc<FailoverSwitchManager>,
         copilot_auth: Option<Arc<RwLock<CopilotAuthManager>>>,
         codex_oauth_auth: Option<Arc<RwLock<CodexOAuthManager>>>,
+        claude_uploaded_auth: ClaudeUploadedAuthManager,
         current_provider_id_at_start: String,
         session_id: String,
         session_client_provided: bool,
@@ -352,6 +339,7 @@ impl RequestForwarder {
             failover_manager,
             copilot_auth,
             codex_oauth_auth,
+            claude_uploaded_auth,
             current_provider_id_at_start,
             session_id,
             session_client_provided,
@@ -469,21 +457,24 @@ impl RequestForwarder {
         })
     }
 
-    async fn load_claude_oauth_auth_for_provider(
-        &self,
-        provider: &Provider,
-    ) -> Option<StoredClaudeRefreshAuth> {
+    async fn load_claude_oauth_auth_for_provider(&self, provider: &Provider) -> Option<String> {
         if !is_claude_oauth_provider(provider) {
             return None;
         }
 
         #[cfg(test)]
         if let Some(refresher) = self.claude_oauth_refresher.as_ref() {
-            return load_claude_oauth_auth_with_refresher(provider, refresher.as_ref()).await;
+            return load_claude_oauth_auth_with_refresher(
+                &self.claude_uploaded_auth,
+                provider,
+                refresher.as_ref(),
+            )
+            .await;
         }
 
         let refresher = ClaudeTokenRefresher::new();
-        load_claude_oauth_auth_with_refresher(provider, &refresher).await
+        load_claude_oauth_auth_with_refresher(&self.claude_uploaded_auth, provider, &refresher)
+            .await
     }
 
     #[cfg(test)]
@@ -1485,9 +1476,10 @@ impl RequestForwarder {
         // Codex OAuth 需要注入的 ChatGPT-Account-Id（在动态 token 获取期间填充）
         let mut codex_oauth_account_id: Option<String> = None;
         let mut should_send_codex_oauth_session_headers = false;
-        let stored_claude_oauth_auth = self.load_claude_oauth_auth_for_provider(provider).await;
+        let stored_claude_oauth_access_token =
+            self.load_claude_oauth_auth_for_provider(provider).await;
         let allow_request_scoped_inbound_auth_fallback =
-            is_claude_oauth_provider(provider) && stored_claude_oauth_auth.is_none();
+            is_claude_oauth_provider(provider) && stored_claude_oauth_access_token.is_none();
         if allow_request_scoped_inbound_auth_fallback {
             log::debug!(
                 "[ClaudeOAuth] provider={} 无可用存储 OAuth，回退到入站 Authorization",
@@ -1520,17 +1512,16 @@ impl RequestForwarder {
                 ));
             }
             headers
-        } else if let Some(stored_auth) = stored_claude_oauth_auth.as_ref() {
+        } else if let Some(access_token) = stored_claude_oauth_access_token.as_ref() {
             log::debug!(
                 "[ClaudeOAuth] 使用存储的 OAuth access_token 转发 provider={}",
                 provider.id
             );
             vec![(
                 http::HeaderName::from_static("authorization"),
-                http::HeaderValue::from_str(&format!("Bearer {}", stored_auth.access_token))
-                    .map_err(|err| {
-                        ProxyError::AuthError(format!("存储的 Claude access_token 非法: {err}"))
-                    })?,
+                http::HeaderValue::from_str(&format!("Bearer {access_token}")).map_err(|err| {
+                    ProxyError::AuthError(format!("存储的 Claude access_token 非法: {err}"))
+                })?,
             )]
         } else if let Some(mut auth) = adapter.extract_auth(provider) {
             // GitHub Copilot 特殊处理：从 CopilotAuthManager 获取真实 token
@@ -1722,10 +1713,10 @@ impl RequestForwarder {
             && matches!(resolved_claude_api_format.as_deref(), Some("anthropic"));
         let should_inject_stored_claude_oauth_beta = should_send_anthropic_headers
             && is_claude_oauth_provider(provider)
-            && stored_claude_oauth_auth.is_some();
+            && stored_claude_oauth_access_token.is_some();
         let should_preserve_claude_oauth_client_beta = should_send_anthropic_headers
             && is_claude_oauth_provider(provider)
-            && stored_claude_oauth_auth.is_none();
+            && stored_claude_oauth_access_token.is_none();
 
         // 预计算 anthropic-beta 值（仅 Claude）
         let anthropic_beta_value = if should_inject_stored_claude_oauth_beta {
@@ -2931,6 +2922,7 @@ mod tests {
             Arc::new(FailoverSwitchManager::new(db, current_providers)),
             None,
             None,
+            crate::services::oauth_refresh::ClaudeUploadedAuthManager::new(),
             String::new(),
             "test-session".to_string(),
             true,
