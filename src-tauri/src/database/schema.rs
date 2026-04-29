@@ -33,6 +33,7 @@ impl Database {
                 category TEXT,
                 created_at INTEGER,
                 sort_index INTEGER,
+                display_sort_index INTEGER,
                 notes TEXT,
                 icon TEXT,
                 icon_color TEXT,
@@ -418,6 +419,7 @@ impl Database {
             "in_failover_queue",
             "BOOLEAN NOT NULL DEFAULT 0",
         )?;
+        Self::add_column_if_missing(conn, "providers", "display_sort_index", "INTEGER")?;
 
         // 删除旧的 failover_queue 表（如果存在）
         let _ = conn.execute("DROP INDEX IF EXISTS idx_failover_queue_order", []);
@@ -561,6 +563,11 @@ impl Database {
                         log::info!("迁移数据库从 v17 到 v18（会话日志字节游标列）");
                         Self::migrate_v17_to_v18(conn)?;
                         Self::set_user_version(conn, 18)?;
+                    }
+                    18 => {
+                        log::info!("迁移数据库从 v18 到 v19（分离供应商展示排序与故障转移排序）");
+                        Self::migrate_v18_to_v19(conn)?;
+                        Self::set_user_version(conn, 19)?;
                     }
                     _ => {
                         return Err(AppError::Database(format!(
@@ -1619,6 +1626,23 @@ impl Database {
                 "INTEGER",
             )?;
         }
+        Ok(())
+    }
+
+    /// v18 -> v19: separate provider drawer display order from failover queue priority.
+    fn migrate_v18_to_v19(conn: &Connection) -> Result<(), AppError> {
+        Self::add_column_if_missing(conn, "providers", "display_sort_index", "INTEGER")?;
+        if Self::has_column(conn, "providers", "sort_index")? {
+            conn.execute(
+                "UPDATE providers
+                 SET display_sort_index = sort_index
+                 WHERE display_sort_index IS NULL AND sort_index IS NOT NULL",
+                [],
+            )
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        }
+
+        log::info!("v18 -> v19 迁移完成：已分离供应商展示排序");
         Ok(())
     }
 
