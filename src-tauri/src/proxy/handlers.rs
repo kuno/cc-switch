@@ -32,8 +32,7 @@ use super::{
 };
 use crate::app_config::AppType;
 use crate::services::oauth_refresh::storage::{
-    load_claude_refresh_auth_for_provider, load_codex_refresh_auth_for_provider,
-    save_refreshed_claude_auth_for_provider, save_refreshed_codex_auth_for_provider,
+    load_codex_refresh_auth_for_provider, save_refreshed_codex_auth_for_provider,
 };
 use crate::services::oauth_refresh::{
     load_or_refresh_oauth_credentials, ClaudeTokenRefresher, CodexTokenRefresher,
@@ -292,19 +291,10 @@ async fn refresh_claude_quota_snapshots_with_query_and_refresher<F, Fut, R>(
 
     for provider in providers.into_values().filter(is_claude_oauth_provider) {
         let auth_provider_id = provider.id.clone();
-        let provider_key = format!("claude:{auth_provider_id}");
-        let Some(auth) = load_or_refresh_oauth_credentials(
-            "Claude",
-            &auth_provider_id,
-            &provider_key,
-            refresher,
-            &state.oauth_refresh_locks,
-            || load_claude_refresh_auth_for_provider(&auth_provider_id),
-            |stored, refreshed| {
-                save_refreshed_claude_auth_for_provider(&auth_provider_id, stored, refreshed)
-            },
-        )
-        .await
+        let Some(access_token) = state
+            .claude_uploaded_auth
+            .get_valid_access_token(&auth_provider_id, refresher)
+            .await
         else {
             continue;
         };
@@ -319,7 +309,7 @@ async fn refresh_claude_quota_snapshots_with_query_and_refresher<F, Fut, R>(
             provider_id.clone(),
             provider_name.clone(),
             move || async move {
-                let quota = query_quota(auth.access_token.clone()).await;
+                let quota = query_quota(access_token.clone()).await;
                 build_subscription_quota_snapshot(
                     state,
                     "claude",
@@ -1128,7 +1118,8 @@ mod tests {
         load_claude_refresh_auth_for_provider, load_codex_refresh_auth_for_provider,
     };
     use crate::services::oauth_refresh::{
-        OAuthRefreshError, OAuthRefreshLockManager, OAuthTokenRefresher, RefreshedCredentials,
+        ClaudeUploadedAuthManager, OAuthRefreshError, OAuthRefreshLockManager, OAuthTokenRefresher,
+        RefreshedCredentials,
     };
     use crate::services::subscription::{CredentialStatus, QuotaTier, SubscriptionQuota};
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
@@ -1332,6 +1323,7 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
             failover_manager: Arc::new(FailoverSwitchManager::new(db, current_providers)),
             rate_limits: new_rate_limit_store(),
             quota_snapshot_cache: crate::proxy::quota_cache::RateLimitSnapshotCache::new(),
+            claude_uploaded_auth: ClaudeUploadedAuthManager::new(),
             oauth_refresh_locks: OAuthRefreshLockManager::new(),
             #[cfg(feature = "tauri-desktop")]
             app_handle: None,
