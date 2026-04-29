@@ -17,8 +17,10 @@ import {
   getSharedProviderPresetById,
   getSharedProviderPresets,
   inferSharedProviderPresetId,
+  type ProviderPlatformAdapter,
   type SharedProviderAppId,
   type SharedProviderEditorPayload,
+  type SharedProviderFailoverState,
   type SharedProviderState,
   type SharedProviderView,
 } from "@/shared/providers/domain";
@@ -36,6 +38,24 @@ import type { ProviderSidePanelPresetGroup } from "./ProviderSidePanelPresetTab"
 
 type ProviderSidePanelMode = "new" | "edit";
 type ProviderSidePanelViewMode = "detail" | "preset-picker";
+type ProviderSidePanelFailoverAction = "app-auto" | "provider-queue";
+
+type MinimalOpenWrtFailoverAdapter = ProviderPlatformAdapter &
+  Required<
+    Pick<
+      ProviderPlatformAdapter,
+      | "getProviderFailoverState"
+      | "addToFailoverQueue"
+      | "removeFromFailoverQueue"
+      | "setAutoFailoverEnabled"
+    >
+  >;
+
+const APP_LABELS: Record<SharedProviderAppId, string> = {
+  claude: "Claude",
+  codex: "Codex",
+  gemini: "Gemini",
+};
 
 type ProviderSidePanelHostProps = {
   onOpenChange?: (open: boolean) => void;
@@ -56,7 +76,9 @@ function getProviderName(
 ): string {
   if (providerId) {
     const matchedProvider =
-      providerState.providers.find((provider) => provider.providerId === providerId) ??
+      providerState.providers.find(
+        (provider) => provider.providerId === providerId,
+      ) ??
       (providerState.activeProvider.providerId === providerId
         ? providerState.activeProvider
         : null);
@@ -187,8 +209,9 @@ function getProviderById(
   }
 
   return (
-    providerState.providers.find((provider) => provider.providerId === providerId) ??
-    null
+    providerState.providers.find(
+      (provider) => provider.providerId === providerId,
+    ) ?? null
   );
 }
 
@@ -214,7 +237,9 @@ function getProviderIdFromDraft(
   );
 }
 
-function createNewDraft(appId: SharedProviderAppId): SharedProviderEditorPayload {
+function createNewDraft(
+  appId: SharedProviderAppId,
+): SharedProviderEditorPayload {
   return emptySharedProviderEditorPayload(appId);
 }
 
@@ -302,6 +327,21 @@ function normalizeAuthContentInput(value: string): string | null {
   return value.trim() ? value : null;
 }
 
+function supportsMinimalOpenWrtFailoverControls(
+  adapter: ProviderPlatformAdapter,
+): adapter is MinimalOpenWrtFailoverAdapter {
+  return (
+    typeof adapter.getProviderFailoverState === "function" &&
+    typeof adapter.addToFailoverQueue === "function" &&
+    typeof adapter.removeFromFailoverQueue === "function" &&
+    typeof adapter.setAutoFailoverEnabled === "function"
+  );
+}
+
+function formatErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 const ProviderSidePanelHostComponent = forwardRef<
   ProviderSidePanelHandle,
   ProviderSidePanelHostProps
@@ -311,9 +351,12 @@ const ProviderSidePanelHostComponent = forwardRef<
 ) {
   const [open, setOpen] = useState(false);
   const [appId, setAppId] = useState<SharedProviderAppId>(selectedApp);
-  const [providerState, setProviderState] = useState<SharedProviderState | null>(null);
+  const [providerState, setProviderState] =
+    useState<SharedProviderState | null>(null);
   const [mode, setMode] = useState<ProviderSidePanelMode>("new");
-  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
+  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(
+    null,
+  );
   const [draft, setDraft] = useState<SharedProviderEditorPayload>(() =>
     createNewDraft(selectedApp),
   );
@@ -332,7 +375,13 @@ const ProviderSidePanelHostComponent = forwardRef<
   const [savePending, setSavePending] = useState(false);
   const [activatePending, setActivatePending] = useState(false);
   const [deletePending, setDeletePending] = useState(false);
+  const [failoverState, setFailoverState] =
+    useState<SharedProviderFailoverState | null>(null);
+  const [failoverLoading, setFailoverLoading] = useState(false);
+  const [failoverPendingAction, setFailoverPendingAction] =
+    useState<ProviderSidePanelFailoverAction | null>(null);
   const loadRequestIdRef = useRef(0);
+  const failoverRequestIdRef = useRef(0);
   const unlockBodyScrollRef = useRef<(() => void) | null>(null);
   const deferredSearch = useDeferredValue(search);
   const selectedProvider = getProviderById(providerState, selectedProviderId);
@@ -360,7 +409,9 @@ const ProviderSidePanelHostComponent = forwardRef<
     getSaveValidity(mode, selectedProvider, draft) &&
     !hasInvalidAuthJson(draft.authContent);
   const saveIdle =
-    mode === "edit" && baselineDraft ? areDraftsEqual(draft, baselineDraft) : false;
+    mode === "edit" && baselineDraft
+      ? areDraftsEqual(draft, baselineDraft)
+      : false;
   const canSave = hasValidSavePayload && (mode === "new" || !saveIdle);
   const canDelete =
     mode === "edit" &&
@@ -398,6 +449,11 @@ const ProviderSidePanelHostComponent = forwardRef<
       }),
     [onProviderMutation, shell, transport],
   );
+  const failoverAdapter = supportsMinimalOpenWrtFailoverControls(
+    providerAdapter,
+  )
+    ? providerAdapter
+    : null;
 
   function syncSelectionFromState(
     nextAppId: SharedProviderAppId,
@@ -409,6 +465,13 @@ const ProviderSidePanelHostComponent = forwardRef<
       const provider = getProviderById(nextState, providerId);
 
       if (provider) {
+        if (appId !== nextAppId || selectedProviderId !== provider.providerId) {
+          failoverRequestIdRef.current += 1;
+          setFailoverState(null);
+          setFailoverLoading(false);
+          setFailoverPendingAction(null);
+        }
+
         const nextDraft = createDraftFromProvider(provider);
         setAppId(nextAppId);
         setProviderState(nextState);
@@ -422,6 +485,13 @@ const ProviderSidePanelHostComponent = forwardRef<
         setTab("activities");
         return;
       }
+    }
+
+    if (appId !== nextAppId || selectedProviderId !== null) {
+      failoverRequestIdRef.current += 1;
+      setFailoverState(null);
+      setFailoverLoading(false);
+      setFailoverPendingAction(null);
     }
 
     setAppId(nextAppId);
@@ -470,11 +540,78 @@ const ProviderSidePanelHostComponent = forwardRef<
         return;
       }
 
-      setError(loadError instanceof Error ? loadError.message : String(loadError));
+      setError(
+        loadError instanceof Error ? loadError.message : String(loadError),
+      );
     } finally {
       if (loadRequestIdRef.current === requestId) {
         setLoading(false);
       }
+    }
+  }
+
+  async function loadFailoverStateForProvider(
+    nextAppId: SharedProviderAppId,
+    providerId: string,
+  ): Promise<SharedProviderFailoverState | null> {
+    if (!failoverAdapter) {
+      setFailoverState(null);
+      setFailoverLoading(false);
+      return null;
+    }
+
+    const requestId = failoverRequestIdRef.current + 1;
+    failoverRequestIdRef.current = requestId;
+    setFailoverLoading(true);
+
+    try {
+      const nextFailoverState = await failoverAdapter.getProviderFailoverState(
+        nextAppId,
+        providerId,
+      );
+
+      if (failoverRequestIdRef.current === requestId) {
+        setFailoverState(nextFailoverState);
+      }
+
+      return nextFailoverState;
+    } catch {
+      if (failoverRequestIdRef.current === requestId) {
+        setFailoverState(null);
+      }
+
+      return null;
+    } finally {
+      if (failoverRequestIdRef.current === requestId) {
+        setFailoverLoading(false);
+      }
+    }
+  }
+
+  async function refreshProviderStatePreservingSelection(providerId: string) {
+    const nextState = await providerAdapter.listProviderState(appId);
+    const nextProvider = getProviderById(nextState, providerId);
+
+    if (!nextProvider) {
+      const nextProviderId = getDefaultProviderId(nextState);
+      syncSelectionFromState(
+        appId,
+        nextState,
+        nextProviderId ? "edit" : "new",
+        nextProviderId,
+      );
+      return;
+    }
+
+    setProviderState(nextState);
+    setMode("edit");
+    setSelectedProviderId(nextProvider.providerId ?? providerId);
+    setPanelMode("detail");
+
+    if (!editing) {
+      const nextDraft = createDraftFromProvider(nextProvider);
+      setDraft(nextDraft);
+      setBaselineDraft(nextDraft);
     }
   }
 
@@ -493,7 +630,11 @@ const ProviderSidePanelHostComponent = forwardRef<
     setPanelMode("detail");
     setPickerSelectedPresetId(null);
     setTab("activities");
-    void loadWorkspace(nextAppId, providerId ?? null, providerId ? "edit" : null);
+    void loadWorkspace(
+      nextAppId,
+      providerId ?? null,
+      providerId ? "edit" : null,
+    );
   }
 
   useImperativeHandle(ref, () => ({
@@ -521,6 +662,18 @@ const ProviderSidePanelHostComponent = forwardRef<
       unlockBodyScroll();
     };
   }, [open]);
+
+  useEffect(() => {
+    if (!open || !selectedProviderId || !failoverAdapter) {
+      failoverRequestIdRef.current += 1;
+      setFailoverState(null);
+      setFailoverLoading(false);
+      setFailoverPendingAction(null);
+      return;
+    }
+
+    void loadFailoverStateForProvider(appId, selectedProviderId);
+  }, [appId, failoverAdapter, open, selectedProviderId]);
 
   useEffect(() => {
     if (!open) {
@@ -636,12 +789,14 @@ const ProviderSidePanelHostComponent = forwardRef<
       await providerAdapter.saveProvider(
         appId,
         draft,
-        mode === "edit" ? selectedProvider?.providerId ?? undefined : undefined,
+        mode === "edit"
+          ? (selectedProvider?.providerId ?? undefined)
+          : undefined,
       );
       await refreshSelectionAfterMutation(
         appId,
         "edit",
-        mode === "edit" ? selectedProvider?.providerId ?? null : null,
+        mode === "edit" ? (selectedProvider?.providerId ?? null) : null,
         draft,
       );
     } catch (saveError) {
@@ -681,7 +836,9 @@ const ProviderSidePanelHostComponent = forwardRef<
     } catch (deleteError) {
       shell.showMessage(
         "error",
-        deleteError instanceof Error ? deleteError.message : String(deleteError),
+        deleteError instanceof Error
+          ? deleteError.message
+          : String(deleteError),
       );
     } finally {
       setDeletePending(false);
@@ -702,7 +859,10 @@ const ProviderSidePanelHostComponent = forwardRef<
 
     setActivatePending(true);
     try {
-      await providerAdapter.activateProvider(appId, selectedProvider.providerId);
+      await providerAdapter.activateProvider(
+        appId,
+        selectedProvider.providerId,
+      );
       await refreshSelectionAfterMutation(
         appId,
         "edit",
@@ -718,6 +878,72 @@ const ProviderSidePanelHostComponent = forwardRef<
       );
     } finally {
       setActivatePending(false);
+    }
+  }
+
+  async function handleToggleAppAutoFailover(enabled: boolean) {
+    if (
+      !failoverAdapter ||
+      !selectedProvider?.providerId ||
+      failoverPendingAction
+    ) {
+      return;
+    }
+
+    const providerId = selectedProvider.providerId;
+
+    setFailoverPendingAction("app-auto");
+    try {
+      await failoverAdapter.setAutoFailoverEnabled(appId, enabled);
+      await Promise.all([
+        refreshProviderStatePreservingSelection(providerId),
+        loadFailoverStateForProvider(appId, providerId),
+      ]);
+      onProviderMutation?.();
+      shell.showMessage(
+        "success",
+        `${APP_LABELS[appId]} auto-failover ${enabled ? "enabled" : "disabled"}.`,
+      );
+    } catch (toggleError) {
+      shell.showMessage("error", formatErrorMessage(toggleError));
+    } finally {
+      setFailoverPendingAction(null);
+    }
+  }
+
+  async function handleToggleProviderFailoverQueue(inQueue: boolean) {
+    if (
+      !failoverAdapter ||
+      !selectedProvider?.providerId ||
+      failoverPendingAction
+    ) {
+      return;
+    }
+
+    const providerId = selectedProvider.providerId;
+    const providerName = selectedProvider.name || providerId;
+
+    setFailoverPendingAction("provider-queue");
+    try {
+      if (inQueue) {
+        await failoverAdapter.addToFailoverQueue(appId, providerId);
+      } else {
+        await failoverAdapter.removeFromFailoverQueue(appId, providerId);
+      }
+
+      await Promise.all([
+        refreshProviderStatePreservingSelection(providerId),
+        loadFailoverStateForProvider(appId, providerId),
+      ]);
+      onProviderMutation?.();
+      shell.showMessage(
+        "success",
+        `${providerName} ${inQueue ? "added to" : "removed from"} failover queue.`,
+      );
+    } catch (toggleError) {
+      shell.showMessage("error", formatErrorMessage(toggleError));
+    } finally {
+      setFailoverPendingAction(null);
     }
   }
 
@@ -791,6 +1017,15 @@ const ProviderSidePanelHostComponent = forwardRef<
       canDelete={Boolean(canDelete)}
       canSave={canSave}
       saveIdle={saveIdle}
+      failoverControlsAvailable={Boolean(
+        failoverAdapter && selectedProvider?.providerId,
+      )}
+      failoverControlsReady={Boolean(failoverState)}
+      failoverControlsLoading={failoverLoading}
+      appAutoFailoverEnabled={Boolean(failoverState?.autoFailoverEnabled)}
+      appFailoverPending={failoverPendingAction === "app-auto"}
+      providerInFailoverQueue={Boolean(failoverState?.inFailoverQueue)}
+      providerFailoverPending={failoverPendingAction === "provider-queue"}
       footerText={footerText}
       onClose={closePanel}
       onSearchChange={setSearch}
@@ -816,6 +1051,12 @@ const ProviderSidePanelHostComponent = forwardRef<
       }}
       onDelete={() => {
         void handleDelete();
+      }}
+      onToggleAppAutoFailover={(enabled) => {
+        void handleToggleAppAutoFailover(enabled);
+      }}
+      onToggleProviderFailoverQueue={(inQueue) => {
+        void handleToggleProviderFailoverQueue(inQueue);
       }}
       onCancel={handleCancel}
       onSave={() => {

@@ -1,5 +1,11 @@
 import { type ReactElement, useRef } from "react";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import {
@@ -287,8 +293,12 @@ describe("ProviderSidePanelHost", () => {
     expect(
       within(draftDialog).getByRole("button", { name: "Configure" }),
     ).toHaveAttribute("data-active", "true");
-    expect(within(draftDialog).getByRole("button", { name: "Cancel" })).toBeInTheDocument();
-    expect(within(draftDialog).getByRole("button", { name: "Save" })).toBeInTheDocument();
+    expect(
+      within(draftDialog).getByRole("button", { name: "Cancel" }),
+    ).toBeInTheDocument();
+    expect(
+      within(draftDialog).getByRole("button", { name: "Save" }),
+    ).toBeInTheDocument();
     expect(
       within(draftDialog).queryByRole("button", { name: "Edit" }),
     ).toBeNull();
@@ -310,16 +320,16 @@ describe("ProviderSidePanelHost", () => {
     });
 
     render(
-      <HostHarness
-        selectedApp="codex"
-        shell={shell}
-        transport={transport}
-      />,
+      <HostHarness selectedApp="codex" shell={shell} transport={transport} />,
     );
 
     const dialog = await openPanel();
-    await user.click(within(await dialog).getByRole("button", { name: "Configure" }));
-    await user.click(within(await dialog).getByRole("button", { name: "Edit" }));
+    await user.click(
+      within(await dialog).getByRole("button", { name: "Configure" }),
+    );
+    await user.click(
+      within(await dialog).getByRole("button", { name: "Edit" }),
+    );
 
     const nameInput = within(await dialog).getByLabelText("Provider name");
     const authTextarea = within(await dialog).getByLabelText("auth.json");
@@ -331,8 +341,12 @@ describe("ProviderSidePanelHost", () => {
         value: '{"token":"temp"}',
       },
     });
-    await user.click(within(await dialog).getByRole("button", { name: "Cancel" }));
-    await user.click(within(await dialog).getByRole("button", { name: "Edit" }));
+    await user.click(
+      within(await dialog).getByRole("button", { name: "Cancel" }),
+    );
+    await user.click(
+      within(await dialog).getByRole("button", { name: "Edit" }),
+    );
 
     expect(within(await dialog).getByLabelText("Provider name")).toHaveValue(
       "OpenAI Official",
@@ -355,18 +369,20 @@ describe("ProviderSidePanelHost", () => {
     });
 
     render(
-      <HostHarness
-        selectedApp="codex"
-        shell={shell}
-        transport={transport}
-      />,
+      <HostHarness selectedApp="codex" shell={shell} transport={transport} />,
     );
 
     const dialog = await openPanel();
-    await user.click(within(await dialog).getByRole("button", { name: "Configure" }));
-    await user.click(within(await dialog).getByRole("button", { name: "Edit" }));
+    await user.click(
+      within(await dialog).getByRole("button", { name: "Configure" }),
+    );
+    await user.click(
+      within(await dialog).getByRole("button", { name: "Edit" }),
+    );
 
-    const saveButton = within(await dialog).getByRole("button", { name: "Save" });
+    const saveButton = within(await dialog).getByRole("button", {
+      name: "Save",
+    });
     const notesInput = within(await dialog).getByLabelText("Notes");
 
     expect(saveButton).toBeDisabled();
@@ -394,18 +410,20 @@ describe("ProviderSidePanelHost", () => {
     });
 
     render(
-      <HostHarness
-        selectedApp="codex"
-        shell={shell}
-        transport={transport}
-      />,
+      <HostHarness selectedApp="codex" shell={shell} transport={transport} />,
     );
 
     const dialog = await openPanel();
-    await user.click(within(await dialog).getByRole("button", { name: "Configure" }));
-    await user.click(within(await dialog).getByRole("button", { name: "Edit" }));
+    await user.click(
+      within(await dialog).getByRole("button", { name: "Configure" }),
+    );
+    await user.click(
+      within(await dialog).getByRole("button", { name: "Edit" }),
+    );
     await user.type(within(await dialog).getByLabelText("Notes"), " updated");
-    await user.click(within(await dialog).getByRole("button", { name: "Save" }));
+    await user.click(
+      within(await dialog).getByRole("button", { name: "Save" }),
+    );
 
     await waitFor(() =>
       expect(transport.upsertProviderByProviderId).toHaveBeenCalledTimes(1),
@@ -418,10 +436,18 @@ describe("ProviderSidePanelHost", () => {
       }),
     );
 
-    await user.click(within(await dialog).getByRole("button", { name: "Configure" }));
-    await user.click(within(await dialog).getByRole("button", { name: "Edit" }));
-    await user.click(within(await dialog).getByRole("button", { name: "Clear auth" }));
-    await user.click(within(await dialog).getByRole("button", { name: "Save" }));
+    await user.click(
+      within(await dialog).getByRole("button", { name: "Configure" }),
+    );
+    await user.click(
+      within(await dialog).getByRole("button", { name: "Edit" }),
+    );
+    await user.click(
+      within(await dialog).getByRole("button", { name: "Clear auth" }),
+    );
+    await user.click(
+      within(await dialog).getByRole("button", { name: "Save" }),
+    );
 
     await waitFor(() =>
       expect(transport.upsertProviderByProviderId).toHaveBeenCalledTimes(2),
@@ -443,11 +469,7 @@ describe("ProviderSidePanelHost", () => {
     });
 
     render(
-      <HostHarness
-        selectedApp="codex"
-        shell={shell}
-        transport={transport}
-      />,
+      <HostHarness selectedApp="codex" shell={shell} transport={transport} />,
     );
 
     const dialog = await openPanel();
@@ -462,9 +484,13 @@ describe("ProviderSidePanelHost", () => {
         value: '{"refresh_token":"new-token"}',
       },
     });
-    await user.click(within(await dialog).getByRole("button", { name: "Save" }));
+    await user.click(
+      within(await dialog).getByRole("button", { name: "Save" }),
+    );
 
-    await waitFor(() => expect(transport.upsertProvider).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(transport.upsertProvider).toHaveBeenCalledTimes(1),
+    );
     expect(transport.upsertProvider).toHaveBeenLastCalledWith(
       "codex",
       expect.objectContaining({
@@ -500,9 +526,7 @@ describe("ProviderSidePanelHost", () => {
       claude: createProviderState("claude", [primaryProvider, backupProvider]),
     });
 
-    render(
-      <HostHarness shell={shell} transport={transport} />,
-    );
+    render(<HostHarness shell={shell} transport={transport} />);
 
     const dialog = await openPanel();
 
@@ -580,6 +604,81 @@ describe("ProviderSidePanelHost", () => {
 
     expect(rows[0]).toHaveTextContent("Claude Backup");
     expect(within(rows[0]).getByText("Active")).toBeInTheDocument();
+  });
+
+  it("toggles OpenWrt failover through the app and provider header checkboxes", async () => {
+    const user = userEvent.setup();
+    const shell = createBridgeFixture({ selectedApp: "claude" });
+    const primaryProvider = createProviderView("claude", {
+      active: true,
+      name: "Claude Primary",
+      providerId: "claude-primary",
+    });
+    const backupProvider = createProviderView("claude", {
+      active: false,
+      name: "Claude Backup",
+      providerId: "claude-backup",
+    });
+    const { transport, getFailoverState } = createProviderTransportFixture({
+      claude: createProviderState("claude", [primaryProvider, backupProvider]),
+    });
+
+    render(
+      <HostHarness
+        providerId="claude-backup"
+        shell={shell}
+        transport={transport}
+      />,
+    );
+
+    const dialog = await openPanel();
+    const appCheckbox = await within(dialog).findByRole("checkbox", {
+      name: "Claude auto-failover",
+    });
+    const providerCheckbox = await within(dialog).findByRole("checkbox", {
+      name: "Include Claude Backup in failover queue",
+    });
+
+    await waitFor(() => expect(appCheckbox).toBeEnabled());
+    expect(appCheckbox).not.toBeChecked();
+    expect(providerCheckbox).not.toBeChecked();
+
+    await user.click(providerCheckbox);
+
+    await waitFor(() =>
+      expect(transport.addToFailoverQueue).toHaveBeenCalledWith(
+        "claude",
+        "claude-backup",
+      ),
+    );
+    await waitFor(() => expect(providerCheckbox).toBeChecked());
+    expect(getFailoverState("claude").queue).toEqual(["claude-backup"]);
+
+    await user.click(appCheckbox);
+
+    await waitFor(() =>
+      expect(transport.setAutoFailoverEnabled).toHaveBeenCalledWith(
+        "claude",
+        true,
+      ),
+    );
+    await waitFor(() => expect(appCheckbox).toBeChecked());
+    await waitFor(() =>
+      expect(
+        within(dialog).queryByRole("button", { name: "Set active" }),
+      ).toBeNull(),
+    );
+
+    await user.click(providerCheckbox);
+
+    await waitFor(() =>
+      expect(transport.removeFromFailoverQueue).toHaveBeenCalledWith(
+        "claude",
+        "claude-backup",
+      ),
+    );
+    await waitFor(() => expect(providerCheckbox).not.toBeChecked());
+    expect(getFailoverState("claude").queue).toEqual([]);
   });
 
   it("keeps forward tab navigation inside the panel when mounted in a shadow root", async () => {

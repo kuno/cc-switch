@@ -1495,12 +1495,41 @@
   flex: 1 1 auto;
 }
 
+.owt-provider-panel__title-row,
+.owt-provider-panel__detail-title-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
 .owt-provider-panel__title {
   margin: 0;
   font-size: 22px;
   line-height: 1.1;
   letter-spacing: -0.02em;
   font-weight: 720;
+}
+
+.owt-provider-panel__failover-checkbox {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.owt-provider-panel__failover-checkbox input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: inherit;
+}
+
+.owt-provider-panel__failover-checkbox input:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .owt-provider-panel__subtitle {
@@ -1729,6 +1758,10 @@
 }
 
 .owt-provider-panel__detail-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 22px;
   line-height: 1.1;
   letter-spacing: -0.02em;
