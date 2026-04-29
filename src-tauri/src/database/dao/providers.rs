@@ -21,12 +21,36 @@ impl Database {
         &self,
         app_type: &str,
     ) -> Result<IndexMap<String, Provider>, AppError> {
+        self.get_all_providers_ordered(
+            app_type,
+            "COALESCE(sort_index, 999999), created_at ASC, id ASC",
+        )
+    }
+
+    pub fn get_all_providers_by_display_order(
+        &self,
+        app_type: &str,
+    ) -> Result<IndexMap<String, Provider>, AppError> {
+        self.get_all_providers_ordered(
+            app_type,
+            "COALESCE(display_sort_index, sort_index, 999999), created_at ASC, id ASC",
+        )
+    }
+
+    fn get_all_providers_ordered(
+        &self,
+        app_type: &str,
+        order_by: &str,
+    ) -> Result<IndexMap<String, Provider>, AppError> {
         let conn = lock_conn!(self.conn);
-        let mut stmt = conn.prepare(
+        let sql = format!(
             "SELECT id, name, settings_config, website_url, category, created_at, sort_index, notes, icon, icon_color, meta, in_failover_queue
              FROM providers WHERE app_type = ?1
-             ORDER BY COALESCE(sort_index, 999999), created_at ASC, id ASC"
-        ).map_err(|e| AppError::Database(e.to_string()))?;
+             ORDER BY {order_by}"
+        );
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| AppError::Database(e.to_string()))?;
 
         let provider_iter = stmt
             .query_map(params![app_type], |row| {
@@ -237,11 +261,26 @@ impl Database {
             )
             .map_err(|e| AppError::Database(e.to_string()))?;
         } else {
+            let display_sort_index = match provider.sort_index {
+                Some(sort_index) => sort_index,
+                None => {
+                    let max: Option<i64> = tx
+                        .query_row(
+                            "SELECT MAX(COALESCE(display_sort_index, sort_index))
+                             FROM providers WHERE app_type = ?1",
+                            params![app_type],
+                            |row| row.get(0),
+                        )
+                        .map_err(|e| AppError::Database(e.to_string()))?;
+                    max.map(|v| (v + 1) as usize).unwrap_or(0)
+                }
+            };
+
             tx.execute(
                 "INSERT INTO providers (
                     id, app_type, name, settings_config, website_url, category,
-                    created_at, sort_index, notes, icon, icon_color, meta, is_current, in_failover_queue
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                    created_at, sort_index, display_sort_index, notes, icon, icon_color, meta, is_current, in_failover_queue
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
                 params![
                     provider.id,
                     app_type,
@@ -252,6 +291,7 @@ impl Database {
                     provider.category,
                     provider.created_at,
                     provider.sort_index,
+                    display_sort_index,
                     provider.notes,
                     provider.icon,
                     provider.icon_color,
@@ -284,6 +324,58 @@ impl Database {
             params![id, app_type],
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
+        Ok(())
+    }
+
+    pub fn reorder_providers(
+        &self,
+        app_type: &str,
+        provider_ids: &[String],
+    ) -> Result<(), AppError> {
+        let current_providers = self.get_all_providers_by_display_order(app_type)?;
+
+        if current_providers.len() != provider_ids.len() {
+            return Err(AppError::Database(
+                "provider reorder must include every saved provider exactly once".to_string(),
+            ));
+        }
+
+        let mut current_ids = current_providers.keys().cloned().collect::<Vec<_>>();
+        let mut next_ids = provider_ids.to_vec();
+        current_ids.sort();
+        next_ids.sort();
+
+        if current_ids != next_ids {
+            return Err(AppError::Database(
+                "provider reorder received a provider set that does not match the current app"
+                    .to_string(),
+            ));
+        }
+
+        let mut conn = lock_conn!(self.conn);
+        let tx = conn
+            .transaction()
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        for (index, provider_id) in provider_ids.iter().enumerate() {
+            let updated = tx
+                .execute(
+                    "UPDATE providers
+                     SET display_sort_index = ?3
+                     WHERE id = ?1 AND app_type = ?2",
+                    params![provider_id, app_type, index as i32],
+                )
+                .map_err(|e| AppError::Database(e.to_string()))?;
+
+            if updated != 1 {
+                return Err(AppError::Database(format!(
+                    "failed to reorder provider {provider_id}"
+                )));
+            }
+        }
+
+        tx.commit().map_err(|e| AppError::Database(e.to_string()))?;
+
         Ok(())
     }
 

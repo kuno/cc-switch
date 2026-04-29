@@ -52,6 +52,10 @@ pub(crate) fn mount_openwrt_admin_routes(router: Router<ProxyState>) -> Router<P
             get(openwrt_list_providers).post(openwrt_upsert_provider),
         )
         .route(
+            "/openwrt/admin/apps/:app/providers/order",
+            put(openwrt_reorder_providers),
+        )
+        .route(
             "/openwrt/admin/apps/:app/providers/active",
             get(openwrt_get_active_provider).post(openwrt_upsert_active_provider),
         )
@@ -109,7 +113,7 @@ pub(crate) fn mount_openwrt_admin_routes(router: Router<ProxyState>) -> Router<P
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct OpenWrtReorderQueuePayload {
+struct OpenWrtProviderIdListPayload {
     provider_ids: Vec<String>,
 }
 
@@ -524,6 +528,19 @@ async fn openwrt_activate_provider(
     }
 }
 
+async fn openwrt_reorder_providers(
+    Path(app): Path<String>,
+    State(state): State<ProxyState>,
+    Json(payload): Json<OpenWrtProviderIdListPayload>,
+) -> (StatusCode, Json<Value>) {
+    match parse_openwrt_app(&app).and_then(|app_type| {
+        openwrt_admin::reorder_providers(state.db.as_ref(), &app_type, &payload.provider_ids)
+    }) {
+        Ok(view) => openwrt_admin_ok(view),
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
 async fn openwrt_upload_codex_auth(
     Path((app, provider_id)): Path<(String, String)>,
     State(state): State<ProxyState>,
@@ -655,7 +672,7 @@ async fn openwrt_remove_from_failover_queue(
 async fn openwrt_reorder_failover_queue(
     Path(app): Path<String>,
     State(state): State<ProxyState>,
-    Json(payload): Json<OpenWrtReorderQueuePayload>,
+    Json(payload): Json<OpenWrtProviderIdListPayload>,
 ) -> (StatusCode, Json<Value>) {
     match parse_openwrt_app(&app) {
         Ok(app_type) => match openwrt_admin::reorder_failover_queue(
