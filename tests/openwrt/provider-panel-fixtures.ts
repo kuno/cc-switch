@@ -50,6 +50,8 @@ type ProviderSidePanelCallbacks = {
   onClearAuth: () => void;
   onActivate: () => void;
   onDelete: () => void;
+  onToggleAppAutoFailover: (enabled: boolean) => void;
+  onToggleProviderFailoverQueue: (inQueue: boolean) => void;
   onCancel: () => void;
   onSave: () => void;
 };
@@ -84,6 +86,13 @@ export interface ProviderSidePanelFixtureOptions {
   canDelete?: boolean;
   canSave?: boolean;
   saveIdle?: boolean;
+  failoverControlsAvailable?: boolean;
+  failoverControlsReady?: boolean;
+  failoverControlsLoading?: boolean;
+  appAutoFailoverEnabled?: boolean;
+  appFailoverPending?: boolean;
+  providerInFailoverQueue?: boolean;
+  providerFailoverPending?: boolean;
   footerText?: string;
   callbacks?: Partial<ProviderSidePanelCallbacks>;
 }
@@ -153,15 +162,15 @@ export function createProviderDraft(
 export function createProviderState(
   appId: SharedProviderAppId,
   providers: SharedProviderView[],
-  activeProviderId: string | null = providers.find((provider) => provider.active)
-    ?.providerId ?? null,
+  activeProviderId: string | null = providers.find(
+    (provider) => provider.active,
+  )?.providerId ?? null,
   phase2Available = true,
 ): SharedProviderState {
   const normalizedProviders = providers.map((provider) => ({
     ...provider,
     active:
-      Boolean(activeProviderId) &&
-      provider.providerId === activeProviderId,
+      Boolean(activeProviderId) && provider.providerId === activeProviderId,
   }));
   const activeProvider =
     normalizedProviders.find(
@@ -222,17 +231,18 @@ export function createProviderSidePanelProps(
     notes: "Pinned for router traffic",
   });
   const providers = options.providers ?? [defaultSelectedProvider];
-  const selectedProvider =
-    Object.prototype.hasOwnProperty.call(options, "selectedProvider")
-      ? (options.selectedProvider ?? null)
-      : providers.find(
-            (provider) => provider.providerId === options.selectedProviderId,
-          ) ??
-          providers.find((provider) => provider.active) ??
-          providers[0] ??
-          null;
-  const mode =
-    options.mode ?? (selectedProvider?.providerId ? "edit" : "new");
+  const selectedProvider = Object.prototype.hasOwnProperty.call(
+    options,
+    "selectedProvider",
+  )
+    ? (options.selectedProvider ?? null)
+    : (providers.find(
+        (provider) => provider.providerId === options.selectedProviderId,
+      ) ??
+      providers.find((provider) => provider.active) ??
+      providers[0] ??
+      null);
+  const mode = options.mode ?? (selectedProvider?.providerId ? "edit" : "new");
   const draft =
     options.draft ??
     (selectedProvider
@@ -256,6 +266,8 @@ export function createProviderSidePanelProps(
     onClearAuth: () => {},
     onActivate: () => {},
     onDelete: () => {},
+    onToggleAppAutoFailover: () => {},
+    onToggleProviderFailoverQueue: () => {},
     onCancel: () => {},
     onSave: () => {},
   };
@@ -280,7 +292,7 @@ export function createProviderSidePanelProps(
       "selectedProviderId",
     )
       ? (options.selectedProviderId ?? null)
-      : selectedProvider?.providerId ?? null,
+      : (selectedProvider?.providerId ?? null),
     selectedProvider,
     draft,
     website: options.website ?? deriveWebsite(draft.baseUrl),
@@ -288,8 +300,9 @@ export function createProviderSidePanelProps(
     search: options.search ?? "",
     selectedPresetId: options.selectedPresetId ?? "custom",
     presetGroups: options.presetGroups ?? createPresetGroups(appId),
-    tokenFieldOptions:
-      options.tokenFieldOptions ?? [...SHARED_PROVIDER_TOKEN_FIELD_OPTIONS[appId]],
+    tokenFieldOptions: options.tokenFieldOptions ?? [
+      ...SHARED_PROVIDER_TOKEN_FIELD_OPTIONS[appId],
+    ],
     savePending: options.savePending ?? false,
     activatePending: options.activatePending ?? false,
     deletePending: options.deletePending ?? false,
@@ -299,9 +312,17 @@ export function createProviderSidePanelProps(
         !Boolean(options.editing) &&
         Boolean(selectedProvider?.providerId) &&
         !selectedProvider?.active),
-    canDelete: options.canDelete ?? (mode === "edit" && Boolean(selectedProvider)),
+    canDelete:
+      options.canDelete ?? (mode === "edit" && Boolean(selectedProvider)),
     canSave: options.canSave ?? true,
     saveIdle: options.saveIdle ?? false,
+    failoverControlsAvailable: options.failoverControlsAvailable ?? false,
+    failoverControlsReady: options.failoverControlsReady ?? false,
+    failoverControlsLoading: options.failoverControlsLoading ?? false,
+    appAutoFailoverEnabled: options.appAutoFailoverEnabled ?? false,
+    appFailoverPending: options.appFailoverPending ?? false,
+    providerInFailoverQueue: options.providerInFailoverQueue ?? false,
+    providerFailoverPending: options.providerFailoverPending ?? false,
     footerText:
       options.footerText ??
       (mode === "new" ? "New provider · not saved" : "Unsaved changes"),
