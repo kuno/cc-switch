@@ -15,6 +15,8 @@ use crate::proxy::providers::{
 };
 use crate::proxy::server::populate_status_active_targets;
 use crate::proxy::types::{AppProxyConfig, GlobalProxyConfig, ProviderHealth, ProxyStatus};
+use crate::proxy::ProviderRouter;
+use crate::proxy::{CircuitBreakerStats, CircuitState};
 use crate::services::usage_stats::{
     LogFilters, PaginatedLogs, ProviderStats, RequestLogDetail, UsageSummary,
 };
@@ -218,6 +220,8 @@ pub struct OpenWrtAppMetaView {
     pub supports_usage_summary: bool,
     pub supports_provider_stats: bool,
     pub supports_recent_activity: bool,
+    pub supports_circuit_breaker_stats: bool,
+    pub supports_circuit_breaker_reset: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -254,7 +258,7 @@ pub struct OpenWrtAppRuntimeStatusView {
     pub unhealthy_provider_count: usize,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenWrtProviderHealthView {
     pub provider_id: String,
@@ -291,6 +295,27 @@ pub struct OpenWrtProviderFailoverView {
     pub provider_health: OpenWrtProviderHealthView,
     pub failover_queue_depth: usize,
     pub failover_queue: Vec<OpenWrtFailoverQueueStatusView>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtCircuitBreakerStateView {
+    pub app: String,
+    pub provider_id: String,
+    pub live_runtime_reachable: bool,
+    pub source: String,
+    pub state: Option<CircuitState>,
+    pub stats: Option<CircuitBreakerStats>,
+    pub provider_health: OpenWrtProviderHealthView,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtCircuitBreakerResetView {
+    pub app: String,
+    pub provider_id: String,
+    pub provider_health: OpenWrtProviderHealthView,
+    pub circuit_breaker: OpenWrtCircuitBreakerStateView,
 }
 
 #[derive(Clone, Copy)]
@@ -541,6 +566,68 @@ pub async fn get_provider_failover(
     })
 }
 
+pub async fn get_circuit_breaker_state(
+    db: &Database,
+    provider_router: &ProviderRouter,
+    app_type: &AppType,
+    provider_id: &str,
+) -> anyhow::Result<OpenWrtCircuitBreakerStateView> {
+    let profile = openwrt_app_profile(app_type)?;
+    let normalized_provider_id = normalize_provider_id(provider_id)?;
+    load_provider(db, profile, &normalized_provider_id)?;
+
+    build_circuit_breaker_state_view(
+        db,
+        provider_router,
+        profile,
+        &normalized_provider_id,
+        "runtime-router",
+        true,
+    )
+    .await
+}
+
+pub async fn reset_circuit_breaker(
+    db: &Database,
+    provider_router: &ProviderRouter,
+    app_type: &AppType,
+    provider_id: &str,
+) -> anyhow::Result<OpenWrtCircuitBreakerResetView> {
+    let profile = openwrt_app_profile(app_type)?;
+    let normalized_provider_id = normalize_provider_id(provider_id)?;
+    load_provider(db, profile, &normalized_provider_id)?;
+
+    db.update_provider_health(&normalized_provider_id, profile.app_id, true, None)
+        .await
+        .map_err(|e| {
+            anyhow!(
+                "failed to reset {} provider {normalized_provider_id} health: {e}",
+                profile.app_id
+            )
+        })?;
+
+    provider_router
+        .reset_provider_breaker(&normalized_provider_id, profile.app_id)
+        .await;
+
+    let circuit_breaker = build_circuit_breaker_state_view(
+        db,
+        provider_router,
+        profile,
+        &normalized_provider_id,
+        "runtime-router",
+        true,
+    )
+    .await?;
+
+    Ok(OpenWrtCircuitBreakerResetView {
+        app: profile.app_id.to_string(),
+        provider_id: normalized_provider_id,
+        provider_health: circuit_breaker.provider_health.clone(),
+        circuit_breaker,
+    })
+}
+
 pub fn get_active_provider(
     db: &Database,
     app_type: &AppType,
@@ -578,6 +665,8 @@ pub fn get_admin_meta() -> anyhow::Result<OpenWrtAdminMetaView> {
                 supports_usage_summary: true,
                 supports_provider_stats: true,
                 supports_recent_activity: true,
+                supports_circuit_breaker_stats: true,
+                supports_circuit_breaker_reset: true,
             })
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
@@ -1536,6 +1625,52 @@ fn build_provider_health_view(
     }
 }
 
+async fn load_provider_health_view(
+    db: &Database,
+    profile: OpenWrtAppProfile,
+    provider_id: &str,
+) -> anyhow::Result<OpenWrtProviderHealthView> {
+    let health_records = db
+        .list_provider_health_records(profile.app_id)
+        .await
+        .map_err(|e| {
+            anyhow!(
+                "failed to list {} provider health records: {e}",
+                profile.app_id
+            )
+        })?;
+    let health = health_records
+        .iter()
+        .find(|record| record.provider_id == provider_id);
+
+    Ok(build_provider_health_view(provider_id, health))
+}
+
+async fn build_circuit_breaker_state_view(
+    db: &Database,
+    provider_router: &ProviderRouter,
+    profile: OpenWrtAppProfile,
+    provider_id: &str,
+    source: &str,
+    live_runtime_reachable: bool,
+) -> anyhow::Result<OpenWrtCircuitBreakerStateView> {
+    let stats = provider_router
+        .get_circuit_breaker_stats(provider_id, profile.app_id)
+        .await;
+    let state = stats.as_ref().map(|stats| stats.state);
+    let provider_health = load_provider_health_view(db, profile, provider_id).await?;
+
+    Ok(OpenWrtCircuitBreakerStateView {
+        app: profile.app_id.to_string(),
+        provider_id: provider_id.to_string(),
+        live_runtime_reachable,
+        source: source.to_string(),
+        state,
+        stats,
+        provider_health,
+    })
+}
+
 fn build_fallback_proxy_status(
     service_config: &GlobalProxyConfig,
     apps: &[OpenWrtAppRuntimeStatusView],
@@ -1625,6 +1760,116 @@ async fn fetch_live_proxy_status(
         .json::<ProxyStatus>()
         .await
         .map_err(|e| anyhow!("failed to decode daemon status from {status_url}: {e}"))
+}
+
+pub async fn get_live_circuit_breaker_state(
+    db: &Database,
+    app_type: &AppType,
+    provider_id: &str,
+) -> anyhow::Result<Value> {
+    let profile = openwrt_app_profile(app_type)?;
+    let normalized_provider_id = normalize_provider_id(provider_id)?;
+    load_provider(db, profile, &normalized_provider_id)?;
+
+    call_live_admin_json(
+        db,
+        "GET",
+        &circuit_breaker_admin_path(profile, &normalized_provider_id),
+    )
+    .await
+}
+
+pub async fn reset_live_circuit_breaker(
+    db: &Database,
+    app_type: &AppType,
+    provider_id: &str,
+) -> anyhow::Result<Value> {
+    let profile = openwrt_app_profile(app_type)?;
+    let normalized_provider_id = normalize_provider_id(provider_id)?;
+    load_provider(db, profile, &normalized_provider_id)?;
+
+    call_live_admin_json(
+        db,
+        "POST",
+        &format!(
+            "{}/reset",
+            circuit_breaker_admin_path(profile, &normalized_provider_id)
+        ),
+    )
+    .await
+}
+
+async fn call_live_admin_json(db: &Database, method: &str, path: &str) -> anyhow::Result<Value> {
+    let service_config = db
+        .get_global_proxy_config()
+        .await
+        .map_err(|e| anyhow!("failed to read proxy service config: {e}"))?;
+    let url = format!(
+        "{}{}",
+        build_proxy_status_origin(&service_config.listen_address, service_config.listen_port),
+        path
+    );
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_millis(1200))
+        .build()
+        .context("failed to build daemon admin HTTP client")?;
+    let request = match method {
+        "GET" => client.get(&url),
+        "POST" => client.post(&url),
+        _ => return Err(anyhow!("unsupported daemon admin HTTP method {method}")),
+    };
+    let response = request
+        .send()
+        .await
+        .map_err(|e| anyhow!("live daemon admin endpoint unavailable at {url}: {e}"))?;
+
+    if !response.status().is_success() {
+        let response_status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        let body = body.trim();
+        let body_suffix = if body.is_empty() {
+            String::new()
+        } else {
+            format!(": {body}")
+        };
+
+        return Err(anyhow!(
+            "live daemon admin endpoint returned {}{}",
+            response_status,
+            body_suffix
+        ));
+    }
+
+    let mut value = response
+        .json::<Value>()
+        .await
+        .map_err(|e| anyhow!("failed to decode daemon admin response from {url}: {e}"))?;
+
+    if let Value::Object(map) = &mut value {
+        if map.get("ok").and_then(Value::as_bool) == Some(false) {
+            let error = map
+                .get("error")
+                .and_then(Value::as_str)
+                .unwrap_or("daemon admin request failed");
+            return Err(anyhow!(error.to_string()));
+        }
+        map.remove("ok");
+    }
+
+    Ok(value)
+}
+
+fn circuit_breaker_admin_path(profile: OpenWrtAppProfile, provider_id: &str) -> String {
+    format!(
+        "/openwrt/admin/apps/{}/providers/{}/circuit-breaker",
+        percent_encode_path_segment(profile.app_id),
+        percent_encode_path_segment(provider_id)
+    )
+}
+
+fn percent_encode_path_segment(value: &str) -> String {
+    url::form_urlencoded::byte_serialize(value.as_bytes()).collect()
 }
 
 fn build_proxy_status_origin(listen_address: &str, listen_port: u16) -> String {
@@ -3106,7 +3351,7 @@ mod tests {
         let initial_auth =
             String::from_utf8(sample_codex_auth_json()).expect("sample codex auth should be utf8");
         let replacement_auth = format!(
-            r#"{{"OPENAI_API_KEY":"sk-replaced","refresh_token":"refresh-two","account_id":"acct-two","expires_at":1791000000}}"#
+            r#"{{"tokens":{{"access_token":"access-two","refresh_token":"refresh-two","account_id":"acct-two"}}}}"#
         );
 
         let mut create_payload = codex_payload("Codex", "", Some("codex_oauth"));
@@ -4359,5 +4604,39 @@ mod tests {
 
         let status_with_proxy = get_runtime_status(&db).await.expect("runtime status");
         assert!(status_with_proxy.service.proxy_enabled);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    #[serial]
+    async fn live_circuit_breaker_state_errors_when_daemon_runtime_is_unavailable() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+        upsert_claude_provider_with_payload(
+            &db,
+            Some("provider-a"),
+            sample_payload("Claude A", "secret-a"),
+        )
+        .expect("create provider a");
+
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind unused listener");
+        let port = listener.local_addr().expect("listener addr").port();
+        drop(listener);
+
+        let mut global_config = db.get_global_proxy_config().await.expect("global config");
+        global_config.listen_address = "127.0.0.1".to_string();
+        global_config.listen_port = port;
+        db.update_global_proxy_config(global_config)
+            .await
+            .expect("update global config");
+
+        let error = get_live_circuit_breaker_state(&db, &AppType::Claude, "provider-a")
+            .await
+            .expect_err("daemon runtime unavailable");
+
+        assert!(error
+            .to_string()
+            .contains("live daemon admin endpoint unavailable"));
     }
 }

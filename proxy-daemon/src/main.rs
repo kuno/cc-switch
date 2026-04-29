@@ -36,7 +36,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-const OPENWRT_COMMAND_HELP: &str = "unsupported command. expected one of: `cc-switch openwrt get-meta`, `cc-switch openwrt get-runtime-status`, `cc-switch openwrt [claude|codex|gemini] get-runtime-status`, `cc-switch openwrt [claude|codex|gemini] get-config`, `cc-switch openwrt [claude|codex|gemini] set-config`, `cc-switch openwrt [claude|codex|gemini] get-usage-summary`, `cc-switch openwrt [claude|codex|gemini] get-provider-stats`, `cc-switch openwrt [claude|codex|gemini] get-recent-activity`, `cc-switch openwrt [claude|codex|gemini] get-request-logs [page] [page-size]`, `cc-switch openwrt [claude|codex|gemini] get-request-detail <request-id>`, `cc-switch openwrt [claude|codex|gemini] get-active-provider`, `cc-switch openwrt [claude|codex|gemini] upsert-active-provider`, `cc-switch openwrt [claude|codex|gemini] list-providers`, `cc-switch openwrt [claude|codex|gemini] get-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] get-provider-failover <provider-id>`, `cc-switch openwrt [claude|codex|gemini] upsert-provider [provider-id]`, `cc-switch openwrt [claude|codex|gemini] delete-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] activate-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] get-available-failover-providers`, `cc-switch openwrt [claude|codex|gemini] add-to-failover-queue <provider-id>`, `cc-switch openwrt [claude|codex|gemini] remove-from-failover-queue <provider-id>`, `cc-switch openwrt [claude|codex|gemini] reorder-failover-queue`, `cc-switch openwrt [claude|codex|gemini] set-auto-failover-enabled <true|false>`, `cc-switch openwrt [claude|codex|gemini] set-max-retries <value>`, `cc-switch openwrt claude upload-claude-auth <provider-id>`, `cc-switch openwrt claude remove-claude-auth <provider-id>`, `cc-switch openwrt codex upload-codex-auth <provider-id>`, `cc-switch openwrt codex remove-codex-auth <provider-id>`";
+const OPENWRT_COMMAND_HELP: &str = "unsupported command. expected one of: `cc-switch openwrt get-meta`, `cc-switch openwrt get-runtime-status`, `cc-switch openwrt [claude|codex|gemini] get-runtime-status`, `cc-switch openwrt [claude|codex|gemini] get-config`, `cc-switch openwrt [claude|codex|gemini] set-config`, `cc-switch openwrt [claude|codex|gemini] get-usage-summary`, `cc-switch openwrt [claude|codex|gemini] get-provider-stats`, `cc-switch openwrt [claude|codex|gemini] get-recent-activity`, `cc-switch openwrt [claude|codex|gemini] get-request-logs [page] [page-size]`, `cc-switch openwrt [claude|codex|gemini] get-request-detail <request-id>`, `cc-switch openwrt [claude|codex|gemini] get-active-provider`, `cc-switch openwrt [claude|codex|gemini] upsert-active-provider`, `cc-switch openwrt [claude|codex|gemini] list-providers`, `cc-switch openwrt [claude|codex|gemini] get-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] get-provider-failover <provider-id>`, `cc-switch openwrt [claude|codex|gemini] get-circuit-breaker-stats <provider-id>`, `cc-switch openwrt [claude|codex|gemini] reset-circuit-breaker <provider-id>`, `cc-switch openwrt [claude|codex|gemini] upsert-provider [provider-id]`, `cc-switch openwrt [claude|codex|gemini] delete-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] activate-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] get-available-failover-providers`, `cc-switch openwrt [claude|codex|gemini] add-to-failover-queue <provider-id>`, `cc-switch openwrt [claude|codex|gemini] remove-from-failover-queue <provider-id>`, `cc-switch openwrt [claude|codex|gemini] reorder-failover-queue`, `cc-switch openwrt [claude|codex|gemini] set-auto-failover-enabled <true|false>`, `cc-switch openwrt [claude|codex|gemini] set-max-retries <value>`, `cc-switch openwrt claude upload-claude-auth <provider-id>`, `cc-switch openwrt claude remove-claude-auth <provider-id>`, `cc-switch openwrt codex upload-codex-auth <provider-id>`, `cc-switch openwrt codex remove-codex-auth <provider-id>`";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -189,6 +189,19 @@ async fn run_cli(args: Vec<String>) -> anyhow::Result<()> {
         }
         (Some("get-provider-failover"), [provider_id]) => {
             print_json(&openwrt_admin::get_provider_failover(&db, &app_type, provider_id).await?)?;
+            Ok(())
+        }
+        (Some("get-circuit-breaker-stats"), [provider_id])
+        | (Some("get-circuit-breaker-state"), [provider_id]) => {
+            print_json(
+                &openwrt_admin::get_live_circuit_breaker_state(&db, &app_type, provider_id).await?,
+            )?;
+            Ok(())
+        }
+        (Some("reset-circuit-breaker"), [provider_id]) => {
+            print_json(
+                &openwrt_admin::reset_live_circuit_breaker(&db, &app_type, provider_id).await?,
+            )?;
             Ok(())
         }
         (Some("upsert-provider"), []) => {
