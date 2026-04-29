@@ -1015,9 +1015,11 @@ pub async fn set_auto_failover_enabled(
     enabled: bool,
 ) -> anyhow::Result<OpenWrtAppRuntimeStatusView> {
     let profile = openwrt_app_profile(app_type)?;
-    if enabled {
-        ensure_failover_queue_ready_for_enable(db, app_type, profile).await?;
-    }
+    let p1_provider_id = if enabled {
+        Some(ensure_failover_queue_ready_for_enable(db, app_type, profile).await?)
+    } else {
+        None
+    };
 
     let mut config = load_proxy_config_for_app(db, profile).await?;
     config.auto_failover_enabled = enabled;
@@ -1027,6 +1029,10 @@ pub async fn set_auto_failover_enabled(
             profile.app_id
         )
     })?;
+
+    if let Some(p1_provider_id) = p1_provider_id.as_deref() {
+        set_active_provider_id(db, app_type, profile, Some(p1_provider_id))?;
+    }
 
     build_app_runtime_status(db, app_type).await
 }
@@ -4061,7 +4067,18 @@ mod tests {
         assert!(enabled.auto_failover_enabled);
         assert_eq!(enabled.failover_queue_depth, 1);
         assert_eq!(enabled.failover_queue[0].provider_id, "provider-a");
+        assert!(enabled.failover_queue[0].active);
         assert_eq!(enabled.active_provider_id.as_deref(), Some("provider-a"));
+        assert_eq!(
+            crate::settings::get_current_provider(&AppType::Claude).as_deref(),
+            Some("provider-a")
+        );
+        assert_eq!(
+            db.get_current_provider(CLAUDE_APP_TYPE)
+                .expect("load database current provider")
+                .as_deref(),
+            Some("provider-a")
+        );
 
         let disabled = set_auto_failover_enabled(&db, &AppType::Claude, false)
             .await
@@ -4075,7 +4092,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     #[serial]
-    async fn set_auto_failover_enabled_preserves_active_provider_when_queue_head_differs() {
+    async fn set_auto_failover_enabled_switches_active_provider_to_queue_head() {
         let _env = TestEnv::new();
         let db = Database::memory().expect("db");
 
@@ -4101,16 +4118,19 @@ mod tests {
             .expect("enable auto failover");
 
         assert!(enabled.auto_failover_enabled);
-        assert_eq!(enabled.active_provider_id.as_deref(), Some("provider-b"));
+        assert_eq!(enabled.failover_queue_depth, 1);
+        assert_eq!(enabled.failover_queue[0].provider_id, "provider-a");
+        assert!(enabled.failover_queue[0].active);
+        assert_eq!(enabled.active_provider_id.as_deref(), Some("provider-a"));
         assert_eq!(
             crate::settings::get_current_provider(&AppType::Claude).as_deref(),
-            Some("provider-b")
+            Some("provider-a")
         );
         assert_eq!(
             db.get_current_provider(CLAUDE_APP_TYPE)
                 .expect("load database current provider")
                 .as_deref(),
-            Some("provider-b")
+            Some("provider-a")
         );
     }
 
