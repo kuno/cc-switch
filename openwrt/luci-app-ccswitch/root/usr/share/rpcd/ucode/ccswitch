@@ -343,6 +343,18 @@ function getProviderFailover(app, providerId) {
 	return runAdminGetJson('/apps/' + percentEncodePath(normalizedApp) + '/providers/' + percentEncodePath(providerId) + '/failover');
 }
 
+function getCircuitBreakerStats(app, providerId) {
+	let normalizedApp = normalizeApp(app);
+	let missing = requireProviderId(providerId);
+	if (missing)
+		return missing;
+
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
+
+	return runAdminGetJson('/apps/' + percentEncodePath(normalizedApp) + '/providers/' + percentEncodePath(providerId) + '/circuit-breaker');
+}
+
 function getActiveProvider(app) {
 	let normalizedApp = normalizeApp(app);
 
@@ -521,6 +533,21 @@ function activateProvider(app, providerId) {
 	return runAdminHttpJson(
 		'POST',
 		`${adminProviderPath(normalizedApp, providerId)}/activate`
+	);
+}
+
+function resetCircuitBreaker(app, providerId) {
+	let normalizedApp = normalizeApp(app);
+	let missing = requireProviderId(providerId);
+	if (missing)
+		return missing;
+
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
+
+	return runAdminHttpJson(
+		'POST',
+		`${adminProviderPath(normalizedApp, providerId)}/circuit-breaker/reset`
 	);
 }
 
@@ -732,6 +759,28 @@ return {
 			}
 		},
 
+		get_circuit_breaker_stats: {
+			args: {
+				app: 'claude',
+				provider_id: 'provider-id'
+			},
+
+			call: function(request) {
+				return getCircuitBreakerStats(request.args.app, request.args.provider_id);
+			}
+		},
+
+		get_circuit_breaker_state: {
+			args: {
+				app: 'claude',
+				provider_id: 'provider-id'
+			},
+
+			call: function(request) {
+				return getCircuitBreakerStats(request.args.app, request.args.provider_id);
+			}
+		},
+
 		get_active_provider: {
 			args: {
 				app: 'claude'
@@ -876,6 +925,17 @@ return {
 
 			call: function(request) {
 				return activateProvider(request.args.app, request.args.provider_id);
+			}
+		},
+
+		reset_circuit_breaker: {
+			args: {
+				app: 'claude',
+				provider_id: 'provider-id'
+			},
+
+			call: function(request) {
+				return resetCircuitBreaker(request.args.app, request.args.provider_id);
 			}
 		},
 
