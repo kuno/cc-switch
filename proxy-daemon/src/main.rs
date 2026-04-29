@@ -411,7 +411,7 @@ fn sync_openwrt_host_proxy_into_runtime_state(db: &database::Database) -> anyhow
 
 async fn startup_claude_oauth_refresh_with_refresher<R>(
     db: &database::Database,
-    lock_manager: &services::oauth_refresh::OAuthRefreshLockManager,
+    claude_uploaded_auth: &services::oauth_refresh::ClaudeUploadedAuthManager,
     refresher: &R,
 ) where
     R: services::oauth_refresh::OAuthTokenRefresher,
@@ -437,28 +437,9 @@ async fn startup_claude_oauth_refresh_with_refresher<R>(
         }
 
         let provider_id = provider.id.clone();
-        let provider_key = format!("claude:{provider_id}");
-
-        let result = services::oauth_refresh::load_or_refresh_oauth_credentials(
-            "Claude",
-            &provider_id,
-            &provider_key,
-            refresher,
-            lock_manager,
-            || {
-                services::oauth_refresh::storage::load_claude_refresh_auth_for_provider(
-                    &provider_id,
-                )
-            },
-            |stored, refreshed| {
-                services::oauth_refresh::storage::save_refreshed_claude_auth_for_provider(
-                    &provider_id,
-                    stored,
-                    refreshed,
-                )
-            },
-        )
-        .await;
+        let result = claude_uploaded_auth
+            .get_valid_access_token(&provider_id, refresher)
+            .await;
 
         if result.is_none() {
             log::warn!("[Startup] Claude OAuth provider {provider_id} has no usable token after refresh attempt");
@@ -468,11 +449,11 @@ async fn startup_claude_oauth_refresh_with_refresher<R>(
 
 async fn startup_claude_oauth_refresh(
     db: &database::Database,
-    lock_manager: &services::oauth_refresh::OAuthRefreshLockManager,
+    claude_uploaded_auth: &services::oauth_refresh::ClaudeUploadedAuthManager,
 ) {
     startup_claude_oauth_refresh_with_refresher(
         db,
-        lock_manager,
+        claude_uploaded_auth,
         &services::oauth_refresh::ClaudeTokenRefresher::new(),
     )
     .await;
@@ -546,10 +527,10 @@ async fn run_daemon() -> anyhow::Result<()> {
     // Eagerly refresh any Claude OAuth providers whose access_token is already
     // expired so they are ready for the first request without needing a quota
     // call to trigger lazy refresh.
-    if let Some(lock_manager) = proxy_service.clone_oauth_refresh_locks().await {
+    if let Some(claude_uploaded_auth) = proxy_service.clone_claude_uploaded_auth_manager().await {
         let db_for_refresh = db.clone();
         tokio::spawn(async move {
-            startup_claude_oauth_refresh(db_for_refresh.as_ref(), &lock_manager).await;
+            startup_claude_oauth_refresh(db_for_refresh.as_ref(), &claude_uploaded_auth).await;
         });
     }
 
@@ -745,12 +726,12 @@ mod tests {
         )
         .expect("write expired auth");
 
-        let lock_manager = services::oauth_refresh::OAuthRefreshLockManager::new();
+        let claude_uploaded_auth = services::oauth_refresh::ClaudeUploadedAuthManager::new();
         let refresher = MockRefresher {
             new_access_token: "refreshed-access-token".to_string(),
         };
 
-        startup_claude_oauth_refresh_with_refresher(&db, &lock_manager, &refresher).await;
+        startup_claude_oauth_refresh_with_refresher(&db, &claude_uploaded_auth, &refresher).await;
 
         let updated =
             services::oauth_refresh::storage::load_claude_refresh_auth_for_provider("claude-oauth")
@@ -794,13 +775,13 @@ mod tests {
         db.save_provider("claude", &provider)
             .expect("save provider");
 
-        let lock_manager = services::oauth_refresh::OAuthRefreshLockManager::new();
+        let claude_uploaded_auth = services::oauth_refresh::ClaudeUploadedAuthManager::new();
         let refresher = MockRefresher {
             new_access_token: "should-not-be-called".to_string(),
         };
 
         // Should complete without touching any auth file.
-        startup_claude_oauth_refresh_with_refresher(&db, &lock_manager, &refresher).await;
+        startup_claude_oauth_refresh_with_refresher(&db, &claude_uploaded_auth, &refresher).await;
 
         // No auth file should have been created.
         assert!(!env.claude_auth_path("claude-apikey").exists());

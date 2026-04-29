@@ -20,7 +20,7 @@ use super::{
 use crate::database::Database;
 use crate::proxy::providers::codex_oauth_auth::CodexOAuthManager;
 use crate::proxy::providers::copilot_auth::CopilotAuthManager;
-use crate::services::oauth_refresh::OAuthRefreshLockManager;
+use crate::services::oauth_refresh::{ClaudeUploadedAuthManager, OAuthRefreshLockManager};
 use axum::{
     extract::DefaultBodyLimit,
     routing::{any, get, post},
@@ -104,7 +104,9 @@ pub struct ProxyState {
     pub rate_limits: super::rate_limit::RateLimitStore,
     /// In-memory TTL cache for live subscription quota snapshots
     pub quota_snapshot_cache: super::quota_cache::RateLimitSnapshotCache,
-    /// Single-flight locks for reactive OAuth token refresh
+    /// Shared Claude uploaded-auth cache plus single-flight refresh locks
+    pub claude_uploaded_auth: ClaudeUploadedAuthManager,
+    /// Single-flight locks for reactive Codex OAuth token refresh
     pub oauth_refresh_locks: OAuthRefreshLockManager,
 }
 
@@ -168,6 +170,7 @@ impl ProxyServer {
             failover_manager,
             rate_limits,
             quota_snapshot_cache: super::quota_cache::RateLimitSnapshotCache::new(),
+            claude_uploaded_auth: ClaudeUploadedAuthManager::new(),
             oauth_refresh_locks: OAuthRefreshLockManager::new(),
         };
 
@@ -383,11 +386,10 @@ impl ProxyServer {
         self.state.rate_limits.write().await.remove(provider_id);
     }
 
-    /// Clone the shared OAuth refresh lock manager so callers outside this server
-    /// (e.g. a startup background task) can acquire the same per-provider locks and
-    /// avoid racing with the lazy refresh path in the request handlers.
-    pub fn clone_oauth_refresh_locks(&self) -> OAuthRefreshLockManager {
-        self.state.oauth_refresh_locks.clone()
+    /// Clone the shared Claude uploaded-auth manager so callers outside this server
+    /// can share the same memory cache and per-provider refresh locks.
+    pub fn clone_claude_uploaded_auth_manager(&self) -> ClaudeUploadedAuthManager {
+        self.state.claude_uploaded_auth.clone()
     }
 
     /// 更新某个应用类型当前"目标供应商"（用于 UI 展示 active_targets）

@@ -1,3 +1,4 @@
+mod claude_uploaded_auth;
 pub mod storage;
 
 use async_trait::async_trait;
@@ -5,8 +6,10 @@ use reqwest::Client;
 use serde::Deserialize;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use tokio::sync::{Mutex, OwnedMutexGuard, RwLock};
+
+pub use claude_uploaded_auth::ClaudeUploadedAuthManager;
 
 use crate::proxy::providers::codex_oauth_auth::{
     extract_identity_from_tokens, refresh_codex_tokens_with_client, CodexOAuthError,
@@ -77,11 +80,6 @@ pub struct OAuthRefreshLockManager {
 impl OAuthRefreshLockManager {
     pub fn new() -> Self {
         Self::default()
-    }
-
-    pub fn shared() -> Self {
-        static SHARED: OnceLock<OAuthRefreshLockManager> = OnceLock::new();
-        SHARED.get_or_init(Self::default).clone()
     }
 
     pub async fn lock_for_provider(&self, provider_key: &str) -> OwnedMutexGuard<()> {

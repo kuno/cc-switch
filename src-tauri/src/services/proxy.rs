@@ -1785,13 +1785,15 @@ impl ProxyService {
         Ok(())
     }
 
-    /// Clone the shared OAuth refresh lock manager from the running server.
+    /// Clone the shared Claude uploaded-auth manager from the running server.
     /// Returns `None` if the server is not currently running.
-    pub async fn clone_oauth_refresh_locks(
+    pub async fn clone_claude_uploaded_auth_manager(
         &self,
-    ) -> Option<crate::services::oauth_refresh::OAuthRefreshLockManager> {
+    ) -> Option<crate::services::oauth_refresh::ClaudeUploadedAuthManager> {
         let server = self.server.read().await;
-        server.as_ref().map(|s| s.clone_oauth_refresh_locks())
+        server
+            .as_ref()
+            .map(|s| s.clone_claude_uploaded_auth_manager())
     }
 
     /// 停止代理服务器
