@@ -677,6 +677,24 @@ function reorderFailoverQueue(app, providerIds) {
 	);
 }
 
+function reorderProviders(app, providerIds) {
+	let normalizedApp = normalizeApp(app);
+
+	if (!providerIds || length(providerIds) === 0)
+		return { ok: false, error: 'provider_ids must be a non-empty array' };
+
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
+
+	return runAdminHttpJson(
+		'PUT',
+		`${adminAppPath(normalizedApp)}/providers/order`,
+		{
+			providerIds: providerIds
+		}
+	);
+}
+
 function setAutoFailoverEnabled(app, enabled) {
 	let normalizedApp = normalizeApp(app);
 	let normalizedEnabled = normalizeEnabled(enabled);
@@ -1015,6 +1033,17 @@ return {
 
 			call: function(request) {
 				return reorderFailoverQueue(request.args.app, request.args.provider_ids);
+			}
+		},
+
+		reorder_providers: {
+			args: {
+				app: 'claude',
+				provider_ids: [ 'provider-id' ]
+			},
+
+			call: function(request) {
+				return reorderProviders(request.args.app, request.args.provider_ids);
 			}
 		},
 

@@ -26,6 +26,13 @@ type RpcCandidate = {
   call(): Promise<OpenWrtRpcResult | null | undefined>;
 };
 
+type OpenWrtProviderReorderAdapter = ProviderPlatformAdapter & {
+  reorderProviders(
+    appId: SharedProviderAppId,
+    providerIds: string[],
+  ): Promise<void>;
+};
+
 const BASE_CAPABILITIES = {
   supportsPresets: true,
   supportsBlankSecretPreserve: true,
@@ -256,10 +263,7 @@ async function resolveProviderStateResponse(
     const result = await call();
 
     if (hasRpcFailureDetails(result)) {
-      if (
-        options.compatibilityFallback &&
-        isCompatibilityRpcFailure(result)
-      ) {
+      if (options.compatibilityFallback && isCompatibilityRpcFailure(result)) {
         return fallback;
       }
 
@@ -322,8 +326,10 @@ async function loadProviderState(
       : new Error(String(failure?.reason ?? "Failed to load provider state."));
   }
 
-  const listResponse = listResult.status === "fulfilled" ? listResult.value : null;
-  const savedResponse = savedResult.status === "fulfilled" ? savedResult.value : [];
+  const listResponse =
+    listResult.status === "fulfilled" ? listResult.value : null;
+  const savedResponse =
+    savedResult.status === "fulfilled" ? savedResult.value : [];
   const activeResponse =
     activeResult.status === "fulfilled" ? activeResult.value : null;
   const activeProvider = parseActiveProviderResponse(activeResponse, appId);
@@ -349,7 +355,8 @@ async function invokePhase2Upsert(
   provider: SharedProviderEditorPayload,
   providerId?: string,
 ): Promise<void> {
-  const missingMessage = "The Phase 2 provider save RPC is not available in this build.";
+  const missingMessage =
+    "The Phase 2 provider save RPC is not available in this build.";
 
   async function invokePhase1Upsert(): Promise<void> {
     if (!transport.upsertActiveProvider) {
@@ -383,10 +390,7 @@ async function invokePhase2Upsert(
       });
     }
 
-    await invokeRpcCandidates(
-      candidates,
-      missingMessage,
-    );
+    await invokeRpcCandidates(candidates, missingMessage);
     return;
   }
 
@@ -505,10 +509,13 @@ async function loadProviderFailoverState(
     );
   }
 
-  return parseSharedProviderFailoverState(parseStatusPayload(response), providerId);
+  return parseSharedProviderFailoverState(
+    parseStatusPayload(response),
+    providerId,
+  );
 }
 
-async function runFailoverMutation(
+async function runOpenWrtMutation(
   action: () => Promise<OpenWrtRpcResult | null | undefined>,
   failureMessage: string,
 ): Promise<void> {
@@ -571,7 +578,11 @@ function shouldRequireRestart(
 ): boolean {
   switch (mutation) {
     case "save":
-      return shouldRequireRestartAfterSave(previousState, nextState, providerId);
+      return shouldRequireRestartAfterSave(
+        previousState,
+        nextState,
+        providerId,
+      );
     case "activate":
       return shouldRequireRestartAfterActivate(previousState, nextState);
     case "delete":
@@ -714,7 +725,7 @@ export function createOpenWrtProviderAdapter(
 
   if (typeof transport.addToFailoverQueue === "function") {
     adapter.addToFailoverQueue = async (appId, providerId) =>
-      runFailoverMutation(
+      runOpenWrtMutation(
         () => transport.addToFailoverQueue!(appId, providerId),
         `Failed to add ${providerId} to the ${appId} failover queue.`,
       );
@@ -722,7 +733,7 @@ export function createOpenWrtProviderAdapter(
 
   if (typeof transport.removeFromFailoverQueue === "function") {
     adapter.removeFromFailoverQueue = async (appId, providerId) =>
-      runFailoverMutation(
+      runOpenWrtMutation(
         () => transport.removeFromFailoverQueue!(appId, providerId),
         `Failed to remove ${providerId} from the ${appId} failover queue.`,
       );
@@ -730,7 +741,7 @@ export function createOpenWrtProviderAdapter(
 
   if (typeof transport.setAutoFailoverEnabled === "function") {
     adapter.setAutoFailoverEnabled = async (appId, enabled) =>
-      runFailoverMutation(
+      runOpenWrtMutation(
         () => transport.setAutoFailoverEnabled!(appId, enabled),
         `Failed to update ${appId} auto-failover.`,
       );
@@ -738,15 +749,26 @@ export function createOpenWrtProviderAdapter(
 
   if (typeof transport.reorderFailoverQueue === "function") {
     adapter.reorderFailoverQueue = async (appId, providerIds) =>
-      runFailoverMutation(
+      runOpenWrtMutation(
         () => transport.reorderFailoverQueue!(appId, providerIds),
         `Failed to reorder the ${appId} failover queue.`,
       );
   }
 
+  if (typeof transport.reorderProviders === "function") {
+    (adapter as OpenWrtProviderReorderAdapter).reorderProviders = async (
+      appId,
+      providerIds,
+    ) =>
+      runOpenWrtMutation(
+        () => transport.reorderProviders!(appId, providerIds),
+        `Failed to reorder ${appId} providers.`,
+      );
+  }
+
   if (typeof transport.setMaxRetries === "function") {
     adapter.setMaxRetries = async (appId, value) =>
-      runFailoverMutation(
+      runOpenWrtMutation(
         () => transport.setMaxRetries!(appId, value),
         `Failed to update ${appId} max retries.`,
       );
@@ -757,12 +779,12 @@ export function createOpenWrtProviderAdapter(
     typeof transport.removeCodexAuth === "function"
   ) {
     adapter.uploadCodexAuth = async (appId, providerId, authJsonText) =>
-      runFailoverMutation(
+      runOpenWrtMutation(
         () => transport.uploadCodexAuth!(appId, providerId, authJsonText),
         `Failed to upload auth.json for ${providerId}.`,
       );
     adapter.removeCodexAuth = async (appId, providerId) =>
-      runFailoverMutation(
+      runOpenWrtMutation(
         () => transport.removeCodexAuth!(appId, providerId),
         `Failed to remove auth.json for ${providerId}.`,
       );
@@ -773,12 +795,12 @@ export function createOpenWrtProviderAdapter(
     typeof transport.removeClaudeAuth === "function"
   ) {
     adapter.uploadClaudeAuth = async (appId, providerId, authJsonText) =>
-      runFailoverMutation(
+      runOpenWrtMutation(
         () => transport.uploadClaudeAuth!(appId, providerId, authJsonText),
         `Failed to upload auth.json for ${providerId}.`,
       );
     adapter.removeClaudeAuth = async (appId, providerId) =>
-      runFailoverMutation(
+      runOpenWrtMutation(
         () => transport.removeClaudeAuth!(appId, providerId),
         `Failed to remove auth.json for ${providerId}.`,
       );
@@ -797,6 +819,6 @@ export const __private__ = {
   parseActiveProviderResponse,
   parseStatusPayload,
   rpcFailureMessage,
-  runFailoverMutation,
+  runOpenWrtMutation,
   shouldRequireRestart,
 };

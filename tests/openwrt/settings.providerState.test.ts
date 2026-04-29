@@ -72,7 +72,10 @@ type SettingsView = {
     statusNodes: StatusNodes,
     shellNodes: ShellNodes,
   ): ProviderMountOptions;
-  createProviderTransport(): Record<string, (...args: unknown[]) => Promise<unknown>>;
+  createProviderTransport(): Record<
+    string,
+    (...args: unknown[]) => Promise<unknown>
+  >;
   createRuntimeTransport(): RuntimeMountOptions["transport"];
   createShellBridge(
     uiState: UiState,
@@ -249,9 +252,14 @@ function loadSettingsView(selectedApp?: AppId) {
     }),
     load: vi.fn().mockResolvedValue(null),
     save: vi.fn().mockResolvedValue(null),
-    set: vi.fn((config: string, section: string, option: string, value: unknown) => {
-      uciState.set(`${config}.${section}.${option}`, value == null ? "" : String(value));
-    }),
+    set: vi.fn(
+      (config: string, section: string, option: string, value: unknown) => {
+        uciState.set(
+          `${config}.${section}.${option}`,
+          value == null ? "" : String(value),
+        );
+      },
+    ),
   };
 
   const settings = factory(
@@ -269,10 +277,7 @@ function loadSettingsView(selectedApp?: AppId) {
         return (...args: unknown[]) => {
           rpcCalls.push({ args, spec });
 
-          if (
-            spec.object === "ccswitch" &&
-            spec.method === "get_host_config"
-          ) {
+          if (spec.object === "ccswitch" && spec.method === "get_host_config") {
             return Promise.resolve({
               ok: true,
               enabled: uciState.get("ccswitch.main.enabled") === "1",
@@ -284,10 +289,7 @@ function loadSettingsView(selectedApp?: AppId) {
             });
           }
 
-          if (
-            spec.object === "ccswitch" &&
-            spec.method === "set_host_config"
-          ) {
+          if (spec.object === "ccswitch" && spec.method === "set_host_config") {
             const host =
               args[0] && typeof args[0] === "object"
                 ? (args[0] as Record<string, unknown>)
@@ -444,7 +446,8 @@ function loadOpenWrtRpcHandler(overrides?: {
       String(value ?? "").substr(start, count),
     (value: unknown, offset: number) => String(value ?? "").charCodeAt(offset),
     (code: number) => String.fromCharCode(code),
-    (value: unknown) => Buffer.from(String(value ?? ""), "utf8").toString("hex"),
+    (value: unknown) =>
+      Buffer.from(String(value ?? ""), "utf8").toString("hex"),
     (value: unknown) => String(value ?? "").toUpperCase(),
     (target: unknown[], value: unknown) => {
       target.push(value);
@@ -620,7 +623,9 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(source).toContain(
       "getRequestLogs: async function (appId, page, pageSize, providerId)",
     );
-    expect(source).toContain("getRequestDetail: async function (appId, requestId)");
+    expect(source).toContain(
+      "getRequestDetail: async function (appId, requestId)",
+    );
   });
 
   it("grants LuCI read access to the app usage-summary ubus method", () => {
@@ -638,21 +643,21 @@ describe("OpenWrt settings shared-provider shell", () => {
       };
     };
 
-    expect(
-      acl["luci-app-ccswitch"]?.read?.ubus?.ccswitch ?? [],
-    ).toContain("get_usage_summary");
-    expect(
-      acl["luci-app-ccswitch"]?.read?.ubus?.ccswitch ?? [],
-    ).toContain("get_provider_stats");
-    expect(
-      acl["luci-app-ccswitch"]?.read?.ubus?.ccswitch ?? [],
-    ).toContain("get_recent_activity");
-    expect(
-      acl["luci-app-ccswitch"]?.read?.ubus?.ccswitch ?? [],
-    ).toContain("get_request_logs");
-    expect(
-      acl["luci-app-ccswitch"]?.read?.ubus?.ccswitch ?? [],
-    ).toContain("get_request_detail");
+    expect(acl["luci-app-ccswitch"]?.read?.ubus?.ccswitch ?? []).toContain(
+      "get_usage_summary",
+    );
+    expect(acl["luci-app-ccswitch"]?.read?.ubus?.ccswitch ?? []).toContain(
+      "get_provider_stats",
+    );
+    expect(acl["luci-app-ccswitch"]?.read?.ubus?.ccswitch ?? []).toContain(
+      "get_recent_activity",
+    );
+    expect(acl["luci-app-ccswitch"]?.read?.ubus?.ccswitch ?? []).toContain(
+      "get_request_logs",
+    );
+    expect(acl["luci-app-ccswitch"]?.read?.ubus?.ccswitch ?? []).toContain(
+      "get_request_detail",
+    );
   });
 
   it("suppresses raw bare rpc failure sentinels so feature-specific fallbacks can render", () => {
@@ -769,6 +774,10 @@ describe("OpenWrt settings shared-provider shell", () => {
       "gemini",
       "provider-a",
     );
+    const reorderResult = await transport.reorderProviders("claude", [
+      "provider-b",
+      "provider-a",
+    ]);
     const restartResult = await transport.restartService();
 
     expect(listResult).toMatchObject({
@@ -785,6 +794,14 @@ describe("OpenWrt settings shared-provider shell", () => {
         method: "activate_provider",
         object: "ccswitch",
         params: ["app", "provider_id"],
+      },
+    });
+    expect(reorderResult).toMatchObject({
+      args: ["claude", ["provider-b", "provider-a"]],
+      spec: {
+        method: "reorder_providers",
+        object: "ccswitch",
+        params: ["app", "provider_ids"],
       },
     });
     expect(restartResult).toMatchObject({
@@ -943,6 +960,10 @@ describe("OpenWrt settings shared-provider shell", () => {
       "codex-primary",
       "codex-backup",
     ]);
+    await transport.reorderProviders("codex", [
+      "codex-backup",
+      "codex-primary",
+    ]);
     await transport.setAutoFailoverEnabled("codex", true);
     await transport.setMaxRetries("codex", 4);
 
@@ -1044,6 +1065,16 @@ describe("OpenWrt settings shared-provider shell", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       13,
+      "http://router.example:15721/openwrt/admin/apps/codex/providers/order",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({
+          providerIds: ["codex-backup", "codex-primary"],
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      14,
       "http://router.example:15721/openwrt/admin/apps/codex/failover/auto-enabled",
       expect.objectContaining({
         method: "PUT",
@@ -1053,7 +1084,7 @@ describe("OpenWrt settings shared-provider shell", () => {
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      14,
+      15,
       "http://router.example:15721/openwrt/admin/apps/codex/failover/max-retries",
       expect.objectContaining({
         method: "PUT",
@@ -1062,7 +1093,7 @@ describe("OpenWrt settings shared-provider shell", () => {
         }),
       }),
     );
-    expect(fetchMock).toHaveBeenCalledTimes(14);
+    expect(fetchMock).toHaveBeenCalledTimes(15);
     expect(
       rpcCalls.some(
         (call) =>
@@ -1079,6 +1110,7 @@ describe("OpenWrt settings shared-provider shell", () => {
             "add_to_failover_queue",
             "remove_from_failover_queue",
             "reorder_failover_queue",
+            "reorder_providers",
             "set_auto_failover_enabled",
             "set_max_retries",
           ].includes(call.spec.method),
@@ -1131,7 +1163,10 @@ describe("OpenWrt settings shared-provider shell", () => {
     const { settings } = loadSettingsView("codex");
     const parsed = (
       settings as SettingsView & {
-        parseProviderState(providerResponse: unknown, appId: AppId): Record<string, unknown>;
+        parseProviderState(
+          providerResponse: unknown,
+          appId: AppId,
+        ): Record<string, unknown>;
       }
     ).parseProviderState(
       {
@@ -1181,8 +1216,12 @@ describe("OpenWrt settings shared-provider shell", () => {
     expect(settingsSource).not.toContain("new form.Map(");
     expect(settingsSource).not.toContain("ccswitch-prototype-restart-result");
     expect(settingsSource).not.toContain("createProviderShell: function");
-    expect(settingsSource).not.toContain("mountSharedProviderUi: async function");
-    expect(settingsSource).not.toContain("mountSharedRuntimeSurface: async function");
+    expect(settingsSource).not.toContain(
+      "mountSharedProviderUi: async function",
+    );
+    expect(settingsSource).not.toContain(
+      "mountSharedRuntimeSurface: async function",
+    );
     expect(settingsSource).not.toContain(
       "ccswitch-openwrt-provider-ui-cutover-mode",
     );

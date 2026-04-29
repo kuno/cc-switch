@@ -1,5 +1,33 @@
-import { Copy, Loader2, Plus, Search, Trash2, X, Zap } from "lucide-react";
+import { CSS } from "@dnd-kit/utilities";
 import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import {
+  Copy,
+  GripVertical,
+  Loader2,
+  Plus,
+  Search,
+  Trash2,
+  X,
+  Zap,
+} from "lucide-react";
+import {
+  type CSSProperties,
+  type HTMLAttributes,
   type KeyboardEvent as ReactKeyboardEvent,
   useEffect,
   useRef,
@@ -62,6 +90,9 @@ interface ProviderSidePanelProps {
   appFailoverPending?: boolean;
   providerInFailoverQueue?: boolean;
   providerFailoverPending?: boolean;
+  providerReorderAvailable?: boolean;
+  providerReorderPending?: boolean;
+  providerReorderDisabled?: boolean;
   footerText: string;
   onClose: () => void;
   onSearchChange: (search: string) => void;
@@ -78,6 +109,7 @@ interface ProviderSidePanelProps {
   onDelete: () => void;
   onToggleAppAutoFailover?: (enabled: boolean) => void;
   onToggleProviderFailoverQueue?: (inQueue: boolean) => void;
+  onReorderProviders?: (providerIds: string[]) => void;
   onCancel: () => void;
   onSave: () => void;
 }
@@ -111,24 +143,6 @@ function formatProviderIdChipLabel(providerId: string): string {
   return `${providerId.slice(0, 10)}...${providerId.slice(-4)}`;
 }
 
-function sortProvidersForRail(
-  providers: SharedProviderView[],
-): SharedProviderView[] {
-  return providers
-    .map((provider, index) => ({
-      provider,
-      index,
-    }))
-    .sort((left, right) => {
-      if (left.provider.active === right.provider.active) {
-        return left.index - right.index;
-      }
-
-      return left.provider.active ? -1 : 1;
-    })
-    .map(({ provider }) => provider);
-}
-
 function getFocusableElements(container: HTMLElement | null): HTMLElement[] {
   if (!container) {
     return [];
@@ -140,6 +154,141 @@ function getFocusableElements(container: HTMLElement | null): HTMLElement[] {
     (element) =>
       !element.hasAttribute("disabled") &&
       element.getAttribute("aria-hidden") !== "true",
+  );
+}
+
+interface SortableProviderRailItemProps {
+  appId: SharedProviderAppId;
+  provider: SharedProviderView;
+  selectedProviderId: string | null;
+  showDragHandle: boolean;
+  dragDisabled: boolean;
+  onSelectProvider: (providerId: string) => void;
+}
+
+interface ProviderRailRowProps extends SortableProviderRailItemProps {
+  setNodeRef?: (element: HTMLElement | null) => void;
+  style?: CSSProperties;
+  isDragging?: boolean;
+  dragAttributes?: HTMLAttributes<HTMLButtonElement>;
+  dragListeners?: HTMLAttributes<HTMLButtonElement>;
+}
+
+function ProviderRailRow({
+  appId,
+  provider,
+  selectedProviderId,
+  showDragHandle,
+  dragDisabled,
+  onSelectProvider,
+  setNodeRef,
+  style,
+  isDragging = false,
+  dragAttributes,
+  dragListeners,
+}: ProviderRailRowProps) {
+  const providerLabel = provider.name || provider.providerId || "Provider";
+  const sortableDisabled = dragDisabled || !provider.providerId;
+
+  return (
+    <div
+      ref={setNodeRef}
+      className="owt-provider-panel__provider-item"
+      data-dragging={isDragging}
+      data-reorderable={showDragHandle ? "true" : "false"}
+      style={style}
+    >
+      {showDragHandle ? (
+        <button
+          type="button"
+          className="owt-provider-panel__provider-drag"
+          disabled={sortableDisabled}
+          title={
+            sortableDisabled
+              ? "Clear search to reorder providers"
+              : `Drag to reorder ${providerLabel}`
+          }
+          {...dragAttributes}
+          {...dragListeners}
+          aria-label={`Reorder ${providerLabel}`}
+        >
+          <GripVertical className="h-4 w-4" aria-hidden="true" />
+        </button>
+      ) : null}
+      <button
+        type="button"
+        className="owt-provider-panel__provider-row"
+        data-active={provider.providerId === selectedProviderId}
+        onClick={() =>
+          provider.providerId
+            ? onSelectProvider(provider.providerId)
+            : undefined
+        }
+      >
+        <div className="owt-provider-panel__provider-mark" data-app={appId}>
+          <OpenWrtProviderIcon
+            appId={appId}
+            name={providerLabel}
+            size={18}
+            source={provider}
+          />
+        </div>
+        <div className="owt-provider-panel__provider-copy">
+          <div className="owt-provider-panel__provider-name">
+            {providerLabel}
+          </div>
+        </div>
+        {provider.active ? (
+          <span className="owt-status-pill" data-tone="success">
+            <span className="owt-status-pill__dot" aria-hidden="true" />
+            Active
+          </span>
+        ) : null}
+      </button>
+    </div>
+  );
+}
+
+function SortableProviderRailItem({
+  appId,
+  provider,
+  selectedProviderId,
+  showDragHandle,
+  dragDisabled,
+  onSelectProvider,
+}: SortableProviderRailItemProps) {
+  const providerKey = provider.providerId || provider.name;
+  const sortableDisabled = dragDisabled || !provider.providerId;
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: providerKey,
+    disabled: sortableDisabled,
+  });
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <ProviderRailRow
+      appId={appId}
+      provider={provider}
+      selectedProviderId={selectedProviderId}
+      showDragHandle={showDragHandle}
+      dragDisabled={dragDisabled}
+      onSelectProvider={onSelectProvider}
+      setNodeRef={setNodeRef}
+      style={style}
+      isDragging={isDragging}
+      dragAttributes={attributes}
+      dragListeners={listeners}
+    />
   );
 }
 
@@ -177,6 +326,9 @@ export function ProviderSidePanel({
   appFailoverPending = false,
   providerInFailoverQueue = false,
   providerFailoverPending = false,
+  providerReorderAvailable = false,
+  providerReorderPending = false,
+  providerReorderDisabled = false,
   footerText,
   showScrim = true,
   onClose,
@@ -194,6 +346,7 @@ export function ProviderSidePanel({
   onDelete,
   onToggleAppAutoFailover,
   onToggleProviderFailoverQueue,
+  onReorderProviders,
   onCancel,
   onSave,
 }: ProviderSidePanelProps) {
@@ -202,7 +355,7 @@ export function ProviderSidePanel({
       ? draft.name.trim() || "New provider"
       : selectedProvider?.name.trim()) || "Provider";
   const detailProviderId = selectedProvider?.providerId ?? null;
-  const railProviders = sortProvidersForRail(filteredProviders);
+  const railProviders = filteredProviders;
   const panelRef = useRef<HTMLElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const copyFeedbackTimeoutRef = useRef<number | null>(null);
@@ -212,6 +365,14 @@ export function ProviderSidePanel({
   const wasOpenRef = useRef(open);
   const [copiedProviderId, setCopiedProviderId] = useState<string | null>(null);
   const [showSaveFlash, setShowSaveFlash] = useState(false);
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 6 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
   const showFailoverCheckboxes =
     failoverControlsAvailable && mode === "edit" && Boolean(detailProviderId);
   const failoverCheckboxesDisabled =
@@ -220,6 +381,16 @@ export function ProviderSidePanel({
     savePending ||
     activatePending ||
     deletePending;
+  const providerIdsForReorder = railProviders
+    .map((provider) => provider.providerId)
+    .filter((providerId): providerId is string => Boolean(providerId));
+  const showProviderReorder = providerReorderAvailable && providers.length > 1;
+  const canReorderProviders =
+    showProviderReorder &&
+    !providerReorderDisabled &&
+    !providerReorderPending &&
+    providerIdsForReorder.length === railProviders.length &&
+    providerIdsForReorder.length > 1;
 
   useEffect(() => {
     if (open && !wasOpenRef.current) {
@@ -364,6 +535,52 @@ export function ProviderSidePanel({
     }
   }
 
+  function handleProviderDragEnd(event: DragEndEvent) {
+    if (!canReorderProviders) {
+      return;
+    }
+
+    const activeId = String(event.active.id);
+    const overId = event.over ? String(event.over.id) : null;
+
+    if (!overId || activeId === overId) {
+      return;
+    }
+
+    const oldIndex = providerIdsForReorder.indexOf(activeId);
+    const newIndex = providerIdsForReorder.indexOf(overId);
+
+    if (oldIndex < 0 || newIndex < 0) {
+      return;
+    }
+
+    onReorderProviders?.(arrayMove(providerIdsForReorder, oldIndex, newIndex));
+  }
+
+  const providerRows = railProviders.map((provider) =>
+    showProviderReorder ? (
+      <SortableProviderRailItem
+        key={provider.providerId || provider.name}
+        appId={appId}
+        provider={provider}
+        selectedProviderId={selectedProviderId}
+        showDragHandle={showProviderReorder}
+        dragDisabled={!canReorderProviders}
+        onSelectProvider={onSelectProvider}
+      />
+    ) : (
+      <ProviderRailRow
+        key={provider.providerId || provider.name}
+        appId={appId}
+        provider={provider}
+        selectedProviderId={selectedProviderId}
+        showDragHandle={false}
+        dragDisabled
+        onSelectProvider={onSelectProvider}
+      />
+    ),
+  );
+
   return (
     <div
       className="owt-provider-panel-shell"
@@ -454,50 +671,21 @@ export function ProviderSidePanel({
                 <div className="owt-provider-panel__empty">
                   No providers match “{search.trim()}”.
                 </div>
-              ) : (
-                railProviders.map((provider) => (
-                  <button
-                    type="button"
-                    key={provider.providerId || provider.name}
-                    className="owt-provider-panel__provider-row"
-                    data-active={provider.providerId === selectedProviderId}
-                    onClick={() =>
-                      provider.providerId
-                        ? onSelectProvider(provider.providerId)
-                        : undefined
-                    }
+              ) : showProviderReorder ? (
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleProviderDragEnd}
+                >
+                  <SortableContext
+                    items={providerIdsForReorder}
+                    strategy={verticalListSortingStrategy}
                   >
-                    <div
-                      className="owt-provider-panel__provider-mark"
-                      data-app={appId}
-                    >
-                      <OpenWrtProviderIcon
-                        appId={appId}
-                        name={
-                          provider.name ||
-                          provider.providerId ||
-                          APP_LABELS[appId]
-                        }
-                        size={18}
-                        source={provider}
-                      />
-                    </div>
-                    <div className="owt-provider-panel__provider-copy">
-                      <div className="owt-provider-panel__provider-name">
-                        {provider.name || provider.providerId || "Provider"}
-                      </div>
-                    </div>
-                    {provider.active ? (
-                      <span className="owt-status-pill" data-tone="success">
-                        <span
-                          className="owt-status-pill__dot"
-                          aria-hidden="true"
-                        />
-                        Active
-                      </span>
-                    ) : null}
-                  </button>
-                ))
+                    {providerRows}
+                  </SortableContext>
+                </DndContext>
+              ) : (
+                providerRows
               )}
             </div>
 

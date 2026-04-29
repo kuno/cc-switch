@@ -423,6 +423,32 @@ describe("OpenWrt provider adapter", () => {
     expect(adapter.setMaxRetries).toBeUndefined();
   });
 
+  it("exposes provider reorder when the OpenWrt transport supports it", async () => {
+    const reorderProviders = vi.fn().mockResolvedValue({ ok: true });
+    const adapter = createOpenWrtProviderAdapter(
+      createTransport({
+        reorderProviders,
+      }),
+    ) as ReturnType<typeof createOpenWrtProviderAdapter> & {
+      reorderProviders?(
+        appId: "claude" | "codex" | "gemini",
+        providerIds: string[],
+      ): Promise<void>;
+    };
+
+    await adapter.reorderProviders?.("claude", [
+      "provider-c",
+      "provider-a",
+      "provider-b",
+    ]);
+
+    expect(reorderProviders).toHaveBeenCalledWith("claude", [
+      "provider-c",
+      "provider-a",
+      "provider-b",
+    ]);
+  });
+
   it("notifies runtime hooks when an active provider edit requires a restart", async () => {
     const onProviderMutation = vi.fn();
     const transport = createTransport({

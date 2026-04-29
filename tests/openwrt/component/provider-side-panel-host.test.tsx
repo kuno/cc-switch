@@ -539,9 +539,14 @@ describe("ProviderSidePanelHost", () => {
       ),
     );
 
-    await user.click(
-      within(await dialog).getByRole("button", { name: /Claude Backup/ }),
-    );
+    const backupRow = Array.from(
+      dialog.querySelectorAll<HTMLButtonElement>(
+        ".owt-provider-panel__provider-row",
+      ),
+    ).find((row) => within(row).queryByText("Claude Backup"));
+
+    expect(backupRow).not.toBeUndefined();
+    await user.click(backupRow!);
 
     await waitFor(() =>
       expect(shell.getRequestLogs).toHaveBeenLastCalledWith(
@@ -602,8 +607,9 @@ describe("ProviderSidePanelHost", () => {
       ),
     );
 
-    expect(rows[0]).toHaveTextContent("Claude Backup");
-    expect(within(rows[0]).getByText("Active")).toBeInTheDocument();
+    expect(rows[0]).toHaveTextContent("Claude Primary");
+    expect(rows[1]).toHaveTextContent("Claude Backup");
+    expect(within(rows[1]).getByText("Active")).toBeInTheDocument();
   });
 
   it("toggles OpenWrt failover through the app and provider header checkboxes", async () => {

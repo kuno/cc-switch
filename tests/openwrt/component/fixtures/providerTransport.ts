@@ -404,6 +404,37 @@ export function createProviderTransportFixture(
         ok: true,
       };
     }),
+    reorderProviders: vi.fn(
+      async (appId: SharedProviderAppId, providerIds: string[]) => {
+        const currentState = getProviderState(appId);
+        const byProviderId = new Map<string | null, SharedProviderView>(
+          currentState.providers.map((provider) => [
+            provider.providerId,
+            provider,
+          ]),
+        );
+        const nextProviders = providerIds
+          .map((providerId) => byProviderId.get(providerId) ?? null)
+          .filter(
+            (provider): provider is SharedProviderView => provider != null,
+          );
+
+        if (nextProviders.length === currentState.providers.length) {
+          setProviderState(
+            appId,
+            createProviderState(
+              appId,
+              nextProviders,
+              currentState.activeProviderId,
+            ),
+          );
+        }
+
+        return {
+          ok: true,
+        };
+      },
+    ),
     setMaxRetries: vi.fn(async (appId, value) => {
       setFailoverState(appId, {
         maxRetries: value,
