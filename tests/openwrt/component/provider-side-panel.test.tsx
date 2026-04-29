@@ -202,7 +202,7 @@ describe("ProviderSidePanel", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders compact rail rows, keeps the active provider first, and supports copying the provider id", async () => {
+  it("renders compact rail rows in provider-state order and supports copying the provider id", async () => {
     vi.useFakeTimers();
     const activeProvider = createProviderView("claude", {
       active: true,
@@ -303,6 +303,37 @@ describe("ProviderSidePanel", () => {
       await Promise.resolve();
     });
     expect(copyChip).not.toHaveTextContent("provider_wg88tuk8z9y0p4q1");
+  });
+
+  it("disables provider reorder handles while the rail is filtered", () => {
+    const primaryProvider = createProviderView("claude", {
+      active: true,
+      name: "Claude Primary",
+      providerId: "claude-primary",
+    });
+    const backupProvider = createProviderView("claude", {
+      active: false,
+      name: "Claude Backup",
+      providerId: "claude-backup",
+    });
+
+    render(
+      <ProviderSidePanel
+        {...createProviderSidePanelProps({
+          providers: [primaryProvider, backupProvider],
+          filteredProviders: [backupProvider],
+          providerReorderAvailable: true,
+          providerReorderDisabled: true,
+          search: "backup",
+          selectedProvider: backupProvider,
+          selectedProviderId: backupProvider.providerId,
+        })}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Reorder Claude Backup" }),
+    ).toBeDisabled();
   });
 
   it("shows server-scoped activities for the selected provider", async () => {

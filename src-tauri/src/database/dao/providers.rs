@@ -287,6 +287,58 @@ impl Database {
         Ok(())
     }
 
+    pub fn reorder_providers(
+        &self,
+        app_type: &str,
+        provider_ids: &[String],
+    ) -> Result<(), AppError> {
+        let current_providers = self.get_all_providers(app_type)?;
+
+        if current_providers.len() != provider_ids.len() {
+            return Err(AppError::Database(
+                "provider reorder must include every saved provider exactly once".to_string(),
+            ));
+        }
+
+        let mut current_ids = current_providers.keys().cloned().collect::<Vec<_>>();
+        let mut next_ids = provider_ids.to_vec();
+        current_ids.sort();
+        next_ids.sort();
+
+        if current_ids != next_ids {
+            return Err(AppError::Database(
+                "provider reorder received a provider set that does not match the current app"
+                    .to_string(),
+            ));
+        }
+
+        let mut conn = lock_conn!(self.conn);
+        let tx = conn
+            .transaction()
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        for (index, provider_id) in provider_ids.iter().enumerate() {
+            let updated = tx
+                .execute(
+                    "UPDATE providers
+                     SET sort_index = ?3
+                     WHERE id = ?1 AND app_type = ?2",
+                    params![provider_id, app_type, index as i32],
+                )
+                .map_err(|e| AppError::Database(e.to_string()))?;
+
+            if updated != 1 {
+                return Err(AppError::Database(format!(
+                    "failed to reorder provider {provider_id}"
+                )));
+            }
+        }
+
+        tx.commit().map_err(|e| AppError::Database(e.to_string()))?;
+
+        Ok(())
+    }
+
     pub fn set_current_provider(&self, app_type: &str, id: &str) -> Result<(), AppError> {
         let mut conn = lock_conn!(self.conn);
         let tx = conn

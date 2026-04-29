@@ -52,6 +52,10 @@ pub(crate) fn mount_openwrt_admin_routes(router: Router<ProxyState>) -> Router<P
             get(openwrt_list_providers).post(openwrt_upsert_provider),
         )
         .route(
+            "/openwrt/admin/apps/:app/providers/order",
+            put(openwrt_reorder_providers),
+        )
+        .route(
             "/openwrt/admin/apps/:app/providers/active",
             get(openwrt_get_active_provider).post(openwrt_upsert_active_provider),
         )
@@ -518,6 +522,19 @@ async fn openwrt_activate_provider(
 ) -> (StatusCode, Json<Value>) {
     match parse_openwrt_app(&app).and_then(|app_type| {
         openwrt_admin::activate_provider(state.db.as_ref(), &app_type, &provider_id)
+    }) {
+        Ok(view) => openwrt_admin_ok(view),
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+async fn openwrt_reorder_providers(
+    Path(app): Path<String>,
+    State(state): State<ProxyState>,
+    Json(payload): Json<OpenWrtReorderQueuePayload>,
+) -> (StatusCode, Json<Value>) {
+    match parse_openwrt_app(&app).and_then(|app_type| {
+        openwrt_admin::reorder_providers(state.db.as_ref(), &app_type, &payload.provider_ids)
     }) {
         Ok(view) => openwrt_admin_ok(view),
         Err(error) => openwrt_admin_error(error),

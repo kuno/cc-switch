@@ -110,6 +110,7 @@ pub struct OpenWrtProviderView {
     pub token_masked: String,
     pub model: String,
     pub notes: String,
+    pub sort_index: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auth_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -810,6 +811,31 @@ pub fn delete_provider(
         active_provider_id: response_active_provider_id,
         providers_remaining: remaining.len(),
     })
+}
+
+pub fn reorder_providers(
+    db: &Database,
+    app_type: &AppType,
+    provider_ids: &[String],
+) -> anyhow::Result<OpenWrtProviderListView> {
+    let profile = openwrt_app_profile(app_type)?;
+
+    if provider_ids.is_empty() {
+        return Err(anyhow!(
+            "{} provider reorder requires at least one saved provider",
+            profile.app_id
+        ));
+    }
+
+    let normalized_provider_ids = provider_ids
+        .iter()
+        .map(|provider_id| normalize_provider_id(provider_id))
+        .collect::<anyhow::Result<Vec<_>>>()?;
+
+    db.reorder_providers(profile.app_id, &normalized_provider_ids)
+        .map_err(|e| anyhow!("failed to reorder {} providers: {e}", profile.app_id))?;
+
+    list_providers(db, app_type)
 }
 
 pub async fn get_runtime_status(db: &Database) -> anyhow::Result<OpenWrtRuntimeStatusView> {
@@ -2366,6 +2392,7 @@ fn empty_provider_view(profile: OpenWrtAppProfile) -> OpenWrtProviderView {
         token_masked: String::new(),
         model: String::new(),
         notes: String::new(),
+        sort_index: None,
         auth_mode: None,
         codex_auth: None,
         claude_auth: None,
@@ -2438,6 +2465,7 @@ fn provider_to_view(
         token_masked: mask_secret(token_value),
         model: extract_model(profile, provider).unwrap_or_default(),
         notes: provider.notes.clone().unwrap_or_default(),
+        sort_index: provider.sort_index,
         auth_mode,
         codex_auth,
         claude_auth,
@@ -3631,6 +3659,98 @@ mod tests {
                 .expect("load db current"),
             None
         );
+    }
+
+    #[test]
+    #[serial]
+    fn reorder_providers_persists_full_provider_order_and_preserves_active() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+
+        upsert_claude_provider_with_payload(
+            &db,
+            Some("provider-a"),
+            sample_payload("Provider A", "secret-a"),
+        )
+        .expect("create provider a");
+        upsert_claude_provider_with_payload(
+            &db,
+            Some("provider-b"),
+            sample_payload("Provider B", "secret-b"),
+        )
+        .expect("create provider b");
+        upsert_claude_provider_with_payload(
+            &db,
+            Some("provider-c"),
+            sample_payload("Provider C", "secret-c"),
+        )
+        .expect("create provider c");
+        activate_claude_provider(&db, "provider-b").expect("activate provider b");
+
+        let reordered = reorder_providers(
+            &db,
+            &AppType::Claude,
+            &[
+                "provider-c".to_string(),
+                "provider-a".to_string(),
+                "provider-b".to_string(),
+            ],
+        )
+        .expect("reorder providers");
+        let ids = reordered
+            .providers
+            .iter()
+            .filter_map(|provider| provider.provider_id.as_deref())
+            .collect::<Vec<_>>();
+
+        assert_eq!(ids, vec!["provider-c", "provider-a", "provider-b"]);
+        assert_eq!(reordered.active_provider_id.as_deref(), Some("provider-b"));
+        assert!(reordered.providers[2].active);
+        assert_eq!(reordered.providers[0].sort_index, Some(0));
+        assert_eq!(reordered.providers[1].sort_index, Some(1));
+        assert_eq!(reordered.providers[2].sort_index, Some(2));
+
+        let reloaded = list_claude_providers(&db).expect("reload provider list");
+        let reloaded_ids = reloaded
+            .providers
+            .iter()
+            .filter_map(|provider| provider.provider_id.as_deref())
+            .collect::<Vec<_>>();
+        assert_eq!(reloaded_ids, ids);
+    }
+
+    #[test]
+    #[serial]
+    fn reorder_providers_rejects_partial_provider_order() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+
+        upsert_claude_provider_with_payload(
+            &db,
+            Some("provider-a"),
+            sample_payload("Provider A", "secret-a"),
+        )
+        .expect("create provider a");
+        upsert_claude_provider_with_payload(
+            &db,
+            Some("provider-b"),
+            sample_payload("Provider B", "secret-b"),
+        )
+        .expect("create provider b");
+
+        let error = reorder_providers(&db, &AppType::Claude, &["provider-b".to_string()])
+            .expect_err("partial provider order should fail");
+        assert!(error
+            .to_string()
+            .contains("provider reorder must include every saved provider exactly once"));
+
+        let list = list_claude_providers(&db).expect("list after failed reorder");
+        let ids = list
+            .providers
+            .iter()
+            .filter_map(|provider| provider.provider_id.as_deref())
+            .collect::<Vec<_>>();
+        assert_eq!(ids, vec!["provider-a", "provider-b"]);
     }
 
     #[test]
