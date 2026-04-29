@@ -13,10 +13,7 @@ import type {
   SharedProviderView,
 } from "@/shared/providers/domain";
 import type { OpenWrtSharedPageShellApi } from "../pageTypes";
-import {
-  getOpenWrtAppIconUrl,
-  OpenWrtProviderIcon,
-} from "../providerIcons";
+import { getOpenWrtAppIconUrl, OpenWrtProviderIcon } from "../providerIcons";
 import { ProviderSidePanelActivitiesTab } from "./ProviderSidePanelActivitiesTab";
 import { ProviderSidePanelConfigureTab } from "./ProviderSidePanelConfigureTab";
 import { getActiveElementInTree } from "./focusTree";
@@ -58,6 +55,13 @@ interface ProviderSidePanelProps {
   canDelete: boolean;
   canSave: boolean;
   saveIdle: boolean;
+  failoverControlsAvailable?: boolean;
+  failoverControlsReady?: boolean;
+  failoverControlsLoading?: boolean;
+  appAutoFailoverEnabled?: boolean;
+  appFailoverPending?: boolean;
+  providerInFailoverQueue?: boolean;
+  providerFailoverPending?: boolean;
   footerText: string;
   onClose: () => void;
   onSearchChange: (search: string) => void;
@@ -72,6 +76,8 @@ interface ProviderSidePanelProps {
   onClearAuth: () => void;
   onActivate: () => void;
   onDelete: () => void;
+  onToggleAppAutoFailover?: (enabled: boolean) => void;
+  onToggleProviderFailoverQueue?: (inQueue: boolean) => void;
   onCancel: () => void;
   onSave: () => void;
 }
@@ -164,6 +170,13 @@ export function ProviderSidePanel({
   canDelete,
   canSave,
   saveIdle,
+  failoverControlsAvailable = false,
+  failoverControlsReady = false,
+  failoverControlsLoading = false,
+  appAutoFailoverEnabled = false,
+  appFailoverPending = false,
+  providerInFailoverQueue = false,
+  providerFailoverPending = false,
   footerText,
   showScrim = true,
   onClose,
@@ -179,6 +192,8 @@ export function ProviderSidePanel({
   onClearAuth,
   onActivate,
   onDelete,
+  onToggleAppAutoFailover,
+  onToggleProviderFailoverQueue,
   onCancel,
   onSave,
 }: ProviderSidePanelProps) {
@@ -197,6 +212,14 @@ export function ProviderSidePanel({
   const wasOpenRef = useRef(open);
   const [copiedProviderId, setCopiedProviderId] = useState<string | null>(null);
   const [showSaveFlash, setShowSaveFlash] = useState(false);
+  const showFailoverCheckboxes =
+    failoverControlsAvailable && mode === "edit" && Boolean(detailProviderId);
+  const failoverCheckboxesDisabled =
+    !failoverControlsReady ||
+    failoverControlsLoading ||
+    savePending ||
+    activatePending ||
+    deletePending;
 
   useEffect(() => {
     if (open && !wasOpenRef.current) {
@@ -373,7 +396,25 @@ export function ProviderSidePanel({
             <img src={getOpenWrtAppIconUrl(appId)} alt="" />
           </div>
           <div className="owt-provider-panel__header-copy">
-            <h3 className="owt-provider-panel__title">{APP_LABELS[appId]}</h3>
+            <div className="owt-provider-panel__title-row">
+              <h3 className="owt-provider-panel__title">{APP_LABELS[appId]}</h3>
+              {showFailoverCheckboxes ? (
+                <label
+                  className="owt-provider-panel__failover-checkbox"
+                  title={`${APP_LABELS[appId]} auto-failover`}
+                >
+                  <input
+                    type="checkbox"
+                    aria-label={`${APP_LABELS[appId]} auto-failover`}
+                    checked={appAutoFailoverEnabled}
+                    disabled={failoverCheckboxesDisabled || appFailoverPending}
+                    onChange={(event) =>
+                      onToggleAppAutoFailover?.(event.currentTarget.checked)
+                    }
+                  />
+                </label>
+              ) : null}
+            </div>
             <div className="owt-provider-panel__subtitle">
               {APP_SUBTITLES[appId]}
             </div>
@@ -390,7 +431,10 @@ export function ProviderSidePanel({
         </header>
 
         <div className="owt-provider-panel__body">
-          <nav className="owt-provider-panel__rail" aria-label="Saved providers">
+          <nav
+            className="owt-provider-panel__rail"
+            aria-label="Saved providers"
+          >
             <label className="owt-provider-panel__search">
               <Search className="h-4 w-4" />
               <input
@@ -490,8 +534,31 @@ export function ProviderSidePanel({
                         />
                       </div>
                       <div className="owt-provider-panel__detail-copy">
-                        <div className="owt-provider-panel__detail-title">
-                          {providerName}
+                        <div className="owt-provider-panel__detail-title-row">
+                          <div className="owt-provider-panel__detail-title">
+                            {providerName}
+                          </div>
+                          {showFailoverCheckboxes ? (
+                            <label
+                              className="owt-provider-panel__failover-checkbox"
+                              title="Failover queue"
+                            >
+                              <input
+                                type="checkbox"
+                                aria-label={`Include ${providerName} in failover queue`}
+                                checked={providerInFailoverQueue}
+                                disabled={
+                                  failoverCheckboxesDisabled ||
+                                  providerFailoverPending
+                                }
+                                onChange={(event) =>
+                                  onToggleProviderFailoverQueue?.(
+                                    event.currentTarget.checked,
+                                  )
+                                }
+                              />
+                            </label>
+                          ) : null}
                         </div>
                         <div className="owt-provider-panel__detail-url">
                           {draft.baseUrl || "Not saved yet"}
@@ -528,7 +595,9 @@ export function ProviderSidePanel({
                           type="button"
                           className="owt-provider-panel__icon-button owt-provider-panel__icon-button--accent"
                           aria-label="Set active"
-                          disabled={activatePending || deletePending || savePending}
+                          disabled={
+                            activatePending || deletePending || savePending
+                          }
                           onClick={onActivate}
                         >
                           {activatePending ? (
