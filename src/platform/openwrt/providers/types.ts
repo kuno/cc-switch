@@ -103,6 +103,10 @@ export interface OpenWrtProviderTransport {
     appId: SharedProviderAppId,
     providerIds: string[],
   ): Promise<OpenWrtRpcResult | null>;
+  reorderProviders?(
+    appId: SharedProviderAppId,
+    providerIds: string[],
+  ): Promise<OpenWrtRpcResult | null>;
   setMaxRetries?(
     appId: SharedProviderAppId,
     value: number,
