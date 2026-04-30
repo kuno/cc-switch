@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createOpenWrtProviderAdapter } from "@/platform/openwrt/providers";
 import type { SharedProviderAppId } from "@/shared/providers/domain";
 import type {
@@ -295,20 +295,27 @@ export function AppsGrid({
   const [cards, setCards] = useState<AppGridData[]>(() =>
     APP_OPTIONS.map(createInitialCard),
   );
+  const initialLoadCompleteRef = useRef(false);
   const [quotaByProviderId, setQuotaByProviderId] = useState<
     Record<string, ProviderQuotaSnapshot>
   >({});
 
   useEffect(() => {
     let cancelled = false;
+    const shouldShowLoading = !initialLoadCompleteRef.current;
 
-    setCards((current) => current.map((card) => ({ ...card, loading: true })));
+    if (shouldShowLoading) {
+      setCards((current) =>
+        current.map((card) => ({ ...card, loading: true })),
+      );
+    }
 
     void Promise.all([
       Promise.all(APP_OPTIONS.map((appId) => loadCardData(options, appId))),
       loadQuotaByProviderId(options.shell),
     ]).then(([nextCards, quotaMap]) => {
       if (cancelled) return;
+      initialLoadCompleteRef.current = true;
       setCards(nextCards);
       setQuotaByProviderId(quotaMap);
     });

@@ -14,6 +14,7 @@ import {
   OPENWRT_APP_IDS,
 } from "../fixtures/openwrtProviderUi";
 import { createBridgeFixture, DEFAULT_HOST_STATE } from "./fixtures/bridge";
+import { createDeferred } from "./fixtures/providerTransport";
 
 type RenderAppsGridOptions = {
   bridge?: ReturnType<typeof createBridgeFixture>;
@@ -511,5 +512,49 @@ describe("AppsGrid", () => {
     expect(
       screen.queryByRole("button", { name: "Add a Claude provider" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("does not flip existing cards back into loading state during a provider-mutation refresh", async () => {
+    const transport = createProviderTransportFixture();
+    const { container, rerenderAppsGrid } = renderAppsGrid({
+      transport,
+      providerMutationVersion: 0,
+    });
+
+    await screen.findByRole("button", {
+      name: "Open Claude providers",
+    });
+
+    const pendingProviderRefresh =
+      createDeferred<ReturnType<typeof createProviderListResponse>>();
+    vi.spyOn(transport, "listProviders").mockImplementation(async (appId) =>
+      appId === "claude"
+        ? pendingProviderRefresh.promise
+        : createProviderListResponse(appId),
+    );
+
+    rerenderAppsGrid(1);
+    await flushMicrotasks();
+
+    expect(getAppCard(container, "claude")).toHaveAttribute(
+      "data-loading",
+      "false",
+    );
+    expect(getAppCard(container, "codex")).toHaveAttribute(
+      "data-loading",
+      "false",
+    );
+    expect(getAppCard(container, "gemini")).toHaveAttribute(
+      "data-loading",
+      "false",
+    );
+
+    pendingProviderRefresh.resolve(createProviderListResponse("claude"));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Open Claude providers" }),
+      ).toBeInTheDocument();
+    });
   });
 });
