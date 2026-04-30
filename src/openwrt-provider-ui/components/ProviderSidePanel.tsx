@@ -40,7 +40,10 @@ import type {
   SharedProviderTokenField,
   SharedProviderView,
 } from "@/shared/providers/domain";
-import type { OpenWrtSharedPageShellApi } from "../pageTypes";
+import type {
+  OpenWrtPageMessage,
+  OpenWrtSharedPageShellApi,
+} from "../pageTypes";
 import { getOpenWrtAppIconUrl, OpenWrtProviderIcon } from "../providerIcons";
 import { ProviderSidePanelActivitiesTab } from "./ProviderSidePanelActivitiesTab";
 import { ProviderSidePanelConfigureTab } from "./ProviderSidePanelConfigureTab";
@@ -70,6 +73,7 @@ interface ProviderSidePanelProps {
   website: string;
   tab: ProviderSidePanelTab;
   search: string;
+  message?: OpenWrtPageMessage | null;
   selectedPresetId: string | null;
   presetGroups: ProviderSidePanelPresetGroup[];
   tokenFieldOptions: Array<{
@@ -309,6 +313,7 @@ export function ProviderSidePanel({
   website,
   tab,
   search,
+  message = null,
   selectedPresetId,
   presetGroups,
   tokenFieldOptions,
@@ -843,6 +848,15 @@ export function ProviderSidePanel({
                     </button>
                   </div>
                 </>
+              ) : null}
+
+              {message ? (
+                <div
+                  className={`owt-provider-panel__note owt-provider-panel__note--${message.kind}`}
+                  role={message.kind === "error" ? "alert" : "status"}
+                >
+                  {message.text}
+                </div>
               ) : null}
 
               <div className="owt-provider-panel__content">

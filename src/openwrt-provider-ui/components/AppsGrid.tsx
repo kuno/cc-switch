@@ -40,6 +40,14 @@ type AppGridData = {
   recentActivity: OpenWrtRecentActivityItem[];
 };
 
+type AppGridLoadResult = {
+  card: AppGridData;
+  providerStateOk: boolean;
+  summaryOk: boolean;
+  providerStatsOk: boolean;
+  recentActivityOk: boolean;
+};
+
 function isInertHomeAppId(appId: OpenWrtHomeAppId): appId is InertHomeAppId {
   return appId === "opencode" || appId === "openclaw";
 }
@@ -71,16 +79,22 @@ function sortRecentActivity(
 async function loadCardData(
   options: OpenWrtSharedPageMountOptions,
   appId: OpenWrtHomeAppId,
-): Promise<AppGridData> {
+): Promise<AppGridLoadResult> {
   if (isInertHomeAppId(appId)) {
     return {
-      appId,
-      loading: false,
-      error: null,
-      providerState: null,
-      summary: null,
-      providerStats: [],
-      recentActivity: [],
+      card: {
+        appId,
+        loading: false,
+        error: null,
+        providerState: null,
+        summary: null,
+        providerStats: [],
+        recentActivity: [],
+      },
+      providerStateOk: true,
+      summaryOk: true,
+      providerStatsOk: true,
+      recentActivityOk: true,
     };
   }
 
@@ -109,22 +123,29 @@ async function loadCardData(
     .map((result) => getErrorMessage(result.reason));
 
   return {
-    appId,
-    loading: false,
-    error: errors[0] ?? null,
-    providerState:
-      providerStateResult.status === "fulfilled"
-        ? providerStateResult.value
-        : null,
-    summary: summaryResult.status === "fulfilled" ? summaryResult.value : null,
-    providerStats:
-      providerStatsResult.status === "fulfilled"
-        ? providerStatsResult.value
-        : [],
-    recentActivity:
-      recentActivityResult.status === "fulfilled"
-        ? sortRecentActivity(recentActivityResult.value)
-        : [],
+    card: {
+      appId,
+      loading: false,
+      error: errors[0] ?? null,
+      providerState:
+        providerStateResult.status === "fulfilled"
+          ? providerStateResult.value
+          : null,
+      summary:
+        summaryResult.status === "fulfilled" ? summaryResult.value : null,
+      providerStats:
+        providerStatsResult.status === "fulfilled"
+          ? providerStatsResult.value
+          : [],
+      recentActivity:
+        recentActivityResult.status === "fulfilled"
+          ? sortRecentActivity(recentActivityResult.value)
+          : [],
+    },
+    providerStateOk: providerStateResult.status === "fulfilled",
+    summaryOk: summaryResult.status === "fulfilled",
+    providerStatsOk: providerStatsResult.status === "fulfilled",
+    recentActivityOk: recentActivityResult.status === "fulfilled",
   };
 }
 
@@ -241,6 +262,28 @@ function isConfigured(card: AppGridData): boolean {
   return card.providerState?.activeProvider.configured ?? false;
 }
 
+function mergeCardData(
+  currentCard: AppGridData,
+  nextResult: AppGridLoadResult,
+): AppGridData {
+  const { card } = nextResult;
+
+  return {
+    ...currentCard,
+    ...card,
+    providerState: nextResult.providerStateOk
+      ? card.providerState
+      : currentCard.providerState,
+    summary: nextResult.summaryOk ? card.summary : currentCard.summary,
+    providerStats: nextResult.providerStatsOk
+      ? card.providerStats
+      : currentCard.providerStats,
+    recentActivity: nextResult.recentActivityOk
+      ? card.recentActivity
+      : currentCard.recentActivity,
+  };
+}
+
 async function loadUsageSummaries(
   shell: OpenWrtSharedPageMountOptions["shell"],
 ): Promise<Partial<Record<SharedProviderAppId, OpenWrtUsageSummary>>> {
@@ -313,10 +356,25 @@ export function AppsGrid({
     void Promise.all([
       Promise.all(APP_OPTIONS.map((appId) => loadCardData(options, appId))),
       loadQuotaByProviderId(options.shell),
-    ]).then(([nextCards, quotaMap]) => {
+    ]).then(([nextResults, quotaMap]) => {
       if (cancelled) return;
       initialLoadCompleteRef.current = true;
-      setCards(nextCards);
+      if (shouldShowLoading) {
+        setCards(nextResults.map((result) => result.card));
+      } else {
+        const nextResultsByAppId = new Map(
+          nextResults.map((result) => [result.card.appId, result]),
+        );
+
+        setCards((currentCards) =>
+          currentCards.map((currentCard) => {
+            const nextResult = nextResultsByAppId.get(currentCard.appId);
+            return nextResult
+              ? mergeCardData(currentCard, nextResult)
+              : currentCard;
+          }),
+        );
+      }
       setQuotaByProviderId(quotaMap);
     });
 
@@ -449,6 +507,26 @@ export function AppsGrid({
       />
     );
   };
+  const settledGridItems = [
+    ...configured.map(renderCard),
+    ...(unconfigured.length > 0
+      ? [
+          <GroupHeader
+            key="group-header-unconfigured"
+            label="Not configured"
+          />,
+        ]
+      : []),
+    ...unconfigured.map(renderCard),
+    ...(settledCards.length % 2 === 1
+      ? [
+          <SkeletonCard
+            key="settled-pad"
+            kind={unconfigured.length > 0 ? "empty" : "configured"}
+          />,
+        ]
+      : []),
+  ];
 
   return (
     <div className="owt-apps-grid">
@@ -461,21 +539,8 @@ export function AppsGrid({
         </div>
       )}
 
-      {configured.length > 0 && (
-        <div className="owt-group-grid">
-          {configured.map(renderCard)}
-          {configured.length % 2 === 1 && <SkeletonCard />}
-        </div>
-      )}
-
-      {unconfigured.length > 0 && (
-        <>
-          <GroupHeader label="Not configured" />
-          <div className="owt-group-grid owt-group-grid--unconfigured">
-            {unconfigured.map(renderCard)}
-            {unconfigured.length % 2 === 1 && <SkeletonCard kind="empty" />}
-          </div>
-        </>
+      {settledCards.length > 0 && (
+        <div className="owt-group-grid">{settledGridItems}</div>
       )}
     </div>
   );
