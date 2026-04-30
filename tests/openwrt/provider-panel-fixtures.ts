@@ -15,7 +15,10 @@ import {
   SHARED_PROVIDER_TOKEN_FIELD_OPTIONS,
 } from "@/shared/providers/ui/presentation";
 import type { ProviderSidePanelTab } from "@/openwrt-provider-ui/components/ProviderSidePanel";
-import type { OpenWrtSharedPageShellApi } from "@/openwrt-provider-ui/pageTypes";
+import type {
+  OpenWrtPageMessage,
+  OpenWrtSharedPageShellApi,
+} from "@/openwrt-provider-ui/pageTypes";
 import type { ProviderSidePanelPresetGroup } from "@/openwrt-provider-ui/components/ProviderSidePanelPresetTab";
 import { createBridgeFixture } from "./component/fixtures/bridge";
 
@@ -74,6 +77,7 @@ export interface ProviderSidePanelFixtureOptions {
   website?: string;
   tab?: ProviderSidePanelTab;
   search?: string;
+  message?: OpenWrtPageMessage | null;
   selectedPresetId?: string | null;
   presetGroups?: ProviderSidePanelPresetGroup[];
   tokenFieldOptions?: Array<{
@@ -303,6 +307,7 @@ export function createProviderSidePanelProps(
     website: options.website ?? deriveWebsite(draft.baseUrl),
     tab: options.tab ?? (mode === "edit" ? "configure" : "configure"),
     search: options.search ?? "",
+    message: options.message ?? null,
     selectedPresetId: options.selectedPresetId ?? "custom",
     presetGroups: options.presetGroups ?? createPresetGroups(appId),
     tokenFieldOptions: options.tokenFieldOptions ?? [
