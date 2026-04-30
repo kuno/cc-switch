@@ -53,7 +53,7 @@ describe("OpenWrtPageShell hard rules", () => {
     expect(screen.queryByRole("button", { name: "Failover" })).toBeNull();
     expect(
       screen.getByRole("button", { name: "OpenClaw not configured" }),
-    ).toBeDisabled();
+    ).toHaveAttribute("aria-disabled", "true");
     expect(
       container.querySelector('[data-placeholder-tab="failover"]'),
     ).toHaveAttribute("hidden");

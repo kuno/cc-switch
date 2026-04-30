@@ -2,6 +2,7 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi, type Mock } from "vitest";
 import type { OpenWrtHostState } from "@/openwrt-provider-ui/pageTypes";
+import type { OpenWrtProviderTransport } from "@/platform/openwrt/providers";
 import {
   APP_OPTIONS,
   AppsGrid,
@@ -13,15 +14,22 @@ import {
   createUsageSummary,
   OPENWRT_APP_IDS,
 } from "../fixtures/openwrtProviderUi";
+import {
+  createProviderState,
+  createProviderView,
+} from "../provider-panel-fixtures";
 import { createBridgeFixture, DEFAULT_HOST_STATE } from "./fixtures/bridge";
-import { createDeferred } from "./fixtures/providerTransport";
+import {
+  createDeferred,
+  createProviderTransportFixture as createMutableProviderTransportFixture,
+} from "./fixtures/providerTransport";
 
 type RenderAppsGridOptions = {
   bridge?: ReturnType<typeof createBridgeFixture>;
   onOpenActivity?: (appId: SharedProviderAppId) => void;
   onOpenProviderPanel?: (appId: SharedProviderAppId) => void;
   providerMutationVersion?: number;
-  transport?: ReturnType<typeof createProviderTransportFixture>;
+  transport?: OpenWrtProviderTransport;
 };
 
 function renderAppsGrid(options: RenderAppsGridOptions = {}) {
@@ -72,6 +80,16 @@ function getAppCard(container: HTMLElement, appId: string) {
   }
 
   return card;
+}
+
+function getSettledGrid(container: HTMLElement) {
+  const grid = container.querySelector<HTMLElement>(".owt-group-grid");
+
+  if (!grid) {
+    throw new Error("Missing settled apps grid");
+  }
+
+  return grid;
 }
 
 function padToEven(count: number): number {
@@ -209,10 +227,10 @@ describe("AppsGrid", () => {
     ).toHaveLength(OPENWRT_APP_IDS.length);
     expect(
       screen.getByRole("button", { name: "OpenCode not configured" }),
-    ).toBeDisabled();
+    ).toHaveAttribute("aria-disabled", "true");
     expect(
       screen.getByRole("button", { name: "OpenClaw not configured" }),
-    ).toBeDisabled();
+    ).toHaveAttribute("aria-disabled", "true");
     expect(listProvidersSpy.mock.calls.map(([appId]) => appId)).toEqual(
       OPENWRT_APP_IDS,
     );
@@ -229,18 +247,13 @@ describe("AppsGrid", () => {
     await screen.findByRole("button", {
       name: "OpenCode not configured",
     });
+    const settledGrid = getSettledGrid(container);
 
-    const unconfiguredGroup = container.querySelector<HTMLElement>(
-      ".owt-group-grid--unconfigured",
-    );
-
-    expect(unconfiguredGroup).not.toBeNull();
     expect(
-      within(unconfiguredGroup!).getByText("OpenCode"),
-    ).toBeInTheDocument();
-    expect(
-      within(unconfiguredGroup!).getByText("OpenClaw"),
-    ).toBeInTheDocument();
+      settledGrid.querySelector(".owt-group-head .owt-group-label"),
+    ).toHaveTextContent("Not configured");
+    expect(within(settledGrid).getByText("OpenCode")).toBeInTheDocument();
+    expect(within(settledGrid).getByText("OpenClaw")).toBeInTheDocument();
     const opencodeCard = getAppCard(container, "opencode");
     const openclawCard = getAppCard(container, "openclaw");
 
@@ -306,9 +319,7 @@ describe("AppsGrid", () => {
       name: "OpenClaw not configured",
     });
 
-    expect(opencodeButton).toBeDisabled();
     expect(opencodeButton).toHaveAttribute("aria-disabled", "true");
-    expect(openclawButton).toBeDisabled();
     expect(openclawButton).toHaveAttribute("aria-disabled", "true");
 
     await user.click(opencodeButton);
@@ -482,12 +493,16 @@ describe("AppsGrid", () => {
     await screen.findByRole("button", {
       name: "Open Claude providers",
     });
-
+    const initialGrid = getSettledGrid(container);
+    const initialHeader = initialGrid.querySelector<HTMLElement>(
+      ".owt-group-head",
+    );
+    expect(initialHeader).not.toBeNull();
     expect(
-      within(
-        container.querySelector<HTMLElement>(".owt-group-grid--unconfigured")!,
-      ).queryByText("Claude"),
-    ).not.toBeInTheDocument();
+      Array.from(initialGrid.children).indexOf(getAppCard(container, "claude")),
+    ).toBeLessThan(
+      Array.from(initialGrid.children).indexOf(initialHeader as HTMLElement),
+    );
 
     vi.spyOn(transport, "listSavedProviders").mockImplementation(
       async (appId) =>
@@ -503,15 +518,106 @@ describe("AppsGrid", () => {
         screen.getByRole("button", { name: "Open Claude providers" }),
       ).toBeInTheDocument();
     });
-
+    const refreshedGrid = getSettledGrid(container);
+    const refreshedHeader = refreshedGrid.querySelector<HTMLElement>(
+      ".owt-group-head",
+    );
+    expect(refreshedHeader).not.toBeNull();
     expect(
-      within(
-        container.querySelector<HTMLElement>(".owt-group-grid--unconfigured")!,
-      ).queryByText("Claude"),
-    ).not.toBeInTheDocument();
+      Array.from(refreshedGrid.children).indexOf(getAppCard(container, "claude")),
+    ).toBeLessThan(
+      Array.from(refreshedGrid.children).indexOf(refreshedHeader as HTMLElement),
+    );
     expect(
       screen.queryByRole("button", { name: "Add a Claude provider" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("keeps the same app-card node when a provider flips from unconfigured to configured", async () => {
+    const transportFixture = createMutableProviderTransportFixture({
+      claude: createProviderState("claude", [], null),
+      codex: createProviderState("codex", [], null),
+      gemini: createProviderState("gemini", [], null),
+    });
+    const { container, rerenderAppsGrid } = renderAppsGrid({
+      transport: transportFixture.transport,
+      providerMutationVersion: 0,
+    });
+
+    await screen.findByRole("button", {
+      name: "Add a Claude provider",
+    });
+
+    const initialClaudeCard = getAppCard(container, "claude");
+
+    transportFixture.setProviderState(
+      "claude",
+      createProviderState(
+        "claude",
+        [
+          createProviderView("claude", {
+            active: true,
+            name: "Claude Primary",
+            providerId: "claude-primary",
+          }),
+        ],
+        "claude-primary",
+      ),
+    );
+
+    rerenderAppsGrid(1);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Open Claude providers" }),
+      ).toBeInTheDocument();
+    });
+
+    expect(getAppCard(container, "claude")).toBe(initialClaudeCard);
+  });
+
+  it("preserves the previous summary during a provider-mutation refresh when one summary request fails", async () => {
+    const bridge = createBridgeFixture({
+      usageSummary: {
+        claude: createUsageSummary({ totalRequests: 10 }),
+        codex: createUsageSummary({ totalRequests: 20 }),
+        gemini: createUsageSummary({ totalRequests: 30 }),
+      },
+    });
+    const { container, rerenderAppsGrid } = renderAppsGrid({
+      bridge,
+      providerMutationVersion: 0,
+    });
+
+    await screen.findByRole("button", {
+      name: "Open Claude providers",
+    });
+
+    const getUsageSummary = bridge.getUsageSummary as unknown as Mock;
+    getUsageSummary.mockImplementation(async (appId: SharedProviderAppId) => {
+      if (appId === "claude") {
+        throw new Error("Transient summary failure");
+      }
+
+      return createUsageSummary({
+        totalRequests: appId === "codex" ? 222 : 333,
+      });
+    });
+
+    rerenderAppsGrid(1);
+
+    await waitFor(() =>
+      expect(
+        within(getAppCard(container, "codex")).getByText("222"),
+      ).toBeInTheDocument(),
+    );
+
+    expect(
+      within(getAppCard(container, "claude")).getByText("10"),
+    ).toBeInTheDocument();
+    expect(
+      within(getAppCard(container, "gemini")).getByText("333"),
+    ).toBeInTheDocument();
   });
 
   it("does not flip existing cards back into loading state during a provider-mutation refresh", async () => {

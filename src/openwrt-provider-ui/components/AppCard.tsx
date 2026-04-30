@@ -327,7 +327,23 @@ export function AppCard({
   const appIconUrl = getOpenWrtAppIconUrl(appId);
 
   if (!activeProvider) {
-    const handleEmptyCardClick: MouseEventHandler<HTMLButtonElement> = () => {
+    const handleEmptyCardClick: MouseEventHandler<HTMLDivElement> = () => {
+      if (isInertHomeAppId(appId)) {
+        return;
+      }
+
+      onOpenProviderPanel(appId);
+    };
+
+    const handleEmptyCardKey: KeyboardEventHandler<HTMLDivElement> = (
+      event,
+    ) => {
+      if (event.key !== "Enter" && event.key !== " ") {
+        return;
+      }
+
+      event.preventDefault();
+
       if (isInertHomeAppId(appId)) {
         return;
       }
@@ -336,15 +352,17 @@ export function AppCard({
     };
 
     return (
-      <button
-        type="button"
+      <div
         className={`owt-app-card owt-app-card--empty${
           isInert ? " owt-app-card--inert" : ""
         }`}
         data-app={appId}
-        disabled={isInert}
+        data-loading={loading ? "true" : "false"}
+        role="button"
+        tabIndex={isInert ? -1 : 0}
         aria-disabled={isInert ? "true" : undefined}
         onClick={handleEmptyCardClick}
+        onKeyDown={handleEmptyCardKey}
         aria-label={
           isInert
             ? `${appCopy.label} not configured`
@@ -375,7 +393,7 @@ export function AppCard({
             </span>
           )}
         </div>
-      </button>
+      </div>
     );
   }
 

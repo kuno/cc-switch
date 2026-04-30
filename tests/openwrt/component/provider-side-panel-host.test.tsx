@@ -437,12 +437,6 @@ describe("ProviderSidePanelHost", () => {
     );
 
     await user.click(
-      within(await dialog).getByRole("button", { name: "Configure" }),
-    );
-    await user.click(
-      within(await dialog).getByRole("button", { name: "Edit" }),
-    );
-    await user.click(
       within(await dialog).getByRole("button", { name: "Clear auth" }),
     );
     await user.click(
@@ -459,6 +453,56 @@ describe("ProviderSidePanelHost", () => {
         authContent: "",
       }),
     );
+  });
+
+  it("keeps the Configure view open after saving an existing provider", async () => {
+    const user = userEvent.setup();
+    const shell = createBridgeFixture({ selectedApp: "codex" });
+    const codexProvider = createProviderView("codex", {
+      active: true,
+      authMode: "codex_oauth",
+      codexAuth: createCodexAuthSummary(),
+      name: "OpenAI Official",
+      notes: "Initial note",
+      providerId: "codex-primary",
+    });
+    const { transport } = createProviderTransportFixture({
+      codex: createProviderState("codex", [codexProvider]),
+    });
+
+    render(
+      <HostHarness selectedApp="codex" shell={shell} transport={transport} />,
+    );
+
+    const dialog = await openPanel();
+    await user.click(
+      within(dialog).getByRole("button", { name: "Configure" }),
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Edit" }));
+    await user.type(within(dialog).getByLabelText("Notes"), " updated");
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(transport.upsertProviderByProviderId).toHaveBeenCalledTimes(1),
+    );
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", { name: "Configure" }),
+      ).toHaveAttribute("data-active", "true"),
+    );
+    expect(
+      within(dialog).getByLabelText("Notes"),
+    ).toHaveValue("Initial note updated");
+    expect(
+      within(dialog).queryByRole("button", { name: "Edit" }),
+    ).toBeNull();
+    expect(
+      within(dialog).getByRole("button", { name: /Save|Saved/ }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/OpenAI Official was saved\./),
+    ).toBeInTheDocument();
+    expect(shell.showMessage).not.toHaveBeenCalled();
   });
 
   it("includes pasted authContent when saving a new oauth draft", async () => {
@@ -497,6 +541,58 @@ describe("ProviderSidePanelHost", () => {
         authContent: expect.stringContaining('"refresh_token":"new-token"'),
       }),
     );
+  });
+
+  it("resets back to Activities when switching to another provider", async () => {
+    const user = userEvent.setup();
+    const shell = createBridgeFixture({ selectedApp: "claude" });
+    const primaryProvider = createProviderView("claude", {
+      active: true,
+      name: "Claude Primary",
+      notes: "Primary note",
+      providerId: "claude-primary",
+    });
+    const backupProvider = createProviderView("claude", {
+      active: false,
+      name: "Claude Backup",
+      notes: "Backup note",
+      providerId: "claude-backup",
+    });
+    const { transport } = createProviderTransportFixture({
+      claude: createProviderState("claude", [primaryProvider, backupProvider]),
+    });
+
+    render(<HostHarness shell={shell} transport={transport} />);
+
+    const dialog = await openPanel();
+    await user.click(
+      within(dialog).getByRole("button", { name: "Configure" }),
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Edit" }));
+    await user.type(within(dialog).getByLabelText("Notes"), " updated");
+
+    const backupRow = Array.from(
+      dialog.querySelectorAll<HTMLButtonElement>(
+        ".owt-provider-panel__provider-row",
+      ),
+    ).find((row) => within(row).queryByText("Claude Backup"));
+
+    expect(backupRow).toBeDefined();
+    await user.click(backupRow!);
+
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", { name: "Activities" }),
+      ).toHaveAttribute("data-active", "true"),
+    );
+    expect(
+      within(dialog).getByText("No recent activity"),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("button", {
+        name: "Copy provider ID claude-backup",
+      }),
+    ).toBeInTheDocument();
   });
 
   it("requests activities with the selected provider id", async () => {
@@ -610,6 +706,59 @@ describe("ProviderSidePanelHost", () => {
     expect(rows[0]).toHaveTextContent("Claude Primary");
     expect(rows[1]).toHaveTextContent("Claude Backup");
     expect(within(rows[1]).getByText("Active")).toBeInTheDocument();
+  });
+
+  it("keeps the current tab when activating a provider from Configure", async () => {
+    const user = userEvent.setup();
+    const shell = createBridgeFixture({ selectedApp: "claude" });
+    const primaryProvider = createProviderView("claude", {
+      active: true,
+      name: "Claude Primary",
+      providerId: "claude-primary",
+    });
+    const backupProvider = createProviderView("claude", {
+      active: false,
+      name: "Claude Backup",
+      providerId: "claude-backup",
+    });
+    const { transport } = createProviderTransportFixture({
+      claude: createProviderState("claude", [primaryProvider, backupProvider]),
+    });
+
+    render(
+      <HostHarness
+        providerId="claude-backup"
+        shell={shell}
+        transport={transport}
+      />,
+    );
+
+    const dialog = await openPanel();
+    await user.click(
+      within(dialog).getByRole("button", { name: "Configure" }),
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Set active" }),
+    );
+
+    await waitFor(() =>
+      expect(transport.activateProviderByProviderId).toHaveBeenCalledWith(
+        "claude",
+        "claude-backup",
+      ),
+    );
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", { name: "Configure" }),
+      ).toHaveAttribute("data-active", "true"),
+    );
+    expect(
+      within(dialog).queryByRole("button", { name: "Set active" }),
+    ).toBeNull();
+    expect(
+      within(dialog).getByText(/Claude Backup was activated\./),
+    ).toBeInTheDocument();
+    expect(shell.showMessage).not.toHaveBeenCalled();
   });
 
   it("toggles OpenWrt failover through the app and provider header checkboxes", async () => {

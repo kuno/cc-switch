@@ -2624,6 +2624,29 @@ select.owt-provider-panel__input {
   line-height: 1.55;
 }
 
+.owt-provider-panel__note {
+  margin-bottom: 14px;
+}
+
+.owt-provider-panel__note--success {
+  border-color: color-mix(in srgb, var(--accent) 20%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 84%, transparent);
+  color: var(--accent-text);
+}
+
+.owt-provider-panel__note--info {
+  border-color: color-mix(in srgb, #4f73d9 20%, var(--line));
+  background: color-mix(in srgb, #eef3ff 74%, var(--panel-soft));
+  color: #3150a8;
+}
+
+.owt-provider-panel__note--error,
+.owt-provider-panel__state--error {
+  border-color: color-mix(in srgb, #c44747 38%, var(--line));
+  background: color-mix(in srgb, #fff1f1 64%, var(--panel-soft));
+  color: #8a2e2e;
+}
+
 .owt-provider-panel__note-title {
   margin-bottom: 5px;
   color: var(--text);
@@ -2636,17 +2659,24 @@ select.owt-provider-panel__input {
   gap: 10px;
 }
 
-.owt-provider-panel__state--error {
-  border-color: color-mix(in srgb, #c44747 38%, var(--line));
-  background: color-mix(in srgb, #fff1f1 64%, var(--panel-soft));
-  color: #8a2e2e;
-}
-
+:host([data-ccswitch-theme="dark"]) .owt-provider-panel__note--error,
+:host([data-ccswitch-theme="dark"]) .owt-provider-panel__note--info,
 :host([data-ccswitch-theme="dark"]) .owt-provider-panel__state--error,
+.ccswitch-openwrt-provider-ui-host[data-ccswitch-theme="dark"]
+  .owt-provider-panel__note--error,
+.ccswitch-openwrt-provider-ui-host[data-ccswitch-theme="dark"]
+  .owt-provider-panel__note--info,
 .ccswitch-openwrt-provider-ui-host[data-ccswitch-theme="dark"]
   .owt-provider-panel__state--error {
   background: color-mix(in srgb, #432020 58%, var(--panel-soft));
   color: #ffd2d2;
+}
+
+:host([data-ccswitch-theme="dark"]) .owt-provider-panel__note--info,
+.ccswitch-openwrt-provider-ui-host[data-ccswitch-theme="dark"]
+  .owt-provider-panel__note--info {
+  background: color-mix(in srgb, #1e2f5e 62%, var(--panel-soft));
+  color: #d9e6ff;
 }
 
 .owt-provider-panel__actions,
@@ -3397,6 +3427,7 @@ select.owt-provider-panel__input {
 }
 .owt-group-head {
   display: flex;
+  grid-column: 1 / -1;
   align-items: baseline;
   gap: 10px;
   padding: 6px 4px 2px;
@@ -3412,9 +3443,6 @@ select.owt-provider-panel__input {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
-  align-items: stretch;
-}
-.owt-group-grid--unconfigured {
   align-items: stretch;
 }
 @media (max-width: 960px) {

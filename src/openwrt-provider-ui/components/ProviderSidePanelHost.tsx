@@ -35,6 +35,7 @@ import {
   type ProviderSidePanelTab,
 } from "./ProviderSidePanel";
 import type { ProviderSidePanelPresetGroup } from "./ProviderSidePanelPresetTab";
+import type { OpenWrtPageMessage } from "../pageTypes";
 
 type ProviderSidePanelMode = "new" | "edit";
 type ProviderSidePanelViewMode = "detail" | "preset-picker";
@@ -358,6 +359,10 @@ function formatErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+type SyncSelectionOptions = {
+  preserveView?: boolean;
+};
+
 const ProviderSidePanelHostComponent = forwardRef<
   ProviderSidePanelHandle,
   ProviderSidePanelHostProps
@@ -392,6 +397,9 @@ const ProviderSidePanelHostComponent = forwardRef<
   const [activatePending, setActivatePending] = useState(false);
   const [deletePending, setDeletePending] = useState(false);
   const [providerReorderPending, setProviderReorderPending] = useState(false);
+  const [panelMessage, setPanelMessage] = useState<OpenWrtPageMessage | null>(
+    null,
+  );
   const [failoverState, setFailoverState] =
     useState<SharedProviderFailoverState | null>(null);
   const [failoverLoading, setFailoverLoading] = useState(false);
@@ -460,7 +468,7 @@ const ProviderSidePanelHostComponent = forwardRef<
             event.serviceRunning,
             event.restartRequired,
           );
-          shell.showMessage(message.kind, message.text);
+          setPanelMessage(message);
           onProviderMutation?.();
         },
       }),
@@ -480,7 +488,10 @@ const ProviderSidePanelHostComponent = forwardRef<
     nextState: SharedProviderState,
     nextMode: ProviderSidePanelMode,
     providerId: string | null,
+    options: SyncSelectionOptions = {},
   ) {
+    const { preserveView = false } = options;
+
     if (nextMode === "edit" && providerId) {
       const provider = getProviderById(nextState, providerId);
 
@@ -499,10 +510,13 @@ const ProviderSidePanelHostComponent = forwardRef<
         setSelectedProviderId(provider.providerId);
         setDraft(nextDraft);
         setBaselineDraft(nextDraft);
-        setEditing(false);
-        setPanelMode("detail");
-        setPickerSelectedPresetId(null);
-        setTab("activities");
+
+        if (!preserveView) {
+          setEditing(false);
+          setPanelMode("detail");
+          setPickerSelectedPresetId(null);
+          setTab("activities");
+        }
         return;
       }
     }
@@ -520,10 +534,13 @@ const ProviderSidePanelHostComponent = forwardRef<
     setSelectedProviderId(null);
     setDraft(createNewDraft(nextAppId));
     setBaselineDraft(null);
-    setEditing(false);
-    setPanelMode("preset-picker");
-    setPickerSelectedPresetId(null);
-    setTab("configure");
+
+    if (!preserveView) {
+      setEditing(false);
+      setPanelMode("preset-picker");
+      setPickerSelectedPresetId(null);
+      setTab("configure");
+    }
   }
 
   async function loadWorkspace(
@@ -638,6 +655,7 @@ const ProviderSidePanelHostComponent = forwardRef<
   function closePanel() {
     setOpen(false);
     setSearch("");
+    setPanelMessage(null);
     setPanelMode("detail");
     setPickerSelectedPresetId(null);
     setEditing(false);
@@ -647,6 +665,7 @@ const ProviderSidePanelHostComponent = forwardRef<
   function openForApp(nextAppId: SharedProviderAppId, providerId?: string) {
     setOpen(true);
     setSearch("");
+    setPanelMessage(null);
     setPanelMode("detail");
     setPickerSelectedPresetId(null);
     setTab("activities");
@@ -713,6 +732,7 @@ const ProviderSidePanelHostComponent = forwardRef<
   }, [open]);
 
   function handleAddProvider() {
+    setPanelMessage(null);
     setPickerSelectedPresetId(
       mode === "new" && !selectedProviderId ? draftPresetId : null,
     );
@@ -726,10 +746,12 @@ const ProviderSidePanelHostComponent = forwardRef<
       return;
     }
 
+    setPanelMessage(null);
     syncSelectionFromState(appId, providerState, "edit", providerId);
   }
 
   function handlePresetSelect(presetId: string) {
+    setPanelMessage(null);
     const preset = getSharedProviderPresetById(appId, presetId);
     const nextDraftBase = createNewDraft(appId);
 
@@ -766,6 +788,7 @@ const ProviderSidePanelHostComponent = forwardRef<
   }
 
   function handlePresetCancel() {
+    setPanelMessage(null);
     if (providerState?.providers.length) {
       syncSelectionFromState(
         appId,
@@ -796,6 +819,9 @@ const ProviderSidePanelHostComponent = forwardRef<
       nextState,
       nextMode,
       nextMode === "edit" ? resolvedProviderId : null,
+      {
+        preserveView: true,
+      },
     );
   }
 
@@ -820,10 +846,10 @@ const ProviderSidePanelHostComponent = forwardRef<
         draft,
       );
     } catch (saveError) {
-      shell.showMessage(
-        "error",
-        saveError instanceof Error ? saveError.message : String(saveError),
-      );
+      setPanelMessage({
+        kind: "error",
+        text: saveError instanceof Error ? saveError.message : String(saveError),
+      });
     } finally {
       setSavePending(false);
     }
@@ -854,12 +880,13 @@ const ProviderSidePanelHostComponent = forwardRef<
         nextProviderId,
       );
     } catch (deleteError) {
-      shell.showMessage(
-        "error",
-        deleteError instanceof Error
-          ? deleteError.message
-          : String(deleteError),
-      );
+      setPanelMessage({
+        kind: "error",
+        text:
+          deleteError instanceof Error
+            ? deleteError.message
+            : String(deleteError),
+      });
     } finally {
       setDeletePending(false);
     }
@@ -890,12 +917,13 @@ const ProviderSidePanelHostComponent = forwardRef<
         draft,
       );
     } catch (activateError) {
-      shell.showMessage(
-        "error",
-        activateError instanceof Error
-          ? activateError.message
-          : String(activateError),
-      );
+      setPanelMessage({
+        kind: "error",
+        text:
+          activateError instanceof Error
+            ? activateError.message
+            : String(activateError),
+      });
     } finally {
       setActivatePending(false);
     }
@@ -920,12 +948,15 @@ const ProviderSidePanelHostComponent = forwardRef<
         loadFailoverStateForProvider(appId, providerId),
       ]);
       onProviderMutation?.();
-      shell.showMessage(
-        "success",
-        `${APP_LABELS[appId]} auto-failover ${enabled ? "enabled" : "disabled"}.`,
-      );
+      setPanelMessage({
+        kind: "success",
+        text: `${APP_LABELS[appId]} auto-failover ${enabled ? "enabled" : "disabled"}.`,
+      });
     } catch (toggleError) {
-      shell.showMessage("error", formatErrorMessage(toggleError));
+      setPanelMessage({
+        kind: "error",
+        text: formatErrorMessage(toggleError),
+      });
     } finally {
       setFailoverPendingAction(null);
     }
@@ -956,12 +987,15 @@ const ProviderSidePanelHostComponent = forwardRef<
         loadFailoverStateForProvider(appId, providerId),
       ]);
       onProviderMutation?.();
-      shell.showMessage(
-        "success",
-        `${providerName} ${inQueue ? "added to" : "removed from"} failover queue.`,
-      );
+      setPanelMessage({
+        kind: "success",
+        text: `${providerName} ${inQueue ? "added to" : "removed from"} failover queue.`,
+      });
     } catch (toggleError) {
-      shell.showMessage("error", formatErrorMessage(toggleError));
+      setPanelMessage({
+        kind: "error",
+        text: formatErrorMessage(toggleError),
+      });
     } finally {
       setFailoverPendingAction(null);
     }
@@ -1001,12 +1035,15 @@ const ProviderSidePanelHostComponent = forwardRef<
       }
 
       onProviderMutation?.();
-      shell.showMessage(
-        "success",
-        `${APP_LABELS[appId]} provider order updated.`,
-      );
+      setPanelMessage({
+        kind: "success",
+        text: `${APP_LABELS[appId]} provider order updated.`,
+      });
     } catch (reorderError) {
-      shell.showMessage("error", formatErrorMessage(reorderError));
+      setPanelMessage({
+        kind: "error",
+        text: formatErrorMessage(reorderError),
+      });
     } finally {
       setProviderReorderPending(false);
     }
@@ -1072,6 +1109,7 @@ const ProviderSidePanelHostComponent = forwardRef<
       website={website}
       tab={tab}
       search={search}
+      message={panelMessage}
       selectedPresetId={pickerSelectedPresetId}
       presetGroups={presetGroups}
       tokenFieldOptions={tokenFieldOptions}
