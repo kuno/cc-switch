@@ -61,6 +61,58 @@ pub fn new_rate_limit_store() -> RateLimitStore {
     Arc::new(RwLock::new(HashMap::new()))
 }
 
+fn status_indicates_quota_exhausted(value: &str) -> bool {
+    matches!(
+        value.to_ascii_lowercase().as_str(),
+        "rejected" | "exhausted" | "rate_limited" | "rate-limited" | "limited"
+    )
+}
+
+fn earliest_future_reset(windows: &[RateLimitWindow], now_secs: i64) -> Option<i64> {
+    windows
+        .iter()
+        .filter_map(|window| window.reset)
+        .filter(|reset| *reset > now_secs)
+        .min()
+}
+
+pub fn quota_exhausted_reset(snapshot: &RateLimitSnapshot, now_secs: i64) -> Option<i64> {
+    let reset = earliest_future_reset(&snapshot.windows, now_secs)?;
+
+    if snapshot.requests_remaining == Some(0) || snapshot.tokens_remaining == Some(0) {
+        return Some(reset);
+    }
+
+    if snapshot
+        .status
+        .as_deref()
+        .is_some_and(status_indicates_quota_exhausted)
+        || snapshot
+            .overage_status
+            .as_deref()
+            .is_some_and(status_indicates_quota_exhausted)
+    {
+        return Some(reset);
+    }
+
+    if snapshot.windows.iter().any(|window| {
+        window
+            .reset
+            .is_some_and(|window_reset| window_reset > now_secs)
+            && (window
+                .status
+                .as_deref()
+                .is_some_and(status_indicates_quota_exhausted)
+                || window
+                    .utilization
+                    .is_some_and(|utilization| utilization >= 1.0))
+    }) {
+        return Some(reset);
+    }
+
+    None
+}
+
 fn quota_reset_iso_to_unix_ts(value: &str) -> Option<i64> {
     chrono::DateTime::parse_from_rfc3339(value)
         .ok()
@@ -143,6 +195,84 @@ fn header_u64(headers: &http::HeaderMap, name: &str) -> Option<u64> {
         .and_then(|s| s.parse().ok())
 }
 
+fn parse_reset_delta_seconds(value: &str) -> Option<i64> {
+    let mut total = 0.0f64;
+    let mut number = String::new();
+    let mut unit = String::new();
+    let mut saw_unit = false;
+
+    for ch in value.trim().chars().chain(std::iter::once(' ')) {
+        if ch.is_ascii_digit() || ch == '.' {
+            if !unit.is_empty() {
+                let parsed = number.parse::<f64>().ok()?;
+                total += match unit.as_str() {
+                    "ms" => parsed / 1000.0,
+                    "s" => parsed,
+                    "m" => parsed * 60.0,
+                    "h" => parsed * 60.0 * 60.0,
+                    _ => return None,
+                };
+                number.clear();
+                unit.clear();
+                saw_unit = true;
+            }
+            number.push(ch);
+            continue;
+        }
+
+        if ch.is_ascii_alphabetic() {
+            unit.push(ch.to_ascii_lowercase());
+            continue;
+        }
+
+        if !number.is_empty() && !unit.is_empty() {
+            let parsed = number.parse::<f64>().ok()?;
+            total += match unit.as_str() {
+                "ms" => parsed / 1000.0,
+                "s" => parsed,
+                "m" => parsed * 60.0,
+                "h" => parsed * 60.0 * 60.0,
+                _ => return None,
+            };
+            number.clear();
+            unit.clear();
+            saw_unit = true;
+        } else if !number.is_empty() || !unit.is_empty() {
+            return None;
+        }
+    }
+
+    if saw_unit {
+        Some(total.ceil() as i64)
+    } else {
+        None
+    }
+}
+
+fn reset_header_to_unix_ts(value: &str) -> Option<i64> {
+    let trimmed = value.trim();
+    if let Ok(timestamp) = trimmed.parse::<i64>() {
+        return Some(if timestamp > 1_000_000_000 {
+            timestamp
+        } else {
+            chrono::Utc::now().timestamp() + timestamp
+        });
+    }
+
+    if let Some(timestamp) = quota_reset_iso_to_unix_ts(trimmed) {
+        return Some(timestamp);
+    }
+
+    parse_reset_delta_seconds(trimmed).map(|delta| chrono::Utc::now().timestamp() + delta)
+}
+
+fn header_reset_ts(headers: &http::HeaderMap, name: &str) -> Option<i64> {
+    headers
+        .get(name)
+        .and_then(|v| v.to_str().ok())
+        .and_then(reset_header_to_unix_ts)
+}
+
 struct ExtractedRaw {
     status: Option<String>,
     windows: Vec<RateLimitWindow>,
@@ -210,9 +340,27 @@ fn extract_anthropic_legacy(headers: &http::HeaderMap) -> Option<ExtractedRaw> {
     if !has_any {
         return None;
     }
+    let mut windows = Vec::new();
+    if let Some(reset) = header_reset_ts(headers, "anthropic-ratelimit-requests-reset") {
+        windows.push(RateLimitWindow {
+            name: "requests".to_string(),
+            status: None,
+            utilization: None,
+            reset: Some(reset),
+        });
+    }
+    if let Some(reset) = header_reset_ts(headers, "anthropic-ratelimit-tokens-reset") {
+        windows.push(RateLimitWindow {
+            name: "tokens".to_string(),
+            status: None,
+            utilization: None,
+            reset: Some(reset),
+        });
+    }
+
     Some(ExtractedRaw {
         status: None,
-        windows: Vec::new(),
+        windows,
         representative_claim: None,
         overage_status: None,
         fallback_percentage: None,
@@ -230,9 +378,27 @@ fn extract_openai(headers: &http::HeaderMap) -> Option<ExtractedRaw> {
     if !has_any {
         return None;
     }
+    let mut windows = Vec::new();
+    if let Some(reset) = header_reset_ts(headers, "x-ratelimit-reset-requests") {
+        windows.push(RateLimitWindow {
+            name: "requests".to_string(),
+            status: None,
+            utilization: None,
+            reset: Some(reset),
+        });
+    }
+    if let Some(reset) = header_reset_ts(headers, "x-ratelimit-reset-tokens") {
+        windows.push(RateLimitWindow {
+            name: "tokens".to_string(),
+            status: None,
+            utilization: None,
+            reset: Some(reset),
+        });
+    }
+
     Some(ExtractedRaw {
         status: None,
-        windows: Vec::new(),
+        windows,
         representative_claim: None,
         overage_status: None,
         fallback_percentage: None,
@@ -359,6 +525,10 @@ mod tests {
             "anthropic-ratelimit-requests-remaining",
             "42".parse().unwrap(),
         );
+        headers.insert(
+            "anthropic-ratelimit-requests-reset",
+            "2026-04-17T12:00:00+00:00".parse().unwrap(),
+        );
         headers.insert("anthropic-ratelimit-tokens-limit", "80000".parse().unwrap());
         headers.insert(
             "anthropic-ratelimit-tokens-remaining",
@@ -370,6 +540,9 @@ mod tests {
         assert_eq!(raw.requests_remaining, Some(42));
         assert_eq!(raw.tokens_limit, Some(80000));
         assert_eq!(raw.tokens_remaining, Some(63200));
+        assert_eq!(raw.windows.len(), 1);
+        assert_eq!(raw.windows[0].name, "requests");
+        assert_eq!(raw.windows[0].reset, Some(1_776_427_200));
     }
 
     #[test]
@@ -379,12 +552,19 @@ mod tests {
         headers.insert("x-ratelimit-remaining-requests", "88".parse().unwrap());
         headers.insert("x-ratelimit-limit-tokens", "100000".parse().unwrap());
         headers.insert("x-ratelimit-remaining-tokens", "91000".parse().unwrap());
+        headers.insert("x-ratelimit-reset-requests", "6m0s".parse().unwrap());
 
+        let before = chrono::Utc::now().timestamp();
         let raw = extract_rate_limits(&headers).expect("should extract");
+        let after = chrono::Utc::now().timestamp();
         assert_eq!(raw.requests_limit, Some(100));
         assert_eq!(raw.requests_remaining, Some(88));
         assert_eq!(raw.tokens_limit, Some(100000));
         assert_eq!(raw.tokens_remaining, Some(91000));
+        assert_eq!(raw.windows.len(), 1);
+        assert_eq!(raw.windows[0].name, "requests");
+        let reset = raw.windows[0].reset.expect("reset");
+        assert!((before + 360..=after + 360).contains(&reset));
     }
 
     #[test]
@@ -443,6 +623,15 @@ mod tests {
     }
 
     #[test]
+    fn parse_reset_delta_seconds_supports_common_header_durations() {
+        assert_eq!(parse_reset_delta_seconds("1s"), Some(1));
+        assert_eq!(parse_reset_delta_seconds("250ms"), Some(1));
+        assert_eq!(parse_reset_delta_seconds("6m0s"), Some(360));
+        assert_eq!(parse_reset_delta_seconds("1h2m3s"), Some(3723));
+        assert_eq!(parse_reset_delta_seconds("not-a-duration"), None);
+    }
+
+    #[test]
     fn snapshot_from_subscription_quota_preserves_existing_scalar_limits() {
         let previous = RateLimitSnapshot {
             app_type: "codex".to_string(),
@@ -490,5 +679,100 @@ mod tests {
         assert_eq!(snapshot.tokens_limit, Some(100_000));
         assert_eq!(snapshot.tokens_remaining, Some(80_000));
         assert_eq!(snapshot.windows[0].utilization, Some(0.2));
+    }
+
+    #[test]
+    fn quota_exhausted_reset_uses_zero_remaining_with_future_reset() {
+        let snapshot = RateLimitSnapshot {
+            app_type: "claude".to_string(),
+            provider_id: "provider-a".to_string(),
+            provider_name: "Provider A".to_string(),
+            source: Some("response_headers".to_string()),
+            status: None,
+            windows: vec![RateLimitWindow {
+                name: "5h".to_string(),
+                status: None,
+                utilization: Some(0.9),
+                reset: Some(1_800),
+            }],
+            representative_claim: None,
+            overage_status: None,
+            fallback_percentage: None,
+            requests_limit: Some(100),
+            requests_remaining: Some(0),
+            tokens_limit: Some(100_000),
+            tokens_remaining: Some(10_000),
+            balances: None,
+            captured_at: 0,
+        };
+
+        assert_eq!(quota_exhausted_reset(&snapshot, 1_700), Some(1_800));
+    }
+
+    #[test]
+    fn quota_exhausted_reset_uses_window_status_or_full_utilization() {
+        let rejected = RateLimitSnapshot {
+            app_type: "claude".to_string(),
+            provider_id: "provider-a".to_string(),
+            provider_name: "Provider A".to_string(),
+            source: Some("subscription_quota".to_string()),
+            status: None,
+            windows: vec![RateLimitWindow {
+                name: "5h".to_string(),
+                status: Some("rejected".to_string()),
+                utilization: Some(0.5),
+                reset: Some(2_000),
+            }],
+            representative_claim: None,
+            overage_status: None,
+            fallback_percentage: None,
+            requests_limit: None,
+            requests_remaining: None,
+            tokens_limit: None,
+            tokens_remaining: None,
+            balances: None,
+            captured_at: 0,
+        };
+        assert_eq!(quota_exhausted_reset(&rejected, 1_900), Some(2_000));
+
+        let full = RateLimitSnapshot {
+            windows: vec![RateLimitWindow {
+                name: "5h".to_string(),
+                status: Some("allowed".to_string()),
+                utilization: Some(1.0),
+                reset: Some(2_100),
+            }],
+            ..rejected
+        };
+        assert_eq!(quota_exhausted_reset(&full, 1_900), Some(2_100));
+    }
+
+    #[test]
+    fn quota_exhausted_reset_requires_future_reset() {
+        let snapshot = RateLimitSnapshot {
+            app_type: "claude".to_string(),
+            provider_id: "provider-a".to_string(),
+            provider_name: "Provider A".to_string(),
+            source: Some("response_headers".to_string()),
+            status: Some("rejected".to_string()),
+            windows: vec![RateLimitWindow {
+                name: "5h".to_string(),
+                status: Some("rejected".to_string()),
+                utilization: Some(1.0),
+                reset: Some(1_000),
+            }],
+            representative_claim: None,
+            overage_status: None,
+            fallback_percentage: None,
+            requests_limit: Some(100),
+            requests_remaining: Some(0),
+            tokens_limit: None,
+            tokens_remaining: None,
+            balances: None,
+            captured_at: 0,
+        };
+
+        assert_eq!(quota_exhausted_reset(&snapshot, 1_000), None);
+        assert_eq!(quota_exhausted_reset(&snapshot, 1_100), None);
     }
 }
