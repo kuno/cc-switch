@@ -470,7 +470,7 @@
 
 .owt-app-card__head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 14px;
   margin-bottom: 22px;
 }
@@ -517,7 +517,7 @@
   margin: 0;
   font-size: 24px;
   font-weight: 720;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   color: var(--text);
 }
 
@@ -536,6 +536,14 @@
 
 .owt-app-card__spacer {
   flex: 1;
+}
+
+.owt-app-card__head-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  flex: 0 0 auto;
 }
 
 .owt-app-card__prov-count {
@@ -3864,15 +3872,13 @@ select.owt-provider-panel__input {
 .owt-mode-toggle__button[data-active="true"] .owt-mode-toggle__dot {
   opacity: 1;
 }
-.owt-app-card .owt-mode-toggle {
-  margin-right: 8px;
-}
 .owt-app-card__failover,
 .owt-app-card__failover-empty {
   border: 1px solid var(--line);
   border-radius: 14px;
   background: var(--panel-soft);
-  padding: 10px;
+  padding: 14px 16px;
+  margin-bottom: 18px;
 }
 .owt-app-card__failover-empty {
   color: var(--muted);
@@ -3882,18 +3888,30 @@ select.owt-provider-panel__input {
 .owt-app-card__queue-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 0;
 }
 .owt-app-card__queue-row {
   display: grid;
-  grid-template-columns: 24px 30px minmax(0, 1fr) auto;
-  gap: 8px;
+  grid-template-columns: 24px 30px 34px minmax(0, 1fr) auto;
+  gap: 10px;
   align-items: center;
-  min-height: 28px;
+  min-height: 46px;
+  padding: 9px 0;
+  border-bottom: 1px dashed var(--line);
+  position: relative;
+  transition:
+    background 140ms,
+    opacity 140ms,
+    transform 140ms;
 }
 .owt-app-card__queue-row[data-dragging="true"] {
-  position: relative;
   z-index: 2;
+  opacity: 0.55;
+  background: var(--panel-strong);
+  border-radius: 8px;
+}
+.owt-app-card__queue-row:last-child {
+  border-bottom: 0;
 }
 .owt-app-card__queue-drag {
   display: inline-flex;
@@ -3931,6 +3949,33 @@ select.owt-provider-panel__input {
   font-size: 11px;
   font-weight: 800;
   text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.owt-app-card__queue-row[data-state="active"] .owt-app-card__queue-pos {
+  color: var(--success);
+}
+.owt-app-card__queue-row[data-state="skipped"] .owt-app-card__queue-pos {
+  color: var(--fail);
+  text-decoration: line-through;
+}
+.owt-app-card__queue-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--panel-strong);
+  border: 1px solid var(--line);
+  display: grid;
+  place-items: center;
+}
+.owt-app-card__queue-row[data-state="skipped"] .owt-app-card__queue-icon {
+  opacity: 0.64;
+  filter: grayscale(1);
+}
+.owt-app-card__queue-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
 }
 .owt-app-card__queue-name {
   min-width: 0;
@@ -3941,16 +3986,36 @@ select.owt-provider-panel__input {
   font-size: 13px;
   font-weight: 720;
 }
+.owt-app-card__queue-note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 560;
+}
+.owt-app-card__queue-row[data-state="active"] .owt-app-card__queue-note {
+  color: var(--success);
+  font-weight: 650;
+}
+.owt-app-card__queue-row[data-state="skipped"] .owt-app-card__queue-name,
+.owt-app-card__queue-row[data-state="skipped"] .owt-app-card__queue-note {
+  color: var(--fail);
+}
 .owt-app-card__queue-state {
   height: 22px;
   padding: 0 8px;
   font-size: 10px;
+  text-transform: uppercase;
 }
 .owt-app-card__failover-foot {
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  margin-top: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
   color: var(--muted);
   font-size: 11px;
   font-weight: 650;
