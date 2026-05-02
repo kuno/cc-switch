@@ -15,7 +15,7 @@ import {
   useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import { GripVertical } from "lucide-react";
+import { GripVertical, Info } from "lucide-react";
 import type {
   CSSProperties,
   HTMLAttributes,
@@ -317,9 +317,7 @@ function QuotaBand({
   );
 }
 
-function getQueueEntryStatus(
-  entry: SharedProviderFailoverQueueEntry,
-): {
+function getQueueEntryStatus(entry: SharedProviderFailoverQueueEntry): {
   label: string;
   note: string;
   tone: StatusTone;
@@ -352,9 +350,7 @@ function getQueueEntryStatus(
   };
 }
 
-function getQueueHeadLabel(
-  queue: SharedProviderFailoverQueueEntry[],
-): string {
+function getQueueHeadLabel(queue: SharedProviderFailoverQueueEntry[]): string {
   if (queue.length === 0) {
     return "—";
   }
@@ -490,12 +486,14 @@ function FailoverQueueSummary({
   appId,
   failoverState,
   providerState,
+  autoFailoverEnabled,
   reorderPending,
   onReorder,
 }: {
   appId: SharedProviderAppId;
   failoverState: SharedProviderFailoverState | null;
   providerState: SharedProviderState | null;
+  autoFailoverEnabled: boolean;
   reorderPending: boolean;
   onReorder?: (providerIds: string[]) => void;
 }) {
@@ -574,10 +572,12 @@ function FailoverQueueSummary({
       </DndContext>
       <div className="owt-app-card__failover-foot">
         <span>
-          Auto-failover {failoverState?.autoFailoverEnabled ? "on" : "off"} ·
-          max {failoverState?.maxRetries ?? 0} retries
+          Auto-failover {autoFailoverEnabled ? "on" : "off"} · max{" "}
+          {failoverState?.maxRetries ?? 0} retries
         </span>
-        <span>Head: {reorderPending ? "Updating" : getQueueHeadLabel(queue)}</span>
+        <span>
+          Head: {reorderPending ? "Updating" : getQueueHeadLabel(queue)}
+        </span>
       </div>
     </div>
   );
@@ -596,6 +596,7 @@ export interface AppCardProps {
   quotaSnapshot?: ProviderQuotaSnapshot;
   failoverState?: SharedProviderFailoverState | null;
   failoverPending?: boolean;
+  optimisticAutoFailoverEnabled?: boolean | null;
   failoverReorderPending?: boolean;
   onOpenActivity: (appId: SharedProviderAppId) => void;
   onOpenProviderPanel: (appId: SharedProviderAppId) => void;
@@ -618,6 +619,7 @@ export function AppCard({
   quotaSnapshot,
   failoverState,
   failoverPending = false,
+  optimisticAutoFailoverEnabled = null,
   failoverReorderPending = false,
   onOpenActivity,
   onOpenProviderPanel,
@@ -631,9 +633,11 @@ export function AppCard({
     ? providerState.activeProvider
     : null;
   const appIconUrl = getOpenWrtAppIconUrl(appId);
-  const runMode: RunMode = failoverState?.autoFailoverEnabled
-    ? "failover"
-    : "normal";
+  const autoFailoverEnabled =
+    optimisticAutoFailoverEnabled ??
+    failoverState?.autoFailoverEnabled ??
+    false;
+  const runMode: RunMode = autoFailoverEnabled ? "failover" : "normal";
   const canChangeRunMode =
     !isInert &&
     Boolean(activeProvider) &&
@@ -743,7 +747,7 @@ export function AppCard({
   const handleCardClick: MouseEventHandler<HTMLDivElement> = (event) => {
     if (
       (event.target as HTMLElement).closest(
-        "[data-owt-chip], [data-mode-toggle]",
+        "[data-owt-chip], [data-mode-toggle], [data-cost-info]",
       )
     ) {
       return;
@@ -755,7 +759,7 @@ export function AppCard({
     if (event.key === "Enter" || event.key === " ") {
       if (
         (event.target as HTMLElement).closest(
-          "[data-owt-chip], [data-mode-toggle]",
+          "[data-owt-chip], [data-mode-toggle], [data-cost-info]",
         )
       ) {
         return;
@@ -830,6 +834,7 @@ export function AppCard({
               aria-label={`${appCopy.label} routing mode`}
               data-mode-toggle="true"
               data-pending={failoverPending ? "true" : "false"}
+              aria-busy={failoverPending ? "true" : undefined}
               onClick={(event) => event.stopPropagation()}
             >
               {(["normal", "failover"] as const).map((modeOption) => (
@@ -858,42 +863,48 @@ export function AppCard({
         </div>
       </div>
 
-      {runMode === "failover" ? (
-        <FailoverQueueSummary
-          appId={appId}
-          failoverState={failoverState ?? null}
-          providerState={providerState}
-          reorderPending={failoverReorderPending}
-          onReorder={(providerIds) => {
-            onReorderFailoverQueue?.(appId, providerIds);
-          }}
-        />
-      ) : (
-        <div className="owt-app-card__active">
-          <div className="owt-app-card__active-row">
-            <div className="owt-app-card__mini-icon" aria-hidden="true">
-              <OpenWrtProviderIcon
-                appId={appId}
-                name={activeProvider.name.trim() || appCopy.label}
-                size={18}
-                source={activeProvider}
-              />
-            </div>
-            <div className="owt-app-card__active-labels">
-              <div className="owt-app-card__active-top">Active provider</div>
-              <div className="owt-app-card__active-main">
-                {activeProvider.name.trim() || "Unnamed provider"}
+      <div
+        data-mode-body="true"
+        data-pending={failoverPending ? "true" : "false"}
+      >
+        {runMode === "failover" ? (
+          <FailoverQueueSummary
+            appId={appId}
+            failoverState={failoverState ?? null}
+            providerState={providerState}
+            autoFailoverEnabled={autoFailoverEnabled}
+            reorderPending={failoverReorderPending}
+            onReorder={(providerIds) => {
+              onReorderFailoverQueue?.(appId, providerIds);
+            }}
+          />
+        ) : (
+          <div className="owt-app-card__active">
+            <div className="owt-app-card__active-row">
+              <div className="owt-app-card__mini-icon" aria-hidden="true">
+                <OpenWrtProviderIcon
+                  appId={appId}
+                  name={activeProvider.name.trim() || appCopy.label}
+                  size={18}
+                  source={activeProvider}
+                />
               </div>
-              <div className="owt-app-card__active-endpoint">
-                {activeProvider.baseUrl.trim() || "Endpoint unavailable"}
+              <div className="owt-app-card__active-labels">
+                <div className="owt-app-card__active-top">Active provider</div>
+                <div className="owt-app-card__active-main">
+                  {activeProvider.name.trim() || "Unnamed provider"}
+                </div>
+                <div className="owt-app-card__active-endpoint">
+                  {activeProvider.baseUrl.trim() || "Endpoint unavailable"}
+                </div>
               </div>
             </div>
+            {quotaSnapshot ? (
+              <QuotaBand snapshot={quotaSnapshot} hideLabel />
+            ) : null}
           </div>
-          {quotaSnapshot ? (
-            <QuotaBand snapshot={quotaSnapshot} hideLabel />
-          ) : null}
-        </div>
-      )}
+        )}
+      </div>
 
       <div className="owt-app-card__usage">
         <div className="owt-app-card__usage-cell">
@@ -905,7 +916,24 @@ export function AppCard({
           <div className="owt-app-card__usage-value">{requestsValue}</div>
         </div>
         <div className="owt-app-card__usage-cell">
-          <div className="owt-app-card__usage-label">Cost</div>
+          <div className="owt-app-card__usage-label">
+            Cost
+            <button
+              type="button"
+              className="owt-app-card__usage-info"
+              data-cost-info="true"
+              aria-label="About this cost number"
+              tabIndex={-1}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <Info className="h-3 w-3" aria-hidden="true" />
+              <span className="owt-app-card__usage-tip" role="tooltip">
+                <strong>Estimated, not billed.</strong> This figure is computed
+                from local request logs and public API prices. Actual charges
+                come from each provider&apos;s billing dashboard.
+              </span>
+            </button>
+          </div>
           <div className="owt-app-card__usage-value">
             {costValue}
             <span className="owt-app-card__usage-unit">USD</span>
