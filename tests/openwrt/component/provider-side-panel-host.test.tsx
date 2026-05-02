@@ -15,7 +15,10 @@ import {
 import type { OpenWrtSharedPageShellApi } from "@/openwrt-provider-ui/pageTypes";
 import type { OpenWrtProviderTransport } from "@/platform/openwrt/providers";
 import { createBridgeFixture } from "./fixtures/bridge";
-import { createProviderTransportFixture } from "./fixtures/providerTransport";
+import {
+  createDeferred,
+  createProviderTransportFixture,
+} from "./fixtures/providerTransport";
 import {
   createCodexAuthSummary,
   createProviderState,
@@ -847,6 +850,76 @@ describe("ProviderSidePanelHost", () => {
       ).toBeInTheDocument(),
     );
     expect(getFailoverState("claude").queue).toEqual([]);
+  });
+
+  it("keeps the app routing mode stable while selecting another provider", async () => {
+    const user = userEvent.setup();
+    const shell = createBridgeFixture({ selectedApp: "claude" });
+    const primaryProvider = createProviderView("claude", {
+      active: true,
+      name: "Claude Primary",
+      providerId: "claude-primary",
+    });
+    const backupProvider = createProviderView("claude", {
+      active: false,
+      name: "Claude Backup",
+      providerId: "claude-backup",
+    });
+    const { transport } = createProviderTransportFixture({
+      claude: createProviderState("claude", [primaryProvider, backupProvider]),
+    });
+    await transport.addToFailoverQueue?.("claude", "claude-primary");
+    await transport.setAutoFailoverEnabled?.("claude", true);
+
+    type FailoverResponse = Awaited<
+      ReturnType<NonNullable<OpenWrtProviderTransport["getProviderFailoverState"]>>
+    >;
+    const delayedFailover = createDeferred<FailoverResponse>();
+    const failoverMock = transport.getProviderFailoverState as unknown as {
+      getMockImplementation: () => NonNullable<
+        OpenWrtProviderTransport["getProviderFailoverState"]
+      >;
+      mockImplementationOnce: (
+        implementation: NonNullable<
+          OpenWrtProviderTransport["getProviderFailoverState"]
+        >,
+      ) => void;
+    };
+    const originalGetFailoverState = failoverMock.getMockImplementation();
+    failoverMock.mockImplementationOnce(originalGetFailoverState);
+    failoverMock.mockImplementationOnce(() => delayedFailover.promise);
+
+    render(<HostHarness shell={shell} transport={transport} />);
+
+    const dialog = await openPanel();
+    const modeTabs = within(
+      await within(dialog).findByRole("tablist", {
+        name: "Claude routing mode",
+      }),
+    );
+    const normalTab = modeTabs.getByRole("tab", { name: "Normal" });
+    const failoverTab = modeTabs.getByRole("tab", { name: "Failover" });
+    await waitFor(() =>
+      expect(failoverTab).toHaveAttribute("aria-selected", "true"),
+    );
+
+    const backupRow = Array.from(
+      dialog.querySelectorAll<HTMLButtonElement>(
+        ".owt-provider-panel__provider-row",
+      ),
+    ).find((row) => within(row).queryByText("Claude Backup"));
+    expect(backupRow).toBeDefined();
+    await user.click(backupRow!);
+
+    expect(failoverTab).toHaveAttribute("aria-selected", "true");
+    expect(normalTab).toHaveAttribute("aria-selected", "false");
+
+    delayedFailover.resolve(
+      await originalGetFailoverState("claude", "claude-backup"),
+    );
+    await waitFor(() =>
+      expect(failoverTab).toHaveAttribute("aria-selected", "true"),
+    );
   });
 
   it("uses drawer order rather than click order when adding providers to failover", async () => {
