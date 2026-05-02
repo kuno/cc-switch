@@ -19,7 +19,8 @@ pub struct FailoverQueueItem {
 }
 
 impl Database {
-    /// 获取故障转移队列（按 sort_index 排序）
+    /// 获取故障转移队列（桌面端按显式队列顺序）
+    #[cfg(feature = "tauri-desktop")]
     pub fn get_failover_queue(&self, app_type: &str) -> Result<Vec<FailoverQueueItem>, AppError> {
         let conn = lock_conn!(self.conn);
 
@@ -48,9 +49,31 @@ impl Database {
         Ok(items)
     }
 
+    /// 获取故障转移队列（OpenWrt 端按可见 provider 顺序过滤）
+    #[cfg(not(feature = "tauri-desktop"))]
+    pub fn get_failover_queue(&self, app_type: &str) -> Result<Vec<FailoverQueueItem>, AppError> {
+        let items = self
+            .get_all_providers_by_display_order(app_type)?
+            .into_values()
+            .filter(|provider| provider.in_failover_queue)
+            .enumerate()
+            .map(|(index, provider)| FailoverQueueItem {
+                provider_id: provider.id,
+                provider_name: provider.name,
+                sort_index: Some(index),
+                provider_notes: provider.notes,
+            })
+            .collect();
+
+        Ok(items)
+    }
+
     /// 获取故障转移队列中的供应商（完整 Provider 信息，按顺序）
     pub fn get_failover_providers(&self, app_type: &str) -> Result<Vec<Provider>, AppError> {
+        #[cfg(feature = "tauri-desktop")]
         let all_providers = self.get_all_providers(app_type)?;
+        #[cfg(not(feature = "tauri-desktop"))]
+        let all_providers = self.get_all_providers_by_display_order(app_type)?;
 
         let result: Vec<Provider> = all_providers
             .into_values()
@@ -61,6 +84,7 @@ impl Database {
     }
 
     /// 添加供应商到故障转移队列
+    #[cfg(feature = "tauri-desktop")]
     pub fn add_to_failover_queue(&self, app_type: &str, provider_id: &str) -> Result<(), AppError> {
         let conn = lock_conn!(self.conn);
 
@@ -102,7 +126,41 @@ impl Database {
         Ok(())
     }
 
+    /// 添加供应商到故障转移队列（OpenWrt 端仅记录 membership）
+    #[cfg(not(feature = "tauri-desktop"))]
+    pub fn add_to_failover_queue(&self, app_type: &str, provider_id: &str) -> Result<(), AppError> {
+        let conn = lock_conn!(self.conn);
+
+        let already_queued = conn
+            .query_row(
+                "SELECT in_failover_queue FROM providers WHERE id = ?1 AND app_type = ?2",
+                rusqlite::params![provider_id, app_type],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    AppError::Database(format!("provider {provider_id} not found for {app_type}"))
+                }
+                e => AppError::Database(e.to_string()),
+            })?;
+
+        if already_queued {
+            return Ok(());
+        }
+
+        conn.execute(
+            "UPDATE providers
+             SET in_failover_queue = 1
+             WHERE id = ?1 AND app_type = ?2",
+            rusqlite::params![provider_id, app_type],
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+        Ok(())
+    }
+
     /// 重排故障转移队列顺序
+    #[cfg(feature = "tauri-desktop")]
     pub fn reorder_failover_queue(
         &self,
         app_type: &str,
@@ -155,6 +213,40 @@ impl Database {
         }
 
         tx.commit().map_err(|e| AppError::Database(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// 重排故障转移队列顺序（OpenWrt 端以 provider 可见顺序为准）
+    #[cfg(not(feature = "tauri-desktop"))]
+    pub fn reorder_failover_queue(
+        &self,
+        app_type: &str,
+        provider_ids: &[String],
+    ) -> Result<(), AppError> {
+        let current_queue = self.get_failover_queue(app_type)?;
+
+        if current_queue.len() != provider_ids.len() {
+            return Err(AppError::Database(
+                "failover queue reorder must include every queued provider exactly once"
+                    .to_string(),
+            ));
+        }
+
+        let mut current_ids = current_queue
+            .iter()
+            .map(|entry| entry.provider_id.clone())
+            .collect::<Vec<_>>();
+        let mut next_ids = provider_ids.to_vec();
+        current_ids.sort();
+        next_ids.sort();
+
+        if current_ids != next_ids {
+            return Err(AppError::Database(
+                "failover queue reorder received a provider set that does not match the current queue"
+                    .to_string(),
+            ));
+        }
 
         Ok(())
     }
@@ -223,7 +315,10 @@ impl Database {
         &self,
         app_type: &str,
     ) -> Result<Vec<Provider>, AppError> {
+        #[cfg(feature = "tauri-desktop")]
         let all_providers = self.get_all_providers(app_type)?;
+        #[cfg(not(feature = "tauri-desktop"))]
+        let all_providers = self.get_all_providers_by_display_order(app_type)?;
 
         let available: Vec<Provider> = all_providers
             .into_values()
@@ -252,6 +347,7 @@ mod tests {
             .expect("save provider");
     }
 
+    #[cfg(feature = "tauri-desktop")]
     #[test]
     fn add_to_failover_queue_appends_after_legacy_null_sort_entries() {
         let db = Database::memory().expect("db");
@@ -271,6 +367,103 @@ mod tests {
         assert!(
             queue[1].sort_index.expect("new provider sort index")
                 > queue[0].sort_index.unwrap_or(999999)
+        );
+    }
+
+    #[cfg(not(feature = "tauri-desktop"))]
+    #[test]
+    fn failover_queue_uses_visible_provider_order_for_queued_providers() {
+        let db = Database::memory().expect("db");
+        save_provider(&db, "claude", "provider-a", false);
+        save_provider(&db, "claude", "provider-b", false);
+        save_provider(&db, "claude", "provider-c", false);
+
+        db.add_to_failover_queue("claude", "provider-c")
+            .expect("queue provider c");
+        db.add_to_failover_queue("claude", "provider-b")
+            .expect("queue provider b");
+
+        let queue = db
+            .get_failover_queue("claude")
+            .expect("queue before reorder");
+        assert_eq!(
+            queue
+                .iter()
+                .map(|item| item.provider_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["provider-b", "provider-c"]
+        );
+        assert_eq!(
+            queue.iter().map(|item| item.sort_index).collect::<Vec<_>>(),
+            vec![Some(0), Some(1)]
+        );
+
+        db.reorder_providers(
+            "claude",
+            &[
+                "provider-c".to_string(),
+                "provider-a".to_string(),
+                "provider-b".to_string(),
+            ],
+        )
+        .expect("reorder providers");
+
+        let reordered_queue = db
+            .get_failover_queue("claude")
+            .expect("queue after reorder");
+        assert_eq!(
+            reordered_queue
+                .iter()
+                .map(|item| item.provider_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["provider-c", "provider-b"]
+        );
+        assert_eq!(
+            reordered_queue
+                .iter()
+                .map(|item| item.sort_index)
+                .collect::<Vec<_>>(),
+            vec![Some(0), Some(1)]
+        );
+    }
+
+    #[cfg(not(feature = "tauri-desktop"))]
+    #[test]
+    fn reorder_failover_queue_does_not_override_visible_provider_order() {
+        let db = Database::memory().expect("db");
+        save_provider(&db, "claude", "provider-a", false);
+        save_provider(&db, "claude", "provider-b", false);
+        save_provider(&db, "claude", "provider-c", false);
+
+        db.add_to_failover_queue("claude", "provider-a")
+            .expect("queue provider a");
+        db.add_to_failover_queue("claude", "provider-c")
+            .expect("queue provider c");
+        db.reorder_providers(
+            "claude",
+            &[
+                "provider-c".to_string(),
+                "provider-a".to_string(),
+                "provider-b".to_string(),
+            ],
+        )
+        .expect("reorder providers");
+
+        db.reorder_failover_queue(
+            "claude",
+            &["provider-a".to_string(), "provider-c".to_string()],
+        )
+        .expect("reorder queue");
+
+        let queue = db
+            .get_failover_queue("claude")
+            .expect("queue after no-op reorder");
+        assert_eq!(
+            queue
+                .iter()
+                .map(|item| item.provider_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["provider-c", "provider-a"]
         );
     }
 }
