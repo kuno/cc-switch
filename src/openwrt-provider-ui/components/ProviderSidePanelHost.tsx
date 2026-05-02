@@ -385,6 +385,9 @@ const ProviderSidePanelHostComponent = forwardRef<
   );
   const [failoverState, setFailoverState] =
     useState<SharedProviderFailoverState | null>(null);
+  const [appAutoFailoverEnabled, setAppAutoFailoverEnabled] = useState<
+    boolean | null
+  >(null);
   const [failoverLoading, setFailoverLoading] = useState(false);
   const [failoverPendingAction, setFailoverPendingAction] =
     useState<ProviderSidePanelFailoverAction | null>(null);
@@ -476,11 +479,17 @@ const ProviderSidePanelHostComponent = forwardRef<
       const provider = getProviderById(nextState, providerId);
 
       if (provider) {
-        if (appId !== nextAppId || selectedProviderId !== provider.providerId) {
+        const appChanged = appId !== nextAppId;
+
+        if (appChanged || selectedProviderId !== provider.providerId) {
           failoverRequestIdRef.current += 1;
           setFailoverState(null);
           setFailoverLoading(false);
           setFailoverPendingAction(null);
+        }
+
+        if (appChanged) {
+          setAppAutoFailoverEnabled(null);
         }
 
         const nextDraft = createDraftFromProvider(provider);
@@ -501,11 +510,17 @@ const ProviderSidePanelHostComponent = forwardRef<
       }
     }
 
-    if (appId !== nextAppId || selectedProviderId !== null) {
+    const appChanged = appId !== nextAppId;
+
+    if (appChanged || selectedProviderId !== null) {
       failoverRequestIdRef.current += 1;
       setFailoverState(null);
       setFailoverLoading(false);
       setFailoverPendingAction(null);
+    }
+
+    if (appChanged) {
+      setAppAutoFailoverEnabled(null);
     }
 
     setAppId(nextAppId);
@@ -589,6 +604,7 @@ const ProviderSidePanelHostComponent = forwardRef<
 
       if (failoverRequestIdRef.current === requestId) {
         setFailoverState(nextFailoverState);
+        setAppAutoFailoverEnabled(nextFailoverState.autoFailoverEnabled);
       }
 
       return nextFailoverState;
@@ -920,8 +936,10 @@ const ProviderSidePanelHostComponent = forwardRef<
     }
 
     const providerId = selectedProvider.providerId;
+    const previousAppAutoFailoverEnabled = appAutoFailoverEnabled;
 
     setFailoverPendingAction("app-auto");
+    setAppAutoFailoverEnabled(enabled);
     try {
       await failoverAdapter.setAutoFailoverEnabled(appId, enabled);
       await Promise.all([
@@ -934,6 +952,7 @@ const ProviderSidePanelHostComponent = forwardRef<
         text: `${APP_LABELS[appId]} auto-failover ${enabled ? "enabled" : "disabled"}.`,
       });
     } catch (toggleError) {
+      setAppAutoFailoverEnabled(previousAppAutoFailoverEnabled);
       setPanelMessage({
         kind: "error",
         text: formatErrorMessage(toggleError),
@@ -1058,7 +1077,9 @@ const ProviderSidePanelHostComponent = forwardRef<
       )}
       failoverControlsReady={Boolean(failoverState)}
       failoverControlsLoading={failoverLoading}
-      appAutoFailoverEnabled={Boolean(failoverState?.autoFailoverEnabled)}
+      appAutoFailoverEnabled={Boolean(
+        appAutoFailoverEnabled ?? failoverState?.autoFailoverEnabled,
+      )}
       appFailoverPending={failoverPendingAction === "app-auto"}
       providerInFailoverQueue={Boolean(failoverState?.inFailoverQueue)}
       providerFailoverPending={failoverPendingAction === "provider-queue"}
