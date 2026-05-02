@@ -502,6 +502,14 @@ impl RequestForwarder {
         })
     }
 
+    async fn quota_exhausted_until(&self, provider_id: &str) -> Option<i64> {
+        let now_secs = chrono::Utc::now().timestamp();
+        let store = self.rate_limits.read().await;
+        store
+            .get(provider_id)
+            .and_then(|snapshot| super::rate_limit::quota_exhausted_reset(snapshot, now_secs))
+    }
+
     async fn load_claude_oauth_auth_for_provider(&self, provider: &Provider) -> Option<String> {
         if !is_claude_oauth_provider(provider) {
             return None;
@@ -524,6 +532,9 @@ impl RequestForwarder {
 
     #[cfg(test)]
     fn set_claude_oauth_refresher_for_tests(&mut self, refresher: Arc<dyn OAuthTokenRefresher>) {
+        self.claude_oauth_refresher = Some(refresher);
+    }
+
         self.claude_oauth_refresher = Some(refresher);
     }
 
@@ -599,6 +610,7 @@ impl RequestForwarder {
         let mut last_error = None;
         let mut last_provider = None;
         let mut attempted_providers = 0usize;
+        let mut quota_skipped_providers = 0usize;
 
         // 单 Provider 场景下跳过熔断器检查（故障转移关闭时）
         let bypass_circuit_breaker = providers.len() == 1;
@@ -610,6 +622,15 @@ impl RequestForwarder {
             let mut rectifier_retried = false;
             let mut budget_rectifier_retried = false;
             let mut media_rectifier_retried = false;
+
+            if let Some(reset_at) = self.quota_exhausted_until(&provider.id).await {
+                quota_skipped_providers += 1;
+                log::warn!(
+                    "[{app_type_str}] [FWD-429-SKIP] Provider {} quota exhausted, skipping until reset_at={reset_at}",
+                    provider.name
+                );
+                continue;
+            }
 
             // 上限检查：尊重用户在 AppProxyConfig.max_retries 上配置的「重试次数」。
             // 放在熔断器 allow 检查之前，避免在已经超限时还占用 HalfOpen 探测名额。
@@ -1281,11 +1302,19 @@ impl RequestForwarder {
         }
 
         if attempted_providers == 0 {
-            // providers 列表非空，但全部被熔断器拒绝（典型：HalfOpen 探测名额被占用）
+            // providers 列表非空，但全部被熔断器或配额冷却拒绝
+            let last_error_message = if quota_skipped_providers > 0 {
+                format!(
+                    "所有供应商暂时不可用（{} 个供应商配额耗尽等待重置）",
+                    quota_skipped_providers
+                )
+            } else {
+                "所有供应商暂时不可用（熔断器限制）".to_string()
+            };
             {
                 let mut status = self.status.write().await;
                 status.failed_requests += 1;
-                status.last_error = Some("所有供应商暂时不可用（熔断器限制）".to_string());
+                status.last_error = Some(last_error_message);
                 if status.total_requests > 0 {
                     status.success_rate =
                         (status.success_requests as f32 / status.total_requests as f32) * 100.0;
@@ -2201,23 +2230,14 @@ impl RequestForwarder {
             Ok((response, resolved_claude_api_format))
         } else {
             // Capture rate limit headers from error responses (e.g. 429)
-            {
-                let rl_store = self.rate_limits.clone();
-                let resp_headers = response.headers().clone();
-                let app = app_type_str.to_string();
-                let pid = provider.id.clone();
-                let pname = provider.name.clone();
-                tokio::spawn(async move {
-                    super::rate_limit::capture_rate_limits(
-                        &rl_store,
-                        &resp_headers,
-                        &app,
-                        &pid,
-                        &pname,
-                    )
-                    .await;
-                });
-            }
+            super::rate_limit::capture_rate_limits(
+                &self.rate_limits,
+                response.headers(),
+                app_type_str,
+                &provider.id,
+                &provider.name,
+            )
+            .await;
 
             let status_code = status.as_u16();
             let body_text = String::from_utf8(response.bytes().await?.to_vec()).ok();
@@ -3117,9 +3137,17 @@ mod tests {
     }
 
     fn claude_api_key_provider(base_url: &str) -> Provider {
+        claude_api_key_provider_with_id("claude-api-key", "Claude API Key", base_url)
+    }
+
+    fn claude_api_key_provider_with_id(
+        provider_id: &str,
+        provider_name: &str,
+        base_url: &str,
+    ) -> Provider {
         Provider::with_id(
-            "claude-api-key".to_string(),
-            "Claude API Key".to_string(),
+            provider_id.to_string(),
+            provider_name.to_string(),
             json!({
                 "env": {
                     "ANTHROPIC_BASE_URL": base_url,
@@ -3241,6 +3269,62 @@ mod tests {
         assert_eq!(code, log_fwd::ALL_PROVIDERS_FAILED);
         assert!(message.contains("已尝试 2/2 个 Provider，均失败"));
         assert!(message.contains("connection reset by peer"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn forward_with_retry_skips_provider_with_exhausted_quota_until_reset() {
+        let (base_url, seen_auth, server) = spawn_test_upstream().await;
+        let forwarder = build_test_forwarder();
+        let exhausted_provider =
+            claude_api_key_provider_with_id("claude-exhausted", "Claude Exhausted", &base_url);
+        let fallback_provider =
+            claude_api_key_provider_with_id("claude-fallback", "Claude Fallback", &base_url);
+
+        forwarder.rate_limits.write().await.insert(
+            exhausted_provider.id.clone(),
+            crate::proxy::rate_limit::RateLimitSnapshot {
+                app_type: "claude".to_string(),
+                provider_id: exhausted_provider.id.clone(),
+                provider_name: exhausted_provider.name.clone(),
+                source: Some("subscription_quota".to_string()),
+                status: None,
+                windows: vec![crate::proxy::rate_limit::RateLimitWindow {
+                    name: "5h".to_string(),
+                    status: Some("rejected".to_string()),
+                    utilization: Some(1.0),
+                    reset: Some(chrono::Utc::now().timestamp() + 300),
+                }],
+                representative_claim: None,
+                overage_status: None,
+                fallback_percentage: None,
+                requests_limit: None,
+                requests_remaining: None,
+                tokens_limit: None,
+                tokens_remaining: None,
+                balances: None,
+                captured_at: chrono::Utc::now().timestamp_millis(),
+            },
+        );
+
+        let result = expect_forward_success(
+            forwarder
+                .forward_with_retry(
+                    &AppType::Claude,
+                    "/v1/messages",
+                    claude_request_body(),
+                    claude_request_headers(None),
+                    Extensions::new(),
+                    vec![exhausted_provider, fallback_provider.clone()],
+                )
+                .await,
+        );
+
+        assert_eq!(result.provider.id, fallback_provider.id);
+        assert_eq!(result.response.status(), http::StatusCode::OK);
+        assert_eq!(seen_auth.lock().expect("lock seen auth").len(), 1);
+
+        server.abort();
     }
 
     #[test]
