@@ -654,9 +654,12 @@
 }
 
 .owt-app-card__usage-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 10.5px;
   font-weight: 800;
-  letter-spacing: 0.1em;
+  letter-spacing: 0;
   text-transform: uppercase;
   color: var(--muted);
 }
@@ -675,6 +678,71 @@
   font-size: 12px;
   font-weight: 600;
   margin-left: 3px;
+}
+
+.owt-app-card__usage-info {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  min-width: 14px;
+  min-height: 14px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: help;
+  font: inherit;
+  transition: color 140ms;
+}
+
+.owt-app-card__usage-info:hover,
+.owt-app-card__usage-info:focus-visible {
+  color: var(--text);
+  outline: none;
+}
+
+.owt-app-card__usage-info svg {
+  display: block;
+}
+
+.owt-app-card__usage-tip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  width: min(240px, 70vw);
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--panel-strong);
+  box-shadow: 0 14px 36px -18px color-mix(in srgb, #000 60%, transparent);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+  text-align: left;
+  text-transform: none;
+  white-space: normal;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -2px);
+  transition:
+    opacity 140ms,
+    transform 140ms;
+  z-index: 5;
+}
+
+.owt-app-card__usage-tip strong {
+  color: var(--text);
+  font-weight: 620;
+}
+
+.owt-app-card__usage-info:hover .owt-app-card__usage-tip,
+.owt-app-card__usage-info:focus-visible .owt-app-card__usage-tip {
+  opacity: 1;
+  transform: translate(-50%, 0);
 }
 
 .owt-quota-band {
@@ -3872,6 +3940,41 @@ select.owt-provider-panel__input {
 .owt-mode-toggle__button[data-active="true"] .owt-mode-toggle__dot {
   opacity: 1;
 }
+
+.owt-mode-toggle[data-pending="true"] {
+  position: relative;
+  pointer-events: none;
+}
+
+.owt-mode-toggle[data-pending="true"]
+  .owt-mode-toggle__button[data-active="true"]
+  .owt-mode-toggle__dot {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid currentColor;
+  border-top-color: transparent;
+  background: transparent;
+  animation: owt-mode-spin 0.7s linear infinite;
+  opacity: 1;
+}
+
+.owt-mode-toggle[data-pending="true"]
+  .owt-mode-toggle__button:not([data-active="true"]) {
+  opacity: 0.4;
+}
+
+[data-mode-body="true"][data-pending="true"] {
+  opacity: 0.55;
+  pointer-events: none;
+  transition: opacity 180ms;
+}
+
+@keyframes owt-mode-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .owt-app-card__failover,
 .owt-app-card__failover-empty {
   border: 1px solid var(--line);
