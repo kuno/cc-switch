@@ -396,6 +396,10 @@ export function AppsGrid({
   const [failoverPendingByApp, setFailoverPendingByApp] = useState<
     Partial<Record<SharedProviderAppId, boolean>>
   >({});
+  const [
+    optimisticAutoFailoverEnabledByApp,
+    setOptimisticAutoFailoverEnabledByApp,
+  ] = useState<Partial<Record<SharedProviderAppId, boolean>>>({});
   const [failoverReorderPendingByApp, setFailoverReorderPendingByApp] =
     useState<Partial<Record<SharedProviderAppId, boolean>>>({});
 
@@ -410,6 +414,10 @@ export function AppsGrid({
     }
 
     setFailoverPendingByApp((current) => ({ ...current, [appId]: true }));
+    setOptimisticAutoFailoverEnabledByApp((current) => ({
+      ...current,
+      [appId]: enabled,
+    }));
     try {
       await adapter.setAutoFailoverEnabled(appId, enabled);
       const nextResult = await loadCardData(options, appId);
@@ -421,6 +429,11 @@ export function AppsGrid({
       );
     } finally {
       setFailoverPendingByApp((current) => ({ ...current, [appId]: false }));
+      setOptimisticAutoFailoverEnabledByApp((current) => {
+        const next = { ...current };
+        delete next[appId];
+        return next;
+      });
     }
   }
 
@@ -650,6 +663,11 @@ export function AppsGrid({
           isInertHomeAppId(card.appId)
             ? false
             : Boolean(failoverPendingByApp[card.appId])
+        }
+        optimisticAutoFailoverEnabled={
+          isInertHomeAppId(card.appId)
+            ? null
+            : (optimisticAutoFailoverEnabledByApp[card.appId] ?? null)
         }
         failoverReorderPending={
           isInertHomeAppId(card.appId)

@@ -454,6 +454,8 @@ export function ProviderSidePanel({
                   className="owt-mode-toggle owt-mode-toggle--panel"
                   role="tablist"
                   aria-label={`${APP_LABELS[appId]} routing mode`}
+                  data-pending={appFailoverPending ? "true" : "false"}
+                  aria-busy={appFailoverPending ? "true" : undefined}
                 >
                   <button
                     type="button"
