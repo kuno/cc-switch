@@ -49,7 +49,7 @@ describe("ProviderSidePanel", () => {
     vi.useRealTimers();
   });
 
-  it("renders the shell with Activities and Configure tabs, plus a hidden Failover placeholder", async () => {
+  it("renders the shell with Activities and Configure tabs", async () => {
     const onClose = vi.fn();
     const onTabChange = vi.fn();
     const provider = createProviderView("claude", {
@@ -79,12 +79,6 @@ describe("ProviderSidePanel", () => {
     const tabButtons = within(tablist).getAllByRole("button", {
       hidden: false,
     });
-    const failoverTab = container.querySelector(
-      '[data-placeholder-tab="failover"]',
-    );
-    const failoverPanel = container.querySelector(
-      '[data-placeholder-panel="failover"]',
-    );
 
     expect(await screen.findByText("No recent activity")).toBeInTheDocument();
 
@@ -93,10 +87,6 @@ describe("ProviderSidePanel", () => {
       "Activities",
       "Configure",
     ]);
-    expect(failoverTab).not.toBeNull();
-    expect(failoverTab).toHaveAttribute("hidden");
-    expect(failoverPanel).not.toBeNull();
-    expect(failoverPanel).toHaveAttribute("hidden");
     expect(
       within(dialog).queryByRole("button", { name: "Set active" }),
     ).toBeNull();
@@ -130,7 +120,7 @@ describe("ProviderSidePanel", () => {
     expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
   });
 
-  it("renders minimal failover checkboxes beside the app and provider names", () => {
+  it("renders routing mode tabs and failover queue actions", () => {
     const onToggleAppAutoFailover = vi.fn();
     const onToggleProviderFailoverQueue = vi.fn();
     const provider = createProviderView("claude", {
@@ -160,21 +150,64 @@ describe("ProviderSidePanel", () => {
     const dialog = screen.getByRole("dialog", {
       name: "Claude providers",
     });
-    const appCheckbox = within(dialog).getByRole("checkbox", {
-      name: "Claude auto-failover",
-    });
-    const providerCheckbox = within(dialog).getByRole("checkbox", {
-      name: "Include Claude Primary in failover queue",
+    const modeTabs = within(
+      within(dialog).getByRole("tablist", {
+        name: "Claude routing mode",
+      }),
+    );
+    const normalTab = modeTabs.getByRole("tab", { name: "Normal" });
+    const failoverTab = modeTabs.getByRole("tab", { name: "Failover" });
+    const addToQueueButton = within(dialog).getByRole("button", {
+      name: "Add Claude Primary to failover queue",
     });
 
-    expect(appCheckbox).toBeChecked();
-    expect(providerCheckbox).not.toBeChecked();
+    expect(normalTab).toHaveAttribute("aria-selected", "false");
+    expect(failoverTab).toHaveAttribute("aria-selected", "true");
+    expect(
+      within(dialog).queryByRole("button", { name: "Set active" }),
+    ).toBeNull();
 
-    fireEvent.click(appCheckbox);
-    fireEvent.click(providerCheckbox);
+    fireEvent.click(normalTab);
+    fireEvent.click(addToQueueButton);
 
     expect(onToggleAppAutoFailover).toHaveBeenCalledWith(false);
     expect(onToggleProviderFailoverQueue).toHaveBeenCalledWith(true);
+  });
+
+  it("shows active actions only in normal routing mode", () => {
+    const provider = createProviderView("claude", {
+      active: false,
+      name: "Claude Backup",
+      providerId: "claude-backup",
+    });
+
+    render(
+      <ProviderSidePanel
+        {...createProviderSidePanelProps({
+          appAutoFailoverEnabled: false,
+          canActivate: true,
+          failoverControlsAvailable: true,
+          failoverControlsReady: true,
+          providerInFailoverQueue: false,
+          providers: [provider],
+          selectedProvider: provider,
+          selectedProviderId: provider.providerId,
+        })}
+      />,
+    );
+
+    const dialog = screen.getByRole("dialog", {
+      name: "Claude providers",
+    });
+
+    expect(
+      within(dialog).getByRole("button", { name: "Set active" }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).queryByRole("button", {
+        name: "Add Claude Backup to failover queue",
+      }),
+    ).toBeNull();
   });
 
   it("renders loading and error state content when requested", () => {

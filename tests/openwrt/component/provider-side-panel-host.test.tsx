@@ -751,7 +751,7 @@ describe("ProviderSidePanelHost", () => {
     expect(shell.showMessage).not.toHaveBeenCalled();
   });
 
-  it("toggles OpenWrt failover through the app and provider header checkboxes", async () => {
+  it("toggles OpenWrt failover through the routing tabs and provider action", async () => {
     const user = userEvent.setup();
     const shell = createBridgeFixture({ selectedApp: "claude" });
     const primaryProvider = createProviderView("claude", {
@@ -777,29 +777,19 @@ describe("ProviderSidePanelHost", () => {
     );
 
     const dialog = await openPanel();
-    const appCheckbox = await within(dialog).findByRole("checkbox", {
-      name: "Claude auto-failover",
-    });
-    const providerCheckbox = await within(dialog).findByRole("checkbox", {
-      name: "Include Claude Backup in failover queue",
-    });
-
-    await waitFor(() => expect(appCheckbox).toBeEnabled());
-    expect(appCheckbox).not.toBeChecked();
-    expect(providerCheckbox).not.toBeChecked();
-
-    await user.click(providerCheckbox);
-
-    await waitFor(() =>
-      expect(transport.addToFailoverQueue).toHaveBeenCalledWith(
-        "claude",
-        "claude-backup",
-      ),
+    const modeTabs = within(
+      await within(dialog).findByRole("tablist", {
+        name: "Claude routing mode",
+      }),
     );
-    await waitFor(() => expect(providerCheckbox).toBeChecked());
-    expect(getFailoverState("claude").queue).toEqual(["claude-backup"]);
+    const normalTab = modeTabs.getByRole("tab", { name: "Normal" });
+    const failoverTab = modeTabs.getByRole("tab", { name: "Failover" });
 
-    await user.click(appCheckbox);
+    await waitFor(() => expect(failoverTab).toBeEnabled());
+    expect(normalTab).toHaveAttribute("aria-selected", "true");
+    expect(failoverTab).toHaveAttribute("aria-selected", "false");
+
+    await user.click(failoverTab);
 
     await waitFor(() =>
       expect(transport.setAutoFailoverEnabled).toHaveBeenCalledWith(
@@ -807,14 +797,41 @@ describe("ProviderSidePanelHost", () => {
         true,
       ),
     );
-    await waitFor(() => expect(appCheckbox).toBeChecked());
+    await waitFor(() =>
+      expect(failoverTab).toHaveAttribute("aria-selected", "true"),
+    );
+
+    const addToQueueButton = await within(dialog).findByRole("button", {
+      name: "Add Claude Backup to failover queue",
+    });
+
+    await user.click(addToQueueButton);
+
+    await waitFor(() =>
+      expect(transport.addToFailoverQueue).toHaveBeenCalledWith(
+        "claude",
+        "claude-backup",
+      ),
+    );
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", {
+          name: "Remove Claude Backup from failover queue",
+        }),
+      ).toBeInTheDocument(),
+    );
+    expect(getFailoverState("claude").queue).toEqual(["claude-backup"]);
     await waitFor(() =>
       expect(
         within(dialog).queryByRole("button", { name: "Set active" }),
       ).toBeNull(),
     );
 
-    await user.click(providerCheckbox);
+    await user.click(
+      within(dialog).getByRole("button", {
+        name: "Remove Claude Backup from failover queue",
+      }),
+    );
 
     await waitFor(() =>
       expect(transport.removeFromFailoverQueue).toHaveBeenCalledWith(
@@ -822,7 +839,13 @@ describe("ProviderSidePanelHost", () => {
         "claude-backup",
       ),
     );
-    await waitFor(() => expect(providerCheckbox).not.toBeChecked());
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", {
+          name: "Add Claude Backup to failover queue",
+        }),
+      ).toBeInTheDocument(),
+    );
     expect(getFailoverState("claude").queue).toEqual([]);
   });
 
@@ -856,6 +879,18 @@ describe("ProviderSidePanelHost", () => {
     render(<HostHarness shell={shell} transport={transport} />);
 
     const dialog = await openPanel();
+    const failoverTab = within(
+      await within(dialog).findByRole("tablist", {
+        name: "Claude routing mode",
+      }),
+    ).getByRole("tab", { name: "Failover" });
+    await user.click(failoverTab);
+    await waitFor(() =>
+      expect(transport.setAutoFailoverEnabled).toHaveBeenCalledWith(
+        "claude",
+        true,
+      ),
+    );
 
     const fallbackRow = Array.from(
       dialog.querySelectorAll<HTMLButtonElement>(
@@ -865,10 +900,10 @@ describe("ProviderSidePanelHost", () => {
     expect(fallbackRow).toBeDefined();
     await user.click(fallbackRow!);
 
-    const fallbackCheckbox = await within(dialog).findByRole("checkbox", {
-      name: "Include Claude Fallback in failover queue",
+    const fallbackQueueButton = await within(dialog).findByRole("button", {
+      name: "Add Claude Fallback to failover queue",
     });
-    await user.click(fallbackCheckbox);
+    await user.click(fallbackQueueButton);
     await waitFor(() =>
       expect(transport.addToFailoverQueue).toHaveBeenCalledWith(
         "claude",
@@ -884,10 +919,10 @@ describe("ProviderSidePanelHost", () => {
     expect(primaryRow).toBeDefined();
     await user.click(primaryRow!);
 
-    const primaryCheckbox = await within(dialog).findByRole("checkbox", {
-      name: "Include Claude Primary in failover queue",
+    const primaryQueueButton = await within(dialog).findByRole("button", {
+      name: "Add Claude Primary to failover queue",
     });
-    await user.click(primaryCheckbox);
+    await user.click(primaryQueueButton);
     await waitFor(() =>
       expect(transport.addToFailoverQueue).toHaveBeenCalledWith(
         "claude",
@@ -900,18 +935,6 @@ describe("ProviderSidePanelHost", () => {
         "claude-primary",
         "claude-fallback",
       ]),
-    );
-
-    const appCheckbox = await within(dialog).findByRole("checkbox", {
-      name: "Claude auto-failover",
-    });
-    await user.click(appCheckbox);
-
-    await waitFor(() =>
-      expect(transport.setAutoFailoverEnabled).toHaveBeenCalledWith(
-        "claude",
-        true,
-      ),
     );
     expect(getProviderState("claude").activeProviderId).toBe("claude-primary");
   });
