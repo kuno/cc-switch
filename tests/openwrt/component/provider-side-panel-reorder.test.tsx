@@ -203,4 +203,91 @@ describe("ProviderSidePanel provider reorder", () => {
       "Unsaved primary draft",
     );
   });
+
+  it("re-derives failover priority from the reordered provider rail", async () => {
+    const user = userEvent.setup();
+    const shell = createBridgeFixture({ selectedApp: "claude" });
+    const primaryProvider = createProviderView("claude", {
+      active: true,
+      name: "Claude Primary",
+      providerId: "claude-primary",
+    });
+    const backupProvider = createProviderView("claude", {
+      active: false,
+      name: "Claude Backup",
+      providerId: "claude-backup",
+    });
+    const fallbackProvider = createProviderView("claude", {
+      active: false,
+      name: "Claude Fallback",
+      providerId: "claude-fallback",
+    });
+    const { transport, getFailoverState, getProviderState, setFailoverState } =
+      createProviderTransportFixture({
+        claude: createProviderState("claude", [
+          primaryProvider,
+          backupProvider,
+          fallbackProvider,
+        ]),
+      });
+    setFailoverState("claude", {
+      queue: ["claude-primary", "claude-fallback"],
+    });
+
+    render(<HostHarness shell={shell} transport={transport} />);
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Open provider panel",
+      }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Claude providers",
+    });
+
+    act(() => {
+      dndHarness.onDragEnd?.({
+        active: { id: "claude-fallback" },
+        over: { id: "claude-primary" },
+      });
+    });
+
+    await waitFor(() =>
+      expect(transport.reorderProviders).toHaveBeenCalledWith("claude", [
+        "claude-fallback",
+        "claude-primary",
+        "claude-backup",
+      ]),
+    );
+    await waitFor(() =>
+      expect(getFailoverState("claude").queue).toEqual([
+        "claude-fallback",
+        "claude-primary",
+      ]),
+    );
+
+    const primaryFailoverState = await transport.getProviderFailoverState!(
+      "claude",
+      "claude-primary",
+    );
+
+    expect(primaryFailoverState).toMatchObject({
+      queuePosition: 1,
+      failoverQueueDepth: 2,
+    });
+    expect(primaryFailoverState.failoverQueue).toMatchObject([
+      { providerId: "claude-fallback", sortIndex: 0 },
+      { providerId: "claude-primary", sortIndex: 1 },
+    ]);
+
+    await transport.setAutoFailoverEnabled!("claude", true);
+    expect(getProviderState("claude").activeProviderId).toBe("claude-fallback");
+    expect(
+      Array.from(
+        dialog.querySelectorAll<HTMLButtonElement>(
+          ".owt-provider-panel__provider-row",
+        ),
+      )[0],
+    ).toHaveTextContent("Claude Fallback");
+  });
 });

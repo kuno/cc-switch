@@ -3728,7 +3728,7 @@ mod tests {
 
     #[test]
     #[serial]
-    fn reorder_providers_preserves_failover_queue_priority_for_mixed_provider_list() {
+    fn reorder_providers_updates_failover_queue_priority_for_mixed_provider_list() {
         let _env = TestEnv::new();
         let db = Database::memory().expect("db");
 
@@ -3803,7 +3803,7 @@ mod tests {
                 .iter()
                 .map(|entry| (entry.provider_id.as_str(), entry.sort_index))
                 .collect::<Vec<_>>(),
-            vec![("provider-a", Some(0)), ("provider-c", Some(1))]
+            vec![("provider-c", Some(0)), ("provider-a", Some(1))]
         );
     }
 
