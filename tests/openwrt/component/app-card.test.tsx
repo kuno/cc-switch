@@ -228,10 +228,54 @@ describe("AppCard", () => {
     });
 
     expect(screen.queryByText("Active provider")).not.toBeInTheDocument();
-    expect(screen.getByText("P1")).toBeInTheDocument();
+    expect(screen.getByText("1")).toBeInTheDocument();
     expect(screen.getByText("Claude Primary")).toBeInTheDocument();
-    expect(screen.getByText("P2")).toBeInTheDocument();
+    expect(screen.getByText("Serving traffic")).toBeInTheDocument();
+    expect(screen.getByText("ACTIVE")).toBeInTheDocument();
+    expect(screen.getByText("2")).toBeInTheDocument();
     expect(screen.getByText("Claude Backup")).toBeInTheDocument();
-    expect(screen.getByText("2 queued · max 3 retries")).toBeInTheDocument();
+    expect(screen.getByText("Standby · 0 retries used")).toBeInTheDocument();
+    expect(screen.getByText("STANDBY")).toBeInTheDocument();
+    expect(screen.getByText("Auto-failover on · max 3 retries")).toBeInTheDocument();
+    expect(screen.getByText("Head: 1 of 2")).toBeInTheDocument();
+  });
+
+  it("stacks the routing mode switch below the running status chip", () => {
+    const { container } = renderAppCard(createSharedProviderState("claude"), {
+      failoverState: createFailoverState(),
+      onSetAutoFailover: vi.fn(),
+    });
+
+    const actions = container.querySelector(".owt-app-card__head-actions");
+    const statusChip = actions?.querySelector("[data-owt-chip='true']");
+    const modeToggle = actions?.querySelector("[data-mode-toggle='true']");
+
+    expect(actions).toBeTruthy();
+    expect(statusChip).toBeTruthy();
+    expect(modeToggle).toBeTruthy();
+    expect(statusChip?.compareDocumentPosition(modeToggle!)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it("renders provider icons in failover queue rows", () => {
+    const { container } = renderAppCard(
+      createSharedProviderState("claude", {
+        icon: "deepseek",
+        name: "Claude Primary",
+      }),
+      {
+        failoverState: createFailoverState({ autoFailoverEnabled: true }),
+        onSetAutoFailover: vi.fn(),
+      },
+    );
+
+    expect(
+      container.querySelectorAll(".owt-app-card__queue-icon").length,
+    ).toBe(2);
+    expect(
+      container.querySelector(".owt-app-card__queue-icon svg title")
+        ?.textContent,
+    ).toBe("DeepSeek");
   });
 });

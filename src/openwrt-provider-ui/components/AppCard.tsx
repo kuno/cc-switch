@@ -27,6 +27,7 @@ import type {
   SharedProviderFailoverQueueEntry,
   SharedProviderFailoverState,
   SharedProviderState,
+  SharedProviderView,
 } from "@/shared/providers/domain";
 import type {
   OpenWrtHostState,
@@ -316,23 +317,59 @@ function QuotaBand({
   );
 }
 
-function getQueueEntryTone(
+function getQueueEntryStatus(
   entry: SharedProviderFailoverQueueEntry,
-): StatusTone {
-  if (!entry.health.observed) return "neutral";
-  if (entry.health.healthy) return "success";
-  return entry.health.consecutiveFailures > 1 ? "fail" : "accent";
+): {
+  label: string;
+  note: string;
+  tone: StatusTone;
+} {
+  if (entry.active) {
+    return {
+      label: "ACTIVE",
+      note: "Serving traffic",
+      tone: "success",
+    };
+  }
+
+  if (entry.health.observed && !entry.health.healthy) {
+    const failures = entry.health.consecutiveFailures;
+
+    return {
+      label: "SKIPPED",
+      note:
+        failures > 0
+          ? `Skipped · ${failures} failure${failures === 1 ? "" : "s"}`
+          : "Skipped by health check",
+      tone: failures > 1 ? "fail" : "accent",
+    };
+  }
+
+  return {
+    label: "STANDBY",
+    note: `Standby · ${entry.health.consecutiveFailures} retries used`,
+    tone: "neutral",
+  };
 }
 
-function getQueueEntryLabel(entry: SharedProviderFailoverQueueEntry): string {
-  if (!entry.health.observed) return "Unknown";
-  if (entry.health.healthy) return "Ready";
-  return entry.health.consecutiveFailures > 1 ? "Blocked" : "Degraded";
+function getQueueHeadLabel(
+  queue: SharedProviderFailoverQueueEntry[],
+): string {
+  if (queue.length === 0) {
+    return "—";
+  }
+
+  const activeIndex = queue.findIndex((entry) => entry.active);
+  const headIndex = activeIndex >= 0 ? activeIndex : 0;
+
+  return `${headIndex + 1} of ${queue.length}`;
 }
 
 interface FailoverQueueRowProps {
+  appId: SharedProviderAppId;
   entry: SharedProviderFailoverQueueEntry;
   index: number;
+  provider: SharedProviderView | null;
   dragDisabled: boolean;
   setNodeRef?: (element: HTMLElement | null) => void;
   style?: CSSProperties;
@@ -342,8 +379,10 @@ interface FailoverQueueRowProps {
 }
 
 function FailoverQueueRow({
+  appId,
   entry,
   index,
+  provider,
   dragDisabled,
   setNodeRef,
   style,
@@ -352,12 +391,14 @@ function FailoverQueueRow({
   dragListeners,
 }: FailoverQueueRowProps) {
   const providerName = entry.providerName || entry.providerId;
+  const status = getQueueEntryStatus(entry);
 
   return (
     <div
       ref={setNodeRef}
       className="owt-app-card__queue-row"
       data-dragging={isDragging ? "true" : "false"}
+      data-state={entry.active ? "active" : status.label.toLowerCase()}
       style={style}
     >
       <button
@@ -376,26 +417,41 @@ function FailoverQueueRow({
       >
         <GripVertical className="h-4 w-4" aria-hidden="true" />
       </button>
-      <span className="owt-app-card__queue-pos">P{index + 1}</span>
-      <span className="owt-app-card__queue-name">{providerName}</span>
+      <span className="owt-app-card__queue-pos">{index + 1}</span>
+      <span className="owt-app-card__queue-icon" aria-hidden="true">
+        <OpenWrtProviderIcon
+          appId={appId}
+          name={providerName}
+          size={18}
+          source={provider}
+        />
+      </span>
+      <span className="owt-app-card__queue-copy">
+        <span className="owt-app-card__queue-name">{providerName}</span>
+        <span className="owt-app-card__queue-note">{status.note}</span>
+      </span>
       <span
         className="owt-status-pill owt-app-card__queue-state"
-        data-tone={getQueueEntryTone(entry)}
+        data-tone={status.tone}
       >
         <span className="owt-status-pill__dot" aria-hidden="true" />
-        {getQueueEntryLabel(entry)}
+        {status.label}
       </span>
     </div>
   );
 }
 
 function SortableFailoverQueueRow({
+  appId,
   entry,
   index,
+  provider,
   dragDisabled,
 }: {
+  appId: SharedProviderAppId;
   entry: SharedProviderFailoverQueueEntry;
   index: number;
+  provider: SharedProviderView | null;
   dragDisabled: boolean;
 }) {
   const {
@@ -416,8 +472,10 @@ function SortableFailoverQueueRow({
 
   return (
     <FailoverQueueRow
+      appId={appId}
       entry={entry}
       index={index}
+      provider={provider}
       dragDisabled={dragDisabled}
       setNodeRef={setNodeRef}
       style={style}
@@ -429,16 +487,25 @@ function SortableFailoverQueueRow({
 }
 
 function FailoverQueueSummary({
+  appId,
   failoverState,
+  providerState,
   reorderPending,
   onReorder,
 }: {
+  appId: SharedProviderAppId;
   failoverState: SharedProviderFailoverState | null;
+  providerState: SharedProviderState | null;
   reorderPending: boolean;
   onReorder?: (providerIds: string[]) => void;
 }) {
   const queue = failoverState?.failoverQueue ?? [];
   const queuedProviderIds = queue.map((entry) => entry.providerId);
+  const providersById = new Map(
+    (providerState?.providers ?? [])
+      .filter((provider) => provider.providerId)
+      .map((provider) => [provider.providerId, provider]),
+  );
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 6 },
@@ -495,8 +562,10 @@ function FailoverQueueSummary({
             {queue.map((entry, index) => (
               <SortableFailoverQueueRow
                 key={entry.providerId}
+                appId={appId}
                 entry={entry}
                 index={index}
+                provider={providersById.get(entry.providerId) ?? null}
                 dragDisabled={!canReorder || reorderPending}
               />
             ))}
@@ -505,11 +574,10 @@ function FailoverQueueSummary({
       </DndContext>
       <div className="owt-app-card__failover-foot">
         <span>
-          {queue.length} queued · max {failoverState?.maxRetries ?? 0} retries
+          Auto-failover {failoverState?.autoFailoverEnabled ? "on" : "off"} ·
+          max {failoverState?.maxRetries ?? 0} retries
         </span>
-        <span>
-          {reorderPending ? "Updating order" : "Drag rows to reorder"}
-        </span>
+        <span>Head: {reorderPending ? "Updating" : getQueueHeadLabel(queue)}</span>
       </div>
     </div>
   );
@@ -724,73 +792,77 @@ export function AppCard({
           <p className="owt-app-card__subtitle">{appCopy.subtitle}</p>
         </div>
         <span className="owt-app-card__spacer" aria-hidden="true" />
-        {canChangeRunMode ? (
-          <div
-            className="owt-mode-toggle"
-            role="tablist"
-            aria-label={`${appCopy.label} routing mode`}
-            data-mode-toggle="true"
-            data-pending={failoverPending ? "true" : "false"}
-            onClick={(event) => event.stopPropagation()}
+        <div className="owt-app-card__head-actions">
+          <button
+            type="button"
+            className="owt-status-pill owt-status-pill--button"
+            data-owt-chip="true"
+            data-tone={status.tone}
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpenActivity(appId);
+            }}
+            title="Show recent requests"
           >
-            {(["normal", "failover"] as const).map((modeOption) => (
-              <button
-                key={modeOption}
-                type="button"
-                className="owt-mode-toggle__button"
-                role="tab"
-                aria-selected={runMode === modeOption}
-                data-active={runMode === modeOption}
-                data-mode={modeOption}
-                disabled={failoverPending}
-                onClick={handleRunModeClick}
-                title={
-                  modeOption === "normal"
-                    ? "Manually use the selected active provider"
-                    : "Route through the ordered failover queue"
-                }
-              >
-                <span className="owt-mode-toggle__dot" aria-hidden="true" />
-                {modeOption === "normal" ? "Normal" : "Failover"}
-              </button>
-            ))}
-          </div>
-        ) : null}
-        <button
-          type="button"
-          className="owt-status-pill owt-status-pill--button"
-          data-owt-chip="true"
-          data-tone={status.tone}
-          onClick={(event) => {
-            event.stopPropagation();
-            onOpenActivity(appId);
-          }}
-          title="Show recent requests"
-        >
-          <span className="owt-status-pill__dot" aria-hidden="true" />
-          {status.label}
-          <svg
-            className="owt-status-pill__caret"
-            viewBox="0 0 12 12"
-            width="10"
-            height="10"
-            aria-hidden="true"
-          >
-            <path
-              d="M3 5l3 3 3-3"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
+            <span className="owt-status-pill__dot" aria-hidden="true" />
+            {status.label}
+            <svg
+              className="owt-status-pill__caret"
+              viewBox="0 0 12 12"
+              width="10"
+              height="10"
+              aria-hidden="true"
+            >
+              <path
+                d="M3 5l3 3 3-3"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+          {canChangeRunMode ? (
+            <div
+              className="owt-mode-toggle"
+              role="tablist"
+              aria-label={`${appCopy.label} routing mode`}
+              data-mode-toggle="true"
+              data-pending={failoverPending ? "true" : "false"}
+              onClick={(event) => event.stopPropagation()}
+            >
+              {(["normal", "failover"] as const).map((modeOption) => (
+                <button
+                  key={modeOption}
+                  type="button"
+                  className="owt-mode-toggle__button"
+                  role="tab"
+                  aria-selected={runMode === modeOption}
+                  data-active={runMode === modeOption}
+                  data-mode={modeOption}
+                  disabled={failoverPending}
+                  onClick={handleRunModeClick}
+                  title={
+                    modeOption === "normal"
+                      ? "Manually use the selected active provider"
+                      : "Route through the ordered failover queue"
+                  }
+                >
+                  <span className="owt-mode-toggle__dot" aria-hidden="true" />
+                  {modeOption === "normal" ? "Normal" : "Failover"}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
       </div>
 
       {runMode === "failover" ? (
         <FailoverQueueSummary
+          appId={appId}
           failoverState={failoverState ?? null}
+          providerState={providerState}
           reorderPending={failoverReorderPending}
           onReorder={(providerIds) => {
             onReorderFailoverQueue?.(appId, providerIds);
