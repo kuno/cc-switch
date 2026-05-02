@@ -475,9 +475,7 @@ describe("ProviderSidePanelHost", () => {
     );
 
     const dialog = await openPanel();
-    await user.click(
-      within(dialog).getByRole("button", { name: "Configure" }),
-    );
+    await user.click(within(dialog).getByRole("button", { name: "Configure" }));
     await user.click(within(dialog).getByRole("button", { name: "Edit" }));
     await user.type(within(dialog).getByLabelText("Notes"), " updated");
     await user.click(within(dialog).getByRole("button", { name: "Save" }));
@@ -490,12 +488,10 @@ describe("ProviderSidePanelHost", () => {
         within(dialog).getByRole("button", { name: "Configure" }),
       ).toHaveAttribute("data-active", "true"),
     );
-    expect(
-      within(dialog).getByLabelText("Notes"),
-    ).toHaveValue("Initial note updated");
-    expect(
-      within(dialog).queryByRole("button", { name: "Edit" }),
-    ).toBeNull();
+    expect(within(dialog).getByLabelText("Notes")).toHaveValue(
+      "Initial note updated",
+    );
+    expect(within(dialog).queryByRole("button", { name: "Edit" })).toBeNull();
     expect(
       within(dialog).getByRole("button", { name: /Save|Saved/ }),
     ).toBeInTheDocument();
@@ -565,9 +561,7 @@ describe("ProviderSidePanelHost", () => {
     render(<HostHarness shell={shell} transport={transport} />);
 
     const dialog = await openPanel();
-    await user.click(
-      within(dialog).getByRole("button", { name: "Configure" }),
-    );
+    await user.click(within(dialog).getByRole("button", { name: "Configure" }));
     await user.click(within(dialog).getByRole("button", { name: "Edit" }));
     await user.type(within(dialog).getByLabelText("Notes"), " updated");
 
@@ -585,9 +579,7 @@ describe("ProviderSidePanelHost", () => {
         within(dialog).getByRole("button", { name: "Activities" }),
       ).toHaveAttribute("data-active", "true"),
     );
-    expect(
-      within(dialog).getByText("No recent activity"),
-    ).toBeInTheDocument();
+    expect(within(dialog).getByText("No recent activity")).toBeInTheDocument();
     expect(
       within(dialog).getByRole("button", {
         name: "Copy provider ID claude-backup",
@@ -734,9 +726,7 @@ describe("ProviderSidePanelHost", () => {
     );
 
     const dialog = await openPanel();
-    await user.click(
-      within(dialog).getByRole("button", { name: "Configure" }),
-    );
+    await user.click(within(dialog).getByRole("button", { name: "Configure" }));
     await user.click(
       within(dialog).getByRole("button", { name: "Set active" }),
     );
@@ -834,6 +824,96 @@ describe("ProviderSidePanelHost", () => {
     );
     await waitFor(() => expect(providerCheckbox).not.toBeChecked());
     expect(getFailoverState("claude").queue).toEqual([]);
+  });
+
+  it("uses drawer order rather than click order when adding providers to failover", async () => {
+    const user = userEvent.setup();
+    const shell = createBridgeFixture({ selectedApp: "claude" });
+    const primaryProvider = createProviderView("claude", {
+      active: true,
+      name: "Claude Primary",
+      providerId: "claude-primary",
+    });
+    const backupProvider = createProviderView("claude", {
+      active: false,
+      name: "Claude Backup",
+      providerId: "claude-backup",
+    });
+    const fallbackProvider = createProviderView("claude", {
+      active: false,
+      name: "Claude Fallback",
+      providerId: "claude-fallback",
+    });
+    const { transport, getFailoverState, getProviderState } =
+      createProviderTransportFixture({
+        claude: createProviderState("claude", [
+          primaryProvider,
+          backupProvider,
+          fallbackProvider,
+        ]),
+      });
+
+    render(<HostHarness shell={shell} transport={transport} />);
+
+    const dialog = await openPanel();
+
+    const fallbackRow = Array.from(
+      dialog.querySelectorAll<HTMLButtonElement>(
+        ".owt-provider-panel__provider-row",
+      ),
+    ).find((row) => within(row).queryByText("Claude Fallback"));
+    expect(fallbackRow).toBeDefined();
+    await user.click(fallbackRow!);
+
+    const fallbackCheckbox = await within(dialog).findByRole("checkbox", {
+      name: "Include Claude Fallback in failover queue",
+    });
+    await user.click(fallbackCheckbox);
+    await waitFor(() =>
+      expect(transport.addToFailoverQueue).toHaveBeenCalledWith(
+        "claude",
+        "claude-fallback",
+      ),
+    );
+
+    const primaryRow = Array.from(
+      dialog.querySelectorAll<HTMLButtonElement>(
+        ".owt-provider-panel__provider-row",
+      ),
+    ).find((row) => within(row).queryByText("Claude Primary"));
+    expect(primaryRow).toBeDefined();
+    await user.click(primaryRow!);
+
+    const primaryCheckbox = await within(dialog).findByRole("checkbox", {
+      name: "Include Claude Primary in failover queue",
+    });
+    await user.click(primaryCheckbox);
+    await waitFor(() =>
+      expect(transport.addToFailoverQueue).toHaveBeenCalledWith(
+        "claude",
+        "claude-primary",
+      ),
+    );
+
+    await waitFor(() =>
+      expect(getFailoverState("claude").queue).toEqual([
+        "claude-primary",
+        "claude-fallback",
+      ]),
+    );
+
+    const appCheckbox = await within(dialog).findByRole("checkbox", {
+      name: "Claude auto-failover",
+    });
+    await user.click(appCheckbox);
+
+    await waitFor(() =>
+      expect(transport.setAutoFailoverEnabled).toHaveBeenCalledWith(
+        "claude",
+        true,
+      ),
+    );
+    expect(getProviderState("claude").activeProviderId).toBe("claude-primary");
   });
 
   it("keeps forward tab navigation inside the panel when mounted in a shadow root", async () => {
