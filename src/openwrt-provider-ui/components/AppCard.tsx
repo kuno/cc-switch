@@ -1,6 +1,8 @@
 import type { KeyboardEventHandler, MouseEventHandler } from "react";
 import type {
   SharedProviderAppId,
+  SharedProviderFailoverQueueEntry,
+  SharedProviderFailoverState,
   SharedProviderState,
 } from "@/shared/providers/domain";
 import type {
@@ -52,6 +54,7 @@ function isInertHomeAppId(appId: AppCardAppId): appId is InertHomeAppId {
 }
 
 type StatusTone = "success" | "accent" | "neutral" | "fail";
+type RunMode = "normal" | "failover";
 
 /** Compact formatter: 12307 → "12.3k", 8_420_000 → "8.42M". Mirrors the prototype. */
 function formatCompactCount(value: number): string {
@@ -290,6 +293,64 @@ function QuotaBand({
   );
 }
 
+function getQueueEntryTone(
+  entry: SharedProviderFailoverQueueEntry,
+): StatusTone {
+  if (!entry.health.observed) return "neutral";
+  if (entry.health.healthy) return "success";
+  return entry.health.consecutiveFailures > 1 ? "fail" : "accent";
+}
+
+function getQueueEntryLabel(entry: SharedProviderFailoverQueueEntry): string {
+  if (!entry.health.observed) return "Unknown";
+  if (entry.health.healthy) return "Ready";
+  return entry.health.consecutiveFailures > 1 ? "Blocked" : "Degraded";
+}
+
+function FailoverQueueSummary({
+  failoverState,
+}: {
+  failoverState: SharedProviderFailoverState | null;
+}) {
+  const queue = failoverState?.failoverQueue ?? [];
+
+  if (queue.length === 0) {
+    return (
+      <div className="owt-app-card__failover-empty">
+        No providers in failover queue
+      </div>
+    );
+  }
+
+  return (
+    <div className="owt-app-card__failover">
+      <div className="owt-app-card__queue-list">
+        {queue.slice(0, 3).map((entry, index) => (
+          <div className="owt-app-card__queue-row" key={entry.providerId}>
+            <span className="owt-app-card__queue-pos">P{index + 1}</span>
+            <span className="owt-app-card__queue-name">
+              {entry.providerName || entry.providerId}
+            </span>
+            <span
+              className="owt-status-pill owt-app-card__queue-state"
+              data-tone={getQueueEntryTone(entry)}
+            >
+              <span className="owt-status-pill__dot" aria-hidden="true" />
+              {getQueueEntryLabel(entry)}
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="owt-app-card__failover-foot">
+        <span>
+          {queue.length} queued · max {failoverState?.maxRetries ?? 0} retries
+        </span>
+        <span>Priority follows drawer order</span>
+      </div>
+    </div>
+  );
+}
+
 export interface AppCardProps {
   appId: AppCardAppId;
   hostState: OpenWrtHostState;
@@ -301,8 +362,11 @@ export interface AppCardProps {
   loading: boolean;
   error: string | null;
   quotaSnapshot?: ProviderQuotaSnapshot;
+  failoverState?: SharedProviderFailoverState | null;
+  failoverPending?: boolean;
   onOpenActivity: (appId: SharedProviderAppId) => void;
   onOpenProviderPanel: (appId: SharedProviderAppId) => void;
+  onSetAutoFailover?: (appId: SharedProviderAppId, enabled: boolean) => void;
 }
 
 export function AppCard({
@@ -315,8 +379,11 @@ export function AppCard({
   loading,
   error,
   quotaSnapshot,
+  failoverState,
+  failoverPending = false,
   onOpenActivity,
   onOpenProviderPanel,
+  onSetAutoFailover,
 }: AppCardProps) {
   const appCopy = APP_COPY[appId];
   const isInert = isInertHomeAppId(appId);
@@ -325,6 +392,14 @@ export function AppCard({
     ? providerState.activeProvider
     : null;
   const appIconUrl = getOpenWrtAppIconUrl(appId);
+  const runMode: RunMode = failoverState?.autoFailoverEnabled
+    ? "failover"
+    : "normal";
+  const canChangeRunMode =
+    !isInert &&
+    Boolean(activeProvider) &&
+    Boolean(failoverState) &&
+    typeof onSetAutoFailover === "function";
 
   if (!activeProvider) {
     const handleEmptyCardClick: MouseEventHandler<HTMLDivElement> = () => {
@@ -386,7 +461,9 @@ export function AppCard({
           <span className="owt-chip owt-chip--dot">Not configured</span>
         </div>
         <div className="owt-app-card__empty-cta">
-          <span>{isInert ? "Not supported yet" : "No provider configured yet"}</span>
+          <span>
+            {isInert ? "Not supported yet" : "No provider configured yet"}
+          </span>
           {!isInert && (
             <span className="owt-app-card__empty-cta-btn">
               Add a provider →
@@ -414,9 +491,22 @@ export function AppCard({
   const tokensValue = formatCompactCount(sumTokenCounts(summary));
   const requestsValue = formatCompactCount(summary?.totalRequests ?? 0);
   const costValue = formatCostValue(summary?.totalCost);
+  const handleRunModeClick: MouseEventHandler<HTMLButtonElement> = (event) => {
+    event.stopPropagation();
+    if (!canChangeRunMode || isInertHomeAppId(appId)) return;
+
+    const nextMode = event.currentTarget.dataset.mode as RunMode | undefined;
+    if (!nextMode || nextMode === runMode) return;
+
+    onSetAutoFailover?.(appId, nextMode === "failover");
+  };
 
   const handleCardClick: MouseEventHandler<HTMLDivElement> = (event) => {
-    if ((event.target as HTMLElement).closest("[data-owt-chip]")) {
+    if (
+      (event.target as HTMLElement).closest(
+        "[data-owt-chip], [data-mode-toggle]",
+      )
+    ) {
       return;
     }
     onOpenProviderPanel(appId);
@@ -424,7 +514,11 @@ export function AppCard({
 
   const handleCardKey: KeyboardEventHandler<HTMLDivElement> = (event) => {
     if (event.key === "Enter" || event.key === " ") {
-      if ((event.target as HTMLElement).closest("[data-owt-chip]")) {
+      if (
+        (event.target as HTMLElement).closest(
+          "[data-owt-chip], [data-mode-toggle]",
+        )
+      ) {
         return;
       }
       event.preventDefault();
@@ -459,6 +553,38 @@ export function AppCard({
           <p className="owt-app-card__subtitle">{appCopy.subtitle}</p>
         </div>
         <span className="owt-app-card__spacer" aria-hidden="true" />
+        {canChangeRunMode ? (
+          <div
+            className="owt-mode-toggle"
+            role="tablist"
+            aria-label={`${appCopy.label} routing mode`}
+            data-mode-toggle="true"
+            data-pending={failoverPending ? "true" : "false"}
+            onClick={(event) => event.stopPropagation()}
+          >
+            {(["normal", "failover"] as const).map((modeOption) => (
+              <button
+                key={modeOption}
+                type="button"
+                className="owt-mode-toggle__button"
+                role="tab"
+                aria-selected={runMode === modeOption}
+                data-active={runMode === modeOption}
+                data-mode={modeOption}
+                disabled={failoverPending}
+                onClick={handleRunModeClick}
+                title={
+                  modeOption === "normal"
+                    ? "Manually use the selected active provider"
+                    : "Route through the ordered failover queue"
+                }
+              >
+                <span className="owt-mode-toggle__dot" aria-hidden="true" />
+                {modeOption === "normal" ? "Normal" : "Failover"}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <button
           type="button"
           className="owt-status-pill owt-status-pill--button"
@@ -491,30 +617,34 @@ export function AppCard({
         </button>
       </div>
 
-      <div className="owt-app-card__active">
-        <div className="owt-app-card__active-row">
-          <div className="owt-app-card__mini-icon" aria-hidden="true">
-            <OpenWrtProviderIcon
-              appId={appId}
-              name={activeProvider.name.trim() || appCopy.label}
-              size={18}
-              source={activeProvider}
-            />
-          </div>
-          <div className="owt-app-card__active-labels">
-            <div className="owt-app-card__active-top">Active provider</div>
-            <div className="owt-app-card__active-main">
-              {activeProvider.name.trim() || "Unnamed provider"}
+      {runMode === "failover" ? (
+        <FailoverQueueSummary failoverState={failoverState ?? null} />
+      ) : (
+        <div className="owt-app-card__active">
+          <div className="owt-app-card__active-row">
+            <div className="owt-app-card__mini-icon" aria-hidden="true">
+              <OpenWrtProviderIcon
+                appId={appId}
+                name={activeProvider.name.trim() || appCopy.label}
+                size={18}
+                source={activeProvider}
+              />
             </div>
-            <div className="owt-app-card__active-endpoint">
-              {activeProvider.baseUrl.trim() || "Endpoint unavailable"}
+            <div className="owt-app-card__active-labels">
+              <div className="owt-app-card__active-top">Active provider</div>
+              <div className="owt-app-card__active-main">
+                {activeProvider.name.trim() || "Unnamed provider"}
+              </div>
+              <div className="owt-app-card__active-endpoint">
+                {activeProvider.baseUrl.trim() || "Endpoint unavailable"}
+              </div>
             </div>
           </div>
+          {quotaSnapshot ? (
+            <QuotaBand snapshot={quotaSnapshot} hideLabel />
+          ) : null}
         </div>
-        {quotaSnapshot ? (
-          <QuotaBand snapshot={quotaSnapshot} hideLabel />
-        ) : null}
-      </div>
+      )}
 
       <div className="owt-app-card__usage">
         <div className="owt-app-card__usage-cell">

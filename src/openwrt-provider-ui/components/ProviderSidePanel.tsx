@@ -165,6 +165,7 @@ interface SortableProviderRailItemProps {
   appId: SharedProviderAppId;
   provider: SharedProviderView;
   selectedProviderId: string | null;
+  showActiveBadge: boolean;
   showDragHandle: boolean;
   dragDisabled: boolean;
   onSelectProvider: (providerId: string) => void;
@@ -182,6 +183,7 @@ function ProviderRailRow({
   appId,
   provider,
   selectedProviderId,
+  showActiveBadge,
   showDragHandle,
   dragDisabled,
   onSelectProvider,
@@ -242,7 +244,7 @@ function ProviderRailRow({
             {providerLabel}
           </div>
         </div>
-        {provider.active ? (
+        {showActiveBadge && provider.active ? (
           <span className="owt-status-pill" data-tone="success">
             <span className="owt-status-pill__dot" aria-hidden="true" />
             Active
@@ -257,6 +259,7 @@ function SortableProviderRailItem({
   appId,
   provider,
   selectedProviderId,
+  showActiveBadge,
   showDragHandle,
   dragDisabled,
   onSelectProvider,
@@ -284,6 +287,7 @@ function SortableProviderRailItem({
       appId={appId}
       provider={provider}
       selectedProviderId={selectedProviderId}
+      showActiveBadge={showActiveBadge}
       showDragHandle={showDragHandle}
       dragDisabled={dragDisabled}
       onSelectProvider={onSelectProvider}
@@ -569,6 +573,7 @@ export function ProviderSidePanel({
         appId={appId}
         provider={provider}
         selectedProviderId={selectedProviderId}
+        showActiveBadge={!appAutoFailoverEnabled}
         showDragHandle={showProviderReorder}
         dragDisabled={!canReorderProviders}
         onSelectProvider={onSelectProvider}
@@ -579,6 +584,7 @@ export function ProviderSidePanel({
         appId={appId}
         provider={provider}
         selectedProviderId={selectedProviderId}
+        showActiveBadge={!appAutoFailoverEnabled}
         showDragHandle={false}
         dragDisabled
         onSelectProvider={onSelectProvider}
@@ -621,20 +627,46 @@ export function ProviderSidePanel({
             <div className="owt-provider-panel__title-row">
               <h3 className="owt-provider-panel__title">{APP_LABELS[appId]}</h3>
               {showFailoverCheckboxes ? (
-                <label
-                  className="owt-provider-panel__failover-checkbox"
-                  title={`${APP_LABELS[appId]} auto-failover`}
+                <div
+                  className="owt-mode-toggle owt-mode-toggle--panel"
+                  role="tablist"
+                  aria-label={`${APP_LABELS[appId]} routing mode`}
                 >
-                  <input
-                    type="checkbox"
-                    aria-label={`${APP_LABELS[appId]} auto-failover`}
-                    checked={appAutoFailoverEnabled}
+                  <button
+                    type="button"
+                    className="owt-mode-toggle__button"
+                    role="tab"
+                    aria-selected={!appAutoFailoverEnabled}
+                    data-active={!appAutoFailoverEnabled}
                     disabled={failoverCheckboxesDisabled || appFailoverPending}
-                    onChange={(event) =>
-                      onToggleAppAutoFailover?.(event.currentTarget.checked)
-                    }
-                  />
-                </label>
+                    onClick={() => {
+                      if (appAutoFailoverEnabled) {
+                        onToggleAppAutoFailover?.(false);
+                      }
+                    }}
+                    title="Manually use the selected active provider"
+                  >
+                    <span className="owt-mode-toggle__dot" aria-hidden="true" />
+                    Normal
+                  </button>
+                  <button
+                    type="button"
+                    className="owt-mode-toggle__button"
+                    role="tab"
+                    aria-selected={appAutoFailoverEnabled}
+                    data-active={appAutoFailoverEnabled}
+                    disabled={failoverCheckboxesDisabled || appFailoverPending}
+                    onClick={() => {
+                      if (!appAutoFailoverEnabled) {
+                        onToggleAppAutoFailover?.(true);
+                      }
+                    }}
+                    title="Route through the ordered failover queue"
+                  >
+                    <span className="owt-mode-toggle__dot" aria-hidden="true" />
+                    Failover
+                  </button>
+                </div>
               ) : null}
             </div>
             <div className="owt-provider-panel__subtitle">
@@ -731,27 +763,6 @@ export function ProviderSidePanel({
                           <div className="owt-provider-panel__detail-title">
                             {providerName}
                           </div>
-                          {showFailoverCheckboxes ? (
-                            <label
-                              className="owt-provider-panel__failover-checkbox"
-                              title="Failover queue"
-                            >
-                              <input
-                                type="checkbox"
-                                aria-label={`Include ${providerName} in failover queue`}
-                                checked={providerInFailoverQueue}
-                                disabled={
-                                  failoverCheckboxesDisabled ||
-                                  providerFailoverPending
-                                }
-                                onChange={(event) =>
-                                  onToggleProviderFailoverQueue?.(
-                                    event.currentTarget.checked,
-                                  )
-                                }
-                              />
-                            </label>
-                          ) : null}
                         </div>
                         <div className="owt-provider-panel__detail-url">
                           {draft.baseUrl || "Not saved yet"}
@@ -783,7 +794,40 @@ export function ProviderSidePanel({
                     </div>
 
                     <div className="owt-provider-panel__detail-meta">
-                      {canActivate ? (
+                      {appAutoFailoverEnabled && showFailoverCheckboxes ? (
+                        <button
+                          type="button"
+                          className="owt-provider-panel__icon-button owt-provider-panel__icon-button--accent"
+                          aria-label={
+                            providerInFailoverQueue
+                              ? `Remove ${providerName} from failover queue`
+                              : `Add ${providerName} to failover queue`
+                          }
+                          disabled={
+                            failoverCheckboxesDisabled ||
+                            providerFailoverPending
+                          }
+                          onClick={() =>
+                            onToggleProviderFailoverQueue?.(
+                              !providerInFailoverQueue,
+                            )
+                          }
+                          title={
+                            providerInFailoverQueue
+                              ? "Remove from failover queue"
+                              : "Add to failover queue"
+                          }
+                        >
+                          {providerFailoverPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : providerInFailoverQueue ? (
+                            <X className="h-4 w-4" />
+                          ) : (
+                            <Plus className="h-4 w-4" />
+                          )}
+                        </button>
+                      ) : null}
+                      {!appAutoFailoverEnabled && canActivate ? (
                         <button
                           type="button"
                           className="owt-provider-panel__icon-button owt-provider-panel__icon-button--accent"
