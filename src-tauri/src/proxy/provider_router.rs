@@ -425,6 +425,47 @@ mod tests {
         assert_eq!(providers[0].id, "b");
     }
 
+    #[cfg(not(feature = "tauri-desktop"))]
+    #[tokio::test]
+    #[serial]
+    async fn test_failover_enabled_uses_display_order_filtered_by_queue_after_provider_reorder() {
+        let _home = TempHome::new();
+        let db = Arc::new(Database::memory().unwrap());
+
+        let provider_a =
+            Provider::with_id("a".to_string(), "Provider A".to_string(), json!({}), None);
+        let provider_b =
+            Provider::with_id("b".to_string(), "Provider B".to_string(), json!({}), None);
+        let provider_c =
+            Provider::with_id("c".to_string(), "Provider C".to_string(), json!({}), None);
+
+        db.save_provider("claude", &provider_a).unwrap();
+        db.save_provider("claude", &provider_b).unwrap();
+        db.save_provider("claude", &provider_c).unwrap();
+        db.add_to_failover_queue("claude", "a").unwrap();
+        db.add_to_failover_queue("claude", "c").unwrap();
+        db.reorder_providers(
+            "claude",
+            &["c".to_string(), "b".to_string(), "a".to_string()],
+        )
+        .unwrap();
+
+        let mut config = db.get_proxy_config_for_app("claude").await.unwrap();
+        config.auto_failover_enabled = true;
+        db.update_proxy_config_for_app(config).await.unwrap();
+
+        let router = ProviderRouter::new(db.clone());
+        let providers = router.select_providers("claude").await.unwrap();
+
+        assert_eq!(
+            providers
+                .iter()
+                .map(|provider| provider.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["c", "a"]
+        );
+    }
+
     #[tokio::test]
     #[serial]
     async fn test_select_providers_does_not_consume_half_open_permit() {
