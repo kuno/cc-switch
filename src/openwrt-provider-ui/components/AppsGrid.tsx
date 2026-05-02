@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createOpenWrtProviderAdapter } from "@/platform/openwrt/providers";
 import type {
+  ProviderPlatformAdapter,
   SharedProviderAppId,
   SharedProviderFailoverState,
 } from "@/shared/providers/domain";
@@ -15,6 +16,13 @@ import { AppCard } from "./AppCard";
 
 type InertHomeAppId = "opencode" | "openclaw";
 export type OpenWrtHomeAppId = SharedProviderAppId | InertHomeAppId;
+
+type OpenWrtProviderReorderAdapter = ProviderPlatformAdapter & {
+  reorderProviders(
+    appId: SharedProviderAppId,
+    providerIds: string[],
+  ): Promise<void>;
+};
 
 export const APP_OPTIONS = [
   "claude",
@@ -55,6 +63,15 @@ type AppGridLoadResult = {
 
 function isInertHomeAppId(appId: OpenWrtHomeAppId): appId is InertHomeAppId {
   return appId === "opencode" || appId === "openclaw";
+}
+
+function supportsOpenWrtProviderReorder(
+  adapter: ProviderPlatformAdapter,
+): adapter is OpenWrtProviderReorderAdapter {
+  return (
+    typeof (adapter as Partial<OpenWrtProviderReorderAdapter>)
+      .reorderProviders === "function"
+  );
 }
 
 function createInitialCard(appId: OpenWrtHomeAppId): AppGridData {
@@ -379,6 +396,8 @@ export function AppsGrid({
   const [failoverPendingByApp, setFailoverPendingByApp] = useState<
     Partial<Record<SharedProviderAppId, boolean>>
   >({});
+  const [failoverReorderPendingByApp, setFailoverReorderPendingByApp] =
+    useState<Partial<Record<SharedProviderAppId, boolean>>>({});
 
   async function handleSetAutoFailover(
     appId: SharedProviderAppId,
@@ -402,6 +421,68 @@ export function AppsGrid({
       );
     } finally {
       setFailoverPendingByApp((current) => ({ ...current, [appId]: false }));
+    }
+  }
+
+  async function handleReorderFailoverQueue(
+    appId: SharedProviderAppId,
+    queuedProviderIds: string[],
+  ) {
+    const adapter = createOpenWrtProviderAdapter(options.transport);
+
+    if (!supportsOpenWrtProviderReorder(adapter)) {
+      return;
+    }
+
+    const currentCard = cards.find((card) => card.appId === appId);
+    const currentProviders = currentCard?.providerState?.providers ?? [];
+    const currentProviderIds = currentProviders
+      .map((provider) => provider.providerId)
+      .filter((providerId): providerId is string => Boolean(providerId));
+    const currentQueuedProviderIds =
+      currentCard?.failoverState?.failoverQueue.map(
+        (entry) => entry.providerId,
+      ) ?? [];
+
+    if (
+      currentProviderIds.length === 0 ||
+      queuedProviderIds.length !== currentQueuedProviderIds.length
+    ) {
+      return;
+    }
+
+    const expectedQueuedSet = new Set(currentQueuedProviderIds);
+    if (
+      queuedProviderIds.some((providerId) => !expectedQueuedSet.has(providerId))
+    ) {
+      return;
+    }
+
+    const nextQueuedProviderIds = [...queuedProviderIds];
+    const nextProviderIds = currentProviderIds.map((providerId) =>
+      expectedQueuedSet.has(providerId)
+        ? (nextQueuedProviderIds.shift() ?? providerId)
+        : providerId,
+    );
+
+    setFailoverReorderPendingByApp((current) => ({
+      ...current,
+      [appId]: true,
+    }));
+    try {
+      await adapter.reorderProviders(appId, nextProviderIds);
+      const nextResult = await loadCardData(options, appId);
+
+      setCards((currentCards) =>
+        currentCards.map((card) =>
+          card.appId === appId ? mergeCardData(card, nextResult) : card,
+        ),
+      );
+    } finally {
+      setFailoverReorderPendingByApp((current) => ({
+        ...current,
+        [appId]: false,
+      }));
     }
   }
 
@@ -570,10 +651,18 @@ export function AppsGrid({
             ? false
             : Boolean(failoverPendingByApp[card.appId])
         }
+        failoverReorderPending={
+          isInertHomeAppId(card.appId)
+            ? false
+            : Boolean(failoverReorderPendingByApp[card.appId])
+        }
         onOpenActivity={onOpenActivity}
         onOpenProviderPanel={onOpenProviderPanel}
         onSetAutoFailover={(nextAppId, enabled) => {
           void handleSetAutoFailover(nextAppId, enabled);
+        }}
+        onReorderFailoverQueue={(nextAppId, providerIds) => {
+          void handleReorderFailoverQueue(nextAppId, providerIds);
         }}
       />
     );
