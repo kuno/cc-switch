@@ -19,6 +19,8 @@ function renderAppCard(
   providerState: SharedProviderState = createSharedProviderState("claude"),
   options: {
     failoverState?: SharedProviderFailoverState | null;
+    failoverPending?: boolean;
+    optimisticAutoFailoverEnabled?: boolean | null;
     onSetAutoFailover?: (appId: SharedProviderAppId, enabled: boolean) => void;
   } = {},
 ) {
@@ -45,6 +47,8 @@ function renderAppCard(
       providerStats={[createProviderStat("claude")]}
       recentActivity={[createRecentActivity("claude")]}
       failoverState={options.failoverState}
+      failoverPending={options.failoverPending}
+      optimisticAutoFailoverEnabled={options.optimisticAutoFailoverEnabled}
       loading={false}
       error={null}
       onOpenActivity={bridge.setSelectedApp}
@@ -221,6 +225,37 @@ describe("AppCard", () => {
     expect(onSetAutoFailover).toHaveBeenCalledWith("claude", true);
   });
 
+  it("shows a pending animation on the optimistic routing mode target", () => {
+    const { container } = renderAppCard(createSharedProviderState("claude"), {
+      failoverState: createFailoverState({ autoFailoverEnabled: false }),
+      failoverPending: true,
+      optimisticAutoFailoverEnabled: true,
+      onSetAutoFailover: vi.fn(),
+    });
+    const modeTabs = within(
+      screen.getByRole("tablist", { name: "Claude routing mode" }),
+    );
+
+    expect(modeTabs.getByRole("tab", { name: "Normal" })).toHaveAttribute(
+      "aria-selected",
+      "false",
+    );
+    expect(modeTabs.getByRole("tab", { name: "Failover" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(
+      screen.getByRole("tablist", { name: "Claude routing mode" }),
+    ).toHaveAttribute("data-pending", "true");
+    expect(container.querySelector("[data-mode-body='true']")).toHaveAttribute(
+      "data-pending",
+      "true",
+    );
+    expect(
+      screen.getByText("Auto-failover on · max 3 retries"),
+    ).toBeInTheDocument();
+  });
+
   it("renders queue priority instead of active provider details in failover mode", () => {
     renderAppCard(createSharedProviderState("claude"), {
       failoverState: createFailoverState({ autoFailoverEnabled: true }),
@@ -236,7 +271,9 @@ describe("AppCard", () => {
     expect(screen.getByText("Claude Backup")).toBeInTheDocument();
     expect(screen.getByText("Standby · 0 retries used")).toBeInTheDocument();
     expect(screen.getByText("STANDBY")).toBeInTheDocument();
-    expect(screen.getByText("Auto-failover on · max 3 retries")).toBeInTheDocument();
+    expect(
+      screen.getByText("Auto-failover on · max 3 retries"),
+    ).toBeInTheDocument();
     expect(screen.getByText("Head: 1 of 2")).toBeInTheDocument();
   });
 
@@ -270,12 +307,27 @@ describe("AppCard", () => {
       },
     );
 
-    expect(
-      container.querySelectorAll(".owt-app-card__queue-icon").length,
-    ).toBe(2);
+    expect(container.querySelectorAll(".owt-app-card__queue-icon").length).toBe(
+      2,
+    );
     expect(
       container.querySelector(".owt-app-card__queue-icon svg title")
         ?.textContent,
     ).toBe("DeepSeek");
+  });
+
+  it("shows cost estimate help without opening the provider panel", async () => {
+    const { bridge, user } = renderAppCard();
+    const setSelectedApp = bridge.setSelectedApp as unknown as Mock;
+    const info = screen.getByRole("button", {
+      name: "About this cost number",
+    });
+
+    expect(info).toBeInTheDocument();
+    expect(screen.getByText("Estimated, not billed.")).toBeInTheDocument();
+
+    await user.click(info);
+
+    expect(setSelectedApp).not.toHaveBeenCalled();
   });
 });
