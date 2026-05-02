@@ -338,7 +338,7 @@ describe("ProviderSidePanel", () => {
     expect(copyChip).not.toHaveTextContent("provider_wg88tuk8z9y0p4q1");
   });
 
-  it("disables provider reorder handles while the rail is filtered", () => {
+  it("does not render provider drawer reorder handles", () => {
     const primaryProvider = createProviderView("claude", {
       active: true,
       name: "Claude Primary",
@@ -355,8 +355,6 @@ describe("ProviderSidePanel", () => {
         {...createProviderSidePanelProps({
           providers: [primaryProvider, backupProvider],
           filteredProviders: [backupProvider],
-          providerReorderAvailable: true,
-          providerReorderDisabled: true,
           search: "backup",
           selectedProvider: backupProvider,
           selectedProviderId: backupProvider.providerId,
@@ -365,8 +363,8 @@ describe("ProviderSidePanel", () => {
     );
 
     expect(
-      screen.getByRole("button", { name: "Reorder Claude Backup" }),
-    ).toBeDisabled();
+      screen.queryByRole("button", { name: "Reorder Claude Backup" }),
+    ).toBeNull();
   });
 
   it("shows server-scoped activities for the selected provider", async () => {

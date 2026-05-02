@@ -1,4 +1,27 @@
-import type { KeyboardEventHandler, MouseEventHandler } from "react";
+import { CSS } from "@dnd-kit/utilities";
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { GripVertical } from "lucide-react";
+import type {
+  CSSProperties,
+  HTMLAttributes,
+  KeyboardEventHandler,
+  MouseEventHandler,
+} from "react";
 import type {
   SharedProviderAppId,
   SharedProviderFailoverQueueEntry,
@@ -307,12 +330,123 @@ function getQueueEntryLabel(entry: SharedProviderFailoverQueueEntry): string {
   return entry.health.consecutiveFailures > 1 ? "Blocked" : "Degraded";
 }
 
+interface FailoverQueueRowProps {
+  entry: SharedProviderFailoverQueueEntry;
+  index: number;
+  dragDisabled: boolean;
+  setNodeRef?: (element: HTMLElement | null) => void;
+  style?: CSSProperties;
+  isDragging?: boolean;
+  dragAttributes?: HTMLAttributes<HTMLButtonElement>;
+  dragListeners?: HTMLAttributes<HTMLButtonElement>;
+}
+
+function FailoverQueueRow({
+  entry,
+  index,
+  dragDisabled,
+  setNodeRef,
+  style,
+  isDragging = false,
+  dragAttributes,
+  dragListeners,
+}: FailoverQueueRowProps) {
+  const providerName = entry.providerName || entry.providerId;
+
+  return (
+    <div
+      ref={setNodeRef}
+      className="owt-app-card__queue-row"
+      data-dragging={isDragging ? "true" : "false"}
+      style={style}
+    >
+      <button
+        type="button"
+        className="owt-app-card__queue-drag"
+        disabled={dragDisabled}
+        title={
+          dragDisabled
+            ? "Queue order is updating"
+            : `Drag to reorder ${providerName}`
+        }
+        {...dragAttributes}
+        {...dragListeners}
+        aria-label={`Reorder ${providerName}`}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <GripVertical className="h-4 w-4" aria-hidden="true" />
+      </button>
+      <span className="owt-app-card__queue-pos">P{index + 1}</span>
+      <span className="owt-app-card__queue-name">{providerName}</span>
+      <span
+        className="owt-status-pill owt-app-card__queue-state"
+        data-tone={getQueueEntryTone(entry)}
+      >
+        <span className="owt-status-pill__dot" aria-hidden="true" />
+        {getQueueEntryLabel(entry)}
+      </span>
+    </div>
+  );
+}
+
+function SortableFailoverQueueRow({
+  entry,
+  index,
+  dragDisabled,
+}: {
+  entry: SharedProviderFailoverQueueEntry;
+  index: number;
+  dragDisabled: boolean;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: entry.providerId,
+    disabled: dragDisabled,
+  });
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <FailoverQueueRow
+      entry={entry}
+      index={index}
+      dragDisabled={dragDisabled}
+      setNodeRef={setNodeRef}
+      style={style}
+      isDragging={isDragging}
+      dragAttributes={attributes}
+      dragListeners={listeners}
+    />
+  );
+}
+
 function FailoverQueueSummary({
   failoverState,
+  reorderPending,
+  onReorder,
 }: {
   failoverState: SharedProviderFailoverState | null;
+  reorderPending: boolean;
+  onReorder?: (providerIds: string[]) => void;
 }) {
   const queue = failoverState?.failoverQueue ?? [];
+  const queuedProviderIds = queue.map((entry) => entry.providerId);
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 6 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
 
   if (queue.length === 0) {
     return (
@@ -322,30 +456,60 @@ function FailoverQueueSummary({
     );
   }
 
+  const canReorder = queue.length > 1 && typeof onReorder === "function";
+
+  function handleDragEnd(event: DragEndEvent) {
+    if (!canReorder || reorderPending) {
+      return;
+    }
+
+    const activeId = String(event.active.id);
+    const overId = event.over ? String(event.over.id) : null;
+
+    if (!overId || activeId === overId) {
+      return;
+    }
+
+    const oldIndex = queuedProviderIds.indexOf(activeId);
+    const newIndex = queuedProviderIds.indexOf(overId);
+
+    if (oldIndex < 0 || newIndex < 0) {
+      return;
+    }
+
+    onReorder?.(arrayMove(queuedProviderIds, oldIndex, newIndex));
+  }
+
   return (
     <div className="owt-app-card__failover">
-      <div className="owt-app-card__queue-list">
-        {queue.slice(0, 3).map((entry, index) => (
-          <div className="owt-app-card__queue-row" key={entry.providerId}>
-            <span className="owt-app-card__queue-pos">P{index + 1}</span>
-            <span className="owt-app-card__queue-name">
-              {entry.providerName || entry.providerId}
-            </span>
-            <span
-              className="owt-status-pill owt-app-card__queue-state"
-              data-tone={getQueueEntryTone(entry)}
-            >
-              <span className="owt-status-pill__dot" aria-hidden="true" />
-              {getQueueEntryLabel(entry)}
-            </span>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
+        <SortableContext
+          items={queuedProviderIds}
+          strategy={verticalListSortingStrategy}
+        >
+          <div className="owt-app-card__queue-list">
+            {queue.map((entry, index) => (
+              <SortableFailoverQueueRow
+                key={entry.providerId}
+                entry={entry}
+                index={index}
+                dragDisabled={!canReorder || reorderPending}
+              />
+            ))}
           </div>
-        ))}
-      </div>
+        </SortableContext>
+      </DndContext>
       <div className="owt-app-card__failover-foot">
         <span>
           {queue.length} queued · max {failoverState?.maxRetries ?? 0} retries
         </span>
-        <span>Priority follows drawer order</span>
+        <span>
+          {reorderPending ? "Updating order" : "Drag rows to reorder"}
+        </span>
       </div>
     </div>
   );
@@ -364,9 +528,14 @@ export interface AppCardProps {
   quotaSnapshot?: ProviderQuotaSnapshot;
   failoverState?: SharedProviderFailoverState | null;
   failoverPending?: boolean;
+  failoverReorderPending?: boolean;
   onOpenActivity: (appId: SharedProviderAppId) => void;
   onOpenProviderPanel: (appId: SharedProviderAppId) => void;
   onSetAutoFailover?: (appId: SharedProviderAppId, enabled: boolean) => void;
+  onReorderFailoverQueue?: (
+    appId: SharedProviderAppId,
+    providerIds: string[],
+  ) => void;
 }
 
 export function AppCard({
@@ -381,9 +550,11 @@ export function AppCard({
   quotaSnapshot,
   failoverState,
   failoverPending = false,
+  failoverReorderPending = false,
   onOpenActivity,
   onOpenProviderPanel,
   onSetAutoFailover,
+  onReorderFailoverQueue,
 }: AppCardProps) {
   const appCopy = APP_COPY[appId];
   const isInert = isInertHomeAppId(appId);
@@ -618,7 +789,13 @@ export function AppCard({
       </div>
 
       {runMode === "failover" ? (
-        <FailoverQueueSummary failoverState={failoverState ?? null} />
+        <FailoverQueueSummary
+          failoverState={failoverState ?? null}
+          reorderPending={failoverReorderPending}
+          onReorder={(providerIds) => {
+            onReorderFailoverQueue?.(appId, providerIds);
+          }}
+        />
       ) : (
         <div className="owt-app-card__active">
           <div className="owt-app-card__active-row">

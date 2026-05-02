@@ -3886,10 +3886,44 @@ select.owt-provider-panel__input {
 }
 .owt-app-card__queue-row {
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) auto;
+  grid-template-columns: 24px 30px minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
   min-height: 28px;
+}
+.owt-app-card__queue-row[data-dragging="true"] {
+  position: relative;
+  z-index: 2;
+}
+.owt-app-card__queue-drag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--soft);
+  cursor: grab;
+  transition:
+    border-color 160ms,
+    background-color 160ms,
+    color 160ms;
+}
+.owt-app-card__queue-drag:hover:not(:disabled),
+.owt-app-card__queue-drag:focus-visible {
+  border-color: var(--line);
+  background: var(--panel);
+  color: var(--text);
+}
+.owt-app-card__queue-drag:active:not(:disabled) {
+  cursor: grabbing;
+}
+.owt-app-card__queue-drag:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
 }
 .owt-app-card__queue-pos {
   color: var(--muted);
