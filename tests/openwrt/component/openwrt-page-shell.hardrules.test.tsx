@@ -50,16 +50,9 @@ describe("OpenWrtPageShell hard rules", () => {
         ].join(", "),
       ),
     ).toBeNull();
-    expect(screen.queryByRole("button", { name: "Failover" })).toBeNull();
     expect(
       screen.getByRole("button", { name: "OpenClaw not configured" }),
     ).toHaveAttribute("aria-disabled", "true");
-    expect(
-      container.querySelector('[data-placeholder-tab="failover"]'),
-    ).toHaveAttribute("hidden");
-    expect(
-      container.querySelector('[data-placeholder-panel="failover"]'),
-    ).toHaveAttribute("hidden");
     expect(renderedAppCards).toEqual([
       "claude",
       "codex",

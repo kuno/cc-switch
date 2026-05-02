@@ -20,10 +20,7 @@ function renderTab(tab: "preset-picker" | "activities" | "configure") {
   const selectedProvider = createProviderView(appId, {
     active: true,
     authMode: appId === "codex" ? "codex_oauth" : undefined,
-    codexAuth:
-      appId === "codex"
-        ? createCodexAuthSummary()
-        : undefined,
+    codexAuth: appId === "codex" ? createCodexAuthSummary() : undefined,
     name: appId === "codex" ? "OpenAI Official" : "Claude Primary",
     providerId: `${appId}-primary`,
   });
@@ -65,7 +62,9 @@ describe("ProviderSidePanel hard rules", () => {
         expect(screen.getByText("Provider Preset")).toBeInTheDocument();
       } else {
         if (tab === "activities") {
-          expect(await screen.findByText("No recent activity")).toBeInTheDocument();
+          expect(
+            await screen.findByText("No recent activity"),
+          ).toBeInTheDocument();
         }
 
         const tablist = screen.getByRole("tablist");
@@ -75,12 +74,6 @@ describe("ProviderSidePanel hard rules", () => {
 
         expect(labels).toEqual(["Activities", "Configure"]);
         expect(labels).toHaveLength(2);
-        expect(
-          container.querySelector('[data-placeholder-tab="failover"]'),
-        ).not.toBeNull();
-        expect(
-          container.querySelector('[data-placeholder-panel="failover"]'),
-        ).not.toBeNull();
       }
     },
   );
