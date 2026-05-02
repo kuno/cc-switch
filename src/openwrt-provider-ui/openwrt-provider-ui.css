@@ -3805,6 +3805,124 @@ select.owt-provider-panel__input {
 }
 
 /* =====================================================================
+ * ROUTING MODE — Normal / Failover segmented controls and queue summary
+ * ===================================================================== */
+.owt-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-softer, var(--panel-soft));
+}
+.owt-mode-toggle--panel {
+  margin-left: 8px;
+}
+.owt-mode-toggle__button {
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 9px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 760;
+  line-height: 1;
+  white-space: nowrap;
+  transition:
+    background 140ms,
+    color 140ms,
+    box-shadow 140ms;
+}
+.owt-mode-toggle__button:hover:not(:disabled) {
+  color: var(--text);
+}
+.owt-mode-toggle__button[data-active="true"] {
+  background: var(--panel-strong);
+  color: var(--text);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.06),
+    0 0 0 1px var(--line);
+}
+.owt-mode-toggle__button:disabled {
+  cursor: default;
+  opacity: 0.62;
+}
+.owt-mode-toggle__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.55;
+}
+.owt-mode-toggle__button[data-active="true"] .owt-mode-toggle__dot {
+  opacity: 1;
+}
+.owt-app-card .owt-mode-toggle {
+  margin-right: 8px;
+}
+.owt-app-card__failover,
+.owt-app-card__failover-empty {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel-soft);
+  padding: 10px;
+}
+.owt-app-card__failover-empty {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+.owt-app-card__queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.owt-app-card__queue-row {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 28px;
+}
+.owt-app-card__queue-pos {
+  color: var(--muted);
+  font-family: var(--mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: 11px;
+  font-weight: 800;
+  text-align: center;
+}
+.owt-app-card__queue-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 720;
+}
+.owt-app-card__queue-state {
+  height: 22px;
+  padding: 0 8px;
+  font-size: 10px;
+}
+.owt-app-card__failover-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+/* =====================================================================
  * ENTRANCE ANIMATION — echoes the revised prototype's subtle rise
  * ===================================================================== */
 @keyframes owt-rise {
