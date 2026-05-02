@@ -13,6 +13,36 @@ pub struct ModelMapping {
     pub default_model: Option<String>,
 }
 
+/// 从 Codex TOML 配置字符串中提取顶层 `model = "..."` 字段
+fn extract_model_from_toml_config(config_str: &str) -> Option<String> {
+    for line in config_str.lines() {
+        let trimmed = line.trim();
+        // 遇到 section header 停止（顶层配置结束）
+        if trimmed.starts_with('[') {
+            break;
+        }
+        // 匹配 `model = "value"` 或 `model = 'value'`
+        // 注意：model_provider、model_reasoning_effort 等不会匹配，因为 "model" 后紧跟 "="
+        if let Some(rest) = trimmed.strip_prefix("model") {
+            let rest = rest.trim_start();
+            if let Some(rest) = rest.strip_prefix('=') {
+                let rest = rest.trim();
+                let model = if let Some(rest) = rest.strip_prefix('"') {
+                    rest.split('"').next()
+                } else if let Some(rest) = rest.strip_prefix('\'') {
+                    rest.split('\'').next()
+                } else {
+                    None
+                };
+                if let Some(m) = model.filter(|s| !s.is_empty()) {
+                    return Some(m.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
 impl ModelMapping {
     /// 从 Provider 配置中提取模型映射
     pub fn from_provider(provider: &Provider) -> Self {
@@ -38,7 +68,16 @@ impl ModelMapping {
                 .and_then(|e| e.get("ANTHROPIC_MODEL"))
                 .and_then(|v| v.as_str())
                 .filter(|s| !s.is_empty())
-                .map(String::from),
+                .map(String::from)
+                .or_else(|| {
+                    // Codex providers store their model in the TOML config string;
+                    // use it as default_model so the client's hardcoded gpt-5.4 gets replaced.
+                    provider
+                        .settings_config
+                        .get("config")
+                        .and_then(|v| v.as_str())
+                        .and_then(extract_model_from_toml_config)
+                }),
         }
     }
 
@@ -250,5 +289,58 @@ mod tests {
         let (result, _, mapped) = apply_model_mapping(body, &provider);
         assert_eq!(result["model"], "sonnet-mapped");
         assert_eq!(mapped, Some("sonnet-mapped".to_string()));
+    }
+
+    #[test]
+    fn test_codex_custom_model_from_toml_config() {
+        // Codex third-party provider stores custom model in TOML config string.
+        // When client sends gpt-5.4 (its hardcoded default), the proxy should
+        // replace it with the model from the provider's TOML config.
+        let provider = Provider {
+            id: "codex-custom".to_string(),
+            name: "Custom Codex".to_string(),
+            settings_config: json!({
+                "config": "model_provider = \"mycustom\"\nmodel = \"gpt-4o\"\nmodel_reasoning_effort = \"high\"\n\n[model_providers.mycustom]\nbase_url = \"https://example.com/v1\""
+            }),
+            website_url: None,
+            category: Some("codex".to_string()),
+            created_at: None,
+            sort_index: None,
+            notes: None,
+            meta: None,
+            icon: None,
+            icon_color: None,
+            in_failover_queue: false,
+        };
+        let body = json!({"model": "gpt-5.4"});
+        let (result, original, mapped) = apply_model_mapping(body, &provider);
+        assert_eq!(result["model"], "gpt-4o");
+        assert_eq!(original, Some("gpt-5.4".to_string()));
+        assert_eq!(mapped, Some("gpt-4o".to_string()));
+    }
+
+    #[test]
+    fn test_codex_model_not_replaced_when_matching_config() {
+        // If client already sends the configured model, no mapping occurs.
+        let provider = Provider {
+            id: "codex-custom".to_string(),
+            name: "Custom Codex".to_string(),
+            settings_config: json!({
+                "config": "model_provider = \"mycustom\"\nmodel = \"gpt-4o\"\n\n[model_providers.mycustom]\nbase_url = \"https://example.com/v1\""
+            }),
+            website_url: None,
+            category: Some("codex".to_string()),
+            created_at: None,
+            sort_index: None,
+            notes: None,
+            meta: None,
+            icon: None,
+            icon_color: None,
+            in_failover_queue: false,
+        };
+        let body = json!({"model": "gpt-4o"});
+        let (result, _original, mapped) = apply_model_mapping(body, &provider);
+        assert_eq!(result["model"], "gpt-4o");
+        assert!(mapped.is_none());
     }
 }
