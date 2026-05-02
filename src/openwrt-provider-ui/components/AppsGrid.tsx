@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { createOpenWrtProviderAdapter } from "@/platform/openwrt/providers";
-import type { SharedProviderAppId } from "@/shared/providers/domain";
+import type {
+  SharedProviderAppId,
+  SharedProviderFailoverState,
+} from "@/shared/providers/domain";
 import type {
   OpenWrtProviderStat,
   OpenWrtRecentActivityItem,
@@ -38,6 +41,7 @@ type AppGridData = {
   summary: OpenWrtUsageSummary | null;
   providerStats: OpenWrtProviderStat[];
   recentActivity: OpenWrtRecentActivityItem[];
+  failoverState: SharedProviderFailoverState | null;
 };
 
 type AppGridLoadResult = {
@@ -46,6 +50,7 @@ type AppGridLoadResult = {
   summaryOk: boolean;
   providerStatsOk: boolean;
   recentActivityOk: boolean;
+  failoverStateOk: boolean;
 };
 
 function isInertHomeAppId(appId: OpenWrtHomeAppId): appId is InertHomeAppId {
@@ -61,6 +66,7 @@ function createInitialCard(appId: OpenWrtHomeAppId): AppGridData {
     summary: null,
     providerStats: [],
     recentActivity: [],
+    failoverState: null,
   };
 }
 
@@ -90,11 +96,13 @@ async function loadCardData(
         summary: null,
         providerStats: [],
         recentActivity: [],
+        failoverState: null,
       },
       providerStateOk: true,
       summaryOk: true,
       providerStatsOk: true,
       recentActivityOk: true,
+      failoverStateOk: true,
     };
   }
 
@@ -110,6 +118,30 @@ async function loadCardData(
     options.shell.getProviderStats(appId),
     options.shell.getRecentActivity(appId),
   ]);
+
+  const providerState =
+    providerStateResult.status === "fulfilled"
+      ? providerStateResult.value
+      : null;
+  const activeProviderId = providerState?.activeProvider.configured
+    ? providerState.activeProvider.providerId
+    : null;
+  let failoverState: SharedProviderFailoverState | null = null;
+  let failoverStateOk = true;
+
+  if (
+    activeProviderId &&
+    typeof adapter.getProviderFailoverState === "function"
+  ) {
+    try {
+      failoverState = await adapter.getProviderFailoverState(
+        appId,
+        activeProviderId,
+      );
+    } catch {
+      failoverStateOk = false;
+    }
+  }
 
   const errors = [
     providerStateResult,
@@ -127,10 +159,7 @@ async function loadCardData(
       appId,
       loading: false,
       error: errors[0] ?? null,
-      providerState:
-        providerStateResult.status === "fulfilled"
-          ? providerStateResult.value
-          : null,
+      providerState,
       summary:
         summaryResult.status === "fulfilled" ? summaryResult.value : null,
       providerStats:
@@ -141,11 +170,13 @@ async function loadCardData(
         recentActivityResult.status === "fulfilled"
           ? sortRecentActivity(recentActivityResult.value)
           : [],
+      failoverState,
     },
     providerStateOk: providerStateResult.status === "fulfilled",
     summaryOk: summaryResult.status === "fulfilled",
     providerStatsOk: providerStatsResult.status === "fulfilled",
     recentActivityOk: recentActivityResult.status === "fulfilled",
+    failoverStateOk,
   };
 }
 
@@ -281,6 +312,9 @@ function mergeCardData(
     recentActivity: nextResult.recentActivityOk
       ? card.recentActivity
       : currentCard.recentActivity,
+    failoverState: nextResult.failoverStateOk
+      ? card.failoverState
+      : currentCard.failoverState,
   };
 }
 
@@ -342,6 +376,34 @@ export function AppsGrid({
   const [quotaByProviderId, setQuotaByProviderId] = useState<
     Record<string, ProviderQuotaSnapshot>
   >({});
+  const [failoverPendingByApp, setFailoverPendingByApp] = useState<
+    Partial<Record<SharedProviderAppId, boolean>>
+  >({});
+
+  async function handleSetAutoFailover(
+    appId: SharedProviderAppId,
+    enabled: boolean,
+  ) {
+    const adapter = createOpenWrtProviderAdapter(options.transport);
+
+    if (typeof adapter.setAutoFailoverEnabled !== "function") {
+      return;
+    }
+
+    setFailoverPendingByApp((current) => ({ ...current, [appId]: true }));
+    try {
+      await adapter.setAutoFailoverEnabled(appId, enabled);
+      const nextResult = await loadCardData(options, appId);
+
+      setCards((currentCards) =>
+        currentCards.map((card) =>
+          card.appId === appId ? mergeCardData(card, nextResult) : card,
+        ),
+      );
+    } finally {
+      setFailoverPendingByApp((current) => ({ ...current, [appId]: false }));
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -502,20 +564,24 @@ export function AppsGrid({
         loading={card.loading}
         error={card.error}
         quotaSnapshot={quotaSnapshot}
+        failoverState={card.failoverState}
+        failoverPending={
+          isInertHomeAppId(card.appId)
+            ? false
+            : Boolean(failoverPendingByApp[card.appId])
+        }
         onOpenActivity={onOpenActivity}
         onOpenProviderPanel={onOpenProviderPanel}
+        onSetAutoFailover={(nextAppId, enabled) => {
+          void handleSetAutoFailover(nextAppId, enabled);
+        }}
       />
     );
   };
   const settledGridItems = [
     ...configured.map(renderCard),
     ...(unconfigured.length > 0
-      ? [
-          <GroupHeader
-            key="group-header-unconfigured"
-            label="Not configured"
-          />,
-        ]
+      ? [<GroupHeader key="group-header-unconfigured" label="Not configured" />]
       : []),
     ...unconfigured.map(renderCard),
     ...(settledCards.length % 2 === 1
