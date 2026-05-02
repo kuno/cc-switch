@@ -55,7 +55,6 @@ type ProviderSidePanelCallbacks = {
   onDelete: () => void;
   onToggleAppAutoFailover: (enabled: boolean) => void;
   onToggleProviderFailoverQueue: (inQueue: boolean) => void;
-  onReorderProviders: (providerIds: string[]) => void;
   onCancel: () => void;
   onSave: () => void;
 };
@@ -98,9 +97,6 @@ export interface ProviderSidePanelFixtureOptions {
   appFailoverPending?: boolean;
   providerInFailoverQueue?: boolean;
   providerFailoverPending?: boolean;
-  providerReorderAvailable?: boolean;
-  providerReorderPending?: boolean;
-  providerReorderDisabled?: boolean;
   footerText?: string;
   callbacks?: Partial<ProviderSidePanelCallbacks>;
 }
@@ -276,7 +272,6 @@ export function createProviderSidePanelProps(
     onDelete: () => {},
     onToggleAppAutoFailover: () => {},
     onToggleProviderFailoverQueue: () => {},
-    onReorderProviders: () => {},
     onCancel: () => {},
     onSave: () => {},
   };
@@ -333,9 +328,6 @@ export function createProviderSidePanelProps(
     appFailoverPending: options.appFailoverPending ?? false,
     providerInFailoverQueue: options.providerInFailoverQueue ?? false,
     providerFailoverPending: options.providerFailoverPending ?? false,
-    providerReorderAvailable: options.providerReorderAvailable ?? false,
-    providerReorderPending: options.providerReorderPending ?? false,
-    providerReorderDisabled: options.providerReorderDisabled ?? false,
     footerText:
       options.footerText ??
       (mode === "new" ? "New provider · not saved" : "Unsaved changes"),
