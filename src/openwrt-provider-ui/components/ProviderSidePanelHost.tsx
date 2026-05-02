@@ -52,13 +52,6 @@ type MinimalOpenWrtFailoverAdapter = ProviderPlatformAdapter &
     >
   >;
 
-type MinimalOpenWrtProviderReorderAdapter = ProviderPlatformAdapter & {
-  reorderProviders(
-    appId: SharedProviderAppId,
-    providerIds: string[],
-  ): Promise<void>;
-};
-
 const APP_LABELS: Record<SharedProviderAppId, string> = {
   claude: "Claude",
   codex: "Codex",
@@ -346,15 +339,6 @@ function supportsMinimalOpenWrtFailoverControls(
   );
 }
 
-function supportsOpenWrtProviderReorder(
-  adapter: ProviderPlatformAdapter,
-): adapter is MinimalOpenWrtProviderReorderAdapter {
-  return (
-    typeof (adapter as Partial<MinimalOpenWrtProviderReorderAdapter>)
-      .reorderProviders === "function"
-  );
-}
-
 function formatErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -396,7 +380,6 @@ const ProviderSidePanelHostComponent = forwardRef<
   const [savePending, setSavePending] = useState(false);
   const [activatePending, setActivatePending] = useState(false);
   const [deletePending, setDeletePending] = useState(false);
-  const [providerReorderPending, setProviderReorderPending] = useState(false);
   const [panelMessage, setPanelMessage] = useState<OpenWrtPageMessage | null>(
     null,
   );
@@ -477,9 +460,6 @@ const ProviderSidePanelHostComponent = forwardRef<
   const failoverAdapter = supportsMinimalOpenWrtFailoverControls(
     providerAdapter,
   )
-    ? providerAdapter
-    : null;
-  const providerReorderAdapter = supportsOpenWrtProviderReorder(providerAdapter)
     ? providerAdapter
     : null;
 
@@ -848,7 +828,8 @@ const ProviderSidePanelHostComponent = forwardRef<
     } catch (saveError) {
       setPanelMessage({
         kind: "error",
-        text: saveError instanceof Error ? saveError.message : String(saveError),
+        text:
+          saveError instanceof Error ? saveError.message : String(saveError),
       });
     } finally {
       setSavePending(false);
@@ -1001,54 +982,6 @@ const ProviderSidePanelHostComponent = forwardRef<
     }
   }
 
-  async function handleReorderProviders(providerIds: string[]) {
-    if (
-      !providerReorderAdapter ||
-      providerReorderPending ||
-      loading ||
-      savePending ||
-      activatePending ||
-      deletePending ||
-      search.trim()
-    ) {
-      return;
-    }
-
-    setProviderReorderPending(true);
-    try {
-      await providerReorderAdapter.reorderProviders(appId, providerIds);
-      const nextState = await providerAdapter.listProviderState(appId);
-
-      if (
-        selectedProviderId &&
-        !getProviderById(nextState, selectedProviderId)
-      ) {
-        const nextProviderId = getDefaultProviderId(nextState);
-        syncSelectionFromState(
-          appId,
-          nextState,
-          nextProviderId ? "edit" : "new",
-          nextProviderId,
-        );
-      } else {
-        setProviderState(nextState);
-      }
-
-      onProviderMutation?.();
-      setPanelMessage({
-        kind: "success",
-        text: `${APP_LABELS[appId]} provider order updated.`,
-      });
-    } catch (reorderError) {
-      setPanelMessage({
-        kind: "error",
-        text: formatErrorMessage(reorderError),
-      });
-    } finally {
-      setProviderReorderPending(false);
-    }
-  }
-
   function handleCancel() {
     if (panelMode === "preset-picker") {
       handlePresetCancel();
@@ -1129,17 +1062,6 @@ const ProviderSidePanelHostComponent = forwardRef<
       appFailoverPending={failoverPendingAction === "app-auto"}
       providerInFailoverQueue={Boolean(failoverState?.inFailoverQueue)}
       providerFailoverPending={failoverPendingAction === "provider-queue"}
-      providerReorderAvailable={Boolean(providerReorderAdapter)}
-      providerReorderPending={providerReorderPending}
-      providerReorderDisabled={
-        !providerReorderAdapter ||
-        providerReorderPending ||
-        savePending ||
-        activatePending ||
-        deletePending ||
-        loading ||
-        Boolean(search.trim())
-      }
       footerText={footerText}
       onClose={closePanel}
       onSearchChange={setSearch}
@@ -1171,9 +1093,6 @@ const ProviderSidePanelHostComponent = forwardRef<
       }}
       onToggleProviderFailoverQueue={(inQueue) => {
         void handleToggleProviderFailoverQueue(inQueue);
-      }}
-      onReorderProviders={(providerIds) => {
-        void handleReorderProviders(providerIds);
       }}
       onCancel={handleCancel}
       onSave={() => {
