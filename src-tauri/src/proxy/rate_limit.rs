@@ -61,6 +61,26 @@ pub fn new_rate_limit_store() -> RateLimitStore {
     Arc::new(RwLock::new(HashMap::new()))
 }
 
+/// Returns true if `name` is a primary quota window that should contribute to the
+/// exhaustion gate.  Sub-quota windows (e.g. `seven_day_claude_design`) are excluded so
+/// that design-workspace saturation on claude.ai does not falsely block Claude Code traffic.
+fn is_primary_window(name: &str) -> bool {
+    matches!(
+        name,
+        // Subscription-quota primary windows (Claude)
+        "five_hour"
+            | "seven_day"
+            // Subscription-quota primary windows (Codex Spark)
+            | "GPT-5.3-Codex-Spark_five_hour"
+            | "GPT-5.3-Codex-Spark_seven_day"
+            // Response-header window names are always primary
+            | "5h"
+            | "7d"
+            | "requests"
+            | "tokens"
+    )
+}
+
 fn status_indicates_quota_exhausted(value: &str) -> bool {
     matches!(
         value.to_ascii_lowercase().as_str(),
@@ -96,9 +116,10 @@ pub fn quota_exhausted_reset(snapshot: &RateLimitSnapshot, now_secs: i64) -> Opt
     }
 
     if snapshot.windows.iter().any(|window| {
-        window
-            .reset
-            .is_some_and(|window_reset| window_reset > now_secs)
+        is_primary_window(&window.name)
+            && window
+                .reset
+                .is_some_and(|window_reset| window_reset > now_secs)
             && (window
                 .status
                 .as_deref()
@@ -745,6 +766,93 @@ mod tests {
             ..rejected
         };
         assert_eq!(quota_exhausted_reset(&full, 1_900), Some(2_100));
+    }
+
+    fn make_snapshot(windows: Vec<RateLimitWindow>) -> RateLimitSnapshot {
+        RateLimitSnapshot {
+            app_type: "claude".to_string(),
+            provider_id: "provider-a".to_string(),
+            provider_name: "Provider A".to_string(),
+            source: Some("subscription_quota".to_string()),
+            status: None,
+            windows,
+            representative_claim: None,
+            overage_status: None,
+            fallback_percentage: None,
+            requests_limit: None,
+            requests_remaining: None,
+            tokens_limit: None,
+            tokens_remaining: None,
+            balances: None,
+            captured_at: 0,
+        }
+    }
+
+    #[test]
+    fn design_sub_quota_saturated_does_not_gate() {
+        // seven_day_claude_design at 100% should NOT block Claude Code traffic.
+        let snapshot = make_snapshot(vec![
+            RateLimitWindow {
+                name: "seven_day".to_string(),
+                status: None,
+                utilization: Some(0.5),
+                reset: Some(2_000),
+            },
+            RateLimitWindow {
+                name: "five_hour".to_string(),
+                status: None,
+                utilization: Some(0.3),
+                reset: Some(2_000),
+            },
+            RateLimitWindow {
+                name: "seven_day_claude_design".to_string(),
+                status: None,
+                utilization: Some(1.0),
+                reset: Some(2_000),
+            },
+        ]);
+        assert_eq!(quota_exhausted_reset(&snapshot, 1_900), None);
+    }
+
+    #[test]
+    fn primary_seven_day_saturated_gates() {
+        let snapshot = make_snapshot(vec![
+            RateLimitWindow {
+                name: "seven_day".to_string(),
+                status: None,
+                utilization: Some(1.0),
+                reset: Some(2_000),
+            },
+            RateLimitWindow {
+                name: "seven_day_claude_design".to_string(),
+                status: None,
+                utilization: Some(1.0),
+                reset: Some(2_000),
+            },
+        ]);
+        assert_eq!(quota_exhausted_reset(&snapshot, 1_900), Some(2_000));
+    }
+
+    #[test]
+    fn primary_five_hour_and_design_sub_saturated_picks_earliest_reset() {
+        // Both five_hour (primary, saturated) and seven_day_claude_design (sub, saturated)
+        // are present.  Gate must fire, and the returned reset is the earliest future reset
+        // across all windows (i.e. five_hour's reset=2_000).
+        let snapshot = make_snapshot(vec![
+            RateLimitWindow {
+                name: "five_hour".to_string(),
+                status: None,
+                utilization: Some(1.0),
+                reset: Some(2_000),
+            },
+            RateLimitWindow {
+                name: "seven_day_claude_design".to_string(),
+                status: None,
+                utilization: Some(1.0),
+                reset: Some(3_000),
+            },
+        ]);
+        assert_eq!(quota_exhausted_reset(&snapshot, 1_900), Some(2_000));
     }
 
     #[test]
