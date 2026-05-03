@@ -170,6 +170,14 @@ function getStatus({
     if (hostState.health === "degraded") {
       return { label: "Degraded", tone: "accent" };
     }
+
+    if (hostState.health === "stopped") {
+      return { label: "Stopped", tone: "neutral" };
+    }
+
+    if (hostState.health === "unknown") {
+      return { label: "Unavailable", tone: "neutral" };
+    }
   }
 
   if ((recentActivity[0]?.statusCode ?? 0) >= 400) {
