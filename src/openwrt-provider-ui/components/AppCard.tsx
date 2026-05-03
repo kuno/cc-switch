@@ -128,21 +128,21 @@ function sumTokenCounts(summary: OpenWrtUsageSummary | null): number {
 }
 
 function getStatus({
-  appId,
   hostState,
   loading,
   error,
   providerState,
   serviceRunning,
   recentActivity,
+  failoverState,
 }: {
-  appId: SharedProviderAppId;
   hostState: OpenWrtHostState;
   loading: boolean;
   error: string | null;
   providerState: SharedProviderState | null;
   serviceRunning: boolean;
   recentActivity: OpenWrtRecentActivityItem[];
+  failoverState: SharedProviderFailoverState | null;
 }): {
   label: string;
   tone: StatusTone;
@@ -162,22 +162,18 @@ function getStatus({
     return { label: "Stopped", tone: "neutral" };
   }
 
-  if (appId === hostState.app) {
-    if (hostState.health === "healthy") {
+  const providerHealth = failoverState?.providerHealth;
+  if (providerHealth?.observed) {
+    if (providerHealth.healthy) {
       return { label: "Running", tone: "success" };
     }
-
-    if (hostState.health === "degraded") {
+    if ((recentActivity[0]?.statusCode ?? 0) >= 400) {
       return { label: "Degraded", tone: "accent" };
     }
-
-    if (hostState.health === "stopped") {
-      return { label: "Stopped", tone: "neutral" };
-    }
-
-    if (hostState.health === "unknown") {
+    if (providerHealth.lastSuccessAt === null && providerHealth.lastFailureAt === null) {
       return { label: "Unavailable", tone: "neutral" };
     }
+    return { label: "Unavailable", tone: "fail" };
   }
 
   if ((recentActivity[0]?.statusCode ?? 0) >= 400) {
@@ -188,7 +184,7 @@ function getStatus({
     return { label: "Unavailable", tone: "fail" };
   }
 
-  return { label: "Running", tone: "success" };
+  return { label: "Unavailable", tone: "neutral" };
 }
 
 function utilBarClass(util: number | null | undefined): string {
@@ -730,13 +726,13 @@ export function AppCard({
   }
 
   const status = getStatus({
-    appId,
     hostState,
     loading,
     error,
     providerState,
     serviceRunning,
     recentActivity,
+    failoverState: failoverState ?? null,
   });
 
   const tokensValue = formatCompactCount(sumTokenCounts(summary));
