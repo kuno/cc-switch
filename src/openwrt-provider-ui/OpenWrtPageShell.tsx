@@ -245,7 +245,6 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
   }
 
   function handleOpenActivity(appId: SharedProviderAppId) {
-    shell.setSelectedApp(appId);
     setProviderPanelOpen(false);
     setActivityDrawerOpen(true);
     providerPanelRef.current?.close();
