@@ -358,6 +358,32 @@ async function loadUsageSummaries(
   return summaries;
 }
 
+async function loadRecentActivityByApp(
+  shell: OpenWrtSharedPageMountOptions["shell"],
+): Promise<Partial<Record<SharedProviderAppId, OpenWrtRecentActivityItem[]>>> {
+  const results = await Promise.allSettled(
+    BACKEND_APP_OPTIONS.map(async (appId) => ({
+      appId,
+      recentActivity: await shell.getRecentActivity(appId),
+    })),
+  );
+  const recentActivityByApp: Partial<
+    Record<SharedProviderAppId, OpenWrtRecentActivityItem[]>
+  > = {};
+
+  results.forEach((result) => {
+    if (result.status !== "fulfilled") {
+      return;
+    }
+
+    recentActivityByApp[result.value.appId] = sortRecentActivity(
+      result.value.recentActivity,
+    );
+  });
+
+  return recentActivityByApp;
+}
+
 export interface AppsGridProps {
   options: OpenWrtSharedPageMountOptions;
   onOpenActivity: (appId: SharedProviderAppId) => void;
@@ -563,7 +589,10 @@ export function AppsGrid({
         : POLL_INTERVAL_MS;
 
     const refetchUsageSummaries = async () => {
-      const newSummaryByApp = await loadUsageSummaries(options.shell);
+      const [newSummaryByApp, newRecentActivityByApp] = await Promise.all([
+        loadUsageSummaries(options.shell),
+        loadRecentActivityByApp(options.shell),
+      ]);
 
       if (cancelled) {
         return;
@@ -576,10 +605,21 @@ export function AppsGrid({
           }
 
           const nextSummary = newSummaryByApp[card.appId];
+          const nextRecentActivity = newRecentActivityByApp[card.appId];
+          let updatedCard = card;
 
-          return nextSummary !== undefined
-            ? { ...card, summary: nextSummary }
-            : card;
+          if (nextSummary !== undefined) {
+            updatedCard = { ...updatedCard, summary: nextSummary };
+          }
+
+          if (nextRecentActivity !== undefined) {
+            updatedCard = {
+              ...updatedCard,
+              recentActivity: nextRecentActivity,
+            };
+          }
+
+          return updatedCard;
         }),
       );
     };
