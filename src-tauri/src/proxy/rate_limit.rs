@@ -110,6 +110,13 @@ fn status_indicates_quota_exhausted(value: &str) -> bool {
     )
 }
 
+fn status_indicates_allowed(value: &str) -> bool {
+    matches!(
+        value.to_ascii_lowercase().as_str(),
+        "allowed" | "allowed_warning" | "ok" | "active"
+    )
+}
+
 fn earliest_future_reset(windows: &[RateLimitWindow], now_secs: i64) -> Option<i64> {
     windows
         .iter()
@@ -125,15 +132,17 @@ pub fn quota_exhausted_reset(snapshot: &RateLimitSnapshot, now_secs: i64) -> Opt
         return Some(reset);
     }
 
-    if snapshot
-        .status
-        .as_deref()
-        .is_some_and(status_indicates_quota_exhausted)
-        || snapshot
-            .overage_status
-            .as_deref()
-            .is_some_and(status_indicates_quota_exhausted)
-    {
+    // `status` and `overage_status` describe two independent paths (primary vs
+    // overage/fallback). If either path reports allowed, the provider can still serve
+    // traffic — only gate when every present signal is rejected with no allowed override.
+    let signals: [&Option<String>; 2] = [&snapshot.status, &snapshot.overage_status];
+    let any_rejected = signals
+        .iter()
+        .any(|s| s.as_deref().is_some_and(status_indicates_quota_exhausted));
+    let any_allowed = signals
+        .iter()
+        .any(|s| s.as_deref().is_some_and(status_indicates_allowed));
+    if any_rejected && !any_allowed {
         return Some(reset);
     }
 
@@ -995,5 +1004,67 @@ mod tests {
         let sanitized = sanitize_for_restart(snapshot);
         assert_eq!(sanitized.status, Some("allowed_warning".to_string()));
         assert_eq!(sanitized.overage_status, Some("rejected".to_string()));
+    }
+
+    fn make_snapshot_with_signals(
+        status: Option<&str>,
+        overage_status: Option<&str>,
+    ) -> RateLimitSnapshot {
+        RateLimitSnapshot {
+            app_type: "claude".to_string(),
+            provider_id: "p".to_string(),
+            provider_name: "P".to_string(),
+            source: Some("response_headers".to_string()),
+            status: status.map(str::to_string),
+            windows: vec![RateLimitWindow {
+                name: "5h".to_string(),
+                status: None,
+                utilization: None,
+                reset: Some(9_999_999_999),
+            }],
+            representative_claim: None,
+            overage_status: overage_status.map(str::to_string),
+            fallback_percentage: None,
+            requests_limit: None,
+            requests_remaining: None,
+            tokens_limit: None,
+            tokens_remaining: None,
+            balances: None,
+            captured_at: 0,
+        }
+    }
+
+    // Gate fires only when every present signal is rejected with no allowed override.
+    #[test]
+    fn quota_gate_status_overage_signal_combinations() {
+        let now = 1_000;
+
+        // (rejected, allowed) — one path allowed → provider OK, no gate
+        let s = make_snapshot_with_signals(Some("rejected"), Some("allowed"));
+        assert_eq!(quota_exhausted_reset(&s, now), None);
+
+        // (allowed, rejected) — one path allowed → provider OK, no gate
+        let s = make_snapshot_with_signals(Some("allowed"), Some("rejected"));
+        assert_eq!(quota_exhausted_reset(&s, now), None);
+
+        // (allowed_warning, rejected) — allowed_warning counts as allowed → no gate
+        let s = make_snapshot_with_signals(Some("allowed_warning"), Some("rejected"));
+        assert_eq!(quota_exhausted_reset(&s, now), None);
+
+        // (rejected, rejected) — both paths exhausted → gate
+        let s = make_snapshot_with_signals(Some("rejected"), Some("rejected"));
+        assert!(quota_exhausted_reset(&s, now).is_some());
+
+        // (rejected, None) — no allowed signal present → gate
+        let s = make_snapshot_with_signals(Some("rejected"), None);
+        assert!(quota_exhausted_reset(&s, now).is_some());
+
+        // (None, rejected) — no allowed signal present → gate
+        let s = make_snapshot_with_signals(None, Some("rejected"));
+        assert!(quota_exhausted_reset(&s, now).is_some());
+
+        // (None, None) — no rejected signal at all → no gate
+        let s = make_snapshot_with_signals(None, None);
+        assert_eq!(quota_exhausted_reset(&s, now), None);
     }
 }
