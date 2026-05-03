@@ -162,13 +162,19 @@ function getStatus({
     return { label: "Stopped", tone: "neutral" };
   }
 
+  if (error) {
+    return { label: "Unavailable", tone: "fail" };
+  }
+
+  // recent live failures override the daemon's probe-based health, which can lag by hours
+  if ((recentActivity[0]?.statusCode ?? 0) >= 400) {
+    return { label: "Degraded", tone: "accent" };
+  }
+
   const providerHealth = failoverState?.providerHealth;
   if (providerHealth?.observed) {
     if (providerHealth.healthy) {
       return { label: "Running", tone: "success" };
-    }
-    if ((recentActivity[0]?.statusCode ?? 0) >= 400) {
-      return { label: "Degraded", tone: "accent" };
     }
     if (providerHealth.lastSuccessAt === null && providerHealth.lastFailureAt === null) {
       return { label: "Unavailable", tone: "neutral" };
@@ -176,15 +182,7 @@ function getStatus({
     return { label: "Unavailable", tone: "fail" };
   }
 
-  if ((recentActivity[0]?.statusCode ?? 0) >= 400) {
-    return { label: "Degraded", tone: "accent" };
-  }
-
-  if (error) {
-    return { label: "Unavailable", tone: "fail" };
-  }
-
-  return { label: "Unavailable", tone: "neutral" };
+  return { label: "Standby", tone: "neutral" };
 }
 
 function utilBarClass(util: number | null | undefined): string {
