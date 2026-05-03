@@ -55,6 +55,22 @@ pub struct RateLimitSnapshot {
     pub captured_at: i64,
 }
 
+/// Strip transient burst signals from a snapshot loaded from DB on daemon restart.
+///
+/// `status` and `overage_status` are point-in-time signals from response headers
+/// (anthropic-ratelimit-unified-status / -overage-status). Their semantics are tied to
+/// the request that produced them, NOT to the window reset. Persisting these across a
+/// daemon restart can incorrectly close the quota gate forever when the daemon can't
+/// repopulate the snapshot (e.g. Anthropic's quota endpoint itself returning 429).
+/// Window-level utilization survives because it's tied to the window reset timestamp.
+pub fn sanitize_for_restart(mut snapshot: RateLimitSnapshot) -> RateLimitSnapshot {
+    if snapshot.source.as_deref() == Some("response_headers") {
+        snapshot.status = None;
+        snapshot.overage_status = None;
+    }
+    snapshot
+}
+
 pub type RateLimitStore = Arc<RwLock<HashMap<String, RateLimitSnapshot>>>;
 
 pub fn new_rate_limit_store() -> RateLimitStore {
@@ -916,5 +932,68 @@ mod tests {
 
         assert_eq!(quota_exhausted_reset(&snapshot, 1_000), None);
         assert_eq!(quota_exhausted_reset(&snapshot, 1_100), None);
+    }
+
+    #[test]
+    fn sanitize_for_restart_strips_response_headers_burst_signals() {
+        let snapshot = RateLimitSnapshot {
+            app_type: "claude".to_string(),
+            provider_id: "provider-a".to_string(),
+            provider_name: "Provider A".to_string(),
+            source: Some("response_headers".to_string()),
+            status: Some("allowed_warning".to_string()),
+            windows: vec![RateLimitWindow {
+                name: "5h".to_string(),
+                status: Some("allowed".to_string()),
+                utilization: Some(0.36),
+                reset: Some(1_777_854_600),
+            }],
+            representative_claim: None,
+            overage_status: Some("rejected".to_string()),
+            fallback_percentage: None,
+            requests_limit: None,
+            requests_remaining: None,
+            tokens_limit: None,
+            tokens_remaining: None,
+            balances: None,
+            captured_at: 0,
+        };
+
+        let sanitized = sanitize_for_restart(snapshot);
+        assert_eq!(sanitized.status, None);
+        assert_eq!(sanitized.overage_status, None);
+        // window-level data survives
+        assert_eq!(sanitized.windows[0].utilization, Some(0.36));
+        assert_eq!(sanitized.windows[0].status, Some("allowed".to_string()));
+    }
+
+    #[test]
+    fn sanitize_for_restart_leaves_subscription_quota_snapshots_unchanged() {
+        let snapshot = RateLimitSnapshot {
+            app_type: "claude".to_string(),
+            provider_id: "provider-b".to_string(),
+            provider_name: "Provider B".to_string(),
+            source: Some("subscription_quota".to_string()),
+            status: Some("allowed_warning".to_string()),
+            windows: vec![RateLimitWindow {
+                name: "seven_day".to_string(),
+                status: None,
+                utilization: Some(0.77),
+                reset: Some(1_777_854_600),
+            }],
+            representative_claim: None,
+            overage_status: Some("rejected".to_string()),
+            fallback_percentage: None,
+            requests_limit: None,
+            requests_remaining: None,
+            tokens_limit: None,
+            tokens_remaining: None,
+            balances: None,
+            captured_at: 0,
+        };
+
+        let sanitized = sanitize_for_restart(snapshot);
+        assert_eq!(sanitized.status, Some("allowed_warning".to_string()));
+        assert_eq!(sanitized.overage_status, Some("rejected".to_string()));
     }
 }
