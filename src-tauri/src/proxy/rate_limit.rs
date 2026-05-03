@@ -62,17 +62,23 @@ pub fn new_rate_limit_store() -> RateLimitStore {
 }
 
 /// Returns true if `name` is a primary quota window that should contribute to the
-/// exhaustion gate.  Sub-quota windows (e.g. `seven_day_claude_design`) are excluded so
-/// that design-workspace saturation on claude.ai does not falsely block Claude Code traffic.
+/// exhaustion gate.
+///
+/// Sub-windows describe per-workload accounting, not provider-level exhaustion:
+/// - `seven_day_claude_design` / `seven_day_opus` / `seven_day_sonnet`: per-model or
+///   per-workspace breakdowns within Claude's subscription quota.
+/// - Codex `additional_rate_limits` prefixed windows (e.g. `GPT-5.3-Codex-Spark_*`): the
+///   top-level Codex `rate_limit` primary/secondary windows are emitted as plain `five_hour`
+///   / `seven_day` (see `push_codex_tiers` called with `prefix=None`); prefixed entries come
+///   from `additional_rate_limits` and represent the same sub-window class.
+///
+/// Only the unprefixed `five_hour` / `seven_day` bind the whole provider for failover.
 fn is_primary_window(name: &str) -> bool {
     matches!(
         name,
-        // Subscription-quota primary windows (Claude)
+        // Subscription-quota primary windows — provider-level exhaustion only
         "five_hour"
             | "seven_day"
-            // Subscription-quota primary windows (Codex Spark)
-            | "GPT-5.3-Codex-Spark_five_hour"
-            | "GPT-5.3-Codex-Spark_seven_day"
             // Response-header window names are always primary
             | "5h"
             | "7d"
@@ -853,6 +859,34 @@ mod tests {
             },
         ]);
         assert_eq!(quota_exhausted_reset(&snapshot, 1_900), Some(2_000));
+    }
+
+    #[test]
+    fn codex_spark_sub_window_saturated_does_not_gate() {
+        // GPT-5.3-Codex-Spark_* entries come from Codex additional_rate_limits (prefixed),
+        // not from the top-level rate_limit (plain five_hour/seven_day). They must not gate
+        // the provider, exactly like seven_day_claude_design.
+        let snapshot = make_snapshot(vec![
+            RateLimitWindow {
+                name: "five_hour".to_string(),
+                status: None,
+                utilization: Some(0.4),
+                reset: Some(2_000),
+            },
+            RateLimitWindow {
+                name: "seven_day".to_string(),
+                status: None,
+                utilization: Some(0.2),
+                reset: Some(2_000),
+            },
+            RateLimitWindow {
+                name: "GPT-5.3-Codex-Spark_seven_day".to_string(),
+                status: None,
+                utilization: Some(1.0),
+                reset: Some(2_000),
+            },
+        ]);
+        assert_eq!(quota_exhausted_reset(&snapshot, 1_900), None);
     }
 
     #[test]
