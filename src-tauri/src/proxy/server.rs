@@ -148,7 +148,7 @@ impl ProxyServer {
                 );
                 let mut map = store.try_write().expect("rate_limit store lock on init");
                 for s in snapshots {
-                    map.insert(s.provider_id.clone(), s);
+                    map.insert(s.provider_id.clone(), super::rate_limit::sanitize_for_restart(s));
                 }
             }
             store
