@@ -5,7 +5,7 @@ import {
   RefreshCcw,
   X,
 } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { SharedProviderAppId } from "@/shared/providers/domain";
 import type {
   OpenWrtPaginatedRequestLogs,
@@ -298,7 +298,22 @@ export function ActivitySidePanel({
   const [refreshCounter, setRefreshCounter] = useState(0);
   const [pageSize, setPageSize] = useState(ACTIVITY_DRAWER_PAGE_SIZE);
   const listRef = useRef<HTMLDivElement | null>(null);
-  const firstRowRef = useRef<HTMLDivElement | null>(null);
+  const measuredRowHeightRef = useRef<number | null>(null);
+  const firstRowCallbackRef = useCallback((el: HTMLDivElement | null) => {
+    if (!el || measuredRowHeightRef.current !== null) return;
+    measuredRowHeightRef.current = el.offsetHeight;
+    const listEl = listRef.current;
+    if (!listEl) return;
+    const height = listEl.getBoundingClientRect().height;
+    if (height <= 0) return;
+    const rowHeight = measuredRowHeightRef.current;
+    setPageSize(
+      Math.max(
+        1,
+        Math.floor((height - LIST_PADDING_PX + ROW_GAP_PX) / (rowHeight + ROW_GAP_PX)),
+      ),
+    );
+  }, []);
   const [lastLoadedAt, setLastLoadedAt] = useState<number | null>(null);
   const [requestLogsState, setRequestLogsState] =
     useState<ActivityRequestLogsState>({
@@ -351,7 +366,7 @@ export function ActivitySidePanel({
     function measure() {
       const height = el!.getBoundingClientRect().height;
       if (height <= 0) return;
-      const rowHeight = firstRowRef.current?.offsetHeight || ROW_HEIGHT_PX;
+      const rowHeight = measuredRowHeightRef.current ?? ROW_HEIGHT_PX;
       setPageSize(
         Math.max(
           1,
@@ -371,8 +386,7 @@ export function ActivitySidePanel({
       clearTimeout(timer);
       observer.disconnect();
     };
-  // data.length: re-run once rows mount so firstRowRef gets a real offsetHeight
-  }, [open, requestLogsState.data.length]);
+  }, [open]);
 
   useEffect(() => {
     if (!requestLogsState.total) return;
@@ -582,7 +596,7 @@ export function ActivitySidePanel({
             requestLogsState.data.map((entry, index) => (
               <div
                 key={`${entry.resolvedAppId}-${entry.requestId}`}
-                ref={index === 0 ? firstRowRef : undefined}
+                ref={index === 0 ? firstRowCallbackRef : undefined}
                 className="owt-activity-drawer__row"
               >
                 <div className="owt-activity-drawer__row-left">
