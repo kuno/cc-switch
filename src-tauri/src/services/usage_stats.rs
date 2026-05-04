@@ -1060,7 +1060,7 @@ impl Database {
                     COALESCE(SUM(CASE WHEN l.status_code >= 200 AND l.status_code < 300 THEN 1 ELSE 0 END), 0) as success_count,
                     COALESCE(SUM(l.latency_ms), 0) as latency_sum
                 FROM proxy_request_logs l
-                LEFT JOIN providers p ON l.provider_id = p.id AND l.app_type = p.app_type
+                INNER JOIN providers p ON l.provider_id = p.id AND l.app_type = p.app_type
                 {detail_where}
                 GROUP BY l.provider_id, l.app_type
                 UNION ALL
@@ -1072,7 +1072,7 @@ impl Database {
                     COALESCE(SUM(r.success_count), 0),
                     COALESCE(SUM(r.avg_latency_ms * r.request_count), 0)
                 FROM usage_daily_rollups r
-                LEFT JOIN providers p2 ON r.provider_id = p2.id AND r.app_type = p2.app_type
+                INNER JOIN providers p2 ON r.provider_id = p2.id AND r.app_type = p2.app_type
                 {rollup_where}
                 GROUP BY r.provider_id, r.app_type
             )
@@ -2841,6 +2841,10 @@ mod tests {
         {
             let conn = lock_conn!(db.conn);
             conn.execute(
+                "INSERT INTO providers (id, app_type, name, settings_config) VALUES (?, ?, ?, ?)",
+                params!["p1", "claude", "Provider1", "{}"],
+            )?;
+            conn.execute(
                 "INSERT INTO proxy_request_logs (
                     request_id, provider_id, app_type, model,
                     input_tokens, output_tokens, total_cost_usd,
@@ -2875,6 +2879,10 @@ mod tests {
 
         {
             let conn = lock_conn!(db.conn);
+            conn.execute(
+                "INSERT INTO providers (id, app_type, name, settings_config) VALUES (?, ?, ?, ?)",
+                params!["p-rollup", "claude", "RollupProvider", "{}"],
+            )?;
             conn.execute(
                 "INSERT INTO usage_daily_rollups (
                     date, app_type, provider_id, model,
@@ -2945,6 +2953,84 @@ mod tests {
         assert_eq!(stats[0].provider_id, "p-rollup");
         assert_eq!(stats[0].request_count, 8);
         assert_eq!(stats[0].total_tokens, 1200);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_provider_stats_excludes_orphan_providers() -> Result<(), AppError> {
+        let db = Database::memory()?;
+
+        {
+            let conn = lock_conn!(db.conn);
+            // Only p1 is a configured provider; p_orphan has been deleted.
+            conn.execute(
+                "INSERT INTO providers (id, app_type, name, settings_config) VALUES (?, ?, ?, ?)",
+                params!["p1", "claude", "Provider1", "{}"],
+            )?;
+            // Detail-log leg: one row for the configured provider, one for the orphan.
+            conn.execute(
+                "INSERT INTO proxy_request_logs (
+                    request_id, provider_id, app_type, model,
+                    input_tokens, output_tokens, total_cost_usd,
+                    latency_ms, status_code, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                params!["req-p1", "p1", "claude", "claude-3", 100, 50, "0.01", 100, 200, 1000],
+            )?;
+            conn.execute(
+                "INSERT INTO proxy_request_logs (
+                    request_id, provider_id, app_type, model,
+                    input_tokens, output_tokens, total_cost_usd,
+                    latency_ms, status_code, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                params![
+                    "req-orphan",
+                    "p_orphan",
+                    "claude",
+                    "claude-3",
+                    200,
+                    100,
+                    "0.02",
+                    120,
+                    200,
+                    2000
+                ],
+            )?;
+            // Rollup leg: orphan also has a rollup row.
+            conn.execute(
+                "INSERT INTO usage_daily_rollups (
+                    date, app_type, provider_id, model,
+                    request_count, success_count, input_tokens, output_tokens,
+                    cache_read_tokens, cache_creation_tokens, total_cost_usd, avg_latency_ms
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                params![
+                    "2024-01-01",
+                    "claude",
+                    "p_orphan",
+                    "claude-3",
+                    57,
+                    50,
+                    5000,
+                    2000,
+                    0,
+                    0,
+                    "0.20",
+                    150
+                ],
+            )?;
+        }
+
+        let stats = db.get_provider_stats(None, None, Some("claude"))?;
+        let ids: Vec<&str> = stats.iter().map(|s| s.provider_id.as_str()).collect();
+        assert!(ids.contains(&"p1"), "configured provider must appear");
+        assert!(
+            !ids.contains(&"p_orphan"),
+            "deleted provider must not appear"
+        );
+        assert_eq!(
+            stats.iter().find(|s| s.provider_id == "p1").unwrap().provider_name,
+            "Provider1"
+        );
 
         Ok(())
     }
