@@ -80,38 +80,28 @@ function isInertHomeAppId(appId: AppCardAppId): appId is InertHomeAppId {
 type StatusTone = "success" | "accent" | "warn" | "neutral" | "fail";
 type RunMode = "normal" | "failover";
 
-/** Compact formatter: 12307 → "12.3k", 8_420_000 → "8.42M". Mirrors the prototype. */
-function formatCompactCount(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) {
-    return "0";
+/** Adaptive formatter: 3 significant figures with k/M/B/T suffix. */
+function formatAdaptive(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return "0";
+  const abs = Math.abs(n);
+  if (abs < 1000) return Math.round(n).toString();
+  const units: [number, string][] = [[1e12, "T"], [1e9, "B"], [1e6, "M"], [1e3, "k"]];
+  for (const [base, suffix] of units) {
+    if (abs >= base) {
+      const v = n / base;
+      const intDigits = Math.floor(Math.log10(Math.abs(v))) + 1;
+      const decimals = Math.max(0, 3 - intDigits);
+      return v.toFixed(decimals) + suffix;
+    }
   }
-
-  if (value >= 1_000_000) {
-    return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 1 : 2)}M`;
-  }
-
-  if (value >= 10_000) {
-    return `${Math.round(value / 100) / 10}k`;
-  }
-
-  if (value >= 1000) {
-    return new Intl.NumberFormat("en-US").format(value);
-  }
-
-  return new Intl.NumberFormat("en-US").format(value);
+  return n.toString();
 }
 
-/** Parses the string-money field and returns a bare numeric string — the unit is rendered separately. */
+/** Parses the string-money field and returns a scaled numeric string — the unit is rendered separately. */
 function formatCostValue(value: string | null | undefined): string {
   const numeric = Number(value ?? 0);
-
-  if (!Number.isFinite(numeric) || numeric === 0) {
-    return "0.00";
-  }
-
-  const fractionDigits = Math.abs(numeric) < 1 ? 4 : 2;
-
-  return numeric.toFixed(fractionDigits);
+  if (!Number.isFinite(numeric) || numeric === 0) return "0";
+  return formatAdaptive(numeric);
 }
 
 function sumTokenCounts(summary: OpenWrtUsageSummary | null): number {
@@ -733,8 +723,8 @@ export function AppCard({
     failoverState: failoverState ?? null,
   });
 
-  const tokensValue = formatCompactCount(sumTokenCounts(summary));
-  const requestsValue = formatCompactCount(summary?.totalRequests ?? 0);
+  const tokensValue = formatAdaptive(sumTokenCounts(summary));
+  const requestsValue = formatAdaptive(summary?.totalRequests ?? 0);
   const costValue = formatCostValue(summary?.totalCost);
   const handleRunModeClick: MouseEventHandler<HTMLButtonElement> = (event) => {
     event.stopPropagation();
