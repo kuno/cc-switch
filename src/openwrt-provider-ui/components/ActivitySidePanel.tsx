@@ -300,7 +300,7 @@ export function ActivitySidePanel({
   const listRef = useRef<HTMLDivElement | null>(null);
   const measuredRowHeightRef = useRef<number | null>(null);
   const firstRowCallbackRef = useCallback((el: HTMLDivElement | null) => {
-    if (!el || measuredRowHeightRef.current !== null) return;
+    if (!el || measuredRowHeightRef.current !== null || el.offsetHeight <= 0) return;
     measuredRowHeightRef.current = el.offsetHeight;
     const listEl = listRef.current;
     if (!listEl) return;
