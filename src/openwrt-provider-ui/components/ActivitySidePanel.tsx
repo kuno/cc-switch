@@ -371,7 +371,8 @@ export function ActivitySidePanel({
       clearTimeout(timer);
       observer.disconnect();
     };
-  }, [open]);
+  // data.length: re-run once rows mount so firstRowRef gets a real offsetHeight
+  }, [open, requestLogsState.data.length]);
 
   useEffect(() => {
     if (!requestLogsState.total) return;
