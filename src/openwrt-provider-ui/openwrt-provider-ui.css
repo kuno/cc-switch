@@ -974,6 +974,13 @@
   color: var(--accent-text);
 }
 
+.owt-status-pill[data-tone="warn"],
+.owt-activity-pill[data-tone="warn"] .owt-activity-pill__status {
+  border-color: var(--warn-line);
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
 .owt-status-pill[data-tone="neutral"],
 .owt-activity-pill[data-tone="neutral"] .owt-activity-pill__status {
   background: color-mix(in srgb, var(--panel-soft) 82%, transparent);
