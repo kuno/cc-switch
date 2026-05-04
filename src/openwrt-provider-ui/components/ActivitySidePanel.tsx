@@ -5,7 +5,7 @@ import {
   RefreshCcw,
   X,
 } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { SharedProviderAppId } from "@/shared/providers/domain";
 import type {
   OpenWrtPaginatedRequestLogs,
@@ -16,6 +16,9 @@ import { lockBodyScroll } from "../utils/bodyScrollLock";
 import { getActiveElementInTree } from "./focusTree";
 
 const ACTIVITY_DRAWER_PAGE_SIZE = 6;
+const ROW_HEIGHT_PX = 65; // row padding (12+12) + border (1+1) + ~2 text lines
+const ROW_GAP_PX = 8;    // gap between rows
+const LIST_PADDING_PX = 24; // list container padding (12 top + 12 bottom)
 const SUPPORTED_APP_IDS = [
   "claude",
   "codex",
@@ -293,6 +296,24 @@ export function ActivitySidePanel({
   const [filterMode, setFilterMode] = useState<ActivityDrawerFilterMode>("app");
   const [page, setPage] = useState(0);
   const [refreshCounter, setRefreshCounter] = useState(0);
+  const [pageSize, setPageSize] = useState(ACTIVITY_DRAWER_PAGE_SIZE);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const measuredRowHeightRef = useRef<number | null>(null);
+  const firstRowCallbackRef = useCallback((el: HTMLDivElement | null) => {
+    if (!el || measuredRowHeightRef.current !== null || el.offsetHeight <= 0) return;
+    measuredRowHeightRef.current = el.offsetHeight;
+    const listEl = listRef.current;
+    if (!listEl) return;
+    const height = listEl.getBoundingClientRect().height;
+    if (height <= 0) return;
+    const rowHeight = measuredRowHeightRef.current;
+    setPageSize(
+      Math.max(
+        1,
+        Math.floor((height - LIST_PADDING_PX + ROW_GAP_PX) / (rowHeight + ROW_GAP_PX)),
+      ),
+    );
+  }, []);
   const [lastLoadedAt, setLastLoadedAt] = useState<number | null>(null);
   const [requestLogsState, setRequestLogsState] =
     useState<ActivityRequestLogsState>({
@@ -305,10 +326,7 @@ export function ActivitySidePanel({
     });
   const totalPages = Math.max(
     1,
-    Math.ceil(
-      requestLogsState.total /
-        Math.max(1, requestLogsState.pageSize || ACTIVITY_DRAWER_PAGE_SIZE),
-    ),
+    Math.ceil(requestLogsState.total / Math.max(1, pageSize)),
   );
   const windowStart = requestLogsState.total
     ? requestLogsState.page * requestLogsState.pageSize + 1
@@ -342,6 +360,41 @@ export function ActivitySidePanel({
   }, [activeAppId, open]);
 
   useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    let timer: ReturnType<typeof setTimeout>;
+    function measure() {
+      const height = el!.getBoundingClientRect().height;
+      if (height <= 0) return;
+      const rowHeight = measuredRowHeightRef.current ?? ROW_HEIGHT_PX;
+      setPageSize(
+        Math.max(
+          1,
+          Math.floor(
+            (height - LIST_PADDING_PX + ROW_GAP_PX) / (rowHeight + ROW_GAP_PX),
+          ),
+        ),
+      );
+    }
+    measure();
+    const observer = new ResizeObserver(() => {
+      clearTimeout(timer);
+      timer = setTimeout(measure, 100);
+    });
+    observer.observe(el);
+    return () => {
+      clearTimeout(timer);
+      observer.disconnect();
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!requestLogsState.total) return;
+    const maxPage = Math.max(0, Math.ceil(requestLogsState.total / pageSize) - 1);
+    setPage((current) => Math.min(current, maxPage));
+  }, [pageSize, requestLogsState.total]);
+
+  useEffect(() => {
     if (!open) {
       return;
     }
@@ -356,13 +409,8 @@ export function ActivitySidePanel({
 
     const requestPromise =
       filterMode === "all"
-        ? loadAllAppRequestLogs(shell, page, ACTIVITY_DRAWER_PAGE_SIZE)
-        : loadScopedRequestLogs(
-            shell,
-            activeAppId,
-            page,
-            ACTIVITY_DRAWER_PAGE_SIZE,
-          );
+        ? loadAllAppRequestLogs(shell, page, pageSize)
+        : loadScopedRequestLogs(shell, activeAppId, page, pageSize);
 
     void requestPromise
       .then((result) => {
@@ -374,7 +422,7 @@ export function ActivitySidePanel({
           data: result.data,
           total: result.total,
           page: result.page,
-          pageSize: result.pageSize || ACTIVITY_DRAWER_PAGE_SIZE,
+          pageSize: result.pageSize || pageSize,
           loading: false,
           error: null,
         });
@@ -389,7 +437,7 @@ export function ActivitySidePanel({
           data: [],
           total: 0,
           page,
-          pageSize: ACTIVITY_DRAWER_PAGE_SIZE,
+          pageSize,
           loading: false,
           error: error instanceof Error ? error.message : String(error),
         });
@@ -398,7 +446,7 @@ export function ActivitySidePanel({
     return () => {
       cancelled = true;
     };
-  }, [activeAppId, filterMode, open, page, refreshCounter, shell]);
+  }, [activeAppId, filterMode, open, page, pageSize, refreshCounter, shell]);
 
   useEffect(() => {
     if (!open) {
@@ -534,7 +582,7 @@ export function ActivitySidePanel({
           </button>
         </div>
 
-        <div className="owt-activity-drawer__list">
+        <div ref={listRef} className="owt-activity-drawer__list">
           {requestLogsState.error ? (
             <div className="owt-activity-drawer__state">
               <p>{requestLogsState.error}</p>
@@ -545,9 +593,10 @@ export function ActivitySidePanel({
               <p>Loading recent requests…</p>
             </div>
           ) : requestLogsState.data.length ? (
-            requestLogsState.data.map((entry) => (
+            requestLogsState.data.map((entry, index) => (
               <div
                 key={`${entry.resolvedAppId}-${entry.requestId}`}
+                ref={index === 0 ? firstRowCallbackRef : undefined}
                 className="owt-activity-drawer__row"
               >
                 <div className="owt-activity-drawer__row-left">
