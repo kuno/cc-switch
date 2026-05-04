@@ -384,6 +384,50 @@ async function loadRecentActivityByApp(
   return recentActivityByApp;
 }
 
+async function loadFailoverStateByApp(
+  transport: OpenWrtSharedPageMountOptions["transport"],
+  currentCards: AppGridData[],
+): Promise<Partial<Record<SharedProviderAppId, SharedProviderFailoverState>>> {
+  const adapter = createOpenWrtProviderAdapter(transport);
+  const { getProviderFailoverState } = adapter;
+
+  if (typeof getProviderFailoverState !== "function") {
+    return {};
+  }
+
+  const results = await Promise.allSettled(
+    BACKEND_APP_OPTIONS.map(async (appId) => {
+      const card = currentCards.find((c) => c.appId === appId);
+      const activeProviderId = card?.providerState?.activeProvider.configured
+        ? card.providerState.activeProvider.providerId
+        : null;
+
+      if (!activeProviderId) {
+        return null;
+      }
+
+      return {
+        appId,
+        failoverState: await getProviderFailoverState(appId, activeProviderId),
+      };
+    }),
+  );
+
+  const failoverStateByApp: Partial<
+    Record<SharedProviderAppId, SharedProviderFailoverState>
+  > = {};
+
+  results.forEach((result) => {
+    if (result.status !== "fulfilled" || result.value === null) {
+      return;
+    }
+
+    failoverStateByApp[result.value.appId] = result.value.failoverState;
+  });
+
+  return failoverStateByApp;
+}
+
 export interface AppsGridProps {
   options: OpenWrtSharedPageMountOptions;
   onOpenActivity: (appId: SharedProviderAppId) => void;
@@ -415,6 +459,8 @@ export function AppsGrid({
   const [cards, setCards] = useState<AppGridData[]>(() =>
     APP_OPTIONS.map(createInitialCard),
   );
+  const cardsRef = useRef(cards);
+  cardsRef.current = cards;
   const initialLoadCompleteRef = useRef(false);
   const [quotaByProviderId, setQuotaByProviderId] = useState<
     Record<string, ProviderQuotaSnapshot>
@@ -589,10 +635,12 @@ export function AppsGrid({
         : POLL_INTERVAL_MS;
 
     const refetchUsageSummaries = async () => {
-      const [newSummaryByApp, newRecentActivityByApp] = await Promise.all([
-        loadUsageSummaries(options.shell),
-        loadRecentActivityByApp(options.shell),
-      ]);
+      const [newSummaryByApp, newRecentActivityByApp, newFailoverStateByApp] =
+        await Promise.all([
+          loadUsageSummaries(options.shell),
+          loadRecentActivityByApp(options.shell),
+          loadFailoverStateByApp(options.transport, cardsRef.current),
+        ]);
 
       if (cancelled) {
         return;
@@ -606,6 +654,7 @@ export function AppsGrid({
 
           const nextSummary = newSummaryByApp[card.appId];
           const nextRecentActivity = newRecentActivityByApp[card.appId];
+          const nextFailoverState = newFailoverStateByApp[card.appId];
           let updatedCard = card;
 
           if (nextSummary !== undefined) {
@@ -617,6 +666,10 @@ export function AppsGrid({
               ...updatedCard,
               recentActivity: nextRecentActivity,
             };
+          }
+
+          if (nextFailoverState !== undefined) {
+            updatedCard = { ...updatedCard, failoverState: nextFailoverState };
           }
 
           return updatedCard;
