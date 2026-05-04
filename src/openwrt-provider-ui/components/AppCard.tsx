@@ -77,7 +77,7 @@ function isInertHomeAppId(appId: AppCardAppId): appId is InertHomeAppId {
   return appId === "opencode" || appId === "openclaw";
 }
 
-type StatusTone = "success" | "accent" | "neutral" | "fail";
+type StatusTone = "success" | "accent" | "warn" | "neutral" | "fail";
 type RunMode = "normal" | "failover";
 
 /** Compact formatter: 12307 → "12.3k", 8_420_000 → "8.42M". Mirrors the prototype. */
@@ -168,7 +168,7 @@ function getStatus({
 
   // recent live failures override the daemon's probe-based health, which can lag by hours
   if ((recentActivity[0]?.statusCode ?? 0) >= 400) {
-    return { label: "Degraded", tone: "accent" };
+    return { label: "Degraded", tone: "warn" };
   }
 
   const providerHealth = failoverState?.providerHealth;
