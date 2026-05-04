@@ -298,6 +298,7 @@ export function ActivitySidePanel({
   const [refreshCounter, setRefreshCounter] = useState(0);
   const [pageSize, setPageSize] = useState(ACTIVITY_DRAWER_PAGE_SIZE);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const firstRowRef = useRef<HTMLDivElement | null>(null);
   const [lastLoadedAt, setLastLoadedAt] = useState<number | null>(null);
   const [requestLogsState, setRequestLogsState] =
     useState<ActivityRequestLogsState>({
@@ -350,11 +351,12 @@ export function ActivitySidePanel({
     function measure() {
       const height = el!.getBoundingClientRect().height;
       if (height <= 0) return;
+      const rowHeight = firstRowRef.current?.offsetHeight || ROW_HEIGHT_PX;
       setPageSize(
         Math.max(
           1,
           Math.floor(
-            (height - LIST_PADDING_PX + ROW_GAP_PX) / (ROW_HEIGHT_PX + ROW_GAP_PX),
+            (height - LIST_PADDING_PX + ROW_GAP_PX) / (rowHeight + ROW_GAP_PX),
           ),
         ),
       );
@@ -576,9 +578,10 @@ export function ActivitySidePanel({
               <p>Loading recent requests…</p>
             </div>
           ) : requestLogsState.data.length ? (
-            requestLogsState.data.map((entry) => (
+            requestLogsState.data.map((entry, index) => (
               <div
                 key={`${entry.resolvedAppId}-${entry.requestId}`}
+                ref={index === 0 ? firstRowRef : undefined}
                 className="owt-activity-drawer__row"
               >
                 <div className="owt-activity-drawer__row-left">
