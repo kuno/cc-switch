@@ -192,9 +192,11 @@ def load_app_icon_base64(app):
     return ""
 
 
-def render_app_header(app, summary):
-    # Plain app name (Claude, Codex, Gemini); icons + numbers moved off the header.
-    return f"{app.capitalize()} | size=14 color=#e2e8f0"
+def render_app_header(app, summary, active_name=""):
+    label = app.capitalize()
+    if active_name:
+        label = f"{label} ▸ {active_name}"
+    return f"{label} | size=14 color=#e2e8f0"
 
 
 def app_providers(app_status):
@@ -219,11 +221,20 @@ def menu_bar_title(apps):
         provider = app_providers(app_status).get(pid, {})
         quota = get_field(provider, "quota") if isinstance(provider, dict) else None
         icon = APP_TITLE_ICONS.get(app, "")
+        name = get_field(provider, "name") or ""
+        pct = None
         if quota:
-            _, pct = provider_headline(quota)
-            parts.append(f"{icon} {pct}%" if pct is not None else f"{icon} --")
-        else:
-            parts.append(f"{icon} --")
+            windows = quota.get("windows", [])
+            for w in windows:
+                wname = get_field(w, "name", default="")
+                if "five" in wname.lower() or "5h" in wname.lower():
+                    util = get_field(w, "utilization")
+                    if util is not None:
+                        pct = int((1 - util) * 100)
+                        break
+            if pct is None:
+                _, pct = provider_headline(quota)
+        parts.append(f"{icon} {pct}%" if pct is not None else f"{icon} {name}")
     # SwiftBar uses ASCII "|" to start item metadata, so use a Unicode vertical bar in title text.
     return sanitize_title_text(" ｜ ".join(parts) if parts else "--")
 
@@ -361,8 +372,12 @@ def main():
             if total_req > 0:
                 summary_parts.append(f"{total_req}r/{format_tokens(total_tok)}tok")
             summary = f" {' '.join(summary_parts)}" if summary_parts else ""
-            print(render_app_header(app, summary))
+            active_pid = active_provider_id(app_status)
+            active_provider = providers.get(active_pid, {}) if active_pid else {}
+            active_name = get_field(active_provider, "name") if isinstance(active_provider, dict) else ""
+            print(render_app_header(app, summary, active_name))
 
+            active_pid = active_provider_id(app_status)
             for pid, provider in providers.items():
                 if not isinstance(provider, dict):
                     continue
@@ -371,8 +386,12 @@ def main():
                 name = get_field(provider, "name") or pid or "Unknown"
                 status = get_field(q, "status") if q else None
                 status_icon = STATUS_ICON.get(status, "") if status else ""
-                provider_label = f"--{status_icon} {name}" if status_icon else f"--{name}"
-                print(f"{provider_label} | size=13")
+                is_active = pid == active_pid
+                active_marker = "▸ " if is_active else ""
+                provider_label = f"--{active_marker}{status_icon} {name}" if status_icon else f"--{active_marker}{name}"
+                font_attr = "font=Menlo-Bold" if is_active else ""
+                extra = f" | {font_attr}" if font_attr else ""
+                print(f"{provider_label} | size=13{extra}")
 
                 if s:
                     print(render_stats_line(s, "--"))
