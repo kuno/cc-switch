@@ -9,6 +9,7 @@ import type {
   OpenWrtRecentActivityItem,
   OpenWrtRequestLog,
   OpenWrtSharedPageShellApi,
+  OpenWrtStatusResponse,
   OpenWrtUsageSummary,
 } from "@/openwrt-provider-ui/pageTypes";
 import type { SharedProviderAppId } from "@/shared/providers/domain";
@@ -49,6 +50,23 @@ const DEFAULT_QUOTA_RESPONSE: QuotaResponse = {
   timestamp: "2026-04-22T00:00:00.000Z",
 };
 
+const BACKEND_APP_IDS = ["claude", "codex", "gemini"] as const;
+const APP_LABELS: Record<SharedProviderAppId, string> = {
+  claude: "Claude",
+  codex: "Codex",
+  gemini: "Gemini",
+};
+const APP_BASE_URLS: Record<SharedProviderAppId, string> = {
+  claude: "https://claude.example.com/v1",
+  codex: "https://api.openai.com/v1",
+  gemini: "https://generativelanguage.googleapis.com/v1beta/openai",
+};
+const APP_TOKEN_FIELDS: Record<SharedProviderAppId, string> = {
+  claude: "ANTHROPIC_AUTH_TOKEN",
+  codex: "OPENAI_API_KEY",
+  gemini: "GEMINI_API_KEY",
+};
+
 export interface BridgeFixtureOptions {
   selectedApp?: SharedProviderAppId;
   host?: Partial<OpenWrtHostState>;
@@ -71,6 +89,7 @@ export interface BridgeFixtureOptions {
     Record<SharedProviderAppId, OpenWrtRecentActivityItem[]>
   >;
   quota?: QuotaResponse;
+  status?: OpenWrtStatusResponse;
   usageSummary?: Partial<Record<SharedProviderAppId, OpenWrtUsageSummary>>;
   overrides?: Partial<OpenWrtSharedPageShellApi>;
 }
@@ -98,6 +117,72 @@ function paginateRequestLogs(
     total: response.total ?? response.data.length,
     page: safePage,
     pageSize: safePageSize,
+  };
+}
+
+function createDefaultStatusResponse(
+  options: BridgeFixtureOptions,
+): OpenWrtStatusResponse {
+  return {
+    daemon: {
+      health: true,
+      running: true,
+      uptimeSeconds: 3600,
+      lastError: null,
+      checkedAt: "2026-04-22T00:00:00.000Z",
+    },
+    apps: Object.fromEntries(
+      BACKEND_APP_IDS.map((appId) => {
+        const providerId = `${appId}-primary`;
+        const providerName = `${APP_LABELS[appId]} Primary`;
+
+        return [
+          appId,
+          {
+            mode: "normal",
+            proxyEnabled: true,
+            health: true,
+            healthReason: null,
+            maxRetries: 3,
+            usage: getAppRecord(
+              options.usageSummary,
+              appId,
+              DEFAULT_USAGE_SUMMARY,
+            ),
+            activeProvider: {
+              providerId,
+              name: providerName,
+            },
+            providers: {
+              [providerId]: {
+                providerId,
+                name: providerName,
+                configured: true,
+                active: true,
+                baseUrl: APP_BASE_URLS[appId],
+                tokenField: APP_TOKEN_FIELDS[appId],
+                tokenConfigured: true,
+                tokenMasked: "sk-****",
+                stats: getAppRecord(options.providerStats, appId, [])[0] ?? null,
+                quota: null,
+                health: {
+                  providerId,
+                  observed: true,
+                  healthy: true,
+                  consecutiveFailures: 0,
+                  lastSuccessAt: null,
+                  lastFailureAt: null,
+                  lastError: null,
+                  updatedAt: null,
+                },
+              },
+            },
+            failoverQueue: [],
+            failoverStatus: {},
+          },
+        ];
+      }),
+    ) as OpenWrtStatusResponse["apps"],
   };
 }
 
@@ -149,12 +234,19 @@ export function createBridgeFixture(
       getAppRecord(options.providerStats, appId, []),
     ),
     getQuota: vi.fn(async () => options.quota ?? DEFAULT_QUOTA_RESPONSE),
+    getStatus: vi.fn(
+      async () => options.status ?? createDefaultStatusResponse(options),
+    ),
     getRequestDetail: vi.fn(
       async (appId: SharedProviderAppId, requestId: string) =>
         options.requestDetails?.[appId]?.[requestId] ?? null,
     ),
     getRequestLogs: vi.fn(async (appId, page, pageSize, providerId) => {
-      const response = getAppRecord(options.requestLogs, appId, DEFAULT_REQUEST_LOGS);
+      const response = getAppRecord(
+        options.requestLogs,
+        appId,
+        DEFAULT_REQUEST_LOGS,
+      );
 
       return paginateRequestLogs(
         {

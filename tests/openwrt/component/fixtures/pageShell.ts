@@ -10,6 +10,7 @@ import type {
   OpenWrtRecentActivityItem,
   OpenWrtRequestLog,
   OpenWrtSharedPageShellApi,
+  OpenWrtStatusResponse,
   OpenWrtUsageSummary,
 } from "@/openwrt-provider-ui/pageTypes";
 import type {
@@ -655,6 +656,70 @@ function paginateLogs(
   };
 }
 
+function createStatusResponse(
+  usageSummary: Record<SharedProviderAppId, OpenWrtUsageSummary>,
+  providerStats: Record<SharedProviderAppId, OpenWrtProviderStat[]>,
+): OpenWrtStatusResponse {
+  return {
+    daemon: {
+      health: true,
+      running: true,
+      uptimeSeconds: 3600,
+      lastError: null,
+      checkedAt: new Date(OPENWRT_PAGE_FIXED_NOW).toISOString(),
+    },
+    apps: Object.fromEntries(
+      (["claude", "codex", "gemini"] as const).map((appId) => {
+        const providerState = REALISTIC_PROVIDER_STATES[appId];
+        const activeProvider = providerState.activeProvider;
+
+        return [
+          appId,
+          {
+            mode: "normal",
+            proxyEnabled: true,
+            health: true,
+            healthReason: null,
+            maxRetries: 3,
+            usage: usageSummary[appId],
+            activeProvider: activeProvider.configured
+              ? {
+                  providerId: activeProvider.providerId,
+                  name: activeProvider.name,
+                }
+              : null,
+            providers: Object.fromEntries(
+              providerState.providers.map((provider) => [
+                provider.providerId ?? provider.name,
+                {
+                  ...provider,
+                  stats:
+                    providerStats[appId].find(
+                      (stat) => stat.providerId === provider.providerId,
+                    ) ?? null,
+                  quota: null,
+                  health: {
+                    providerId: provider.providerId,
+                    observed: true,
+                    healthy: true,
+                    consecutiveFailures: 0,
+                    lastSuccessAt: null,
+                    lastFailureAt: null,
+                    lastError: null,
+                    updatedAt: null,
+                  },
+                },
+              ]),
+            ),
+            failoverQueue: [],
+            failoverStatus: {},
+          },
+        ];
+      }),
+    ) as OpenWrtStatusResponse["apps"],
+  };
+}
+
 export function createPlainPageShellBridge(
   data: Partial<PageShellBridgeData> = {},
 ): OpenWrtSharedPageShellApi {
@@ -734,6 +799,9 @@ export function createPlainPageShellBridge(
         providers: [],
         timestamp: "2026-04-22T00:00:00.000Z",
       };
+    },
+    async getStatus() {
+      return createStatusResponse(usageSummary, providerStats);
     },
     async getRequestDetail(appId, requestId) {
       return requestDetails[appId]?.[requestId] ?? null;

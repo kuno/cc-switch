@@ -51,6 +51,13 @@ def fetch_json(path):
         return json.loads(resp.read())
 
 
+def get_field(data, *names, default=None):
+    for name in names:
+        if isinstance(data, dict) and name in data:
+            return data.get(name)
+    return default
+
+
 def bar_graph(ratio, width=10):
     filled = round(ratio * width)
     return "\u2588" * filled + "\u2591" * (width - filled)
@@ -114,22 +121,25 @@ def group_by_app(providers):
 
 def provider_headline(p):
     windows = p.get("windows", [])
-    status = p.get("status")
+    status = get_field(p, "status")
     if windows:
-        rep = p.get("representative_claim", "")
+        rep = get_field(p, "representative_claim", "representativeClaim", default="")
         w = next(
-            (w for w in windows if rep and rep.replace("_", "") in w["name"].replace("_", "")),
+            (
+                w for w in windows
+                if rep and rep.replace("_", "") in get_field(w, "name", default="").replace("_", "")
+            ),
             None,
         )
         if w is None:
             w = windows[-1]
-        util = w.get("utilization")
+        util = get_field(w, "utilization")
         if util is not None:
             pct = int((1 - util) * 100)
-            icon = STATUS_ICON.get(status or w.get("status", ""), "")
+            icon = STATUS_ICON.get(status or get_field(w, "status", default=""), "")
             return icon, pct
-    req_rem = p.get("requests_remaining")
-    req_lim = p.get("requests_limit")
+    req_rem = get_field(p, "requests_remaining", "requestsRemaining")
+    req_lim = get_field(p, "requests_limit", "requestsLimit")
     if req_rem is not None and req_lim:
         pct = int((req_rem / req_lim) * 100)
         return "", pct
@@ -149,8 +159,8 @@ def app_window_headline(providers):
     lowest_remaining = OrderedDict([("5h", None), ("7d", None)])
     for p in providers:
         for w in p.get("windows", []):
-            label = normalize_window_name(w.get("name"))
-            util = w.get("utilization")
+            label = normalize_window_name(get_field(w, "name"))
+            util = get_field(w, "utilization")
             if not label or util is None:
                 continue
             pct = int((1 - util) * 100)
@@ -187,27 +197,33 @@ def render_app_header(app, summary):
     return f"{app.capitalize()} | size=14 color=#e2e8f0"
 
 
-def menu_bar_title(quota_groups, stats_by_app):
+def app_providers(app_status):
+    providers = get_field(app_status, "providers", default={})
+    return providers if isinstance(providers, dict) else {}
+
+
+def active_provider_id(app_status):
+    active = get_field(app_status, "activeProvider", "active_provider", default={})
+    return get_field(active, "providerId", "provider_id")
+
+
+def menu_bar_title(apps):
     parts = []
     for app in APP_ORDER:
-        providers = quota_groups.get(app, [])
-        app_stats = stats_by_app.get(app)
-        if not providers and not app_stats:
+        app_status = apps.get(app, {})
+        if not isinstance(app_status, dict):
             continue
-        window_pcts = app_window_headline(providers)
-        short_5h = window_pcts.get("5h")
-        if short_5h is not None:
-            icon = APP_TITLE_ICONS.get(app, "")
-            parts.append(f"{icon} {short_5h}%".strip())
-        elif any(pct is not None for pct in window_pcts.values()):
-            # 5h unavailable but other windows reported — fall back to the longest one
-            for window_name, pct in window_pcts.items():
-                if pct is not None:
-                    parts.append(f"{window_name} {pct}%")
-                    break
-        elif app_stats:
-            total_req = sum(s.get("requestCount", 0) for s in app_stats)
-            parts.append(f"{total_req}r")
+        pid = active_provider_id(app_status)
+        if not pid:
+            continue
+        provider = app_providers(app_status).get(pid, {})
+        quota = get_field(provider, "quota") if isinstance(provider, dict) else None
+        icon = APP_TITLE_ICONS.get(app, "")
+        if quota:
+            _, pct = provider_headline(quota)
+            parts.append(f"{icon} {pct}%" if pct is not None else f"{icon} --")
+        else:
+            parts.append(f"{icon} --")
     # SwiftBar uses ASCII "|" to start item metadata, so use a Unicode vertical bar in title text.
     return sanitize_title_text(" ｜ ".join(parts) if parts else "--")
 
@@ -217,10 +233,10 @@ def render_quota_windows(p, prefix):
     windows = p.get("windows", [])
     if windows:
         for w in windows:
-            wname = w["name"]
-            wstatus = w.get("status", "")
-            util = w.get("utilization")
-            reset = w.get("reset")
+            wname = get_field(w, "name", default="")
+            wstatus = get_field(w, "status", default="")
+            util = get_field(w, "utilization")
+            reset = get_field(w, "reset")
             if util is not None:
                 pct = int((1 - util) * 100)
                 color = STATUS_COLOR.get(wstatus) or quota_hex_color(pct)
@@ -233,20 +249,20 @@ def render_quota_windows(p, prefix):
             else:
                 color = STATUS_COLOR.get(wstatus, "#a1a1aa")
                 lines.append(f"{prefix}{wname}: {wstatus} | size=12 color={color}")
-        rep = p.get("representative_claim")
+        rep = get_field(p, "representative_claim", "representativeClaim")
         if rep:
             lines.append(f"{prefix}Billing: {rep.replace('_', ' ')} | size=11 color=#a1a1aa")
-        overage = p.get("overage_status")
+        overage = get_field(p, "overage_status", "overageStatus")
         if overage:
             lines.append(f"{prefix}Overage: {overage} | size=11 color=#a1a1aa")
-        fb = p.get("fallback_percentage")
+        fb = get_field(p, "fallback_percentage", "fallbackPercentage")
         if fb is not None:
             lines.append(f"{prefix}Fallback: {int(fb * 100)}% | size=11 color=#a1a1aa")
     else:
-        req_lim = p.get("requests_limit")
-        req_rem = p.get("requests_remaining")
-        tok_lim = p.get("tokens_limit")
-        tok_rem = p.get("tokens_remaining")
+        req_lim = get_field(p, "requests_limit", "requestsLimit")
+        req_rem = get_field(p, "requests_remaining", "requestsRemaining")
+        tok_lim = get_field(p, "tokens_limit", "tokensLimit")
+        tok_rem = get_field(p, "tokens_remaining", "tokensRemaining")
         if req_lim is not None and req_rem is not None:
             ratio = req_rem / req_lim if req_lim > 0 else 1
             graph = bar_graph(ratio)
@@ -255,7 +271,7 @@ def render_quota_windows(p, prefix):
             ratio = tok_rem / tok_lim if tok_lim > 0 else 1
             graph = bar_graph(ratio)
             lines.append(f"{prefix}Tokens:   {graph} {tok_rem}/{tok_lim} | font=Menlo size=12")
-    ago = format_ago(p.get("captured_at"))
+    ago = format_ago(get_field(p, "captured_at", "capturedAt"))
     if ago:
         lines.append(f"{prefix}Updated {ago} | size=10 color=#71717a")
     return lines
@@ -283,9 +299,9 @@ def render_stats_line(stat, prefix):
 
 def main():
     try:
-        quota_data = fetch_json("/api/quota")
+        status_data = fetch_json("/api/status")
     except Exception as e:
-        print(f"offline | color=#f87171")
+        print(f"cc-switch: error | color=#f87171")
         print("---")
         print(f"Cannot reach daemon | color=#f87171")
         print(f"{DAEMON} | size=11 color=#a1a1aa")
@@ -294,24 +310,15 @@ def main():
         print("Refresh | refresh=true")
         return
 
-    quota_providers = quota_data.get("providers", [])
-    quota_groups = group_by_app(quota_providers)
+    apps = get_field(status_data, "apps", default={})
+    if not isinstance(apps, dict):
+        apps = {}
+    all_apps = [
+        app for app in APP_ORDER
+        if app_providers(apps.get(app, {}))
+    ]
 
-    stats_by_app = {}
-    for app in APP_ORDER:
-        try:
-            data = fetch_json(f"/openwrt/admin/apps/{app}/provider-stats")
-            providers = data.get("providers", [])
-            if providers:
-                stats_by_app[app] = providers
-        except Exception:
-            pass
-
-    all_apps = list(OrderedDict.fromkeys(
-        list(quota_groups.keys()) + list(stats_by_app.keys())
-    ))
-
-    print(menu_bar_title(quota_groups, stats_by_app))
+    print(menu_bar_title(apps))
     print("---")
 
     if not all_apps:
@@ -320,9 +327,9 @@ def main():
     else:
         first_group = True
         for app in APP_ORDER:
-            app_quota = quota_groups.get(app, [])
-            app_stats = stats_by_app.get(app, [])
-            if not app_quota and not app_stats:
+            app_status = apps.get(app, {})
+            providers = app_providers(app_status)
+            if not providers:
                 continue
 
             if not first_group:
@@ -330,14 +337,24 @@ def main():
             first_group = False
 
             best_icon, best_pct = "", None
-            for p in app_quota:
-                icon, pct = provider_headline(p)
-                if pct is not None and (best_pct is None or pct < best_pct):
-                    best_pct = pct
-                    best_icon = icon
+            stats_by_id = {}
+            quota_by_id = {}
+            for pid, provider in providers.items():
+                if not isinstance(provider, dict):
+                    continue
+                stats = get_field(provider, "stats")
+                quota = get_field(provider, "quota")
+                if stats:
+                    stats_by_id[pid] = stats
+                if quota:
+                    quota_by_id[pid] = quota
+                    icon, pct = provider_headline(quota)
+                    if pct is not None and (best_pct is None or pct < best_pct):
+                        best_pct = pct
+                        best_icon = icon
 
-            total_req = sum(s.get("requestCount", 0) for s in app_stats)
-            total_tok = sum(s.get("totalTokens", 0) for s in app_stats)
+            total_req = sum(s.get("requestCount", 0) for s in stats_by_id.values())
+            total_tok = sum(s.get("totalTokens", 0) for s in stats_by_id.values())
             summary_parts = []
             if best_pct is not None:
                 summary_parts.append(f"{best_icon} {best_pct}%".strip())
@@ -346,25 +363,13 @@ def main():
             summary = f" {' '.join(summary_parts)}" if summary_parts else ""
             print(render_app_header(app, summary))
 
-            stats_by_id = {s["providerId"]: s for s in app_stats}
-            quota_by_id = {
-                p.get("provider_id", ""): p for p in app_quota
-            }
-
-            all_provider_ids = list(OrderedDict.fromkeys(
-                list(quota_by_id.keys()) + list(stats_by_id.keys())
-            ))
-
-            for pid in all_provider_ids:
+            for pid, provider in providers.items():
+                if not isinstance(provider, dict):
+                    continue
                 q = quota_by_id.get(pid)
                 s = stats_by_id.get(pid)
-                name = (
-                    (q.get("provider_name") if q else None)
-                    or (s.get("providerName") if s else None)
-                    or pid
-                    or "Unknown"
-                )
-                status = q.get("status") if q else None
+                name = get_field(provider, "name") or pid or "Unknown"
+                status = get_field(q, "status") if q else None
                 status_icon = STATUS_ICON.get(status, "") if status else ""
                 provider_label = f"--{status_icon} {name}" if status_icon else f"--{name}"
                 print(f"{provider_label} | size=13")
@@ -377,7 +382,8 @@ def main():
                         print(line)
 
     print("---")
-    ts = quota_data.get("timestamp", "")
+    daemon = get_field(status_data, "daemon", default={})
+    ts = get_field(daemon, "checkedAt", "checked_at", default="")
     if ts:
         print(f"Daemon: {ts[:19]} | size=10 color=#71717a")
     print("Refresh | refresh=true")

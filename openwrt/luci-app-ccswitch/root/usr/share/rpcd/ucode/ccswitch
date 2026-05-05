@@ -408,6 +408,10 @@ function getQuota() {
 	return runDaemonGetJson('/api/quota');
 }
 
+function getStatus() {
+	return runDaemonGetJson('/api/status');
+}
+
 function getRequestLogs(app, page, pageSize, providerId) {
 	let normalizedApp = normalizeApp(app);
 	let path, sep;
@@ -864,6 +868,12 @@ return {
 		get_quota: {
 			call: function() {
 				return getQuota();
+			}
+		},
+
+		get_status: {
+			call: function() {
+				return getStatus();
 			}
 		},
 
