@@ -15,10 +15,7 @@ export interface OpenWrtSharedProviderShellApi {
     pending: boolean;
     inFlight: boolean;
   };
-  setRestartState?(state: {
-    pending?: boolean;
-    inFlight?: boolean;
-  }): void;
+  setRestartState?(state: { pending?: boolean; inFlight?: boolean }): void;
   subscribe?(listener: () => void): () => void;
   refreshServiceStatus(): Promise<{
     isRunning: boolean;
@@ -129,6 +126,103 @@ export interface OpenWrtRecentActivityItem {
   createdAt: number;
 }
 
+export interface OpenWrtStatusDaemon {
+  health: boolean;
+  running: boolean;
+  uptimeSeconds: number;
+  lastError: string | null;
+  checkedAt: string;
+}
+
+export interface OpenWrtStatusProviderStats {
+  requestCount?: number;
+  totalTokens?: number;
+  totalCost?: string | number;
+  successRate?: number;
+  avgLatencyMs?: number;
+}
+
+export interface OpenWrtStatusActiveProvider {
+  providerId?: string | null;
+  provider_id?: string | null;
+  id?: string | null;
+  name?: string | null;
+  [key: string]: unknown;
+}
+
+export interface OpenWrtStatusProvider {
+  name?: string | null;
+  configured?: boolean;
+  stats?: OpenWrtStatusProviderStats | null;
+  quota?: Record<string, unknown> | null;
+  health?: Record<string, unknown> | null;
+  circuit?: Record<string, unknown> | null;
+  [key: string]: unknown;
+}
+
+export interface OpenWrtStatusFailoverQueueEntry {
+  providerId?: string | null;
+  provider_id?: string | null;
+  providerName?: string | null;
+  provider_name?: string | null;
+  name?: string | null;
+  position?: number | null;
+  sortIndex?: number | null;
+  sort_index?: number | null;
+  active?: boolean;
+  health?: Record<string, unknown> | null;
+  [key: string]: unknown;
+}
+
+export interface OpenWrtStatusFailoverProviderStatus {
+  inFailoverQueue?: boolean;
+  in_failover_queue?: boolean;
+  queuePosition?: number | null;
+  queue_position?: number | null;
+  sortIndex?: number | null;
+  sort_index?: number | null;
+  currentRole?: string | null;
+  current_role?: string | null;
+  available?: boolean;
+  unavailableReasons?: string[];
+  unavailable_reasons?: string[];
+  health?: Record<string, unknown> | null;
+  circuit?: Record<string, unknown> | null;
+  quota?: Record<string, unknown> | null;
+  [key: string]: unknown;
+}
+
+export interface OpenWrtStatusApp {
+  mode?: string | null;
+  proxyEnabled?: boolean;
+  proxy_enabled?: boolean;
+  health?: boolean | null;
+  healthReason?: string | null;
+  health_reason?: string | null;
+  maxRetries: number;
+  max_retries?: number;
+  usage?: (Partial<OpenWrtUsageSummary> & { window?: unknown }) | null;
+  activeProvider?: OpenWrtStatusActiveProvider | null;
+  active_provider?: OpenWrtStatusActiveProvider | null;
+  providers?: Record<string, OpenWrtStatusProvider>;
+  failoverQueue?: OpenWrtStatusFailoverQueueEntry[];
+  failover_queue?: OpenWrtStatusFailoverQueueEntry[];
+  failoverStatus?: Record<string, OpenWrtStatusFailoverProviderStatus>;
+  failover_status?: Record<string, OpenWrtStatusFailoverProviderStatus>;
+  recentActivity?:
+    | OpenWrtRecentActivityItem[]
+    | { entries?: OpenWrtRecentActivityItem[] };
+  recent_activity?:
+    | OpenWrtRecentActivityItem[]
+    | { entries?: OpenWrtRecentActivityItem[] };
+  [key: string]: unknown;
+}
+
+export interface OpenWrtStatusResponse {
+  daemon?: OpenWrtStatusDaemon;
+  apps: Partial<Record<SharedProviderAppId, OpenWrtStatusApp>>;
+}
+
 export interface OpenWrtRequestLog {
   requestId: string;
   providerId: string;
@@ -169,6 +263,7 @@ export interface OpenWrtSharedPageShellApi
   getMessage(): OpenWrtPageMessage | null;
   getProviderStats(appId: SharedProviderAppId): Promise<OpenWrtProviderStat[]>;
   getQuota(): Promise<QuotaResponse>;
+  getStatus(): Promise<OpenWrtStatusResponse>;
   getRequestDetail(
     appId: SharedProviderAppId,
     requestId: string,
