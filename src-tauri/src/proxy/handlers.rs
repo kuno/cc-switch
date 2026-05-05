@@ -70,6 +70,10 @@ const CODEX_OFFICIAL_PROVIDER_ID: &str = "codex-official";
 const CODEX_OAUTH_AUTH_MODE: &str = "codex_oauth";
 const CODEX_LEGACY_CLIENT_PASSTHROUGH_AUTH_MODE: &str = "client_passthrough";
 const CLAUDE_OAUTH_AUTH_MODE: &str = "claude_oauth";
+const CLAUDE_DEFAULT_TOKEN_FIELD: &str = "ANTHROPIC_AUTH_TOKEN";
+const CLAUDE_ALT_TOKEN_FIELD: &str = "ANTHROPIC_API_KEY";
+const CODEX_TOKEN_FIELD: &str = "OPENAI_API_KEY";
+const GEMINI_TOKEN_FIELD: &str = "GEMINI_API_KEY";
 
 #[cfg(test)]
 static LIVE_QUOTA_REFRESH_CALLS: AtomicUsize = AtomicUsize::new(0);
@@ -597,17 +601,8 @@ async fn build_app_status(
 
     let mut provider_views = BTreeMap::new();
     for provider in providers.values() {
-        let settings = provider.settings_config.as_object();
-        let base_url = settings
-            .and_then(|o| o.get("base_url").or_else(|| o.get("baseURL")))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        let token_field = settings
-            .and_then(|o| o.get("tokenField").or_else(|| o.get("token_field")))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
+        let base_url = extract_status_provider_base_url(&app_key, &provider.settings_config);
+        let token_field = extract_status_provider_token_field(&app_key, &provider.settings_config);
         provider_views.insert(
             provider.id.clone(),
             ApiStatusProvider {
@@ -715,6 +710,111 @@ fn build_provider_stats(stats: Option<&ProviderStats>) -> Option<ApiStatusProvid
         success_rate: stats.success_rate,
         avg_latency_ms: stats.avg_latency_ms,
     })
+}
+
+fn extract_status_provider_base_url(app_key: &str, settings_config: &Value) -> String {
+    match app_key {
+        "claude" => settings_config
+            .get("env")
+            .and_then(Value::as_object)
+            .and_then(|env| env.get("ANTHROPIC_BASE_URL"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .or_else(|| extract_status_direct_string(settings_config, &["base_url", "baseURL"]))
+            .unwrap_or_default(),
+        "codex" => extract_status_direct_string(settings_config, &["base_url", "baseURL"])
+            .or_else(|| {
+                settings_config
+                    .get("config")
+                    .and_then(Value::as_str)
+                    .and_then(extract_status_codex_base_url_from_toml)
+            })
+            .unwrap_or_default(),
+        "gemini" => settings_config
+            .get("env")
+            .and_then(Value::as_object)
+            .and_then(|env| env.get("GOOGLE_GEMINI_BASE_URL"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .or_else(|| extract_status_direct_string(settings_config, &["base_url", "baseURL"]))
+            .unwrap_or_default(),
+        _ => extract_status_direct_string(settings_config, &["base_url", "baseURL"])
+            .unwrap_or_default(),
+    }
+}
+
+fn extract_status_provider_token_field(app_key: &str, settings_config: &Value) -> String {
+    if let Some(value) =
+        extract_status_direct_string(settings_config, &["tokenField", "token_field"])
+    {
+        return value;
+    }
+
+    match app_key {
+        "claude" => settings_config
+            .get("env")
+            .and_then(Value::as_object)
+            .and_then(|env| {
+                if env.contains_key(CLAUDE_DEFAULT_TOKEN_FIELD) {
+                    Some(CLAUDE_DEFAULT_TOKEN_FIELD)
+                } else if env.contains_key(CLAUDE_ALT_TOKEN_FIELD) {
+                    Some(CLAUDE_ALT_TOKEN_FIELD)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(CLAUDE_DEFAULT_TOKEN_FIELD)
+            .to_string(),
+        "codex" => CODEX_TOKEN_FIELD.to_string(),
+        "gemini" => GEMINI_TOKEN_FIELD.to_string(),
+        _ => String::new(),
+    }
+}
+
+fn extract_status_direct_string(root: &Value, keys: &[&str]) -> Option<String> {
+    keys.iter()
+        .find_map(|key| root.get(*key).and_then(Value::as_str))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn extract_status_codex_base_url_from_toml(config: &str) -> Option<String> {
+    if let Ok(table) = toml::from_str::<toml::Table>(config) {
+        if let Some(provider_key) = table
+            .get("model_provider")
+            .and_then(|value| value.as_str())
+            .filter(|value| !value.trim().is_empty())
+        {
+            if let Some(url) = table
+                .get("model_providers")
+                .and_then(|value| value.as_table())
+                .and_then(|providers| providers.get(provider_key))
+                .and_then(|value| value.as_table())
+                .and_then(|provider| provider.get("base_url"))
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                return Some(url.to_string());
+            }
+        }
+
+        if let Some(url) = table
+            .get("base_url")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            return Some(url.to_string());
+        }
+    }
+
+    None
 }
 
 fn build_failover_status(
@@ -4650,7 +4750,23 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
         );
         provider.icon = Some("custom-provider".to_string());
         provider.icon_color = Some("#336699".to_string());
-        db.save_provider("claude", &provider).expect("save provider");
+        db.save_provider("claude", &provider)
+            .expect("save provider");
+        db.save_provider(
+            "claude",
+            &Provider::with_id(
+                "p_env".to_string(),
+                "Provider Env".to_string(),
+                json!({
+                    "env": {
+                        "ANTHROPIC_BASE_URL": "https://env.example.test",
+                        "ANTHROPIC_API_KEY": "sk-test"
+                    }
+                }),
+                None,
+            ),
+        )
+        .expect("save env provider");
         db.set_current_provider("claude", "p_meta")
             .expect("set current");
         set_proxy_flags(&db, "claude", true, false).await;
@@ -4664,6 +4780,10 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
         assert_eq!(provider_view.icon.as_deref(), Some("custom-provider"));
         assert_eq!(provider_view.icon_color.as_deref(), Some("#336699"));
         assert_eq!(provider_view.token_field, "apiKey");
+
+        let env_provider_view = app.providers.get("p_env").expect("env provider view");
+        assert_eq!(env_provider_view.base_url, "https://env.example.test");
+        assert_eq!(env_provider_view.token_field, "ANTHROPIC_API_KEY");
 
         let serialized = serde_json::to_value(provider_view).expect("serialize provider view");
         assert_eq!(serialized["baseUrl"], "https://example.test/v1");
