@@ -523,11 +523,15 @@ EOF
 build_luci_package() {
 	local control_dir="$WORK_DIR/luci-control"
 	local data_dir="$WORK_DIR/luci-data"
+	local po_src="$LUCI_SRC/po"
+	local lmo_staging="$WORK_DIR/luci-i18n"
 	local output="$DIST_DIR/luci-app-cc-switch_${VERSION}-${PKG_RELEASE}_all.ipk"
+	local po_file lang_dir pkg_basename
 
-	rm -rf "$control_dir" "$data_dir"
+	rm -rf "$control_dir" "$data_dir" "$lmo_staging"
 	mkdir -p \
 		"$control_dir" \
+		"$lmo_staging" \
 		"$data_dir/usr/share/rpcd/acl.d" \
 		"$data_dir/usr/share/rpcd/ucode" \
 		"$data_dir/usr/lib/lua/luci/i18n" \
@@ -535,6 +539,20 @@ build_luci_package() {
 		"$data_dir/www/luci-static/resources/view/ccswitch" \
 		"$data_dir/www/luci-static/resources/ccswitch/provider-ui" \
 		"$data_dir/www/luci-static/resources/ccswitch/provider-ui/icons"
+
+	if [ -d "$po_src" ]; then
+		if ! command -v po2lmo >/dev/null 2>&1; then
+			echo "ERROR: po2lmo not found on PATH; required to compile .po files at $po_src" >&2
+			echo "       Install it via the OpenWrt SDK or build it from luci-base source." >&2
+			exit 1
+		fi
+
+		while IFS= read -r po_file; do
+			lang_dir="$(basename "$(dirname "$po_file")")"
+			pkg_basename="$(basename "$po_file" .po)"
+			po2lmo "$po_file" "$lmo_staging/$pkg_basename.$lang_dir.lmo"
+		done < <(find "$po_src" -name '*.po')
+	fi
 
 	emit_control_file \
 		"$control_dir/control" \
@@ -571,8 +589,8 @@ build_luci_package() {
 	install_openwrt_provider_ui_icons \
 		"$OPENWRT_PROVIDER_UI_ICONS_DIR" \
 		"$data_dir/www/luci-static/resources/ccswitch/provider-ui/icons"
-	if [ -d "$LUCI_SRC/i18n" ]; then
-		find "$LUCI_SRC/i18n" -name 'ccswitch.*.lmo' -exec install -m 0644 {} "$data_dir/usr/lib/lua/luci/i18n/" \;
+	if [ -d "$lmo_staging" ]; then
+		find "$lmo_staging" -name '*.lmo' -exec install -m 0644 {} "$data_dir/usr/lib/lua/luci/i18n/" \;
 	fi
 
 	rm -f "$output"
