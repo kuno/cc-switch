@@ -2605,6 +2605,8 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
         const REQUEST_LOGS_PER_PROVIDER: usize = 75;
         const ROLLUP_REQUESTS_PER_PROVIDER: u64 = 25;
         const CALLS: usize = 5;
+        // Defends a 60s LuCI poll cadence + swiftbar tick; measured worst over 5 calls: ~3ms.
+        // 250ms leaves ~80x headroom for slower routers and DB cache misses.
         const POLL_BUDGET: Duration = Duration::from_millis(250);
 
         let db = Arc::new(Database::memory().expect("db"));
