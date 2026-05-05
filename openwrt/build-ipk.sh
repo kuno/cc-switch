@@ -91,16 +91,14 @@ git_describe_version() {
 }
 
 rebuild_openwrt_provider_ui_bundle() {
+	if ! command -v pnpm >/dev/null 2>&1; then
+		die "pnpm is required to rebuild the OpenWrt provider UI bundle. Run \`pnpm install --frozen-lockfile\` first, then rerun $0."
+	fi
+
 	echo "Rebuilding OpenWrt provider UI bundle"
 	if ! (
 		cd "$PROJECT_DIR"
-		if [ -x "./node_modules/.bin/vite" ]; then
-			CCSWITCH_BUILD_TARGET=openwrt-provider-ui ./node_modules/.bin/vite build
-		elif command -v pnpm >/dev/null 2>&1; then
-			pnpm build:openwrt-provider-ui
-		else
-			die "pnpm is required to rebuild the OpenWrt provider UI bundle. Run \`pnpm install --frozen-lockfile\` first, then rerun $0."
-		fi
+		pnpm build:openwrt-provider-ui
 	); then
 		die "failed to rebuild the OpenWrt provider UI bundle. Run \`pnpm install --frozen-lockfile\` first, then rerun $0."
 	fi
@@ -246,7 +244,6 @@ assert_inputs() {
 	require_command file
 	require_command install
 	require_command find
-	require_command ar
 
 	[ -f "$BINARY" ] || die "binary not found: $BINARY
 Build it first with:
@@ -277,236 +274,12 @@ install_openwrt_provider_ui_icons() {
 	done < <(find "$source_dir" -type f -print0)
 }
 
-compile_luci_lmo_with_python() {
-	local po_path="$1"
-	local lmo_path="$2"
-
-	command -v python3 >/dev/null 2>&1 || die "po2lmo is not available and python3 is required for standalone LuCI translation builds"
-
-	python3 - "$po_path" "$lmo_path" <<'PY'
-import ast
-import os
-import struct
-import sys
-
-po_path, lmo_path = sys.argv[1], sys.argv[2]
-
-def u32(value):
-    return value & 0xffffffff
-
-def get16(data, pos):
-    return data[pos] | (data[pos + 1] << 8)
-
-def signed_byte(value):
-    return value - 256 if value >= 128 else value
-
-def sfh_hash(text):
-    data = text.encode("utf-8")
-    length = len(data)
-    h = length
-    pos = 0
-    rem = length & 3
-    count = length >> 2
-
-    for _ in range(count):
-        h = u32(h + get16(data, pos))
-        tmp = u32((get16(data, pos + 2) << 11) ^ h)
-        h = u32((h << 16) ^ tmp)
-        pos += 4
-        h = u32(h + (h >> 11))
-
-    if rem == 3:
-        h = u32(h + get16(data, pos))
-        h = u32(h ^ (h << 16))
-        h = u32(h ^ (signed_byte(data[pos + 2]) << 18))
-        h = u32(h + (h >> 11))
-    elif rem == 2:
-        h = u32(h + get16(data, pos))
-        h = u32(h ^ (h << 11))
-        h = u32(h + (h >> 17))
-    elif rem == 1:
-        h = u32(h + signed_byte(data[pos]))
-        h = u32(h ^ (h << 10))
-        h = u32(h + (h >> 1))
-
-    h = u32(h ^ (h << 3))
-    h = u32(h + (h >> 5))
-    h = u32(h ^ (h << 4))
-    h = u32(h + (h >> 17))
-    h = u32(h ^ (h << 25))
-    h = u32(h + (h >> 6))
-    return h
-
-def parse_po(path):
-    entries = []
-    current = None
-    field = None
-
-    def flush():
-        nonlocal current, field
-        if current is not None and "msgid" in current:
-            entries.append(current)
-        current = None
-        field = None
-
-    with open(path, "r", encoding="utf-8") as fh:
-        for raw_line in fh:
-            line = raw_line.rstrip("\n")
-            if not line.strip() or line.startswith("#"):
-                continue
-            if line.startswith("msgid "):
-                flush()
-                current = {"msgid": ast.literal_eval(line[6:].strip())}
-                field = "msgid"
-            elif line.startswith("msgstr "):
-                if current is None:
-                    raise ValueError(f"msgstr before msgid in {path}")
-                current["msgstr"] = ast.literal_eval(line[7:].strip())
-                field = "msgstr"
-            elif line.startswith('"') and field:
-                current[field] += ast.literal_eval(line.strip())
-            elif line.startswith("msgid_plural") or line.startswith("msgstr["):
-                raise ValueError(f"plural PO entries are not supported by the standalone compiler: {path}")
-
-    flush()
-    return entries
-
-def plural_formula(header):
-    for line in header.splitlines():
-        if line.startswith("Plural-Forms:"):
-            value = line.split(":", 1)[1].strip()
-            for part in value.split(";"):
-                part = part.strip()
-                if part.startswith("plural="):
-                    return part + ";"
-    return None
-
-data = bytearray()
-index = []
-
-for entry in parse_po(po_path):
-    msgid = entry.get("msgid", "")
-    msgstr = entry.get("msgstr", "")
-    if msgid == "":
-        formula = plural_formula(msgstr)
-        if formula:
-            encoded = formula.encode("utf-8")
-            index.append((0, 0, len(data), len(encoded)))
-            data.extend(encoded)
-            while len(data) % 4:
-                data.append(0)
-        continue
-    if not msgstr:
-        continue
-
-    key_id = sfh_hash(msgid)
-    if key_id == sfh_hash(msgstr):
-        continue
-
-    encoded = msgstr.encode("utf-8")
-    index.append((key_id, 1, len(data), len(encoded)))
-    data.extend(encoded)
-    while len(data) % 4:
-        data.append(0)
-
-if not index:
-    try:
-        os.unlink(lmo_path)
-    except FileNotFoundError:
-        pass
-    sys.exit(0)
-
-os.makedirs(os.path.dirname(lmo_path), exist_ok=True)
-index.sort(key=lambda item: item[0])
-offset = len(data)
-with open(lmo_path, "wb") as fh:
-    fh.write(data)
-    for item in index:
-        fh.write(struct.pack("!IIII", *item))
-    fh.write(struct.pack("!I", offset))
-PY
-}
-
-compile_luci_i18n() {
-	local output_dir="$1"
-	local po_path lang pkg lmo_path
-
-	rm -rf "$output_dir"
-	mkdir -p "$output_dir"
-
-	[ -d "$LUCI_SRC/po" ] || return 0
-
-	while IFS= read -r -d '' po_path; do
-		lang="$(basename "$(dirname "$po_path")")"
-		pkg="$(basename "$po_path" .po)"
-		lmo_path="$output_dir/$pkg.$lang.lmo"
-
-		if command -v po2lmo >/dev/null 2>&1; then
-			po2lmo "$po_path" "$lmo_path"
-		else
-			compile_luci_lmo_with_python "$po_path" "$lmo_path"
-		fi
-	done < <(find "$LUCI_SRC/po" -name '*.po' -print0)
-}
-
-install_luci_i18n() {
-	local source_dir="$1"
-	local dest_dir="$2"
-	local lmo_path
-
-	[ -d "$source_dir" ] || return 0
-
-	while IFS= read -r -d '' lmo_path; do
-		install -m 0644 "$lmo_path" "$dest_dir/$(basename "$lmo_path")"
-	done < <(find "$source_dir" -name '*.lmo' -print0)
-}
-
-musl_cc_for_target() {
-	case "$RUST_TARGET" in
-		aarch64-unknown-linux-musl)
-			printf '%s\n' "aarch64-linux-musl-gcc"
-			;;
-		x86_64-unknown-linux-musl)
-			printf '%s\n' "x86_64-linux-musl-gcc"
-			;;
-		*)
-			return 1
-			;;
-	esac
-}
-
-configure_musl_bindgen_sysroot() {
-	local cc env_name sysroot
-
-	case "$RUST_TARGET" in
-		*-linux-musl)
-			;;
-		*)
-			return 0
-			;;
-	esac
-
-	cc="$(musl_cc_for_target || true)"
-	[ -n "$cc" ] || return 0
-	command -v "$cc" >/dev/null 2>&1 || return 0
-
-	sysroot="$("$cc" -print-sysroot 2>/dev/null || true)"
-	[ -n "$sysroot" ] || return 0
-	[ -d "$sysroot/usr/include" ] || return 0
-
-	env_name="BINDGEN_EXTRA_CLANG_ARGS_${RUST_TARGET//-/_}"
-	if [ -z "${!env_name:-}" ]; then
-		export "$env_name=--sysroot=$sysroot"
-	fi
-}
-
 build_daemon_binary() {
 	if [ "$BINARY_EXPLICIT" -eq 1 ]; then
 		return
 	fi
 
 	require_command cargo
-	configure_musl_bindgen_sysroot
 
 	echo "Building fresh cc-switch daemon binary for $RUST_TARGET"
 	(
@@ -560,9 +333,8 @@ build_ipk() {
 	local control_dir="$1"
 	local data_dir="$2"
 	local output="$3"
-	local pkg_dir output_abs
+	local pkg_dir
 	pkg_dir="$WORK_DIR/$(basename "$output" .ipk)"
-	output_abs="$(cd "$(dirname "$output")" && pwd)/$(basename "$output")"
 
 	rm -rf "$pkg_dir"
 	mkdir -p "$pkg_dir"
@@ -570,10 +342,7 @@ build_ipk() {
 	printf '2.0\n' > "$pkg_dir/debian-binary"
 	tar_from_dir "$control_dir" "$pkg_dir/control.tar.gz"
 	tar_from_dir "$data_dir" "$pkg_dir/data.tar.gz"
-	(
-		cd "$pkg_dir"
-		ar -q -S "$output_abs" debian-binary control.tar.gz data.tar.gz >/dev/null
-	)
+	tar_from_files "$pkg_dir" "$output" debian-binary control.tar.gz data.tar.gz
 }
 
 emit_default_postinst_wrapper() {
@@ -754,7 +523,6 @@ EOF
 build_luci_package() {
 	local control_dir="$WORK_DIR/luci-control"
 	local data_dir="$WORK_DIR/luci-data"
-	local i18n_dir="$WORK_DIR/luci-i18n"
 	local output="$DIST_DIR/luci-app-cc-switch_${VERSION}-${PKG_RELEASE}_all.ipk"
 
 	rm -rf "$control_dir" "$data_dir"
@@ -803,10 +571,9 @@ build_luci_package() {
 	install_openwrt_provider_ui_icons \
 		"$OPENWRT_PROVIDER_UI_ICONS_DIR" \
 		"$data_dir/www/luci-static/resources/ccswitch/provider-ui/icons"
-	compile_luci_i18n "$i18n_dir"
-	install_luci_i18n \
-		"$i18n_dir" \
-		"$data_dir/usr/lib/lua/luci/i18n"
+	if [ -d "$LUCI_SRC/i18n" ]; then
+		find "$LUCI_SRC/i18n" -name 'ccswitch.*.lmo' -exec install -m 0644 {} "$data_dir/usr/lib/lua/luci/i18n/" \;
+	fi
 
 	rm -f "$output"
 	build_ipk "$control_dir" "$data_dir" "$output"
