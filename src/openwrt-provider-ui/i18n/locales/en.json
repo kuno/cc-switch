@@ -34,6 +34,39 @@
       "updatedJustNow": "Updated just now",
       "waitingForData": "Waiting for data"
     },
+    "configure": {
+      "apiKey": "API key",
+      "apiToken": "API token",
+      "apiTokenPlaceholder": "Enter the secret for this provider",
+      "authJson": "auth.json",
+      "authJsonHintPrefix": "Pasted contents are stored as this provider's",
+      "authJsonHintSuffix": ". The daemon writes it to the app's config directory on save.",
+      "authJsonPlaceholder": "Paste the contents of auth.json, e.g.\n{\n  \"OPENAI_API_KEY\": \"sk-…\",\n  \"tokens\": { … },\n  \"account_id\": \"…\"\n}",
+      "authMode": "Auth mode",
+      "authWillClearOnSave": "Will clear on save",
+      "clearAuth": "Clear auth",
+      "clientPassthrough": "Client passthrough",
+      "configured": "Configured",
+      "connected": "Connected",
+      "envMapping": "Env mapping",
+      "expiresAt": "Expires at",
+      "invalidJson": "Invalid JSON",
+      "missing": "Missing",
+      "noContent": "No content",
+      "notAvailable": "Not available",
+      "notConfigured": "Not configured",
+      "notConnected": "Not connected",
+      "pasteFromClipboard": "Paste from clipboard",
+      "present": "Present",
+      "refreshToken": "Refresh token",
+      "saved": "Saved",
+      "saving": "Saving…",
+      "scopes": "Scopes",
+      "sizeBytes": "{{value}} B",
+      "sizeKilobytes": "{{value}} KB",
+      "subscription": "Subscription",
+      "validJson": "Valid JSON · {{size}}"
+    },
     "daemon": {
       "controlAria": "Daemon control",
       "daemonLabel": "ccswitch daemon",
@@ -66,6 +99,17 @@
       "daemonHeading": "Daemon",
       "switchToDarkTheme": "Switch to dark theme",
       "switchToLightTheme": "Switch to light theme"
+    },
+    "providerActivities": {
+      "emptySubtitle": "This provider hasn't served any requests yet. Once traffic flows through the daemon, requests will appear here.",
+      "emptyTitle": "No recent activity",
+      "loadingRecentRequestsMeta": "Loading recent requests",
+      "shownCount": "{{count}} shown",
+      "subtitleForProvider": "Recent requests for {{providerName}}",
+      "subtitleGeneric": "Recent requests for this provider",
+      "thisProvider": "this provider",
+      "updated": "updated {{time}}",
+      "updatedJustNow": "updated just now"
     }
   },
   "common": {
