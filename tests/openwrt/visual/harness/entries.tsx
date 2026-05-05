@@ -284,6 +284,50 @@ function createActivityShellStub({
       providers: [],
       timestamp: "2026-04-22T00:00:00.000Z",
     }),
+    getStatus: async () => ({
+      daemon: {
+        health: true,
+        running: true,
+        uptimeSeconds: 3600,
+        lastError: null,
+        checkedAt: "2026-04-22T00:00:00.000Z",
+      },
+      apps: {
+        claude: {
+          mode: "normal",
+          proxyEnabled: true,
+          health: true,
+          healthReason: null,
+          usage: usageSummary,
+          activeProvider: null,
+          providers: {},
+          failoverQueue: [],
+          failoverStatus: {},
+        },
+        codex: {
+          mode: "normal",
+          proxyEnabled: true,
+          health: true,
+          healthReason: null,
+          usage: usageSummary,
+          activeProvider: null,
+          providers: {},
+          failoverQueue: [],
+          failoverStatus: {},
+        },
+        gemini: {
+          mode: "normal",
+          proxyEnabled: true,
+          health: true,
+          healthReason: null,
+          usage: usageSummary,
+          activeProvider: null,
+          providers: {},
+          failoverQueue: [],
+          failoverStatus: {},
+        },
+      },
+    }),
     getRequestDetail: async (appId, requestId) => {
       if (requestDetailPending) {
         return await new Promise<OpenWrtRequestLog | null>(() => {});

@@ -455,6 +455,15 @@ function getDaemonAdminBaseUrl() {
 	return 'http://' + hostname + ':15721/openwrt/admin';
 }
 
+function getDaemonApiBaseUrl() {
+	var baseUrl = getDaemonAdminBaseUrl();
+
+	if (!baseUrl)
+		return null;
+
+	return baseUrl.replace(/\/openwrt\/admin\/?$/, '');
+}
+
 function readDaemonAdminJson(response) {
 	if (!response || typeof response.json !== 'function')
 		return Promise.reject(createDaemonAdminUnavailableError('OpenWrt daemon admin API returned an invalid response object.'));
@@ -467,6 +476,61 @@ function readDaemonAdminJson(response) {
 			throw createDaemonAdminUnavailableError('OpenWrt daemon admin API returned invalid JSON.');
 
 		return payload;
+	});
+}
+
+function callDaemonApiJson(path, options) {
+	var baseUrl = getDaemonApiBaseUrl();
+	var request = options || {};
+	var headers = {
+		Accept: 'application/json'
+	};
+	var timeoutMs = typeof request.timeoutMs === 'number' && request.timeoutMs > 0 ? request.timeoutMs : 5000;
+	var controller = typeof AbortController === 'function' ? new AbortController() : null;
+	var timeoutId = null;
+	var key;
+
+	if (!baseUrl)
+		return Promise.reject(createDaemonAdminUnavailableError('OpenWrt daemon API disabled for this page origin.'));
+
+	if (typeof fetch !== 'function')
+		return Promise.reject(createDaemonAdminUnavailableError('Browser fetch API is unavailable.'));
+
+	if (request.headers && typeof request.headers === 'object') {
+		for (key in request.headers)
+			headers[key] = request.headers[key];
+	}
+
+	if (request.body != null && headers['Content-Type'] == null)
+		headers['Content-Type'] = 'application/json';
+
+	if (controller && typeof window !== 'undefined' && typeof window.setTimeout === 'function') {
+		timeoutId = window.setTimeout(function () {
+			controller.abort();
+		}, timeoutMs);
+	}
+
+	return fetch(baseUrl + path, {
+		method: request.method || 'GET',
+		headers: headers,
+		body: request.body != null ? JSON.stringify(request.body) : undefined,
+		signal: controller ? controller.signal : undefined
+	}).then(function (response) {
+		if (timeoutId !== null)
+			window.clearTimeout(timeoutId);
+
+		return readDaemonAdminJson(response);
+	}).catch(function (error) {
+		if (timeoutId !== null)
+			window.clearTimeout(timeoutId);
+
+		if (error && error.name === 'AbortError')
+			throw createDaemonAdminUnavailableError('OpenWrt daemon API request timed out.');
+
+		if (isDaemonAdminUnavailableError(error))
+			throw error;
+
+		throw createDaemonAdminUnavailableError((error && error.message) || String(error));
 	});
 }
 
@@ -512,6 +576,12 @@ function daemonAdminOrFallback(apiCall, fallbackCall) {
 			return fallbackCall();
 
 		throw error;
+	});
+}
+
+function callOpenWrtStatus() {
+	return callDaemonApiJson('/api/status', {
+		timeoutMs: 5000
 	});
 }
 
@@ -2776,6 +2846,26 @@ return view.extend({
 			},
 			getQuota: async function () {
 				return self.loadNativeQuota();
+			},
+			getStatus: async function () {
+				return callOpenWrtStatus().then(function (status) {
+					var daemon = status && typeof status === 'object' ? status.daemon : null;
+
+					if (daemon && typeof daemon === 'object') {
+						uiState.isRunning = daemon.running === true;
+						if (uiState.hostState) {
+							uiState.hostState.status = uiState.isRunning ? 'running' : 'stopped';
+							uiState.hostState.health = !uiState.isRunning
+								? 'stopped'
+								: daemon.health === true
+									? 'healthy'
+									: 'degraded';
+						}
+						self.notifyShellListeners(uiState);
+					}
+
+					return status;
+				});
 			},
 				getRequestLogs: async function (appId, page, pageSize, providerId) {
 					return self.loadNativeRequestLogs(appId || uiState.selectedApp, page, pageSize, providerId);

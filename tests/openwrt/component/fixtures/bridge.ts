@@ -9,6 +9,7 @@ import type {
   OpenWrtRecentActivityItem,
   OpenWrtRequestLog,
   OpenWrtSharedPageShellApi,
+  OpenWrtStatusResponse,
   OpenWrtUsageSummary,
 } from "@/openwrt-provider-ui/pageTypes";
 import type { SharedProviderAppId } from "@/shared/providers/domain";
@@ -71,6 +72,7 @@ export interface BridgeFixtureOptions {
     Record<SharedProviderAppId, OpenWrtRecentActivityItem[]>
   >;
   quota?: QuotaResponse;
+  status?: OpenWrtStatusResponse;
   usageSummary?: Partial<Record<SharedProviderAppId, OpenWrtUsageSummary>>;
   overrides?: Partial<OpenWrtSharedPageShellApi>;
 }
@@ -98,6 +100,67 @@ function paginateRequestLogs(
     total: response.total ?? response.data.length,
     page: safePage,
     pageSize: safePageSize,
+  };
+}
+
+function createDefaultStatusResponse(
+  options: BridgeFixtureOptions,
+): OpenWrtStatusResponse {
+  return {
+    daemon: {
+      health: true,
+      running: true,
+      uptimeSeconds: 3600,
+      lastError: null,
+      checkedAt: "2026-04-22T00:00:00.000Z",
+    },
+    apps: {
+      claude: {
+        mode: "normal",
+        proxyEnabled: true,
+        health: true,
+        healthReason: null,
+        usage: getAppRecord(
+          options.usageSummary,
+          "claude",
+          DEFAULT_USAGE_SUMMARY,
+        ),
+        activeProvider: null,
+        providers: {},
+        failoverQueue: [],
+        failoverStatus: {},
+      },
+      codex: {
+        mode: "normal",
+        proxyEnabled: true,
+        health: true,
+        healthReason: null,
+        usage: getAppRecord(
+          options.usageSummary,
+          "codex",
+          DEFAULT_USAGE_SUMMARY,
+        ),
+        activeProvider: null,
+        providers: {},
+        failoverQueue: [],
+        failoverStatus: {},
+      },
+      gemini: {
+        mode: "normal",
+        proxyEnabled: true,
+        health: true,
+        healthReason: null,
+        usage: getAppRecord(
+          options.usageSummary,
+          "gemini",
+          DEFAULT_USAGE_SUMMARY,
+        ),
+        activeProvider: null,
+        providers: {},
+        failoverQueue: [],
+        failoverStatus: {},
+      },
+    },
   };
 }
 
@@ -149,12 +212,19 @@ export function createBridgeFixture(
       getAppRecord(options.providerStats, appId, []),
     ),
     getQuota: vi.fn(async () => options.quota ?? DEFAULT_QUOTA_RESPONSE),
+    getStatus: vi.fn(
+      async () => options.status ?? createDefaultStatusResponse(options),
+    ),
     getRequestDetail: vi.fn(
       async (appId: SharedProviderAppId, requestId: string) =>
         options.requestDetails?.[appId]?.[requestId] ?? null,
     ),
     getRequestLogs: vi.fn(async (appId, page, pageSize, providerId) => {
-      const response = getAppRecord(options.requestLogs, appId, DEFAULT_REQUEST_LOGS);
+      const response = getAppRecord(
+        options.requestLogs,
+        appId,
+        DEFAULT_REQUEST_LOGS,
+      );
 
       return paginateRequestLogs(
         {

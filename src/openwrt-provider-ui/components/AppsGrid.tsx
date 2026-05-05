@@ -2,18 +2,32 @@ import type { TFunction } from "i18next";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { createOpenWrtProviderAdapter } from "@/platform/openwrt/providers";
-import type {
-  ProviderPlatformAdapter,
-  SharedProviderAppId,
-  SharedProviderFailoverState,
+import {
+  emptySharedProviderView,
+  normalizeSharedProviderView,
+  parseSharedProviderFailoverState,
+  type ProviderPlatformAdapter,
+  type SharedProviderAppId,
+  type SharedProviderFailoverQueueEntry,
+  type SharedProviderFailoverState,
+  type SharedProviderState,
+  type SharedProviderView,
 } from "@/shared/providers/domain";
 import type {
   OpenWrtProviderStat,
   OpenWrtRecentActivityItem,
   OpenWrtSharedPageMountOptions,
+  OpenWrtStatusApp,
+  OpenWrtStatusFailoverProviderStatus,
+  OpenWrtStatusProvider,
+  OpenWrtStatusResponse,
   OpenWrtUsageSummary,
 } from "../pageTypes";
-import type { ProviderQuotaSnapshot } from "../types/quota";
+import type {
+  BalanceSnapshot,
+  ProviderQuotaSnapshot,
+  QuotaWindow,
+} from "../types/quota";
 import { AppCard } from "./AppCard";
 
 type InertHomeAppId = "opencode" | "openclaw";
@@ -43,11 +57,7 @@ type AppGridData = {
   appId: OpenWrtHomeAppId;
   loading: boolean;
   error: string | null;
-  providerState: Awaited<
-    ReturnType<
-      ReturnType<typeof createOpenWrtProviderAdapter>["listProviderState"]
-    >
-  > | null;
+  providerState: SharedProviderState | null;
   summary: OpenWrtUsageSummary | null;
   providerStats: OpenWrtProviderStat[];
   recentActivity: OpenWrtRecentActivityItem[];
@@ -101,102 +111,564 @@ function sortRecentActivity(
   return [...entries].sort((left, right) => right.createdAt - left.createdAt);
 }
 
-async function loadCardData(
-  options: OpenWrtSharedPageMountOptions,
-  appId: OpenWrtHomeAppId,
-  t: TFunction,
-): Promise<AppGridLoadResult> {
-  if (isInertHomeAppId(appId)) {
-    return {
-      card: {
-        appId,
-        loading: false,
-        error: null,
-        providerState: null,
-        summary: null,
-        providerStats: [],
-        recentActivity: [],
-        failoverState: null,
-      },
-      providerStateOk: true,
-      summaryOk: true,
-      providerStatsOk: true,
-      recentActivityOk: true,
-      failoverStateOk: true,
-    };
-  }
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
 
-  const adapter = createOpenWrtProviderAdapter(options.transport);
-  const [
-    providerStateResult,
-    summaryResult,
-    providerStatsResult,
-    recentActivityResult,
-  ] = await Promise.allSettled([
-    adapter.listProviderState(appId),
-    options.shell.getUsageSummary(appId),
-    options.shell.getProviderStats(appId),
-    options.shell.getRecentActivity(appId),
-  ]);
-
-  const providerState =
-    providerStateResult.status === "fulfilled"
-      ? providerStateResult.value
-      : null;
-  const activeProviderId = providerState?.activeProvider.configured
-    ? providerState.activeProvider.providerId
-    : null;
-  let failoverState: SharedProviderFailoverState | null = null;
-  let failoverStateOk = true;
-
-  if (
-    activeProviderId &&
-    typeof adapter.getProviderFailoverState === "function"
-  ) {
-    try {
-      failoverState = await adapter.getProviderFailoverState(
-        appId,
-        activeProviderId,
-      );
-    } catch {
-      failoverStateOk = false;
+function getString(value: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const candidate = value[key];
+    if (typeof candidate === "string") {
+      return candidate;
     }
   }
 
-  const errors = [
-    providerStateResult,
-    summaryResult,
-    providerStatsResult,
-    recentActivityResult,
-  ]
-    .filter(
-      (result): result is PromiseRejectedResult => result.status === "rejected",
-    )
-    .map((result) => getErrorMessage(result.reason, t));
+  return "";
+}
+
+function getOptionalString(
+  value: Record<string, unknown>,
+  keys: string[],
+): string | null {
+  const result = getString(value, keys);
+  return result || null;
+}
+
+function getNumber(
+  value: Record<string, unknown>,
+  keys: string[],
+): number | null {
+  for (const key of keys) {
+    const candidate = value[key];
+    if (typeof candidate === "number" && Number.isFinite(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function getBoolean(
+  value: Record<string, unknown>,
+  keys: string[],
+): boolean | null {
+  for (const key of keys) {
+    const candidate = value[key];
+    if (typeof candidate === "boolean") {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function createInertLoadResult(appId: InertHomeAppId): AppGridLoadResult {
+  return {
+    card: {
+      appId,
+      loading: false,
+      error: null,
+      providerState: null,
+      summary: null,
+      providerStats: [],
+      recentActivity: [],
+      failoverState: null,
+    },
+    providerStateOk: true,
+    summaryOk: true,
+    providerStatsOk: true,
+    recentActivityOk: true,
+    failoverStateOk: true,
+  };
+}
+
+function createFailedLoadResult(
+  appId: OpenWrtHomeAppId,
+  error: string,
+): AppGridLoadResult {
+  if (isInertHomeAppId(appId)) {
+    return createInertLoadResult(appId);
+  }
 
   return {
     card: {
       appId,
       loading: false,
-      error: errors[0] ?? null,
-      providerState,
-      summary:
-        summaryResult.status === "fulfilled" ? summaryResult.value : null,
-      providerStats:
-        providerStatsResult.status === "fulfilled"
-          ? providerStatsResult.value
-          : [],
-      recentActivity:
-        recentActivityResult.status === "fulfilled"
-          ? sortRecentActivity(recentActivityResult.value)
-          : [],
-      failoverState,
+      error,
+      providerState: null,
+      summary: null,
+      providerStats: [],
+      recentActivity: [],
+      failoverState: null,
     },
-    providerStateOk: providerStateResult.status === "fulfilled",
-    summaryOk: summaryResult.status === "fulfilled",
-    providerStatsOk: providerStatsResult.status === "fulfilled",
-    recentActivityOk: recentActivityResult.status === "fulfilled",
-    failoverStateOk,
+    providerStateOk: false,
+    summaryOk: false,
+    providerStatsOk: false,
+    recentActivityOk: false,
+    failoverStateOk: false,
+  };
+}
+
+function normalizeUsageSummary(
+  value: OpenWrtStatusApp["usage"],
+): OpenWrtUsageSummary | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  return {
+    totalRequests: getNumber(value, ["totalRequests"]) ?? 0,
+    totalCost: String(value.totalCost ?? "0"),
+    totalInputTokens: getNumber(value, ["totalInputTokens"]) ?? 0,
+    totalOutputTokens: getNumber(value, ["totalOutputTokens"]) ?? 0,
+    totalCacheCreationTokens:
+      getNumber(value, ["totalCacheCreationTokens"]) ?? 0,
+    totalCacheReadTokens: getNumber(value, ["totalCacheReadTokens"]) ?? 0,
+    successRate: getNumber(value, ["successRate"]) ?? 0,
+  };
+}
+
+function normalizeProviderStats(app: OpenWrtStatusApp): OpenWrtProviderStat[] {
+  if (!isRecord(app.providers)) {
+    return [];
+  }
+
+  return Object.entries(app.providers)
+    .map(([providerId, provider]) => {
+      if (!isRecord(provider.stats)) {
+        return null;
+      }
+
+      return {
+        providerId,
+        providerName: provider.name?.trim() || providerId,
+        requestCount: getNumber(provider.stats, ["requestCount"]) ?? 0,
+        totalTokens: getNumber(provider.stats, ["totalTokens"]) ?? 0,
+        totalCost: String(provider.stats.totalCost ?? "0"),
+        successRate: getNumber(provider.stats, ["successRate"]) ?? 0,
+        avgLatencyMs: getNumber(provider.stats, ["avgLatencyMs"]) ?? 0,
+      } satisfies OpenWrtProviderStat;
+    })
+    .filter((stat): stat is OpenWrtProviderStat => stat != null);
+}
+
+function normalizeRecentActivityEntry(
+  value: unknown,
+): OpenWrtRecentActivityItem | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const requestId = getString(value, ["requestId", "request_id"]);
+  if (!requestId) {
+    return null;
+  }
+
+  return {
+    requestId,
+    providerId: getString(value, ["providerId", "provider_id"]),
+    providerName: getString(value, ["providerName", "provider_name"]),
+    model: getString(value, ["model"]),
+    totalTokens: getNumber(value, ["totalTokens", "total_tokens"]) ?? 0,
+    totalCost: String(value.totalCost ?? value.total_cost ?? "0"),
+    statusCode: getNumber(value, ["statusCode", "status_code"]) ?? 0,
+    latencyMs: getNumber(value, ["latencyMs", "latency_ms"]) ?? 0,
+    createdAt: getNumber(value, ["createdAt", "created_at"]) ?? 0,
+  };
+}
+
+function normalizeRecentActivity(
+  app: OpenWrtStatusApp,
+): OpenWrtRecentActivityItem[] {
+  const value = app.recentActivity ?? app.recent_activity;
+  const entries = Array.isArray(value)
+    ? value
+    : isRecord(value) && Array.isArray(value.entries)
+      ? value.entries
+      : [];
+
+  return sortRecentActivity(
+    entries
+      .map((entry) => normalizeRecentActivityEntry(entry))
+      .filter((entry): entry is OpenWrtRecentActivityItem => entry != null),
+  );
+}
+
+function normalizeQuotaWindow(value: unknown): QuotaWindow | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const name = getString(value, ["name"]);
+  if (!name) {
+    return null;
+  }
+
+  return {
+    name,
+    status: getOptionalString(value, ["status"]),
+    utilization: getNumber(value, ["utilization"]),
+    reset: getNumber(value, ["reset"]),
+  };
+}
+
+function normalizeBalance(value: unknown): BalanceSnapshot | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  return {
+    plan_name: getOptionalString(value, ["planName", "plan_name"]),
+    currency: getOptionalString(value, ["currency"]),
+    total: getNumber(value, ["total"]),
+    used: getNumber(value, ["used"]),
+    remaining: getNumber(value, ["remaining"]),
+    is_valid: getBoolean(value, ["isValid", "is_valid"]),
+    invalid_message: getOptionalString(value, [
+      "invalidMessage",
+      "invalid_message",
+    ]),
+  };
+}
+
+function normalizeQuotaSnapshot(
+  value: unknown,
+  appId: SharedProviderAppId,
+  providerId: string,
+  providerName: string,
+): ProviderQuotaSnapshot | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const windows = Array.isArray(value.windows)
+    ? value.windows
+        .map((entry) => normalizeQuotaWindow(entry))
+        .filter((entry): entry is QuotaWindow => entry != null)
+    : [];
+  const balances = Array.isArray(value.balances)
+    ? value.balances
+        .map((entry) => normalizeBalance(entry))
+        .filter((entry): entry is BalanceSnapshot => entry != null)
+    : null;
+
+  return {
+    app_type: getString(value, ["appType", "app_type"]) || appId,
+    provider_id: getString(value, ["providerId", "provider_id"]) || providerId,
+    provider_name:
+      getString(value, ["providerName", "provider_name"]) ||
+      providerName ||
+      providerId,
+    source: getOptionalString(value, ["source"]),
+    status: getOptionalString(value, ["status"]),
+    windows,
+    balances,
+    representative_claim: getOptionalString(value, [
+      "representativeClaim",
+      "representative_claim",
+    ]),
+    overage_status: getOptionalString(value, [
+      "overageStatus",
+      "overage_status",
+    ]),
+    fallback_percentage: getNumber(value, [
+      "fallbackPercentage",
+      "fallback_percentage",
+    ]),
+    requests_remaining: getNumber(value, [
+      "requestsRemaining",
+      "requests_remaining",
+    ]),
+    requests_limit: getNumber(value, ["requestsLimit", "requests_limit"]),
+    tokens_remaining: getNumber(value, ["tokensRemaining", "tokens_remaining"]),
+    tokens_limit: getNumber(value, ["tokensLimit", "tokens_limit"]),
+    captured_at: getNumber(value, ["capturedAt", "captured_at"]) ?? Date.now(),
+  };
+}
+
+function getActiveProviderHint(
+  app: OpenWrtStatusApp,
+): OpenWrtStatusApp["activeProvider"] {
+  return app.activeProvider ?? app.active_provider ?? null;
+}
+
+function getActiveProviderId(app: OpenWrtStatusApp): string | null {
+  const activeProvider = getActiveProviderHint(app);
+  return isRecord(activeProvider)
+    ? getString(activeProvider, ["providerId", "provider_id", "id"]) || null
+    : null;
+}
+
+function normalizeStatusProviderView(
+  appId: SharedProviderAppId,
+  providerId: string,
+  provider: OpenWrtStatusProvider,
+  activeProviderId: string | null,
+  activeProviderHint: OpenWrtStatusApp["activeProvider"],
+): SharedProviderView {
+  const activeHintName =
+    activeProviderId === providerId && isRecord(activeProviderHint)
+      ? getString(activeProviderHint, ["name"])
+      : "";
+  const providerPayload = {
+    ...provider,
+    providerId:
+      getString(provider, ["providerId", "provider_id", "id"]) || providerId,
+    name: provider.name?.trim() || activeHintName || providerId,
+    active: activeProviderId === providerId,
+  };
+
+  return normalizeSharedProviderView(
+    providerPayload,
+    providerId,
+    activeProviderId,
+    appId,
+  );
+}
+
+function normalizeProviderState(
+  appId: SharedProviderAppId,
+  app: OpenWrtStatusApp,
+): SharedProviderState {
+  const activeProviderId = getActiveProviderId(app);
+  const activeProviderHint = getActiveProviderHint(app);
+  const providers = isRecord(app.providers)
+    ? Object.entries(app.providers)
+        .map(([providerId, provider]) =>
+          normalizeStatusProviderView(
+            appId,
+            providerId,
+            provider,
+            activeProviderId,
+            activeProviderHint,
+          ),
+        )
+        .filter((provider) => provider.configured)
+    : [];
+  let activeProvider =
+    providers.find(
+      (provider) =>
+        activeProviderId != null && provider.providerId === activeProviderId,
+    ) ?? emptySharedProviderView(appId);
+
+  if (
+    !activeProvider.configured &&
+    activeProviderId &&
+    isRecord(activeProviderHint)
+  ) {
+    activeProvider = normalizeSharedProviderView(
+      {
+        ...activeProviderHint,
+        configured: true,
+        providerId: activeProviderId,
+        active: true,
+      },
+      activeProviderId,
+      activeProviderId,
+      appId,
+    );
+  }
+
+  const normalizedProviders =
+    activeProvider.configured &&
+    !providers.some(
+      (provider) => provider.providerId === activeProvider.providerId,
+    )
+      ? [...providers, activeProvider]
+      : providers;
+
+  return {
+    phase2Available: true,
+    providers: normalizedProviders,
+    activeProviderId: activeProvider.configured
+      ? activeProvider.providerId
+      : activeProviderId,
+    activeProvider,
+  };
+}
+
+function getFailoverStatusMap(
+  app: OpenWrtStatusApp,
+): Record<string, OpenWrtStatusFailoverProviderStatus> {
+  return app.failoverStatus ?? app.failover_status ?? {};
+}
+
+function statusProviderIsQueued(
+  value: OpenWrtStatusFailoverProviderStatus | undefined,
+): boolean {
+  return Boolean(value?.inFailoverQueue ?? value?.in_failover_queue);
+}
+
+function getStatusQueuePosition(
+  value: OpenWrtStatusFailoverProviderStatus | undefined,
+): number | null {
+  return value
+    ? getNumber(value, ["queuePosition", "queue_position", "position"])
+    : null;
+}
+
+function normalizeFailoverQueueFromStatus(
+  app: OpenWrtStatusApp,
+  providerState: SharedProviderState,
+): SharedProviderFailoverQueueEntry[] {
+  const statusMap = getFailoverStatusMap(app);
+  const providersById = new Map(
+    providerState.providers
+      .filter((provider) => provider.providerId)
+      .map((provider) => [provider.providerId, provider]),
+  );
+  const rawQueue = app.failoverQueue ?? app.failover_queue;
+  const queueEntries: Array<{
+    providerId: string;
+    providerName: string;
+    sortIndex: number | null;
+    active: boolean;
+    health: unknown;
+  }> = Array.isArray(rawQueue)
+    ? rawQueue
+        .map((entry, index) => {
+          const providerId = getString(entry, ["providerId", "provider_id"]);
+          if (!providerId) {
+            return null;
+          }
+
+          const providerStatus = statusMap[providerId];
+          const provider = providersById.get(providerId);
+          const currentRole = providerStatus
+            ? getString(providerStatus, ["currentRole", "current_role"])
+            : "";
+
+          return {
+            providerId,
+            providerName:
+              getString(entry, ["providerName", "provider_name", "name"]) ||
+              provider?.name ||
+              providerId,
+            sortIndex:
+              getNumber(entry, ["sortIndex", "sort_index", "position"]) ??
+              index,
+            active:
+              entry.active === true ||
+              currentRole === "active" ||
+              providerState.activeProviderId === providerId,
+            health: providerStatus?.health ?? entry.health,
+          };
+        })
+        .filter((entry): entry is NonNullable<typeof entry> => entry != null)
+    : Object.entries(statusMap)
+        .filter(([, status]) => statusProviderIsQueued(status))
+        .sort(([, left], [, right]) => {
+          const leftPosition =
+            getStatusQueuePosition(left) ?? Number.MAX_SAFE_INTEGER;
+          const rightPosition =
+            getStatusQueuePosition(right) ?? Number.MAX_SAFE_INTEGER;
+
+          return leftPosition - rightPosition;
+        })
+        .map(([providerId, status], index) => {
+          const provider = providersById.get(providerId);
+          const currentRole = getString(status, [
+            "currentRole",
+            "current_role",
+          ]);
+
+          return {
+            providerId,
+            providerName: provider?.name || providerId,
+            sortIndex: getStatusQueuePosition(status) ?? index,
+            active:
+              currentRole === "active" ||
+              providerState.activeProviderId === providerId,
+            health: status.health,
+          };
+        });
+
+  return queueEntries.map((entry) => ({
+    providerId: entry.providerId,
+    providerName: entry.providerName,
+    sortIndex: entry.sortIndex,
+    active: entry.active,
+    health: parseSharedProviderFailoverState(
+      {
+        providerId: entry.providerId,
+        providerHealth: entry.health,
+      },
+      entry.providerId,
+    ).providerHealth,
+  }));
+}
+
+function normalizeFailoverState(
+  app: OpenWrtStatusApp,
+  providerState: SharedProviderState,
+): SharedProviderFailoverState | null {
+  const activeProviderId = providerState.activeProvider.configured
+    ? providerState.activeProvider.providerId
+    : null;
+
+  if (!activeProviderId) {
+    return null;
+  }
+
+  const statusMap = getFailoverStatusMap(app);
+  const activeProviderStatus = statusMap[activeProviderId];
+  const activeProvider = isRecord(app.providers)
+    ? app.providers[activeProviderId]
+    : null;
+  const queue = normalizeFailoverQueueFromStatus(app, providerState);
+  const queueIndex = queue.findIndex(
+    (entry) => entry.providerId === activeProviderId,
+  );
+  const mode = app.mode ?? "";
+
+  return parseSharedProviderFailoverState(
+    {
+      providerId: activeProviderId,
+      proxyEnabled: getBoolean(app, ["proxyEnabled", "proxy_enabled"]) ?? false,
+      autoFailoverEnabled: mode === "failover",
+      maxRetries: getNumber(app, ["maxRetries", "max_retries"]) ?? 0,
+      activeProviderId,
+      inFailoverQueue:
+        statusProviderIsQueued(activeProviderStatus) || queueIndex >= 0,
+      queuePosition:
+        getStatusQueuePosition(activeProviderStatus) ??
+        (queueIndex >= 0 ? queueIndex : null),
+      sortIndex:
+        getNumber(activeProviderStatus ?? {}, ["sortIndex", "sort_index"]) ??
+        (queueIndex >= 0 ? queueIndex : null),
+      providerHealth: activeProviderStatus?.health ?? activeProvider?.health,
+      failoverQueueDepth: queue.length,
+      failoverQueue: queue,
+    },
+    activeProviderId,
+  );
+}
+
+function normalizeCardFromStatus(
+  appId: SharedProviderAppId,
+  app: OpenWrtStatusApp,
+): AppGridLoadResult {
+  const providerState = normalizeProviderState(appId, app);
+
+  return {
+    card: {
+      appId,
+      loading: false,
+      error: null,
+      providerState,
+      summary: normalizeUsageSummary(app.usage),
+      providerStats: normalizeProviderStats(app),
+      recentActivity:
+        app.recentActivity || app.recent_activity
+          ? normalizeRecentActivity(app)
+          : [],
+      failoverState: normalizeFailoverState(app, providerState),
+    },
+    providerStateOk: true,
+    summaryOk: Boolean(app.usage),
+    providerStatsOk: true,
+    recentActivityOk: Boolean(app.recentActivity || app.recent_activity),
+    failoverStateOk: true,
   };
 }
 
@@ -338,99 +810,6 @@ function mergeCardData(
   };
 }
 
-async function loadUsageSummaries(
-  shell: OpenWrtSharedPageMountOptions["shell"],
-): Promise<Partial<Record<SharedProviderAppId, OpenWrtUsageSummary>>> {
-  const results = await Promise.allSettled(
-    BACKEND_APP_OPTIONS.map(async (appId) => ({
-      appId,
-      summary: await shell.getUsageSummary(appId),
-    })),
-  );
-  const summaries: Partial<Record<SharedProviderAppId, OpenWrtUsageSummary>> =
-    {};
-
-  results.forEach((result) => {
-    if (result.status !== "fulfilled") {
-      return;
-    }
-
-    summaries[result.value.appId] = result.value.summary;
-  });
-
-  return summaries;
-}
-
-async function loadRecentActivityByApp(
-  shell: OpenWrtSharedPageMountOptions["shell"],
-): Promise<Partial<Record<SharedProviderAppId, OpenWrtRecentActivityItem[]>>> {
-  const results = await Promise.allSettled(
-    BACKEND_APP_OPTIONS.map(async (appId) => ({
-      appId,
-      recentActivity: await shell.getRecentActivity(appId),
-    })),
-  );
-  const recentActivityByApp: Partial<
-    Record<SharedProviderAppId, OpenWrtRecentActivityItem[]>
-  > = {};
-
-  results.forEach((result) => {
-    if (result.status !== "fulfilled") {
-      return;
-    }
-
-    recentActivityByApp[result.value.appId] = sortRecentActivity(
-      result.value.recentActivity,
-    );
-  });
-
-  return recentActivityByApp;
-}
-
-async function loadFailoverStateByApp(
-  transport: OpenWrtSharedPageMountOptions["transport"],
-  currentCards: AppGridData[],
-): Promise<Partial<Record<SharedProviderAppId, SharedProviderFailoverState>>> {
-  const adapter = createOpenWrtProviderAdapter(transport);
-  const { getProviderFailoverState } = adapter;
-
-  if (typeof getProviderFailoverState !== "function") {
-    return {};
-  }
-
-  const results = await Promise.allSettled(
-    BACKEND_APP_OPTIONS.map(async (appId) => {
-      const card = currentCards.find((c) => c.appId === appId);
-      const activeProviderId = card?.providerState?.activeProvider.configured
-        ? card.providerState.activeProvider.providerId
-        : null;
-
-      if (!activeProviderId) {
-        return null;
-      }
-
-      return {
-        appId,
-        failoverState: await getProviderFailoverState(appId, activeProviderId),
-      };
-    }),
-  );
-
-  const failoverStateByApp: Partial<
-    Record<SharedProviderAppId, SharedProviderFailoverState>
-  > = {};
-
-  results.forEach((result) => {
-    if (result.status !== "fulfilled" || result.value === null) {
-      return;
-    }
-
-    failoverStateByApp[result.value.appId] = result.value.failoverState;
-  });
-
-  return failoverStateByApp;
-}
-
 export interface AppsGridProps {
   options: OpenWrtSharedPageMountOptions;
   onOpenActivity: (appId: SharedProviderAppId) => void;
@@ -438,19 +817,99 @@ export interface AppsGridProps {
   providerMutationVersion?: number;
 }
 
-async function loadQuotaByProviderId(
-  shell: OpenWrtSharedPageMountOptions["shell"],
-): Promise<Record<string, ProviderQuotaSnapshot>> {
-  try {
-    const response = await shell.getQuota();
-    const map: Record<string, ProviderQuotaSnapshot> = {};
-    for (const snapshot of response.providers) {
-      map[snapshot.provider_id] = snapshot;
-    }
-    return map;
-  } catch {
-    return {};
+type StatusGridLoadResult = {
+  cards: AppGridLoadResult[];
+  quotaByProviderId: Record<string, ProviderQuotaSnapshot>;
+  quotaOk: boolean;
+};
+
+function assertStatusShape(
+  status: OpenWrtStatusResponse,
+): OpenWrtStatusResponse {
+  if (!status || !isRecord(status) || !isRecord(status.apps)) {
+    throw new Error("OpenWrt status payload was empty or invalid.");
   }
+
+  return status;
+}
+
+function normalizeQuotaByProviderId(
+  status: OpenWrtStatusResponse,
+): Record<string, ProviderQuotaSnapshot> {
+  const quotaByProviderId: Record<string, ProviderQuotaSnapshot> = {};
+
+  for (const appId of BACKEND_APP_OPTIONS) {
+    const app = status.apps[appId];
+    if (!app || !isRecord(app.providers)) {
+      continue;
+    }
+
+    for (const [providerId, provider] of Object.entries(app.providers)) {
+      const providerName = provider.name?.trim() || providerId;
+      const quota = normalizeQuotaSnapshot(
+        provider.quota,
+        appId,
+        providerId,
+        providerName,
+      );
+
+      if (quota) {
+        quotaByProviderId[quota.provider_id] = quota;
+      }
+    }
+  }
+
+  return quotaByProviderId;
+}
+
+async function loadStatusGridData(
+  options: OpenWrtSharedPageMountOptions,
+  t: TFunction,
+): Promise<StatusGridLoadResult> {
+  try {
+    const status = assertStatusShape(await options.shell.getStatus());
+    const cards = APP_OPTIONS.map((appId): AppGridLoadResult => {
+      if (isInertHomeAppId(appId)) {
+        return createInertLoadResult(appId);
+      }
+
+      const app = status.apps[appId];
+      return app
+        ? normalizeCardFromStatus(appId, app)
+        : createFailedLoadResult(
+            appId,
+            t("openwrt.appsGrid.routerDataUnavailable"),
+          );
+    });
+
+    return {
+      cards,
+      quotaByProviderId: normalizeQuotaByProviderId(status),
+      quotaOk: true,
+    };
+  } catch (error) {
+    const message = getErrorMessage(error, t);
+
+    return {
+      cards: APP_OPTIONS.map((appId) => createFailedLoadResult(appId, message)),
+      quotaByProviderId: {},
+      quotaOk: false,
+    };
+  }
+}
+
+function mergeStatusCards(
+  currentCards: AppGridData[],
+  nextResults: AppGridLoadResult[],
+): AppGridData[] {
+  const nextResultsByAppId = new Map(
+    nextResults.map((result) => [result.card.appId, result]),
+  );
+
+  return currentCards.map((currentCard) => {
+    const nextResult = nextResultsByAppId.get(currentCard.appId);
+    return nextResult ? mergeCardData(currentCard, nextResult) : currentCard;
+  });
 }
 
 export function AppsGrid({
@@ -463,8 +922,6 @@ export function AppsGrid({
   const [cards, setCards] = useState<AppGridData[]>(() =>
     APP_OPTIONS.map(createInitialCard),
   );
-  const cardsRef = useRef(cards);
-  cardsRef.current = cards;
   const initialLoadCompleteRef = useRef(false);
   const [quotaByProviderId, setQuotaByProviderId] = useState<
     Record<string, ProviderQuotaSnapshot>
@@ -478,6 +935,17 @@ export function AppsGrid({
   ] = useState<Partial<Record<SharedProviderAppId, boolean>>>({});
   const [failoverReorderPendingByApp, setFailoverReorderPendingByApp] =
     useState<Partial<Record<SharedProviderAppId, boolean>>>({});
+
+  async function refreshStatusSnapshot() {
+    const nextStatus = await loadStatusGridData(options, t);
+
+    setCards((currentCards) =>
+      mergeStatusCards(currentCards, nextStatus.cards),
+    );
+    if (nextStatus.quotaOk) {
+      setQuotaByProviderId(nextStatus.quotaByProviderId);
+    }
+  }
 
   async function handleSetAutoFailover(
     appId: SharedProviderAppId,
@@ -496,13 +964,7 @@ export function AppsGrid({
     }));
     try {
       await adapter.setAutoFailoverEnabled(appId, enabled);
-      const nextResult = await loadCardData(options, appId, t);
-
-      setCards((currentCards) =>
-        currentCards.map((card) =>
-          card.appId === appId ? mergeCardData(card, nextResult) : card,
-        ),
-      );
+      await refreshStatusSnapshot();
     } finally {
       setFailoverPendingByApp((current) => ({ ...current, [appId]: false }));
       setOptimisticAutoFailoverEnabledByApp((current) => {
@@ -560,13 +1022,7 @@ export function AppsGrid({
     }));
     try {
       await adapter.reorderProviders(appId, nextProviderIds);
-      const nextResult = await loadCardData(options, appId, t);
-
-      setCards((currentCards) =>
-        currentCards.map((card) =>
-          card.appId === appId ? mergeCardData(card, nextResult) : card,
-        ),
-      );
+      await refreshStatusSnapshot();
     } finally {
       setFailoverReorderPendingByApp((current) => ({
         ...current,
@@ -585,29 +1041,19 @@ export function AppsGrid({
       );
     }
 
-    void Promise.all([
-      Promise.all(APP_OPTIONS.map((appId) => loadCardData(options, appId, t))),
-      loadQuotaByProviderId(options.shell),
-    ]).then(([nextResults, quotaMap]) => {
+    void loadStatusGridData(options, t).then((nextStatus) => {
       if (cancelled) return;
       initialLoadCompleteRef.current = true;
       if (shouldShowLoading) {
-        setCards(nextResults.map((result) => result.card));
+        setCards(nextStatus.cards.map((result) => result.card));
       } else {
-        const nextResultsByAppId = new Map(
-          nextResults.map((result) => [result.card.appId, result]),
-        );
-
         setCards((currentCards) =>
-          currentCards.map((currentCard) => {
-            const nextResult = nextResultsByAppId.get(currentCard.appId);
-            return nextResult
-              ? mergeCardData(currentCard, nextResult)
-              : currentCard;
-          }),
+          mergeStatusCards(currentCards, nextStatus.cards),
         );
       }
-      setQuotaByProviderId(quotaMap);
+      if (nextStatus.quotaOk) {
+        setQuotaByProviderId(nextStatus.quotaByProviderId);
+      }
     });
 
     return () => {
@@ -638,47 +1084,17 @@ export function AppsGrid({
         ? POLL_INTERVAL_BACKGROUND_MS
         : POLL_INTERVAL_MS;
 
-    const refetchUsageSummaries = async () => {
-      const [newSummaryByApp, newRecentActivityByApp, newFailoverStateByApp] =
-        await Promise.all([
-          loadUsageSummaries(options.shell),
-          loadRecentActivityByApp(options.shell),
-          loadFailoverStateByApp(options.transport, cardsRef.current),
-        ]);
+    const refetchStatus = async () => {
+      const nextStatus = await loadStatusGridData(options, t);
 
       if (cancelled) {
         return;
       }
 
-      setCards((prev) =>
-        prev.map((card) => {
-          if (isInertHomeAppId(card.appId)) {
-            return card;
-          }
-
-          const nextSummary = newSummaryByApp[card.appId];
-          const nextRecentActivity = newRecentActivityByApp[card.appId];
-          const nextFailoverState = newFailoverStateByApp[card.appId];
-          let updatedCard = card;
-
-          if (nextSummary !== undefined) {
-            updatedCard = { ...updatedCard, summary: nextSummary };
-          }
-
-          if (nextRecentActivity !== undefined) {
-            updatedCard = {
-              ...updatedCard,
-              recentActivity: nextRecentActivity,
-            };
-          }
-
-          if (nextFailoverState !== undefined) {
-            updatedCard = { ...updatedCard, failoverState: nextFailoverState };
-          }
-
-          return updatedCard;
-        }),
-      );
+      setCards((prev) => mergeStatusCards(prev, nextStatus.cards));
+      if (nextStatus.quotaOk) {
+        setQuotaByProviderId(nextStatus.quotaByProviderId);
+      }
     };
 
     const startPolling = () => {
@@ -690,7 +1106,7 @@ export function AppsGrid({
       }
 
       intervalId = window.setInterval(() => {
-        void refetchUsageSummaries();
+        void refetchStatus();
       }, pollIntervalMs);
     };
 
@@ -700,17 +1116,9 @@ export function AppsGrid({
         return;
       }
 
-      void refetchUsageSummaries();
+      void refetchStatus();
       startPolling();
     };
-
-    const QUOTA_POLL_INTERVAL_MS = 60_000;
-    const quotaIntervalId = window.setInterval(async () => {
-      const map = await loadQuotaByProviderId(options.shell);
-      if (!cancelled) {
-        setQuotaByProviderId(map);
-      }
-    }, QUOTA_POLL_INTERVAL_MS);
 
     doc.addEventListener("visibilitychange", handleVisibilityChange);
     startPolling();
@@ -718,10 +1126,9 @@ export function AppsGrid({
     return () => {
       cancelled = true;
       clearPollingInterval();
-      window.clearInterval(quotaIntervalId);
       doc.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [options.shell]);
+  }, [options, t]);
 
   const hostState = options.shell.getHostState();
   const serviceRunning = options.shell.getServiceStatus().isRunning;
