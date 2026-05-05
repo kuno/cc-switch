@@ -2,6 +2,7 @@ import "./openwrt-luci-host.css";
 import providerUiCss from "./openwrt-provider-ui.css?inline";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
+import { I18nextProvider } from "react-i18next";
 import {
   createOpenWrtProviderAdapter,
   type OpenWrtProviderMutationEvent,
@@ -26,6 +27,7 @@ import type {
   SharedProviderAppId,
   SharedProviderView,
 } from "@/shared/providers/domain";
+import i18n from "./i18n";
 import { OpenWrtPageShell } from "./OpenWrtPageShell";
 import type {
   OpenWrtSharedProviderShellApi,
@@ -646,13 +648,19 @@ function mountOpenWrtPageShell(options: OpenWrtSharedPageMountOptions) {
     }
     root.render(
       createElement(
-        PortalContainerContext.Provider,
+        I18nextProvider,
         {
-          value: shadowMount?.portalTarget ?? null,
+          i18n,
         },
-        createElement(OpenWrtPageShell, {
-          options,
-        }),
+        createElement(
+          PortalContainerContext.Provider,
+          {
+            value: shadowMount?.portalTarget ?? null,
+          },
+          createElement(OpenWrtPageShell, {
+            options,
+          }),
+        ),
       ),
     );
 
