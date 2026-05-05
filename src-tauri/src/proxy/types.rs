@@ -211,6 +211,7 @@ pub struct ApiStatusApp {
     pub proxy_enabled: bool,
     pub health: Option<bool>,
     pub health_reason: String,
+    pub max_retries: u32,
     pub usage: ApiStatusUsage,
     pub active_provider: Option<ApiStatusActiveProvider>,
     pub providers: BTreeMap<String, ApiStatusProvider>,
