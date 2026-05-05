@@ -133,6 +133,9 @@ fn extract_coding_plan_credentials(provider: &Provider) -> Option<(String, Strin
 }
 
 pub(super) async fn refresh_third_party_coding_plan_snapshots(state: &ProxyState) {
+    #[cfg(test)]
+    super::handlers::record_live_quota_refresh_call();
+
     let providers = match state.db.get_all_providers(THIRD_PARTY_QUOTA_APP_TYPE) {
         Ok(providers) => providers,
         Err(error) => {
@@ -210,6 +213,9 @@ pub(super) async fn refresh_third_party_coding_plan_snapshots(state: &ProxyState
 }
 
 pub(super) async fn refresh_third_party_balance_snapshots(state: &ProxyState) {
+    #[cfg(test)]
+    super::handlers::record_live_quota_refresh_call();
+
     let providers = match state.db.get_all_providers(THIRD_PARTY_QUOTA_APP_TYPE) {
         Ok(providers) => providers,
         Err(error) => {

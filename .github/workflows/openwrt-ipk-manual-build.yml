@@ -121,6 +121,14 @@ jobs:
         working-directory: proxy-daemon
         run: cross build --release --target ${{ matrix.target.rust_target }}
 
+      - name: Install po2lmo
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/openwrt/luci.git /tmp/luci
+          cd /tmp/luci/modules/luci-base/src
+          make po2lmo
+          sudo cp po2lmo /usr/local/bin/
+
       - name: Build OpenWrt IPKs
         run: |
           set -euo pipefail
