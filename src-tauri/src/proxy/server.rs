@@ -496,6 +496,7 @@ mod tests {
     };
     use http_body_util::BodyExt;
     use serde_json::json;
+    use serial_test::serial;
     use tower::Service;
 
     #[tokio::test]
@@ -568,6 +569,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn get_quota_removes_stale_codex_subscription_snapshots_without_live_refresh_sources() {
         let db = Arc::new(Database::memory().expect("init db"));
         let server = ProxyServer::new(
@@ -680,6 +682,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn get_quota_removes_stale_claude_snapshots_for_providers_missing_from_db() {
         let db = Arc::new(Database::memory().expect("init db"));
         let server = ProxyServer::new(

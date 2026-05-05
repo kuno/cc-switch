@@ -51,11 +51,31 @@ use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::future::Future;
+#[cfg(test)]
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 const CODEX_OFFICIAL_PROVIDER_ID: &str = "codex-official";
 const CODEX_OAUTH_AUTH_MODE: &str = "codex_oauth";
 const CODEX_LEGACY_CLIENT_PASSTHROUGH_AUTH_MODE: &str = "client_passthrough";
 const CLAUDE_OAUTH_AUTH_MODE: &str = "claude_oauth";
+
+#[cfg(test)]
+static LIVE_QUOTA_REFRESH_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(test)]
+pub(super) fn record_live_quota_refresh_call() {
+    LIVE_QUOTA_REFRESH_CALLS.fetch_add(1, Ordering::SeqCst);
+}
+
+#[cfg(test)]
+fn reset_live_quota_refresh_call_count() {
+    LIVE_QUOTA_REFRESH_CALLS.store(0, Ordering::SeqCst);
+}
+
+#[cfg(test)]
+fn live_quota_refresh_call_count() -> usize {
+    LIVE_QUOTA_REFRESH_CALLS.load(Ordering::SeqCst)
+}
 
 // ============================================================================
 // 健康检查和状态查询（简单端点）
@@ -171,6 +191,9 @@ async fn refresh_codex_quota_snapshots_with_query_and_refresher<F, Fut, R>(
     Fut: Future<Output = SubscriptionQuota>,
     R: OAuthTokenRefresher,
 {
+    #[cfg(test)]
+    record_live_quota_refresh_call();
+
     let providers = match state.db.get_all_providers("codex") {
         Ok(providers) => providers,
         Err(error) => {
@@ -280,6 +303,9 @@ async fn refresh_claude_quota_snapshots_with_query_and_refresher<F, Fut, R>(
     Fut: Future<Output = SubscriptionQuota>,
     R: OAuthTokenRefresher,
 {
+    #[cfg(test)]
+    record_live_quota_refresh_call();
+
     let providers = match state.db.get_all_providers("claude") {
         Ok(providers) => providers,
         Err(error) => {
@@ -1531,9 +1557,11 @@ async fn log_usage(
 mod tests {
     use super::{
         build_api_status_response, build_provider_quota, is_claude_oauth_provider,
-        is_codex_oauth_provider, refresh_claude_quota_snapshots_with_query,
+        is_codex_oauth_provider, live_quota_refresh_call_count,
+        refresh_claude_quota_snapshots_with_query,
         refresh_claude_quota_snapshots_with_query_and_refresher,
-        refresh_codex_quota_snapshots_with_query_and_refresher, responses_sse_to_response_value,
+        refresh_codex_quota_snapshots_with_query_and_refresher,
+        reset_live_quota_refresh_call_count, responses_sse_to_response_value,
         should_use_claude_transform_streaming,
     };
     use crate::app_config::AppType;
@@ -2088,18 +2116,25 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
     #[tokio::test]
     async fn api_status_failover_mode_uses_queue_order_and_roles() {
         let db = Arc::new(Database::memory().expect("db"));
-        let mut first = test_provider("first", "First Provider");
-        first.sort_index = Some(0);
-        let mut second = test_provider("second", "Second Provider");
-        second.sort_index = Some(1);
-        db.save_provider("claude", &first).expect("save first");
-        db.save_provider("claude", &second).expect("save second");
-        db.set_current_provider("claude", "first")
+        let desired_order = ["p_charlie", "p_alpha", "p_delta", "p_bravo"];
+        for (provider_id, sort_index) in [
+            ("p_bravo", 3),
+            ("p_unqueued", 4),
+            ("p_delta", 2),
+            ("p_alpha", 1),
+            ("p_charlie", 0),
+        ] {
+            let mut provider = test_provider(provider_id, provider_id);
+            provider.sort_index = Some(sort_index);
+            db.save_provider("claude", &provider)
+                .expect("save provider");
+        }
+        db.set_current_provider("claude", "p_charlie")
             .expect("set current");
-        db.add_to_failover_queue("claude", "first")
-            .expect("queue first");
-        db.add_to_failover_queue("claude", "second")
-            .expect("queue second");
+        for provider_id in desired_order {
+            db.add_to_failover_queue("claude", provider_id)
+                .expect("queue provider");
+        }
         set_proxy_flags(&db, "claude", true, true).await;
 
         let state = test_proxy_state(db);
@@ -2107,12 +2142,31 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
         let app = response.apps.get("claude").expect("claude app");
 
         assert_eq!(app.mode, "failover");
-        assert_eq!(app.failover_queue[0].provider_id, "first");
-        assert_eq!(app.failover_queue[0].position, 0);
-        assert_eq!(app.failover_queue[1].provider_id, "second");
-        assert_eq!(app.failover_queue[1].position, 1);
-        assert_eq!(app.failover_status["first"].current_role, "active");
-        assert_eq!(app.failover_status["second"].current_role, "standby");
+        let observed_order = app
+            .failover_queue
+            .iter()
+            .map(|item| item.provider_id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(observed_order, desired_order);
+        for (position, provider_id) in desired_order.iter().enumerate() {
+            assert_eq!(app.failover_queue[position].position, position);
+            assert_eq!(
+                app.failover_status[*provider_id].queue_position,
+                Some(position)
+            );
+        }
+        assert_eq!(app.failover_status["p_charlie"].current_role, "active");
+        assert_eq!(app.failover_status["p_alpha"].current_role, "standby");
+        assert_eq!(app.failover_status["p_delta"].current_role, "standby");
+        assert_eq!(app.failover_status["p_bravo"].current_role, "standby");
+        assert!(!app
+            .failover_queue
+            .iter()
+            .any(|item| item.provider_id == "p_unqueued"));
+        assert_eq!(app.failover_status["p_unqueued"].current_role, "skipped");
+        assert!(app.failover_status["p_unqueued"]
+            .unavailable_reasons
+            .contains(&"not_in_failover_queue".to_string()));
     }
 
     #[tokio::test]
@@ -2419,6 +2473,7 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
     }
 
     #[tokio::test]
+    #[serial]
     async fn api_status_has_no_failover_active_health_circuit_or_quota_refresh_side_effects() {
         let db = Arc::new(Database::memory().expect("db"));
         db.save_provider(
@@ -2426,10 +2481,17 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
             &codex_provider("codex-oauth", "codex_oauth", "Codex OAuth"),
         )
         .expect("save codex provider");
+        db.save_provider(
+            "codex",
+            &codex_provider("codex-standby", "codex_oauth", "Codex Standby"),
+        )
+        .expect("save standby provider");
         db.set_current_provider("codex", "codex-oauth")
             .expect("set current");
         db.add_to_failover_queue("codex", "codex-oauth")
             .expect("queue provider");
+        db.add_to_failover_queue("codex", "codex-standby")
+            .expect("queue standby");
         set_proxy_flags(&db, "codex", true, true).await;
 
         let state = test_proxy_state(db.clone());
@@ -2438,33 +2500,53 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
             .record_result("codex-oauth", "codex", false, true, None)
             .await
             .expect("seed circuit and health");
+        state
+            .provider_router
+            .record_result("codex-standby", "codex", false, true, None)
+            .await
+            .expect("seed standby circuit and health");
         {
             let mut store = state.rate_limits.write().await;
             store.insert(
                 "codex-oauth".to_string(),
                 quota_snapshot("codex", "codex-oauth", "Codex OAuth"),
             );
+            store.insert(
+                "codex-standby".to_string(),
+                quota_snapshot("codex", "codex-standby", "Codex Standby"),
+            );
         }
 
+        let provider_ids = ["codex-oauth", "codex-standby"];
+        reset_live_quota_refresh_call_count();
         let current_before = db.get_current_provider("codex").expect("current before");
-        let queue_before: Vec<String> = db
-            .get_failover_queue("codex")
-            .expect("queue before")
-            .into_iter()
-            .map(|item| item.provider_id)
-            .collect();
-        let health_before = db
-            .list_provider_health_records("codex")
+        let queue_before =
+            serde_json::to_value(db.get_failover_queue("codex").expect("queue before"))
+                .expect("serialize queue before");
+        let health_before = serde_json::to_value(
+            futures::future::join_all(
+                provider_ids
+                    .iter()
+                    .map(|provider_id| db.get_provider_health(provider_id, "codex")),
+            )
             .await
-            .expect("health before");
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()
+            .expect("health before"),
+        )
+        .expect("serialize health before");
         let circuit_before = serde_json::to_value(
-            state
-                .provider_router
-                .get_circuit_breaker_stats("codex-oauth", "codex")
-                .await
-                .expect("circuit before"),
+            futures::future::join_all(provider_ids.iter().map(|provider_id| {
+                state
+                    .provider_router
+                    .get_circuit_breaker_stats(provider_id, "codex")
+            }))
+            .await,
         )
         .expect("serialize circuit before");
+        let quota_store_before = serde_json::to_value(state.rate_limits.read().await.clone())
+            .expect("serialize quota store before");
+        let refresh_calls_before = live_quota_refresh_call_count();
 
         let _response = status_response(&state).await;
 
@@ -2472,52 +2554,84 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
             db.get_current_provider("codex").expect("current after"),
             current_before
         );
-        let queue_after: Vec<String> = db
-            .get_failover_queue("codex")
-            .expect("queue after")
-            .into_iter()
-            .map(|item| item.provider_id)
-            .collect();
-        assert_eq!(queue_after, queue_before);
-        let health_after = db
-            .list_provider_health_records("codex")
-            .await
-            .expect("health after");
-        assert_eq!(health_after.len(), health_before.len());
         assert_eq!(
-            health_after[0].consecutive_failures,
-            health_before[0].consecutive_failures
+            serde_json::to_value(db.get_failover_queue("codex").expect("queue after"))
+                .expect("serialize queue after"),
+            queue_before
         );
         assert_eq!(
             serde_json::to_value(
-                state
-                    .provider_router
-                    .get_circuit_breaker_stats("codex-oauth", "codex")
-                    .await
-                    .expect("circuit after"),
+                futures::future::join_all(
+                    provider_ids
+                        .iter()
+                        .map(|provider_id| { db.get_provider_health(provider_id, "codex") })
+                )
+                .await
+                .into_iter()
+                .collect::<Result<Vec<_>, _>>()
+                .expect("health after"),
+            )
+            .expect("serialize health after"),
+            health_before
+        );
+        assert_eq!(
+            serde_json::to_value(
+                futures::future::join_all(provider_ids.iter().map(|provider_id| {
+                    state
+                        .provider_router
+                        .get_circuit_breaker_stats(provider_id, "codex")
+                }))
+                .await,
             )
             .expect("serialize circuit after"),
             circuit_before
         );
-        let store = state.rate_limits.read().await;
-        assert!(
-            store.contains_key("codex-oauth"),
-            "status endpoint must not run live quota refresh cleanup"
+        assert_eq!(
+            serde_json::to_value(state.rate_limits.read().await.clone())
+                .expect("serialize quota store after"),
+            quota_store_before,
+            "status endpoint must not mutate quota snapshots"
         );
-        assert_eq!(store["codex-oauth"].captured_at, 1_777_971_123_456);
+        assert_eq!(
+            live_quota_refresh_call_count(),
+            refresh_calls_before,
+            "status endpoint must not invoke live quota refresh helpers"
+        );
     }
 
     #[tokio::test]
     async fn api_status_seeded_usage_across_supported_apps_completes_within_poll_budget() {
+        const PROVIDERS_PER_APP: usize = 4;
+        const REQUEST_LOGS_PER_PROVIDER: usize = 75;
+        const ROLLUP_REQUESTS_PER_PROVIDER: u64 = 25;
+        const CALLS: usize = 5;
+        const POLL_BUDGET: Duration = Duration::from_millis(250);
+
         let db = Arc::new(Database::memory().expect("db"));
         for app_type in ["claude", "codex", "gemini"] {
-            let provider_id = format!("{app_type}-provider");
-            db.save_provider(app_type, &test_provider(&provider_id, "Provider"))
-                .expect("save provider");
-            for index in 0..25 {
+            for provider_index in 0..PROVIDERS_PER_APP {
+                let provider_id = format!("{app_type}-provider-{provider_index}");
+                db.save_provider(app_type, &test_provider(&provider_id, "Provider"))
+                    .expect("save provider");
+                for row_index in 0..REQUEST_LOGS_PER_PROVIDER {
+                    insert_usage_log(
+                        &db,
+                        &format!("{app_type}-{provider_index}-log-{row_index}"),
+                        &provider_id,
+                        app_type,
+                        10,
+                        5,
+                        0,
+                        0,
+                        "0.001000",
+                        20,
+                        200,
+                        1_700_000_000 + row_index as i64,
+                    );
+                }
                 insert_usage_log(
                     &db,
-                    &format!("{app_type}-log-{index}"),
+                    &format!("{app_type}-{provider_index}-failed-log"),
                     &provider_id,
                     app_type,
                     10,
@@ -2526,32 +2640,45 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
                     0,
                     "0.001000",
                     20,
-                    200,
-                    1_700_000_000 + index,
+                    500,
+                    1_700_000_100 + provider_index as i64,
+                );
+                insert_rollup(
+                    &db,
+                    "2026-05-01",
+                    &provider_id,
+                    app_type,
+                    ROLLUP_REQUESTS_PER_PROVIDER,
+                    ROLLUP_REQUESTS_PER_PROVIDER,
+                    250,
+                    125,
+                    "0.025000",
+                    20,
                 );
             }
-            insert_rollup(
-                &db,
-                "2026-05-01",
-                &provider_id,
-                app_type,
-                25,
-                25,
-                250,
-                125,
-                "0.025000",
-                20,
-            );
         }
 
         let state = test_proxy_state(db);
-        let started = Instant::now();
-        let response = status_response(&state).await;
-        let elapsed = started.elapsed();
+        let expected_total_requests = PROVIDERS_PER_APP as u64
+            * (REQUEST_LOGS_PER_PROVIDER as u64 + 1 + ROLLUP_REQUESTS_PER_PROVIDER);
 
-        assert!(elapsed < Duration::from_secs(10), "elapsed: {elapsed:?}");
-        for app_type in ["claude", "codex", "gemini"] {
-            assert_eq!(response.apps[app_type].usage.total_requests, 50);
+        let mut worst_elapsed = Duration::ZERO;
+        for call in 0..CALLS {
+            let started = Instant::now();
+            let response = status_response(&state).await;
+            let elapsed = started.elapsed();
+            worst_elapsed = worst_elapsed.max(elapsed);
+
+            assert!(
+                elapsed < POLL_BUDGET,
+                "call {call} elapsed {elapsed:?}, worst {worst_elapsed:?}, budget {POLL_BUDGET:?}"
+            );
+            for app_type in ["claude", "codex", "gemini"] {
+                assert_eq!(
+                    response.apps[app_type].usage.total_requests,
+                    expected_total_requests
+                );
+            }
         }
     }
 
