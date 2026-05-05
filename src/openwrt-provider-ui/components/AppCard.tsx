@@ -15,6 +15,7 @@ import {
   useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
+import type { TFunction } from "i18next";
 import { GripVertical, Info } from "lucide-react";
 import type {
   CSSProperties,
@@ -22,6 +23,7 @@ import type {
   KeyboardEventHandler,
   MouseEventHandler,
 } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   SharedProviderAppId,
   SharedProviderFailoverQueueEntry,
@@ -49,27 +51,27 @@ type AppCardAppId = SharedProviderAppId | InertHomeAppId;
 const APP_COPY: Record<
   AppCardAppId,
   {
-    label: string;
-    subtitle?: string;
+    labelKey: string;
+    subtitleKey?: string;
   }
 > = {
   claude: {
-    label: "Claude",
-    subtitle: "Anthropic · Claude Code",
+    labelKey: "apps.claude",
+    subtitleKey: "openwrt.appCard.subtitle.claude",
   },
   codex: {
-    label: "Codex",
-    subtitle: "OpenAI · Codex CLI",
+    labelKey: "apps.codex",
+    subtitleKey: "openwrt.appCard.subtitle.codex",
   },
   gemini: {
-    label: "Gemini",
-    subtitle: "Google · Gemini CLI",
+    labelKey: "apps.gemini",
+    subtitleKey: "openwrt.appCard.subtitle.gemini",
   },
   opencode: {
-    label: "OpenCode",
+    labelKey: "apps.opencode",
   },
   openclaw: {
-    label: "OpenClaw",
+    labelKey: "apps.openclaw",
   },
 };
 
@@ -134,45 +136,48 @@ function getStatus({
   recentActivity: OpenWrtRecentActivityItem[];
   failoverState: SharedProviderFailoverState | null;
 }): {
-  label: string;
+  labelKey: string;
   tone: StatusTone;
 } {
   const activeProviderConfigured =
     providerState?.activeProvider.configured ?? false;
 
   if (loading && !providerState) {
-    return { label: "Loading", tone: "neutral" };
+    return { labelKey: "openwrt.appCard.status.loading", tone: "neutral" };
   }
 
   if (!activeProviderConfigured) {
-    return { label: "Not configured", tone: "neutral" };
+    return { labelKey: "openwrt.appCard.notConfigured", tone: "neutral" };
   }
 
   if (!serviceRunning || hostState.status === "stopped") {
-    return { label: "Stopped", tone: "neutral" };
+    return { labelKey: "settings.advanced.proxy.stopped", tone: "neutral" };
   }
 
   if (error) {
-    return { label: "Unavailable", tone: "fail" };
+    return { labelKey: "openwrt.appCard.status.unavailable", tone: "fail" };
   }
 
   // recent live failures override the daemon's probe-based health, which can lag by hours
   if ((recentActivity[0]?.statusCode ?? 0) >= 400) {
-    return { label: "Degraded", tone: "warn" };
+    return { labelKey: "health.degraded", tone: "warn" };
   }
 
   const providerHealth = failoverState?.providerHealth;
   if (providerHealth?.observed) {
     if (providerHealth.healthy) {
-      return { label: "Running", tone: "success" };
+      return { labelKey: "settings.advanced.proxy.running", tone: "success" };
     }
     if (providerHealth.lastSuccessAt === null && providerHealth.lastFailureAt === null) {
-      return { label: "Unavailable", tone: "neutral" };
+      return {
+        labelKey: "openwrt.appCard.status.unavailable",
+        tone: "neutral",
+      };
     }
-    return { label: "Unavailable", tone: "fail" };
+    return { labelKey: "openwrt.appCard.status.unavailable", tone: "fail" };
   }
 
-  return { label: "Standby", tone: "neutral" };
+  return { labelKey: "openwrt.appCard.status.standby", tone: "neutral" };
 }
 
 function utilBarClass(util: number | null | undefined): string {
@@ -201,6 +206,7 @@ function formatBalanceAmount(amount: number, currency: string): string {
 }
 
 function WindowRow({ window: w }: { window: QuotaWindow }) {
+  const { t } = useTranslation();
   const remainingRatio =
     w.utilization != null ? Math.max(0, Math.min(1, 1 - w.utilization)) : null;
   const remainingPct =
@@ -219,10 +225,14 @@ function WindowRow({ window: w }: { window: QuotaWindow }) {
       <div className="owt-quota-row__label">
         <span className="owt-quota-row__name">{w.name}</span>
         {remainingPct != null && (
-          <span className="owt-quota-row__pct">{remainingPct}% remaining</span>
+          <span className="owt-quota-row__pct">
+            {t("openwrt.appCard.percentRemaining", { percent: remainingPct })}
+          </span>
         )}
         {resetLabel && (
-          <span className="owt-quota-row__reset">resets {resetLabel}</span>
+          <span className="owt-quota-row__reset">
+            {t("openwrt.appCard.resets", { time: resetLabel })}
+          </span>
         )}
       </div>
       {remainingWidth != null && (
@@ -238,6 +248,7 @@ function WindowRow({ window: w }: { window: QuotaWindow }) {
 }
 
 function BalanceRow({ balance }: { balance: BalanceSnapshot }) {
+  const { t } = useTranslation();
   const currency = balance.currency ?? "USD";
   const remaining = balance.remaining ?? 0;
   const isInvalid = balance.is_valid === false || remaining <= 0;
@@ -259,7 +270,9 @@ function BalanceRow({ balance }: { balance: BalanceSnapshot }) {
         <span
           className={`owt-quota-row__name${isInvalid ? " owt-quota-row__name--invalid" : ""}`}
         >
-          {formattedRemaining} remaining
+          {t("openwrt.appCard.amountRemaining", {
+            amount: formattedRemaining,
+          })}
           {hasTotal && balance.total != null
             ? ` / ${formatBalanceAmount(balance.total, currency)}`
             : null}
@@ -289,6 +302,7 @@ function QuotaBand({
   snapshot: ProviderQuotaSnapshot;
   hideLabel?: boolean;
 }) {
+  const { t } = useTranslation();
   const hasWindows = snapshot.windows.length > 0;
   const activeBalances = snapshot.balances?.filter(
     (b) => b.remaining != null || b.total != null,
@@ -299,7 +313,11 @@ function QuotaBand({
 
   return (
     <div className="owt-quota-band">
-      {!hideLabel && <div className="owt-quota-band__label">Quota</div>}
+      {!hideLabel && (
+        <div className="owt-quota-band__label">
+          {t("openwrt.appCard.quota")}
+        </div>
+      )}
       {hasWindows
         ? snapshot.windows.map((w, i) => (
             <WindowRow key={`${w.name}-${i}`} window={w} />
@@ -309,15 +327,20 @@ function QuotaBand({
   );
 }
 
-function getQueueEntryStatus(entry: SharedProviderFailoverQueueEntry): {
+function getQueueEntryStatus(
+  entry: SharedProviderFailoverQueueEntry,
+  t: TFunction,
+): {
   label: string;
   note: string;
+  state: "active" | "skipped" | "standby";
   tone: StatusTone;
 } {
   if (entry.active) {
     return {
-      label: "ACTIVE",
-      note: "Serving traffic",
+      label: t("openwrt.appCard.queue.active"),
+      note: t("openwrt.appCard.queue.servingTraffic"),
+      state: "active",
       tone: "success",
     };
   }
@@ -326,23 +349,32 @@ function getQueueEntryStatus(entry: SharedProviderFailoverQueueEntry): {
     const failures = entry.health.consecutiveFailures;
 
     return {
-      label: "SKIPPED",
+      label: t("openwrt.appCard.queue.skipped"),
       note:
         failures > 0
-          ? `Skipped · ${failures} failure${failures === 1 ? "" : "s"}`
-          : "Skipped by health check",
+          ? t("openwrt.appCard.queue.skippedWithFailures", {
+              count: failures,
+            })
+          : t("openwrt.appCard.queue.skippedByHealthCheck"),
+      state: "skipped",
       tone: failures > 1 ? "fail" : "accent",
     };
   }
 
   return {
-    label: "STANDBY",
-    note: `Standby · ${entry.health.consecutiveFailures} retries used`,
+    label: t("openwrt.appCard.queue.standby"),
+    note: t("openwrt.appCard.queue.standbyRetriesUsed", {
+      count: entry.health.consecutiveFailures,
+    }),
+    state: "standby",
     tone: "neutral",
   };
 }
 
-function getQueueHeadLabel(queue: SharedProviderFailoverQueueEntry[]): string {
+function getQueueHeadLabel(
+  queue: SharedProviderFailoverQueueEntry[],
+  t: TFunction,
+): string {
   if (queue.length === 0) {
     return "—";
   }
@@ -350,7 +382,10 @@ function getQueueHeadLabel(queue: SharedProviderFailoverQueueEntry[]): string {
   const activeIndex = queue.findIndex((entry) => entry.active);
   const headIndex = activeIndex >= 0 ? activeIndex : 0;
 
-  return `${headIndex + 1} of ${queue.length}`;
+  return t("openwrt.appCard.positionOfTotal", {
+    position: headIndex + 1,
+    total: queue.length,
+  });
 }
 
 interface FailoverQueueRowProps {
@@ -378,15 +413,16 @@ function FailoverQueueRow({
   dragAttributes,
   dragListeners,
 }: FailoverQueueRowProps) {
+  const { t } = useTranslation();
   const providerName = entry.providerName || entry.providerId;
-  const status = getQueueEntryStatus(entry);
+  const status = getQueueEntryStatus(entry, t);
 
   return (
     <div
       ref={setNodeRef}
       className="owt-app-card__queue-row"
       data-dragging={isDragging ? "true" : "false"}
-      data-state={entry.active ? "active" : status.label.toLowerCase()}
+      data-state={status.state}
       style={style}
     >
       <button
@@ -395,12 +431,16 @@ function FailoverQueueRow({
         disabled={dragDisabled}
         title={
           dragDisabled
-            ? "Queue order is updating"
-            : `Drag to reorder ${providerName}`
+            ? t("openwrt.appCard.queueOrderUpdating")
+            : t("openwrt.appCard.dragToReorderProvider", {
+                provider: providerName,
+              })
         }
         {...dragAttributes}
         {...dragListeners}
-        aria-label={`Reorder ${providerName}`}
+        aria-label={t("openwrt.appCard.reorderProvider", {
+          provider: providerName,
+        })}
         onClick={(event) => event.stopPropagation()}
       >
         <GripVertical className="h-4 w-4" aria-hidden="true" />
@@ -489,6 +529,7 @@ function FailoverQueueSummary({
   reorderPending: boolean;
   onReorder?: (providerIds: string[]) => void;
 }) {
+  const { t } = useTranslation();
   const queue = failoverState?.failoverQueue ?? [];
   const queuedProviderIds = queue.map((entry) => entry.providerId);
   const providersById = new Map(
@@ -508,7 +549,7 @@ function FailoverQueueSummary({
   if (queue.length === 0) {
     return (
       <div className="owt-app-card__failover-empty">
-        No providers in failover queue
+        {t("openwrt.appCard.noProvidersInFailoverQueue")}
       </div>
     );
   }
@@ -564,11 +605,19 @@ function FailoverQueueSummary({
       </DndContext>
       <div className="owt-app-card__failover-foot">
         <span>
-          Auto-failover {autoFailoverEnabled ? "on" : "off"} · max{" "}
-          {failoverState?.maxRetries ?? 0} retries
+          {t(
+            autoFailoverEnabled
+              ? "openwrt.appCard.autoFailoverOnSummary"
+              : "openwrt.appCard.autoFailoverOffSummary",
+            { maxRetries: failoverState?.maxRetries ?? 0 },
+          )}
         </span>
         <span>
-          Head: {reorderPending ? "Updating" : getQueueHeadLabel(queue)}
+          {t("openwrt.appCard.queueHead", {
+            head: reorderPending
+              ? t("openwrt.appCard.updating")
+              : getQueueHeadLabel(queue, t),
+          })}
         </span>
       </div>
     </div>
@@ -618,7 +667,10 @@ export function AppCard({
   onSetAutoFailover,
   onReorderFailoverQueue,
 }: AppCardProps) {
+  const { t } = useTranslation();
   const appCopy = APP_COPY[appId];
+  const appLabel = t(appCopy.labelKey);
+  const appSubtitle = appCopy.subtitleKey ? t(appCopy.subtitleKey) : "";
   const isInert = isInertHomeAppId(appId);
   const providerCount = providerState?.providers.length ?? 0;
   const activeProvider = providerState?.activeProvider.configured
@@ -675,8 +727,8 @@ export function AppCard({
         onKeyDown={handleEmptyCardKey}
         aria-label={
           isInert
-            ? `${appCopy.label} not configured`
-            : `Add a ${appCopy.label} provider`
+            ? t("openwrt.appCard.appNotConfigured", { app: appLabel })
+            : t("openwrt.appCard.addProviderForApp", { app: appLabel })
         }
       >
         <div className="owt-app-card__head">
@@ -688,20 +740,24 @@ export function AppCard({
           </div>
           <div className="owt-app-card__titles">
             <h3 className="owt-app-card__title owt-app-card__title--muted">
-              {appCopy.label}
+              {appLabel}
             </h3>
-            <p className="owt-app-card__subtitle">{appCopy.subtitle ?? ""}</p>
+            <p className="owt-app-card__subtitle">{appSubtitle}</p>
           </div>
           <span className="owt-app-card__spacer" aria-hidden="true" />
-          <span className="owt-chip owt-chip--dot">Not configured</span>
+          <span className="owt-chip owt-chip--dot">
+            {t("openwrt.appCard.notConfigured")}
+          </span>
         </div>
         <div className="owt-app-card__empty-cta">
           <span>
-            {isInert ? "Not supported yet" : "No provider configured yet"}
+            {isInert
+              ? t("openwrt.appCard.notSupportedYet")
+              : t("openwrt.appCard.noProviderConfiguredYet")}
           </span>
           {!isInert && (
             <span className="owt-app-card__empty-cta-btn">
-              Add a provider →
+              {t("openwrt.appCard.addProviderArrow")}
             </span>
           )}
         </div>
@@ -770,7 +826,7 @@ export function AppCard({
       tabIndex={0}
       onClick={handleCardClick}
       onKeyDown={handleCardKey}
-      aria-label={`Open ${appCopy.label} providers`}
+      aria-label={t("openwrt.appCard.openProviders", { app: appLabel })}
     >
       <div className="owt-app-card__head">
         <div className="owt-app-card__icon" aria-hidden="true">
@@ -778,14 +834,16 @@ export function AppCard({
         </div>
         <div className="owt-app-card__titles">
           <h3 className="owt-app-card__title">
-            {appCopy.label}
+            {appLabel}
             <span className="owt-app-card__prov-count">
               {" · "}
-              {providerCount} provider{providerCount === 1 ? "" : "s"}
+              {t("openwrt.appCard.providerCount", {
+                count: providerCount,
+              })}
               <span className="owt-app-card__prov-hover"> →</span>
             </span>
           </h3>
-          <p className="owt-app-card__subtitle">{appCopy.subtitle}</p>
+          <p className="owt-app-card__subtitle">{appSubtitle}</p>
         </div>
         <span className="owt-app-card__spacer" aria-hidden="true" />
         <div className="owt-app-card__head-actions">
@@ -798,10 +856,10 @@ export function AppCard({
               event.stopPropagation();
               onOpenActivity(appId);
             }}
-            title="Show recent requests"
+            title={t("openwrt.appCard.showRecentRequests")}
           >
             <span className="owt-status-pill__dot" aria-hidden="true" />
-            {status.label}
+            {t(status.labelKey)}
             <svg
               className="owt-status-pill__caret"
               viewBox="0 0 12 12"
@@ -823,7 +881,9 @@ export function AppCard({
             <div
               className="owt-mode-toggle"
               role="tablist"
-              aria-label={`${appCopy.label} routing mode`}
+              aria-label={t("openwrt.appCard.routingMode", {
+                app: appLabel,
+              })}
               data-mode-toggle="true"
               data-pending={failoverPending ? "true" : "false"}
               aria-busy={failoverPending ? "true" : undefined}
@@ -842,12 +902,14 @@ export function AppCard({
                   onClick={handleRunModeClick}
                   title={
                     modeOption === "normal"
-                      ? "Manually use the selected active provider"
-                      : "Route through the ordered failover queue"
+                      ? t("openwrt.appCard.mode.normalTitle")
+                      : t("openwrt.appCard.mode.failoverTitle")
                   }
                 >
                   <span className="owt-mode-toggle__dot" aria-hidden="true" />
-                  {modeOption === "normal" ? "Normal" : "Failover"}
+                  {modeOption === "normal"
+                    ? t("openwrt.appCard.mode.normal")
+                    : t("openwrt.appCard.mode.failover")}
                 </button>
               ))}
             </div>
@@ -876,18 +938,22 @@ export function AppCard({
               <div className="owt-app-card__mini-icon" aria-hidden="true">
                 <OpenWrtProviderIcon
                   appId={appId}
-                  name={activeProvider.name.trim() || appCopy.label}
+                  name={activeProvider.name.trim() || appLabel}
                   size={18}
                   source={activeProvider}
                 />
               </div>
               <div className="owt-app-card__active-labels">
-                <div className="owt-app-card__active-top">Active provider</div>
+                <div className="owt-app-card__active-top">
+                  {t("openwrt.appCard.activeProvider")}
+                </div>
                 <div className="owt-app-card__active-main">
-                  {activeProvider.name.trim() || "Unnamed provider"}
+                  {activeProvider.name.trim() ||
+                    t("openwrt.appCard.unnamedProvider")}
                 </div>
                 <div className="owt-app-card__active-endpoint">
-                  {activeProvider.baseUrl.trim() || "Endpoint unavailable"}
+                  {activeProvider.baseUrl.trim() ||
+                    t("openwrt.appCard.endpointUnavailable")}
                 </div>
               </div>
             </div>
@@ -900,35 +966,40 @@ export function AppCard({
 
       <div className="owt-app-card__usage">
         <div className="owt-app-card__usage-cell">
-          <div className="owt-app-card__usage-label">Tokens</div>
+          <div className="owt-app-card__usage-label">
+            {t("usage.tokens")}
+          </div>
           <div className="owt-app-card__usage-value">{tokensValue}</div>
         </div>
         <div className="owt-app-card__usage-cell">
-          <div className="owt-app-card__usage-label">Requests</div>
+          <div className="owt-app-card__usage-label">
+            {t("usage.requests")}
+          </div>
           <div className="owt-app-card__usage-value">{requestsValue}</div>
         </div>
         <div className="owt-app-card__usage-cell">
           <div className="owt-app-card__usage-label">
-            Cost
+            {t("usage.cost")}
             <button
               type="button"
               className="owt-app-card__usage-info"
               data-cost-info="true"
-              aria-label="About this cost number"
+              aria-label={t("openwrt.appCard.aboutCostNumber")}
               tabIndex={-1}
               onClick={(event) => event.stopPropagation()}
             >
               <Info className="h-3 w-3" aria-hidden="true" />
               <span className="owt-app-card__usage-tip" role="tooltip">
-                <strong>Estimated, not billed.</strong> This figure is computed
-                from local request logs and public API prices. Actual charges
-                come from each provider&apos;s billing dashboard.
+                <strong>{t("openwrt.appCard.costTooltipTitle")}</strong>{" "}
+                {t("openwrt.appCard.costTooltipBody")}
               </span>
             </button>
           </div>
           <div className="owt-app-card__usage-value">
             {costValue}
-            <span className="owt-app-card__usage-unit">USD</span>
+            <span className="owt-app-card__usage-unit">
+              {t("openwrt.appCard.currencyUsd")}
+            </span>
           </div>
         </div>
       </div>
