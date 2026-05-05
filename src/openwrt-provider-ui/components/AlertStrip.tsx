@@ -1,5 +1,7 @@
+import type { TFunction } from "i18next";
 import { Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { OpenWrtHostState, OpenWrtPageMessage } from "../pageTypes";
 
 type AlertStripVariant =
@@ -23,15 +25,18 @@ function getListenEndpoint(host: OpenWrtHostState): string {
   return `${address}:${port}`;
 }
 
-function getRestartFailureDetail(message: OpenWrtPageMessage | null): string {
+function getRestartFailureDetail(
+  message: OpenWrtPageMessage | null,
+  t: TFunction,
+): string {
   const text = message?.text?.trim();
 
   if (!text) {
-    return "The router daemon did not acknowledge the restart request.";
+    return t("openwrt.alertStrip.restartFailureDetail");
   }
 
   if (/^failed to restart service\.?$/i.test(text)) {
-    return "The router daemon did not acknowledge the restart request.";
+    return t("openwrt.alertStrip.restartFailureDetail");
   }
 
   return text.replace(/^restart failed:\s*/i, "");
@@ -41,6 +46,7 @@ function getAlertContent(
   variant: AlertStripVariant,
   host: OpenWrtHostState,
   message: OpenWrtPageMessage | null,
+  t: TFunction,
 ): {
   actionLabel: string | null;
   detail: string;
@@ -52,31 +58,33 @@ function getAlertContent(
   switch (variant) {
     case "restarting":
       return {
-        title: "Restarting daemon…",
-        detail: `Waiting for OpenWrt to confirm the service at ${endpoint}.`,
+        title: t("openwrt.alertStrip.restartingTitle"),
+        detail: t("openwrt.alertStrip.restartingDetail", { endpoint }),
         actionLabel: null,
       };
     case "restart-failed":
       return {
-        title: "Restart failed:",
-        detail: getRestartFailureDetail(message),
-        actionLabel: "Retry restart",
+        title: t("openwrt.alertStrip.restartFailedTitle"),
+        detail: getRestartFailureDetail(message, t),
+        actionLabel: t("openwrt.alertStrip.retryRestart"),
       };
     case "unreachable":
       return {
-        title: "Daemon not reachable.",
+        title: t("openwrt.alertStrip.daemonNotReachableTitle"),
         detail: proxy
-          ? `The daemon at ${endpoint} did not respond while proxy routing points to ${proxy}.`
-          : `The daemon at ${endpoint} did not respond. Check the service and retry.`,
-        actionLabel: "Restart now",
+          ? t("openwrt.alertStrip.daemonNotReachableWithProxy", {
+              endpoint,
+              proxy,
+            })
+          : t("openwrt.alertStrip.daemonNotReachableNoProxy", { endpoint }),
+        actionLabel: t("openwrt.alertStrip.restartNow"),
       };
     case "stopped":
     default:
       return {
-        title: "Daemon stopped.",
-        detail:
-          "All app routing is offline until the CC Switch service is restarted.",
-        actionLabel: "Restart now",
+        title: t("openwrt.alertStrip.daemonStoppedTitle"),
+        detail: t("openwrt.alertStrip.daemonStoppedDetail"),
+        actionLabel: t("openwrt.alertStrip.restartNow"),
       };
   }
 }
@@ -92,11 +100,12 @@ export function AlertStrip({
   message,
   onRestart,
 }: AlertStripProps) {
+  const { t } = useTranslation();
   const previousRestartInFlightRef = useRef(restartInFlight);
   const [restartFailureDetail, setRestartFailureDetail] = useState<
     string | null
   >(() =>
-    isRestartFailureMessage(message) ? getRestartFailureDetail(message) : null,
+    isRestartFailureMessage(message) ? getRestartFailureDetail(message, t) : null,
   );
 
   useEffect(() => {
@@ -107,15 +116,15 @@ export function AlertStrip({
     }
 
     if (previousRestartInFlightRef.current && message?.kind === "error") {
-      setRestartFailureDetail(getRestartFailureDetail(message));
+      setRestartFailureDetail(getRestartFailureDetail(message, t));
     } else if (isRestartFailureMessage(message)) {
-      setRestartFailureDetail(getRestartFailureDetail(message));
+      setRestartFailureDetail(getRestartFailureDetail(message, t));
     } else if (message?.kind !== "error") {
       setRestartFailureDetail(null);
     }
 
     previousRestartInFlightRef.current = false;
-  }, [message, restartInFlight]);
+  }, [message, restartInFlight, t]);
 
   const variant: AlertStripVariant | null = restartInFlight
     ? "restarting"
@@ -137,6 +146,7 @@ export function AlertStrip({
     restartFailureDetail
       ? { kind: "error", text: restartFailureDetail }
       : message,
+    t,
   );
 
   return (

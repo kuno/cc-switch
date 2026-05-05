@@ -1,10 +1,13 @@
 import { Loader2 } from "lucide-react";
+import type { TFunction } from "i18next";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { SharedProviderAppId } from "@/shared/providers/domain";
 import type {
   OpenWrtRequestLog,
   OpenWrtSharedPageShellApi,
 } from "../pageTypes";
+import { formatRelativeTime } from "../i18n/formatRelativeTime";
 
 const REQUEST_LOG_LIMIT = 20;
 
@@ -22,56 +25,22 @@ interface ProviderSidePanelActivitiesTabProps {
   shell: OpenWrtSharedPageShellApi;
 }
 
-function normalizeEpochMs(value: number): number {
-  if (!Number.isFinite(value) || value <= 0) {
-    return 0;
-  }
-
-  return value > 1_000_000_000_000 ? value : value * 1000;
-}
-
-function formatRelativeTime(value: number): string {
-  const epochMs = normalizeEpochMs(value);
-
-  if (!epochMs) {
-    return "Unknown time";
-  }
-
-  const diffMs = Date.now() - epochMs;
-  const diffMinutes = Math.max(0, Math.round(diffMs / 60000));
-
-  if (diffMinutes <= 1) {
-    return "Just now";
-  }
-
-  if (diffMinutes < 60) {
-    return `${diffMinutes}m ago`;
-  }
-
-  if (diffMinutes < 1440) {
-    return `${Math.round(diffMinutes / 60)}h ago`;
-  }
-
-  return new Intl.DateTimeFormat("en-US", {
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    month: "short",
-  }).format(new Date(epochMs));
-}
-
-function formatUpdatedLabel(value: number | null): string {
+function formatUpdatedLabel(value: number | null, t: TFunction): string {
   if (!value) {
     return "";
   }
 
   const relativeLabel = formatRelativeTime(value);
 
-  return `Updated ${relativeLabel === "Just now" ? "just now" : relativeLabel}`;
+  if (relativeLabel === t("openwrt.activity.justNow")) {
+    return t("openwrt.providerActivities.updatedJustNow");
+  }
+
+  return t("openwrt.providerActivities.updated", { time: relativeLabel });
 }
 
-function formatCompactCount(value: number): string {
-  return new Intl.NumberFormat("en-US", {
+function formatCompactCount(value: number, language: string): string {
+  return new Intl.NumberFormat(language, {
     maximumFractionDigits: 1,
     notation: "compact",
   }).format(Number.isFinite(value) ? value : 0);
@@ -89,12 +58,12 @@ function formatCost(value: string | null | undefined): string {
     : `$${numericValue.toFixed(2)}`;
 }
 
-function formatLatency(value: number | null | undefined): string {
+function formatLatency(value: number | null | undefined, t: TFunction): string {
   if (!Number.isFinite(value) || value == null || value <= 0) {
-    return "n/a";
+    return t("openwrt.activity.notAvailable");
   }
 
-  return `${Math.round(value)} ms`;
+  return t("openwrt.activity.latencyMs", { value: Math.round(value) });
 }
 
 function getRequestTokenCount(entry: OpenWrtRequestLog): number {
@@ -106,16 +75,18 @@ function getRequestTokenCount(entry: OpenWrtRequestLog): number {
   );
 }
 
-function getStatusLabel(entry: OpenWrtRequestLog): string {
+function getStatusLabel(entry: OpenWrtRequestLog, t: TFunction): string {
   if (entry.statusCode > 0) {
-    return `HTTP ${entry.statusCode}`;
+    return t("openwrt.activity.httpStatus", {
+      statusCode: entry.statusCode,
+    });
   }
 
   if (entry.errorMessage) {
-    return "Error";
+    return t("common.error");
   }
 
-  return "Pending";
+  return t("openwrt.activity.pending");
 }
 
 function getStatusTone(
@@ -139,6 +110,8 @@ export function ProviderSidePanelActivitiesTab({
   providerName,
   shell,
 }: ProviderSidePanelActivitiesTabProps) {
+  const { t, i18n: i18nextInstance } = useTranslation();
+  const language = i18nextInstance.language || "en";
   const [state, setState] = useState<ProviderActivitiesState>({
     data: [],
     error: null,
@@ -196,13 +169,24 @@ export function ProviderSidePanelActivitiesTab({
     };
   }, [appId, providerId, shell]);
 
+  const providerLabel =
+    providerName || t("openwrt.providerActivities.thisProvider");
   const subtitle = providerId
-    ? `Recent requests for ${providerName || "this provider"}`
-    : "Recent requests for this provider";
+    ? t("openwrt.providerActivities.subtitleForProvider", {
+        providerName: providerLabel,
+      })
+    : t("openwrt.providerActivities.subtitleGeneric");
   const meta = state.loading
-    ? "Loading recent requests"
+    ? t("openwrt.providerActivities.loadingRecentRequestsMeta")
     : state.data.length
-      ? `${state.data.length} shown${state.lastLoadedAt ? ` · ${formatUpdatedLabel(state.lastLoadedAt).toLowerCase()}` : ""}`
+      ? [
+          t("openwrt.providerActivities.shownCount", {
+            count: state.data.length,
+          }),
+          state.lastLoadedAt ? formatUpdatedLabel(state.lastLoadedAt, t) : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")
       : "";
 
   return (
@@ -221,7 +205,7 @@ export function ProviderSidePanelActivitiesTab({
       ) : state.loading ? (
         <div className="owt-provider-panel__state">
           <Loader2 className="h-4 w-4 animate-spin" />
-          Loading recent requests…
+          {t("openwrt.activity.loadingRecentRequests")}
         </div>
       ) : state.data.length ? (
         <div className="owt-provider-panel__activities-list">
@@ -242,11 +226,14 @@ export function ProviderSidePanelActivitiesTab({
                       Boolean(entry.errorMessage),
                     )}
                   >
-                    {getStatusLabel(entry)}
+                    {getStatusLabel(entry, t)}
                   </span>
                 </div>
                 <div className="owt-provider-panel__activity-subtitle">
-                  {[entry.model || "Default model", formatRelativeTime(entry.createdAt)]
+                  {[
+                    entry.model || t("openwrt.activity.defaultModel"),
+                    formatRelativeTime(entry.createdAt),
+                  ]
                     .filter(Boolean)
                     .join(" · ")}
                 </div>
@@ -254,11 +241,16 @@ export function ProviderSidePanelActivitiesTab({
 
               <div className="owt-provider-panel__activity-right">
                 <span className="owt-provider-panel__activity-metric">
-                  {formatCompactCount(getRequestTokenCount(entry))} tok
+                  {t("openwrt.activity.tokens", {
+                    tokenCount: formatCompactCount(
+                      getRequestTokenCount(entry),
+                      language,
+                    ),
+                  })}
                 </span>
                 <span>{formatCost(entry.totalCostUsd)}</span>
                 <span className="owt-provider-panel__activity-metric">
-                  {formatLatency(entry.latencyMs)}
+                  {formatLatency(entry.latencyMs, t)}
                 </span>
               </div>
             </div>
@@ -266,10 +258,11 @@ export function ProviderSidePanelActivitiesTab({
         </div>
       ) : (
         <div className="owt-provider-panel__activities-empty">
-          <div className="owt-provider-panel__empty-title">No recent activity</div>
+          <div className="owt-provider-panel__empty-title">
+            {t("openwrt.providerActivities.emptyTitle")}
+          </div>
           <div className="owt-provider-panel__empty-subtitle">
-            This provider hasn&apos;t served any requests yet. Once traffic flows
-            through the daemon, requests will appear here.
+            {t("openwrt.providerActivities.emptySubtitle")}
           </div>
         </div>
       )}
