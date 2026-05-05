@@ -142,7 +142,10 @@ impl ProxyServer {
                 );
                 let mut map = store.try_write().expect("rate_limit store lock on init");
                 for s in snapshots {
-                    map.insert(s.provider_id.clone(), super::rate_limit::sanitize_for_restart(s));
+                    map.insert(
+                        s.provider_id.clone(),
+                        super::rate_limit::sanitize_for_restart(s),
+                    );
                 }
             }
             store
@@ -403,6 +406,7 @@ impl ProxyServer {
             // 健康检查
             .route("/health", get(handlers::health_check))
             .route("/status", get(handlers::get_status))
+            .route("/api/status", get(handlers::get_api_status))
             .route("/api/quota", get(handlers::get_quota))
             // Claude API (支持带前缀和不带前缀两种格式)
             .route("/v1/messages", post(handlers::handle_messages))
@@ -485,8 +489,15 @@ mod tests {
     use crate::database::Database;
     use crate::provider::Provider;
     use crate::proxy::rate_limit::RateLimitSnapshot;
-    use axum::{extract::State, http::StatusCode};
+    use axum::{
+        body::Body,
+        extract::State,
+        http::{Request, StatusCode},
+    };
+    use http_body_util::BodyExt;
     use serde_json::json;
+    use serial_test::serial;
+    use tower::Service;
 
     #[tokio::test]
     async fn get_status_prefers_claude_target_for_legacy_current_provider_fields() {
@@ -518,6 +529,47 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn api_status_route_registration_returns_200_and_camel_case_keys() {
+        let db = Arc::new(Database::memory().expect("init db"));
+        let server = ProxyServer::new(
+            ProxyConfig::default(),
+            db,
+            None,
+            None,
+            #[cfg(feature = "tauri-desktop")]
+            None,
+        );
+
+        let mut app = server.build_router();
+        let response = app
+            .call(
+                Request::builder()
+                    .uri("/api/status")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("route response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = response
+            .into_body()
+            .collect()
+            .await
+            .expect("body")
+            .to_bytes();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).expect("json body");
+
+        assert!(body["daemon"].get("uptimeSeconds").is_some());
+        assert!(body["daemon"].get("checkedAt").is_some());
+        assert!(body["daemon"].get("uptime_seconds").is_none());
+        assert!(body["apps"].get("claude").is_some());
+        assert!(body["apps"]["claude"].get("activeProvider").is_some());
+        assert!(body["apps"]["claude"].get("active_provider").is_none());
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn get_quota_removes_stale_codex_subscription_snapshots_without_live_refresh_sources() {
         let db = Arc::new(Database::memory().expect("init db"));
         let server = ProxyServer::new(
@@ -630,6 +682,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn get_quota_removes_stale_claude_snapshots_for_providers_missing_from_db() {
         let db = Arc::new(Database::memory().expect("init db"));
         let server = ProxyServer::new(
