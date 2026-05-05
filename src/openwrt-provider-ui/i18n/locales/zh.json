@@ -3,6 +3,71 @@
     "title": "CC Switch",
     "description": "Claude Code / Codex / Gemini CLI 全方位辅助工具"
   },
+  "openwrt": {
+    "activity": {
+      "allApps": "All apps",
+      "close": "Close recent activity",
+      "closeDrawer": "Close recent activity drawer",
+      "defaultModel": "Default model",
+      "filters": "Activity filters",
+      "httpStatus": "HTTP {{statusCode}}",
+      "justNow": "Just now",
+      "latencyMs": "{{value}} ms",
+      "loadingRecentRequests": "Loading recent requests…",
+      "nextPage": "Next request log page",
+      "noRecentRequestsForFilter": "No recent requests for this filter.",
+      "notAvailable": "n/a",
+      "pageLabel": "Page {{page}} of {{totalPages}}",
+      "pending": "Pending",
+      "previousPage": "Previous request log page",
+      "refresh": "Refresh recent activity",
+      "requestLogPages": "Request log pages",
+      "showing": "Showing {{start}}-{{end}} of {{total}}",
+      "showingEmpty": "Showing 0 of 0",
+      "subtitleLastRequests": "{{filter}} · last {{requestCount}} requests",
+      "subtitleLoading": "{{filter}} · loading recent requests",
+      "subtitleNoRequests": "{{filter}} · no requests yet",
+      "title": "Recent activity",
+      "tokens": "{{tokenCount}} tok",
+      "unknownTime": "Unknown time",
+      "updated": "Updated {{time}}",
+      "updatedJustNow": "Updated just now",
+      "waitingForData": "Waiting for data"
+    },
+    "daemon": {
+      "controlAria": "Daemon control",
+      "daemonLabel": "ccswitch daemon",
+      "daemonVersion": "ccswitch daemon version",
+      "health": {
+        "healthy": "Healthy",
+        "stopped": "Stopped"
+      },
+      "httpProxy": "HTTP proxy",
+      "httpsProxy": "HTTPS proxy",
+      "listenAddress": "Listen address",
+      "listenPort": "Listen port",
+      "logLevel": "Log level",
+      "luciAppLabel": "luci-app-ccswitch",
+      "luciAppVersion": "luci-app-ccswitch version",
+      "persistConfig": "Persist current daemon config",
+      "restart": "Restart",
+      "restarting": "Restarting…",
+      "saved": "Saved",
+      "saving": "Saving…",
+      "status": {
+        "running": "Running",
+        "stopped": "Stopped"
+      },
+      "unknownVersion": "unknown"
+    },
+    "pageShell": {
+      "appsHeading": "Apps",
+      "closeOpenDrawer": "Close open drawer",
+      "daemonHeading": "Daemon",
+      "switchToDarkTheme": "Switch to dark theme",
+      "switchToLightTheme": "Switch to light theme"
+    }
+  },
   "common": {
     "add": "添加",
     "edit": "编辑",
