@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// 代理服务器配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -192,6 +193,173 @@ pub struct AppProxyConfig {
     pub circuit_error_rate_threshold: f64,
     /// 计算错误率的最小请求数
     pub circuit_min_requests: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiStatusResponse {
+    pub daemon: ApiStatusDaemon,
+    pub apps: BTreeMap<String, ApiStatusApp>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiStatusDaemon {
+    pub health: bool,
+    pub running: bool,
+    pub uptime_seconds: u64,
+    pub last_error: Option<String>,
+    pub checked_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiStatusApp {
+    pub mode: String,
+    pub proxy_enabled: bool,
+    pub health: Option<bool>,
+    pub health_reason: String,
+    pub usage: ApiStatusUsage,
+    pub active_provider: Option<ApiStatusActiveProvider>,
+    pub providers: BTreeMap<String, ApiStatusProvider>,
+    pub failover_queue: Vec<ApiStatusFailoverQueueItem>,
+    pub failover_status: BTreeMap<String, ApiStatusFailoverProviderStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiStatusUsageWindow {
+    pub preset: String,
+    pub start: Option<String>,
+    pub end: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiStatusUsage {
+    pub window: ApiStatusUsageWindow,
+    pub total_requests: u64,
+    pub total_cost: String,
+    pub total_input_tokens: u64,
+    pub total_output_tokens: u64,
+    pub total_cache_creation_tokens: u64,
+    pub total_cache_read_tokens: u64,
+    pub success_rate: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiStatusActiveProvider {
+    pub provider_id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiStatusProvider {
+    pub name: String,
+    pub configured: bool,
+    pub stats: Option<ApiStatusProviderStats>,
+    pub quota: Option<ApiStatusQuota>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiStatusProviderStats {
+    pub request_count: u64,
+    pub total_tokens: u64,
+    pub total_cost: String,
+    pub success_rate: f32,
+    pub avg_latency_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiStatusQuotaWindow {
+    pub name: String,
+    pub status: Option<String>,
+    pub utilization: Option<f64>,
+    pub reset: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiStatusBalanceSnapshot {
+    pub plan_name: Option<String>,
+    pub currency: Option<String>,
+    pub total: Option<f64>,
+    pub used: Option<f64>,
+    pub remaining: Option<f64>,
+    pub is_valid: Option<bool>,
+    pub invalid_message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiStatusQuota {
+    pub source: Option<String>,
+    pub status: Option<String>,
+    pub windows: Vec<ApiStatusQuotaWindow>,
+    pub representative_claim: Option<String>,
+    pub overage_status: Option<String>,
+    pub fallback_percentage: Option<f64>,
+    pub requests_limit: Option<u64>,
+    pub requests_remaining: Option<u64>,
+    pub tokens_limit: Option<u64>,
+    pub tokens_remaining: Option<u64>,
+    pub balances: Option<Vec<ApiStatusBalanceSnapshot>>,
+    pub captured_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiStatusFailoverQueueItem {
+    pub provider_id: String,
+    pub name: String,
+    pub position: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiStatusFailoverProviderStatus {
+    pub in_failover_queue: bool,
+    pub queue_position: Option<usize>,
+    pub current_role: String,
+    pub available: bool,
+    pub unavailable_reasons: Vec<String>,
+    pub health: ApiStatusProviderHealth,
+    pub circuit: ApiStatusCircuit,
+    pub quota: ApiStatusQuotaGate,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiStatusProviderHealth {
+    pub observed: bool,
+    pub healthy: bool,
+    pub consecutive_failures: u32,
+    pub last_success_at: Option<String>,
+    pub last_failure_at: Option<String>,
+    pub last_error: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiStatusCircuit {
+    pub observed: bool,
+    pub state: Option<String>,
+    pub consecutive_failures: Option<u32>,
+    pub consecutive_successes: Option<u32>,
+    pub total_requests: Option<u32>,
+    pub failed_requests: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiStatusQuotaGate {
+    pub exhausted: bool,
+    pub reset_at: Option<i64>,
 }
 
 /// 整流器配置
