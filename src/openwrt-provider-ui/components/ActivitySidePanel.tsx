@@ -5,19 +5,22 @@ import {
   RefreshCcw,
   X,
 } from "lucide-react";
+import type { TFunction } from "i18next";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { SharedProviderAppId } from "@/shared/providers/domain";
 import type {
   OpenWrtPaginatedRequestLogs,
   OpenWrtRequestLog,
   OpenWrtSharedPageShellApi,
 } from "../pageTypes";
+import { formatRelativeTime } from "../i18n/formatRelativeTime";
 import { lockBodyScroll } from "../utils/bodyScrollLock";
 import { getActiveElementInTree } from "./focusTree";
 
 const ACTIVITY_DRAWER_PAGE_SIZE = 6;
 const ROW_HEIGHT_PX = 65; // row padding (12+12) + border (1+1) + ~2 text lines
-const ROW_GAP_PX = 8;    // gap between rows
+const ROW_GAP_PX = 8; // gap between rows
 const LIST_PADDING_PX = 24; // list container padding (12 top + 12 bottom)
 const SUPPORTED_APP_IDS = [
   "claude",
@@ -45,10 +48,10 @@ export interface ActivitySidePanelProps {
   showScrim?: boolean;
 }
 
-const APP_LABELS: Record<SharedProviderAppId, string> = {
-  claude: "Claude",
-  codex: "Codex",
-  gemini: "Gemini",
+const APP_LABEL_KEYS: Record<SharedProviderAppId, string> = {
+  claude: "apps.claude",
+  codex: "apps.codex",
+  gemini: "apps.gemini",
 };
 
 function isSupportedAppId(
@@ -72,65 +75,43 @@ function normalizeEpochMs(value: number): number {
   return value > 1_000_000_000_000 ? value : value * 1000;
 }
 
-function formatRelativeTime(value: number): string {
-  const epochMs = normalizeEpochMs(value);
-
-  if (!epochMs) {
-    return "Unknown time";
-  }
-
-  const diffMs = Date.now() - epochMs;
-  const diffMinutes = Math.max(0, Math.round(diffMs / 60000));
-
-  if (diffMinutes <= 1) {
-    return "Just now";
-  }
-
-  if (diffMinutes < 60) {
-    return `${diffMinutes}m ago`;
-  }
-
-  if (diffMinutes < 1440) {
-    return `${Math.round(diffMinutes / 60)}h ago`;
-  }
-
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(epochMs));
+function getAppLabel(t: TFunction, appId: SharedProviderAppId): string {
+  return t(APP_LABEL_KEYS[appId]);
 }
 
-function formatUpdatedLabel(value: number | null): string {
+function formatUpdatedLabel(value: number | null, t: TFunction): string {
   if (!value) {
-    return "Waiting for data";
+    return t("openwrt.activity.waitingForData");
   }
 
   const relativeLabel = formatRelativeTime(value);
 
-  return `Updated ${relativeLabel === "Just now" ? "just now" : relativeLabel}`;
+  if (relativeLabel === t("openwrt.activity.justNow")) {
+    return t("openwrt.activity.updatedJustNow");
+  }
+
+  return t("openwrt.activity.updated", { time: relativeLabel });
 }
 
-function formatCount(value: number): string {
-  return new Intl.NumberFormat("en-US").format(
+function formatCount(value: number, language: string): string {
+  return new Intl.NumberFormat(language).format(
     Number.isFinite(value) ? value : 0,
   );
 }
 
-function formatCompactCount(value: number): string {
-  return new Intl.NumberFormat("en-US", {
+function formatCompactCount(value: number, language: string): string {
+  return new Intl.NumberFormat(language, {
     notation: "compact",
     maximumFractionDigits: 1,
   }).format(Number.isFinite(value) ? value : 0);
 }
 
-function formatLatency(value: number | null | undefined): string {
+function formatLatency(value: number | null | undefined, t: TFunction): string {
   if (!Number.isFinite(value) || value == null || value <= 0) {
-    return "n/a";
+    return t("openwrt.activity.notAvailable");
   }
 
-  return `${Math.round(value)} ms`;
+  return t("openwrt.activity.latencyMs", { value: Math.round(value) });
 }
 
 function getRequestTokenCount(entry: OpenWrtRequestLog | null): number {
@@ -161,16 +142,16 @@ function getStatusTone(
   return "warn";
 }
 
-function getStatusLabel(entry: OpenWrtRequestLog): string {
+function getStatusLabel(entry: OpenWrtRequestLog, t: TFunction): string {
   if (entry.statusCode > 0) {
-    return `HTTP ${entry.statusCode}`;
+    return t("openwrt.activity.httpStatus", { statusCode: entry.statusCode });
   }
 
   if (entry.errorMessage) {
-    return "Error";
+    return t("common.error");
   }
 
-  return "Pending";
+  return t("openwrt.activity.pending");
 }
 
 function sortByRecent(
@@ -269,10 +250,11 @@ function getFocusableElements(container: HTMLElement): HTMLElement[] {
 function getRowSubtitle(
   entry: ActivityRequestLog,
   filterMode: ActivityDrawerFilterMode,
+  t: TFunction,
 ): string {
   const parts = [
-    entry.model || "Default model",
-    filterMode === "all" ? APP_LABELS[entry.resolvedAppId] : null,
+    entry.model || t("openwrt.activity.defaultModel"),
+    filterMode === "all" ? getAppLabel(t, entry.resolvedAppId) : null,
     formatRelativeTime(entry.createdAt),
   ].filter(Boolean);
 
@@ -286,12 +268,16 @@ export function ActivitySidePanel({
   shell,
   showScrim = true,
 }: ActivitySidePanelProps) {
+  const { t, i18n: i18nextInstance } = useTranslation();
+  const language = i18nextInstance.language || "en";
   const titleId = useId();
   const descriptionId = useId();
   const panelRef = useRef<HTMLDivElement | null>(null);
   const unlockBodyScrollRef = useRef<(() => void) | null>(null);
   const onCloseRef = useRef(onClose);
-  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
   const activeAppId = resolveAppId(appId, shell.getSelectedApp());
   const [filterMode, setFilterMode] = useState<ActivityDrawerFilterMode>("app");
   const [page, setPage] = useState(0);
@@ -300,7 +286,8 @@ export function ActivitySidePanel({
   const listRef = useRef<HTMLDivElement | null>(null);
   const measuredRowHeightRef = useRef<number | null>(null);
   const firstRowCallbackRef = useCallback((el: HTMLDivElement | null) => {
-    if (!el || measuredRowHeightRef.current !== null || el.offsetHeight <= 0) return;
+    if (!el || measuredRowHeightRef.current !== null || el.offsetHeight <= 0)
+      return;
     measuredRowHeightRef.current = el.offsetHeight;
     const listEl = listRef.current;
     if (!listEl) return;
@@ -310,7 +297,9 @@ export function ActivitySidePanel({
     setPageSize(
       Math.max(
         1,
-        Math.floor((height - LIST_PADDING_PX + ROW_GAP_PX) / (rowHeight + ROW_GAP_PX)),
+        Math.floor(
+          (height - LIST_PADDING_PX + ROW_GAP_PX) / (rowHeight + ROW_GAP_PX),
+        ),
       ),
     );
   }, []);
@@ -338,17 +327,28 @@ export function ActivitySidePanel({
       )
     : 0;
   const activeFilterLabel =
-    filterMode === "all" ? "All apps" : APP_LABELS[activeAppId];
+    filterMode === "all"
+      ? t("openwrt.activity.allApps")
+      : getAppLabel(t, activeAppId);
   const subtitle = requestLogsState.loading
-    ? `${activeFilterLabel} · loading recent requests`
+    ? t("openwrt.activity.subtitleLoading", { filter: activeFilterLabel })
     : requestLogsState.total
-      ? `${activeFilterLabel} · last ${formatCount(requestLogsState.data.length)} requests`
-      : `${activeFilterLabel} · no requests yet`;
-  const updatedLabel = formatUpdatedLabel(lastLoadedAt);
+      ? t("openwrt.activity.subtitleLastRequests", {
+          filter: activeFilterLabel,
+          requestCount: formatCount(requestLogsState.data.length, language),
+        })
+      : t("openwrt.activity.subtitleNoRequests", {
+          filter: activeFilterLabel,
+        });
+  const updatedLabel = formatUpdatedLabel(lastLoadedAt, t);
   const requestSummary =
     windowStart && windowEnd
-      ? `Showing ${windowStart}-${windowEnd} of ${formatCount(requestLogsState.total)}`
-      : "Showing 0 of 0";
+      ? t("openwrt.activity.showing", {
+          start: windowStart,
+          end: windowEnd,
+          total: formatCount(requestLogsState.total, language),
+        })
+      : t("openwrt.activity.showingEmpty");
 
   useEffect(() => {
     if (!open) {
@@ -390,7 +390,10 @@ export function ActivitySidePanel({
 
   useEffect(() => {
     if (!requestLogsState.total) return;
-    const maxPage = Math.max(0, Math.ceil(requestLogsState.total / pageSize) - 1);
+    const maxPage = Math.max(
+      0,
+      Math.ceil(requestLogsState.total / pageSize) - 1,
+    );
     setPage((current) => Math.min(current, maxPage));
   }, [pageSize, requestLogsState.total]);
 
@@ -548,7 +551,7 @@ export function ActivitySidePanel({
           type="button"
           className="owt-activity-drawer__scrim"
           tabIndex={open ? 0 : -1}
-          aria-label="Close recent activity drawer"
+          aria-label={t("openwrt.activity.closeDrawer")}
           onClick={onClose}
         />
       ) : null}
@@ -565,7 +568,7 @@ export function ActivitySidePanel({
         <div className="owt-activity-drawer__head">
           <div className="owt-activity-drawer__title-wrap">
             <h2 id={titleId} className="owt-activity-drawer__title">
-              Recent activity
+              {t("openwrt.activity.title")}
             </h2>
             <p id={descriptionId} className="owt-activity-drawer__subtitle">
               {subtitle}
@@ -576,7 +579,7 @@ export function ActivitySidePanel({
             type="button"
             className="owt-activity-drawer__icon-button"
             onClick={onClose}
-            aria-label="Close recent activity"
+            aria-label={t("openwrt.activity.close")}
           >
             <X className="h-4 w-4" />
           </button>
@@ -590,7 +593,7 @@ export function ActivitySidePanel({
           ) : requestLogsState.loading ? (
             <div className="owt-activity-drawer__state">
               <Loader2 className="h-4 w-4 animate-spin" />
-              <p>Loading recent requests…</p>
+              <p>{t("openwrt.activity.loadingRecentRequests")}</p>
             </div>
           ) : requestLogsState.data.length ? (
             requestLogsState.data.map((entry, index) => (
@@ -602,7 +605,9 @@ export function ActivitySidePanel({
                 <div className="owt-activity-drawer__row-left">
                   <div className="owt-activity-drawer__row-title">
                     <span className="owt-activity-drawer__row-provider">
-                      {entry.providerName || entry.providerId || "Provider"}
+                      {entry.providerName ||
+                        entry.providerId ||
+                        t("provider.tabProvider")}
                     </span>
                     <span
                       className="owt-activity-drawer__status-pill"
@@ -611,27 +616,32 @@ export function ActivitySidePanel({
                         Boolean(entry.errorMessage),
                       )}
                     >
-                      {getStatusLabel(entry)}
+                      {getStatusLabel(entry, t)}
                     </span>
                   </div>
                   <div className="owt-activity-drawer__row-subtitle">
-                    {getRowSubtitle(entry, filterMode)}
+                    {getRowSubtitle(entry, filterMode, t)}
                   </div>
                 </div>
 
                 <div className="owt-activity-drawer__row-right">
                   <span className="owt-activity-drawer__tokens">
-                    {formatCompactCount(getRequestTokenCount(entry))} tok
+                    {t("openwrt.activity.tokens", {
+                      tokenCount: formatCompactCount(
+                        getRequestTokenCount(entry),
+                        language,
+                      ),
+                    })}
                   </span>
                   <span className="owt-activity-drawer__ms">
-                    {formatLatency(entry.latencyMs)}
+                    {formatLatency(entry.latencyMs, t)}
                   </span>
                 </div>
               </div>
             ))
           ) : (
             <div className="owt-activity-drawer__state">
-              <p>No recent requests for this filter.</p>
+              <p>{t("openwrt.activity.noRecentRequestsForFilter")}</p>
             </div>
           )}
         </div>
@@ -648,7 +658,7 @@ export function ActivitySidePanel({
               className="owt-activity-drawer__icon-button"
               onClick={handleRefresh}
               disabled={requestLogsState.loading}
-              aria-label="Refresh recent activity"
+              aria-label={t("openwrt.activity.refresh")}
             >
               {requestLogsState.loading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -662,7 +672,7 @@ export function ActivitySidePanel({
             <div
               className="owt-activity-drawer__filter"
               role="group"
-              aria-label="Activity filters"
+              aria-label={t("openwrt.activity.filters")}
             >
               <button
                 type="button"
@@ -672,7 +682,7 @@ export function ActivitySidePanel({
                   handleFilterChange("all");
                 }}
               >
-                All apps
+                {t("openwrt.activity.allApps")}
               </button>
               <button
                 type="button"
@@ -682,14 +692,14 @@ export function ActivitySidePanel({
                   handleFilterChange("app");
                 }}
               >
-                {APP_LABELS[activeAppId]}
+                {getAppLabel(t, activeAppId)}
               </button>
             </div>
 
             <div
               className="owt-activity-drawer__pagination"
               role="group"
-              aria-label="Request log pages"
+              aria-label={t("openwrt.activity.requestLogPages")}
             >
               <button
                 type="button"
@@ -698,12 +708,15 @@ export function ActivitySidePanel({
                   setPage((current) => Math.max(0, current - 1));
                 }}
                 disabled={requestLogsState.loading || page <= 0}
-                aria-label="Previous request log page"
+                aria-label={t("openwrt.activity.previousPage")}
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
               <span className="owt-activity-drawer__page-label">
-                Page {page + 1} of {totalPages}
+                {t("openwrt.activity.pageLabel", {
+                  page: page + 1,
+                  totalPages,
+                })}
               </span>
               <button
                 type="button"
@@ -715,7 +728,7 @@ export function ActivitySidePanel({
                   requestLogsState.loading ||
                   page >= Math.max(0, totalPages - 1)
                 }
-                aria-label="Next request log page"
+                aria-label={t("openwrt.activity.nextPage")}
               >
                 <ChevronRight className="h-4 w-4" />
               </button>
