@@ -1,5 +1,6 @@
 import "./openwrt-luci-host.css";
 import providerUiCss from "./openwrt-provider-ui.css?inline";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { I18nextProvider } from "react-i18next";
@@ -13,15 +14,18 @@ import {
   type OpenWrtRuntimeTransport,
 } from "@/platform/openwrt/runtime";
 import {
-  mountSharedProviderManager,
+  createSharedProviderManagerQueryClient,
   type MountedSharedProviderManager,
+  SharedProviderManager,
   type SharedProviderManagerProps,
   type SharedProviderShellState,
 } from "@/shared/providers";
 import { PortalContainerContext } from "@/shared/contexts/PortalContainerContext";
 import {
-  mountSharedRuntimeSurface,
+  createSharedRuntimeSurfaceQueryClient,
   type MountedSharedRuntimeSurface,
+  SharedRuntimeSurface,
+  type SharedRuntimeSurfaceProps,
 } from "@/shared/runtime";
 import type {
   SharedProviderAppId,
@@ -552,11 +556,44 @@ function mountOpenWrtSharedProviderManager(
       ensureLightDomStyles(options.target.ownerDocument);
       clearTarget(options.target);
     }
-    state.mounted = mountSharedProviderManager(
-      shadowMount?.reactMount ?? options.target,
-      createManagerProps(),
-      shadowMount?.portalTarget ?? null,
-    );
+    const root = createRoot(shadowMount?.reactMount ?? options.target);
+    const queryClient = createSharedProviderManagerQueryClient();
+    const portalTarget = shadowMount?.portalTarget ?? null;
+
+    function renderManager(nextProps: SharedProviderManagerProps) {
+      root.render(
+        createElement(
+          I18nextProvider,
+          {
+            i18n,
+          },
+          createElement(
+            PortalContainerContext.Provider,
+            {
+              value: portalTarget,
+            },
+            createElement(
+              QueryClientProvider,
+              {
+                client: queryClient,
+              },
+              createElement(SharedProviderManager, nextProps),
+            ),
+          ),
+        ),
+      );
+    }
+
+    state.mounted = {
+      update(nextProps) {
+        renderManager(nextProps);
+      },
+      unmount() {
+        root.unmount();
+        queryClient.clear();
+      },
+    };
+    renderManager(createManagerProps());
     unsubscribe = options.shell.subscribe?.(() => {
       if (state.disposed) {
         return;
@@ -602,13 +639,46 @@ function mountOpenWrtSharedRuntimeSurface(
       ensureLightDomStyles(options.target.ownerDocument);
       clearTarget(options.target);
     }
-    mounted = mountSharedRuntimeSurface(
-      shadowMount?.reactMount ?? options.target,
-      {
-        adapter: createOpenWrtRuntimeAdapter(options.transport),
+    const root = createRoot(shadowMount?.reactMount ?? options.target);
+    const queryClient = createSharedRuntimeSurfaceQueryClient();
+    const portalTarget = shadowMount?.portalTarget ?? null;
+
+    function renderRuntimeSurface(nextProps: SharedRuntimeSurfaceProps) {
+      root.render(
+        createElement(
+          I18nextProvider,
+          {
+            i18n,
+          },
+          createElement(
+            PortalContainerContext.Provider,
+            {
+              value: portalTarget,
+            },
+            createElement(
+              QueryClientProvider,
+              {
+                client: queryClient,
+              },
+              createElement(SharedRuntimeSurface, nextProps),
+            ),
+          ),
+        ),
+      );
+    }
+
+    mounted = {
+      update(nextProps) {
+        renderRuntimeSurface(nextProps);
       },
-      shadowMount?.portalTarget ?? null,
-    );
+      unmount() {
+        root.unmount();
+        queryClient.clear();
+      },
+    };
+    renderRuntimeSurface({
+      adapter: createOpenWrtRuntimeAdapter(options.transport),
+    });
 
     return {
       unmount() {
