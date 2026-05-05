@@ -21,6 +21,7 @@
 					"get_request_logs",
 					"get_request_detail",
 					"get_quota",
+					"get_status",
 					"get_available_failover_providers"
 				]
 			}

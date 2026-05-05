@@ -117,44 +117,45 @@ function createTransport(
         ) => Promise<{ ok: true }>
       >()
       .mockImplementation(async (appId, provider) => {
-      const state = getProviderState(appId);
-      const nextProviderId =
-        provider.name.toLowerCase().replace(/\s+/g, "-") || `${appId}-provider`;
+        const state = getProviderState(appId);
+        const nextProviderId =
+          provider.name.toLowerCase().replace(/\s+/g, "-") ||
+          `${appId}-provider`;
 
-      providerStates[appId] = createProviderState(
-        appId,
-        [
-          ...state.providers.map((existingProvider) => ({
-            active: existingProvider.active,
-            baseUrl: existingProvider.baseUrl,
-            configured: existingProvider.configured,
-            model: existingProvider.model,
-            name: existingProvider.name,
-            notes: existingProvider.notes,
-            providerId:
-              existingProvider.providerId ??
-              existingProvider.name.toLowerCase().replace(/\s+/g, "-"),
-            tokenConfigured: existingProvider.tokenConfigured,
-            tokenField: existingProvider.tokenField,
-            tokenMasked: existingProvider.tokenMasked,
-          })),
-          {
-            active: false,
-            baseUrl: provider.baseUrl,
-            model: provider.model,
-            name: provider.name,
-            notes: provider.notes,
-            providerId: nextProviderId,
-            tokenConfigured: Boolean(provider.token),
-            tokenField: provider.tokenField,
-            tokenMasked: provider.token ? "********" : "",
-          },
-        ],
-        state.activeProviderId,
-      );
+        providerStates[appId] = createProviderState(
+          appId,
+          [
+            ...state.providers.map((existingProvider) => ({
+              active: existingProvider.active,
+              baseUrl: existingProvider.baseUrl,
+              configured: existingProvider.configured,
+              model: existingProvider.model,
+              name: existingProvider.name,
+              notes: existingProvider.notes,
+              providerId:
+                existingProvider.providerId ??
+                existingProvider.name.toLowerCase().replace(/\s+/g, "-"),
+              tokenConfigured: existingProvider.tokenConfigured,
+              tokenField: existingProvider.tokenField,
+              tokenMasked: existingProvider.tokenMasked,
+            })),
+            {
+              active: false,
+              baseUrl: provider.baseUrl,
+              model: provider.model,
+              name: provider.name,
+              notes: provider.notes,
+              providerId: nextProviderId,
+              tokenConfigured: Boolean(provider.token),
+              tokenField: provider.tokenField,
+              tokenMasked: provider.token ? "********" : "",
+            },
+          ],
+          state.activeProviderId,
+        );
 
-      return { ok: true };
-    }),
+        return { ok: true };
+      }),
     restartService: vi.fn().mockResolvedValue({ ok: true }),
   };
 }
@@ -778,9 +779,9 @@ describe("OpenWrt provider UI bundle", () => {
         within(target).getByRole("button", { name: "Edit Codex Primary" }),
       ).toBeInTheDocument(),
     );
-    const codexPrimaryCard = Array.from(target.querySelectorAll("article")).find(
-      (card) => card.textContent?.includes("Codex Primary"),
-    );
+    const codexPrimaryCard = Array.from(
+      target.querySelectorAll("article"),
+    ).find((card) => card.textContent?.includes("Codex Primary"));
     const codexDetailPanel = target.querySelector(
       '[data-ccswitch-region="provider-detail-panel"]',
     );
@@ -927,63 +928,65 @@ describe("OpenWrt provider UI bundle", () => {
           createdAt: 1_712_345_278,
         },
       ]),
-      getRequestDetail: vi.fn().mockImplementation(async (_appId, requestId) => {
-        if (requestId === "req-2") {
+      getRequestDetail: vi
+        .fn()
+        .mockImplementation(async (_appId, requestId) => {
+          if (requestId === "req-2") {
+            return {
+              requestId: "req-2",
+              providerId: "claude-backup",
+              providerName: "MiniMax Backup",
+              appType: "claude",
+              model: "claude-haiku-4-5",
+              requestModel: "claude-haiku-4-5",
+              costMultiplier: "1",
+              inputTokens: 160,
+              outputTokens: 60,
+              cacheReadTokens: 0,
+              cacheCreationTokens: 0,
+              inputCostUsd: "0.04",
+              outputCostUsd: "0.05",
+              cacheReadCostUsd: "0",
+              cacheCreationCostUsd: "0",
+              totalCostUsd: "0.09",
+              isStreaming: false,
+              latencyMs: 910,
+              firstTokenMs: null,
+              durationMs: 1_210,
+              statusCode: 429,
+              errorMessage: "Rate limit from upstream backup provider",
+              createdAt: 1_712_345_278,
+              dataSource: "proxy",
+            };
+          }
+
           return {
-            requestId: "req-2",
-            providerId: "claude-backup",
-            providerName: "MiniMax Backup",
+            requestId: "req-1",
+            providerId: "claude-primary",
+            providerName: "OpenAI Official",
             appType: "claude",
-            model: "claude-haiku-4-5",
-            requestModel: "claude-haiku-4-5",
+            model: "claude-sonnet-4-5",
+            requestModel: "claude-sonnet-4-5",
             costMultiplier: "1",
-            inputTokens: 160,
-            outputTokens: 60,
-            cacheReadTokens: 0,
-            cacheCreationTokens: 0,
-            inputCostUsd: "0.04",
-            outputCostUsd: "0.05",
+            inputTokens: 420,
+            outputTokens: 180,
+            cacheReadTokens: 20,
+            cacheCreationTokens: 20,
+            inputCostUsd: "0.09",
+            outputCostUsd: "0.12",
             cacheReadCostUsd: "0",
             cacheCreationCostUsd: "0",
-            totalCostUsd: "0.09",
-            isStreaming: false,
-            latencyMs: 910,
-            firstTokenMs: null,
-            durationMs: 1_210,
-            statusCode: 429,
-            errorMessage: "Rate limit from upstream backup provider",
-            createdAt: 1_712_345_278,
+            totalCostUsd: "0.21",
+            isStreaming: true,
+            latencyMs: 318,
+            firstTokenMs: 88,
+            durationMs: 510,
+            statusCode: 200,
+            errorMessage: null,
+            createdAt: 1_712_345_678,
             dataSource: "proxy",
           };
-        }
-
-        return {
-          requestId: "req-1",
-          providerId: "claude-primary",
-          providerName: "OpenAI Official",
-          appType: "claude",
-          model: "claude-sonnet-4-5",
-          requestModel: "claude-sonnet-4-5",
-          costMultiplier: "1",
-          inputTokens: 420,
-          outputTokens: 180,
-          cacheReadTokens: 20,
-          cacheCreationTokens: 20,
-          inputCostUsd: "0.09",
-          outputCostUsd: "0.12",
-          cacheReadCostUsd: "0",
-          cacheCreationCostUsd: "0",
-          totalCostUsd: "0.21",
-          isStreaming: true,
-          latencyMs: 318,
-          firstTokenMs: 88,
-          durationMs: 510,
-          statusCode: 200,
-          errorMessage: null,
-          createdAt: 1_712_345_678,
-          dataSource: "proxy",
-        };
-      }),
+        }),
       getRequestLogs: vi.fn().mockResolvedValue({
         data: [
           {
@@ -1045,7 +1048,126 @@ describe("OpenWrt provider UI bundle", () => {
       }),
       getQuota: vi
         .fn()
-        .mockResolvedValue({ providers: [], timestamp: "2026-04-22T00:00:00Z" }),
+        .mockResolvedValue({
+          providers: [],
+          timestamp: "2026-04-22T00:00:00Z",
+        }),
+      getStatus: vi.fn().mockResolvedValue({
+        daemon: {
+          health: true,
+          running: true,
+          uptimeSeconds: 3600,
+          lastError: null,
+          checkedAt: "2026-04-22T00:00:00Z",
+        },
+        apps: {
+          claude: {
+            mode: "normal",
+            proxyEnabled: true,
+            health: true,
+            healthReason: null,
+            maxRetries: 3,
+            usage: {
+              totalRequests: 12,
+              totalCost: "1.23",
+              totalInputTokens: 1200,
+              totalOutputTokens: 450,
+              totalCacheCreationTokens: 80,
+              totalCacheReadTokens: 60,
+              successRate: 83.3,
+            },
+            activeProvider: {
+              providerId: "claude-primary",
+              name: "Claude Primary",
+            },
+            providers: {
+              "claude-primary": {
+                active: true,
+                baseUrl: "https://claude-primary.example.com",
+                configured: true,
+                model: "claude-sonnet-4-5",
+                name: "Claude Primary",
+                providerId: "claude-primary",
+                tokenConfigured: true,
+                tokenField: "ANTHROPIC_AUTH_TOKEN",
+                stats: {
+                  requestCount: 8,
+                  totalTokens: 1320,
+                  totalCost: "0.82",
+                  successRate: 87.5,
+                  avgLatencyMs: 418,
+                },
+                quota: null,
+                health: {
+                  providerId: "claude-primary",
+                  observed: true,
+                  healthy: true,
+                  consecutiveFailures: 0,
+                  lastSuccessAt: null,
+                  lastFailureAt: null,
+                  lastError: null,
+                  updatedAt: null,
+                },
+              },
+            },
+            failoverQueue: [],
+            failoverStatus: {},
+            recentActivity: [
+              {
+                requestId: "req-1",
+                providerId: "claude-primary",
+                providerName: "OpenAI Official",
+                model: "claude-sonnet-4-5",
+                totalTokens: 640,
+                totalCost: "0.21",
+                statusCode: 200,
+                latencyMs: 318,
+                createdAt: 1_712_345_678,
+              },
+            ],
+          },
+          codex: {
+            mode: "normal",
+            proxyEnabled: true,
+            health: true,
+            healthReason: null,
+            maxRetries: 3,
+            usage: {
+              totalRequests: 0,
+              totalCost: "0",
+              totalInputTokens: 0,
+              totalOutputTokens: 0,
+              totalCacheCreationTokens: 0,
+              totalCacheReadTokens: 0,
+              successRate: 0,
+            },
+            activeProvider: null,
+            providers: {},
+            failoverQueue: [],
+            failoverStatus: {},
+          },
+          gemini: {
+            mode: "normal",
+            proxyEnabled: true,
+            health: true,
+            healthReason: null,
+            maxRetries: 3,
+            usage: {
+              totalRequests: 0,
+              totalCost: "0",
+              totalInputTokens: 0,
+              totalOutputTokens: 0,
+              totalCacheCreationTokens: 0,
+              totalCacheReadTokens: 0,
+              successRate: 0,
+            },
+            activeProvider: null,
+            providers: {},
+            failoverQueue: [],
+            failoverStatus: {},
+          },
+        },
+      }),
       getSelectedApp: vi.fn().mockImplementation(() => selectedApp),
       getUsageSummary: vi.fn().mockResolvedValue({
         totalRequests: 12,
@@ -1156,9 +1278,7 @@ describe("OpenWrt provider UI bundle", () => {
     expect(target).toHaveClass("ccswitch-openwrt-native-page-host");
     expect(section).toHaveClass("ccswitch-openwrt-native-page-section");
     expect(map).toHaveClass("ccswitch-openwrt-native-page-map");
-    expect(
-      within(target).getByRole("button", { name: "Save" }),
-    ).toBeDisabled();
+    expect(within(target).getByRole("button", { name: "Save" })).toBeDisabled();
     expect(
       within(target).getByRole("button", { name: "Restart" }),
     ).toBeInTheDocument();
@@ -1172,9 +1292,7 @@ describe("OpenWrt provider UI bundle", () => {
       });
     });
 
-    expect(
-      within(target).getByRole("button", { name: "Save" }),
-    ).toBeEnabled();
+    expect(within(target).getByRole("button", { name: "Save" })).toBeEnabled();
 
     await act(async () => {
       fireEvent.click(within(target).getByRole("button", { name: "Save" }));
@@ -1188,11 +1306,10 @@ describe("OpenWrt provider UI bundle", () => {
       logLevel: "debug",
     });
 
-    for (const appId of ["claude", "codex", "gemini"] as const) {
-      expect(shell.getUsageSummary).toHaveBeenCalledWith(appId);
-      expect(shell.getProviderStats).toHaveBeenCalledWith(appId);
-      expect(shell.getRecentActivity).toHaveBeenCalledWith(appId);
-    }
+    expect(shell.getStatus).toHaveBeenCalled();
+    expect(shell.getUsageSummary).not.toHaveBeenCalled();
+    expect(shell.getProviderStats).not.toHaveBeenCalled();
+    expect(shell.getRecentActivity).not.toHaveBeenCalled();
 
     await act(async () => {
       fireEvent.click(
@@ -1221,9 +1338,7 @@ describe("OpenWrt provider UI bundle", () => {
     expect(shell.getRequestLogs).toHaveBeenCalledWith("claude", 0, 6);
 
     await act(async () => {
-      fireEvent.click(
-        within(target).getByRole("button", { name: /req-2/ }),
-      );
+      fireEvent.click(within(target).getByRole("button", { name: /req-2/ }));
     });
 
     await waitFor(() =>
@@ -1392,7 +1507,9 @@ describe("OpenWrt provider UI bundle", () => {
       providerRoot.querySelector(".ccswitch-openwrt-provider-card"),
     ).not.toBeNull();
     expect(
-      providerRoot.querySelector('[data-ccswitch-region="provider-detail-panel"]'),
+      providerRoot.querySelector(
+        '[data-ccswitch-region="provider-detail-panel"]',
+      ),
     ).not.toBeNull();
     expect(
       within(providerRoot).getByRole("tab", { name: "General" }),
@@ -1405,9 +1522,7 @@ describe("OpenWrt provider UI bundle", () => {
         '[data-ccswitch-region="provider-summary-grid"][data-ccswitch-layout="stack-to-split"]',
       ),
     ).not.toBeNull();
-    expect(
-      providerRoot,
-    ).toHaveTextContent("General provider settings");
+    expect(providerRoot).toHaveTextContent("General provider settings");
     expect(
       shellRoot.querySelector("main, nav, aside, [role='navigation']"),
     ).toBeNull();
@@ -1490,7 +1605,9 @@ describe("OpenWrt provider UI bundle", () => {
       clearMessage: vi.fn(),
       getHostState: vi.fn().mockImplementation(() => hostState),
       getMessage: vi.fn().mockReturnValue(null),
-      getSelectedApp: vi.fn().mockReturnValue("claude" satisfies SharedProviderAppId),
+      getSelectedApp: vi
+        .fn()
+        .mockReturnValue("claude" satisfies SharedProviderAppId),
       getRequestDetail: vi.fn().mockResolvedValue(null),
       getRequestLogs: vi.fn().mockResolvedValue({
         data: [],
@@ -1506,7 +1623,107 @@ describe("OpenWrt provider UI bundle", () => {
       }),
       getQuota: vi
         .fn()
-        .mockResolvedValue({ providers: [], timestamp: "2026-04-22T00:00:00Z" }),
+        .mockResolvedValue({
+          providers: [],
+          timestamp: "2026-04-22T00:00:00Z",
+        }),
+      getStatus: vi.fn().mockResolvedValue({
+        daemon: {
+          health: true,
+          running: true,
+          uptimeSeconds: 3600,
+          lastError: null,
+          checkedAt: "2026-04-22T00:00:00Z",
+        },
+        apps: {
+          claude: {
+            mode: "normal",
+            proxyEnabled: true,
+            health: true,
+            healthReason: null,
+            maxRetries: 3,
+            usage: {
+              totalRequests: 0,
+              totalCost: "0",
+              totalInputTokens: 0,
+              totalOutputTokens: 0,
+              totalCacheCreationTokens: 0,
+              totalCacheReadTokens: 0,
+              successRate: 0,
+            },
+            activeProvider: {
+              providerId: "claude-primary",
+              name: "Claude Primary",
+            },
+            providers: {
+              "claude-primary": {
+                active: true,
+                baseUrl: "https://claude-primary.example.com",
+                configured: true,
+                model: "claude-sonnet-4-5",
+                name: "Claude Primary",
+                providerId: "claude-primary",
+                tokenConfigured: true,
+                tokenField: "ANTHROPIC_AUTH_TOKEN",
+                stats: null,
+                quota: null,
+                health: {
+                  providerId: "claude-primary",
+                  observed: true,
+                  healthy: true,
+                  consecutiveFailures: 0,
+                  lastSuccessAt: null,
+                  lastFailureAt: null,
+                  lastError: null,
+                  updatedAt: null,
+                },
+              },
+            },
+            failoverQueue: [],
+            failoverStatus: {},
+          },
+          codex: {
+            mode: "normal",
+            proxyEnabled: true,
+            health: true,
+            healthReason: null,
+            maxRetries: 3,
+            usage: {
+              totalRequests: 0,
+              totalCost: "0",
+              totalInputTokens: 0,
+              totalOutputTokens: 0,
+              totalCacheCreationTokens: 0,
+              totalCacheReadTokens: 0,
+              successRate: 0,
+            },
+            activeProvider: null,
+            providers: {},
+            failoverQueue: [],
+            failoverStatus: {},
+          },
+          gemini: {
+            mode: "normal",
+            proxyEnabled: true,
+            health: true,
+            healthReason: null,
+            maxRetries: 3,
+            usage: {
+              totalRequests: 0,
+              totalCost: "0",
+              totalInputTokens: 0,
+              totalOutputTokens: 0,
+              totalCacheCreationTokens: 0,
+              totalCacheReadTokens: 0,
+              successRate: 0,
+            },
+            activeProvider: null,
+            providers: {},
+            failoverQueue: [],
+            failoverStatus: {},
+          },
+        },
+      }),
       getServiceStatus: vi.fn().mockReturnValue({ isRunning: true }),
       getUsageSummary: vi.fn().mockResolvedValue({
         totalRequests: 0,
@@ -1522,7 +1739,9 @@ describe("OpenWrt provider UI bundle", () => {
       restartService: vi.fn().mockResolvedValue({ isRunning: true }),
       saveHostConfig: vi.fn().mockImplementation(async () => hostState),
       setRestartState: vi.fn(),
-      setSelectedApp: vi.fn().mockImplementation((appId: SharedProviderAppId) => appId),
+      setSelectedApp: vi
+        .fn()
+        .mockImplementation((appId: SharedProviderAppId) => appId),
       showMessage: vi.fn(),
       subscribe: vi.fn().mockReturnValue(vi.fn()),
     };
@@ -1663,12 +1882,16 @@ describe("OpenWrt provider UI bundle", () => {
     expect(editForm).not.toBeNull();
     expect(overlay).not.toBeNull();
     expect(editPositioner).not.toBeNull();
-    expect(editPositioner).toHaveClass("ccswitch-openwrt-provider-ui-positioner");
+    expect(editPositioner).toHaveClass(
+      "ccswitch-openwrt-provider-ui-positioner",
+    );
     expect(editPositioner).toHaveClass("z-[61]");
     expect(editPositioner).toHaveClass("items-start");
     expect(document.body.contains(overlay)).toBe(true);
     expect(shellRoot.contains(overlay as Node)).toBe(false);
-    expect(within(editDialog).queryByRole("button", { name: /restart/i })).toBeNull();
+    expect(
+      within(editDialog).queryByRole("button", { name: /restart/i }),
+    ).toBeNull();
 
     await act(async () => {
       fireEvent.click(
@@ -2028,14 +2251,10 @@ describe("OpenWrt provider UI bundle", () => {
       path.resolve(repoRoot, "vite.config.ts"),
       "utf8",
     );
-    const {
-      bundlePath,
-      stylesheetPath,
-      bundleSource,
-      stylesheetSource,
-    } = buildOpenWrtProviderUiBundle({
-      repoRoot,
-    });
+    const { bundlePath, stylesheetPath, bundleSource, stylesheetSource } =
+      buildOpenWrtProviderUiBundle({
+        repoRoot,
+      });
 
     expect(existsSync(bundlePath)).toBe(true);
     expect(existsSync(stylesheetPath)).toBe(true);

@@ -12,6 +12,7 @@ import type {
   OpenWrtRecentActivityItem,
   OpenWrtRequestLog,
   OpenWrtSharedPageShellApi,
+  OpenWrtStatusResponse,
   OpenWrtUsageSummary,
 } from "@/openwrt-provider-ui/pageTypes";
 import type {
@@ -277,7 +278,62 @@ export interface ShellStubOptions {
     Record<SharedProviderAppId, OpenWrtRecentActivityItem[]>
   >;
   quota?: QuotaResponse;
+  status?: OpenWrtStatusResponse;
   usageSummary?: Partial<Record<SharedProviderAppId, OpenWrtUsageSummary>>;
+}
+
+function createDefaultStatusResponse(
+  options: ShellStubOptions,
+): OpenWrtStatusResponse {
+  return {
+    daemon: {
+      health: true,
+      running: true,
+      uptimeSeconds: 3600,
+      lastError: null,
+      checkedAt: "2026-04-22T00:00:00.000Z",
+    },
+    apps: Object.fromEntries(
+      OPENWRT_APP_IDS.map((appId) => {
+        const provider = createProviderView(appId);
+
+        return [
+          appId,
+          {
+            mode: "normal",
+            proxyEnabled: true,
+            health: true,
+            healthReason: null,
+            maxRetries: 3,
+            usage: options.usageSummary?.[appId] ?? DEFAULT_USAGE_SUMMARY,
+            activeProvider: {
+              providerId: provider.providerId,
+              name: provider.name,
+            },
+            providers: {
+              [provider.providerId ?? `${appId}-primary`]: {
+                ...provider,
+                stats: options.providerStats?.[appId]?.[0] ?? null,
+                quota: null,
+                health: {
+                  providerId: provider.providerId,
+                  observed: true,
+                  healthy: true,
+                  consecutiveFailures: 0,
+                  lastSuccessAt: null,
+                  lastFailureAt: null,
+                  lastError: null,
+                  updatedAt: null,
+                },
+              },
+            },
+            failoverQueue: [],
+            failoverStatus: {},
+          },
+        ];
+      }),
+    ) as OpenWrtStatusResponse["apps"],
+  };
 }
 
 export function createShellStub(
@@ -349,33 +405,34 @@ export function createShellStub(
     async getQuota() {
       return options.quota ?? DEFAULT_QUOTA_RESPONSE;
     },
+    async getStatus() {
+      return options.status ?? createDefaultStatusResponse(options);
+    },
     async getRequestDetail(appId, requestId) {
       return options.requestDetails?.[appId]?.[requestId] ?? null;
     },
     async getRequestLogs(appId, page = 0, pageSize = 20, providerId) {
-      return (
-        providerId
-          ? {
-              ...(options.requestLogs?.[appId] ?? {
-                data: [],
-                total: 0,
-                page,
-                pageSize,
-              }),
-              data: (options.requestLogs?.[appId]?.data ?? []).filter(
-                (entry) => entry.providerId === providerId,
-              ),
-              total: (options.requestLogs?.[appId]?.data ?? []).filter(
-                (entry) => entry.providerId === providerId,
-              ).length,
-            }
-          : options.requestLogs?.[appId] ?? {
-          data: [],
-          total: 0,
-          page,
-          pageSize,
-        }
-      );
+      return providerId
+        ? {
+            ...(options.requestLogs?.[appId] ?? {
+              data: [],
+              total: 0,
+              page,
+              pageSize,
+            }),
+            data: (options.requestLogs?.[appId]?.data ?? []).filter(
+              (entry) => entry.providerId === providerId,
+            ),
+            total: (options.requestLogs?.[appId]?.data ?? []).filter(
+              (entry) => entry.providerId === providerId,
+            ).length,
+          }
+        : (options.requestLogs?.[appId] ?? {
+            data: [],
+            total: 0,
+            page,
+            pageSize,
+          });
     },
     async getRecentActivity(appId) {
       return options.recentActivity?.[appId] ?? [];
