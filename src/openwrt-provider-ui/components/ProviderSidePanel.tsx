@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useTranslation } from "react-i18next";
 import { copyText } from "@/lib/clipboard";
 import type {
   SharedProviderAppId,
@@ -86,16 +87,16 @@ interface ProviderSidePanelProps {
   onSave: () => void;
 }
 
-const APP_LABELS: Record<SharedProviderAppId, string> = {
-  claude: "Claude",
-  codex: "Codex",
-  gemini: "Gemini",
+const APP_LABEL_KEYS: Record<SharedProviderAppId, string> = {
+  claude: "apps.claude",
+  codex: "apps.codex",
+  gemini: "apps.gemini",
 };
 
-const APP_SUBTITLES: Record<SharedProviderAppId, string> = {
-  claude: "Anthropic · Claude Code",
-  codex: "OpenAI · Codex CLI",
-  gemini: "Google · Gemini CLI",
+const APP_SUBTITLE_KEYS: Record<SharedProviderAppId, string> = {
+  claude: "openwrt.providerPanel.appSubtitles.claude",
+  codex: "openwrt.providerPanel.appSubtitles.codex",
+  gemini: "openwrt.providerPanel.appSubtitles.gemini",
 };
 
 const FOCUSABLE_SELECTOR = [
@@ -144,7 +145,9 @@ function ProviderRailRow({
   showActiveBadge,
   onSelectProvider,
 }: SortableProviderRailItemProps) {
-  const providerLabel = provider.name || provider.providerId || "Provider";
+  const { t } = useTranslation();
+  const providerLabel =
+    provider.name || provider.providerId || t("provider.tabProvider");
 
   return (
     <div className="owt-provider-panel__provider-item" data-reorderable="false">
@@ -174,7 +177,7 @@ function ProviderRailRow({
         {showActiveBadge && provider.active ? (
           <span className="owt-status-pill" data-tone="success">
             <span className="owt-status-pill__dot" aria-hidden="true" />
-            Active
+            {t("openwrt.providerPanel.active")}
           </span>
         ) : null}
       </button>
@@ -237,10 +240,14 @@ export function ProviderSidePanel({
   onCancel,
   onSave,
 }: ProviderSidePanelProps) {
+  const { t } = useTranslation();
+  const appLabel = t(APP_LABEL_KEYS[appId]);
+  const appSubtitle = t(APP_SUBTITLE_KEYS[appId]);
+  const fallbackProviderName = t("provider.tabProvider");
   const providerName =
     (mode === "new"
-      ? draft.name.trim() || "New provider"
-      : selectedProvider?.name.trim()) || "Provider";
+      ? draft.name.trim() || t("openwrt.providerPanel.newProvider")
+      : selectedProvider?.name.trim()) || fallbackProviderName;
   const detailProviderId = selectedProvider?.providerId ?? null;
   const railProviders = filteredProviders;
   const panelRef = useRef<HTMLElement | null>(null);
@@ -435,7 +442,9 @@ export function ProviderSidePanel({
         className="owt-provider-panel"
         data-panel-mode={panelMode}
         aria-hidden={!open}
-        aria-label={`${APP_LABELS[appId]} providers`}
+        aria-label={t("openwrt.providerPanel.providersDialogLabel", {
+          app: appLabel,
+        })}
         aria-modal="true"
         role="dialog"
         ref={panelRef}
@@ -448,12 +457,14 @@ export function ProviderSidePanel({
           </div>
           <div className="owt-provider-panel__header-copy">
             <div className="owt-provider-panel__title-row">
-              <h3 className="owt-provider-panel__title">{APP_LABELS[appId]}</h3>
+              <h3 className="owt-provider-panel__title">{appLabel}</h3>
               {showFailoverCheckboxes ? (
                 <div
                   className="owt-mode-toggle owt-mode-toggle--panel"
                   role="tablist"
-                  aria-label={`${APP_LABELS[appId]} routing mode`}
+                  aria-label={t("openwrt.providerPanel.routingModeAria", {
+                    app: appLabel,
+                  })}
                   data-pending={appFailoverPending ? "true" : "false"}
                   aria-busy={appFailoverPending ? "true" : undefined}
                 >
@@ -469,10 +480,10 @@ export function ProviderSidePanel({
                         onToggleAppAutoFailover?.(false);
                       }
                     }}
-                    title="Manually use the selected active provider"
+                    title={t("openwrt.providerPanel.normalModeTitle")}
                   >
                     <span className="owt-mode-toggle__dot" aria-hidden="true" />
-                    Normal
+                    {t("openwrt.providerPanel.normal")}
                   </button>
                   <button
                     type="button"
@@ -486,23 +497,21 @@ export function ProviderSidePanel({
                         onToggleAppAutoFailover?.(true);
                       }
                     }}
-                    title="Route through the ordered failover queue"
+                    title={t("openwrt.providerPanel.failoverModeTitle")}
                   >
                     <span className="owt-mode-toggle__dot" aria-hidden="true" />
-                    Failover
+                    {t("openwrt.providerPanel.failover")}
                   </button>
                 </div>
               ) : null}
             </div>
-            <div className="owt-provider-panel__subtitle">
-              {APP_SUBTITLES[appId]}
-            </div>
+            <div className="owt-provider-panel__subtitle">{appSubtitle}</div>
           </div>
           <button
             type="button"
             className="owt-provider-panel__close"
             onClick={onClose}
-            aria-label="Close provider panel"
+            aria-label={t("openwrt.providerPanel.closeProviderPanel")}
             ref={closeButtonRef}
           >
             <X className="h-4 w-4" />
@@ -512,13 +521,15 @@ export function ProviderSidePanel({
         <div className="owt-provider-panel__body">
           <nav
             className="owt-provider-panel__rail"
-            aria-label="Saved providers"
+            aria-label={t("openwrt.providerPanel.savedProviders")}
           >
             <label className="owt-provider-panel__search">
               <Search className="h-4 w-4" />
               <input
                 type="text"
-                placeholder="Search provider or endpoint"
+                placeholder={t(
+                  "openwrt.providerPanel.searchProviderPlaceholder",
+                )}
                 value={search}
                 onChange={(event) => onSearchChange(event.target.value)}
               />
@@ -527,11 +538,13 @@ export function ProviderSidePanel({
             <div className="owt-provider-panel__rail-scroll">
               {providers.length === 0 ? (
                 <div className="owt-provider-panel__empty">
-                  No providers yet. Create one from a preset or a custom draft.
+                  {t("openwrt.providerPanel.noProviders")}
                 </div>
               ) : filteredProviders.length === 0 ? (
                 <div className="owt-provider-panel__empty">
-                  No providers match “{search.trim()}”.
+                  {t("openwrt.providerPanel.noProviderSearchMatch", {
+                    search: search.trim(),
+                  })}
                 </div>
               ) : (
                 providerRows
@@ -545,7 +558,7 @@ export function ProviderSidePanel({
                 onClick={onAddProvider}
               >
                 <Plus className="h-4 w-4" />
-                Add provider
+                {t("openwrt.providerPanel.addProvider")}
               </button>
             </div>
           </nav>
@@ -577,17 +590,23 @@ export function ProviderSidePanel({
                           </div>
                         </div>
                         <div className="owt-provider-panel__detail-url">
-                          {draft.baseUrl || "Not saved yet"}
+                          {draft.baseUrl ||
+                            t("openwrt.providerPanel.notSavedYet")}
                         </div>
                         {detailProviderId ? (
                           <button
                             type="button"
                             className="owt-provider-panel__id-chip"
                             data-copied={copiedProviderId === detailProviderId}
-                            aria-label={`Copy provider ID ${detailProviderId}`}
+                            aria-label={t(
+                              "openwrt.providerPanel.copyProviderId",
+                              {
+                                providerId: detailProviderId,
+                              },
+                            )}
                             title={
                               copiedProviderId === detailProviderId
-                                ? "Copied"
+                                ? t("openwrt.providerPanel.copied")
                                 : detailProviderId
                             }
                             onClick={() =>
@@ -597,7 +616,7 @@ export function ProviderSidePanel({
                             <Copy className="h-3 w-3" aria-hidden="true" />
                             <span className="owt-provider-panel__id-chip-text">
                               {copiedProviderId === detailProviderId
-                                ? "Copied"
+                                ? t("openwrt.providerPanel.copied")
                                 : formatProviderIdChipLabel(detailProviderId)}
                             </span>
                           </button>
@@ -612,8 +631,15 @@ export function ProviderSidePanel({
                           className="owt-provider-panel__icon-button owt-provider-panel__icon-button--accent"
                           aria-label={
                             providerInFailoverQueue
-                              ? `Remove ${providerName} from failover queue`
-                              : `Add ${providerName} to failover queue`
+                              ? t(
+                                  "openwrt.providerPanel.removeFromFailoverQueue",
+                                  {
+                                    provider: providerName,
+                                  },
+                                )
+                              : t("openwrt.providerPanel.addToFailoverQueue", {
+                                  provider: providerName,
+                                })
                           }
                           disabled={
                             failoverCheckboxesDisabled ||
@@ -626,8 +652,12 @@ export function ProviderSidePanel({
                           }
                           title={
                             providerInFailoverQueue
-                              ? "Remove from failover queue"
-                              : "Add to failover queue"
+                              ? t(
+                                  "openwrt.providerPanel.removeFromFailoverQueueTitle",
+                                )
+                              : t(
+                                  "openwrt.providerPanel.addToFailoverQueueTitle",
+                                )
                           }
                         >
                           {providerFailoverPending ? (
@@ -643,7 +673,7 @@ export function ProviderSidePanel({
                         <button
                           type="button"
                           className="owt-provider-panel__icon-button owt-provider-panel__icon-button--accent"
-                          aria-label="Set active"
+                          aria-label={t("openwrt.providerPanel.setActive")}
                           disabled={
                             activatePending || deletePending || savePending
                           }
@@ -660,7 +690,7 @@ export function ProviderSidePanel({
                         <button
                           type="button"
                           className="owt-provider-panel__icon-button owt-provider-panel__icon-button--danger"
-                          aria-label="Delete provider"
+                          aria-label={t("openwrt.providerPanel.deleteProvider")}
                           disabled={deletePending}
                           onClick={onDelete}
                         >
@@ -681,7 +711,7 @@ export function ProviderSidePanel({
                       data-active={tab === "activities"}
                       onClick={() => onTabChange("activities")}
                     >
-                      Activities
+                      {t("openwrt.providerPanel.activitiesTab")}
                     </button>
                     <button
                       type="button"
@@ -689,7 +719,7 @@ export function ProviderSidePanel({
                       data-active={tab === "configure"}
                       onClick={() => onTabChange("configure")}
                     >
-                      Configure
+                      {t("openwrt.providerPanel.configureTab")}
                     </button>
                     <button
                       type="button"
@@ -700,7 +730,7 @@ export function ProviderSidePanel({
                       aria-hidden="true"
                       tabIndex={-1}
                     >
-                      Failover
+                      {t("openwrt.providerPanel.failover")}
                     </button>
                   </div>
                 </>
@@ -719,7 +749,7 @@ export function ProviderSidePanel({
                 {loading ? (
                   <div className="owt-provider-panel__state">
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Loading provider workspace…
+                    {t("openwrt.providerPanel.loadingWorkspace")}
                   </div>
                 ) : error ? (
                   <div className="owt-provider-panel__state owt-provider-panel__state--error">
@@ -775,11 +805,11 @@ export function ProviderSidePanel({
                   >
                     <div className="owt-provider-panel__config-group">
                       <div className="owt-provider-panel__config-group-title">
-                        Failover
+                        {t("openwrt.providerPanel.failover")}
                       </div>
                       <div className="owt-provider-panel__config-row">
                         <div className="owt-provider-panel__config-label">
-                          Auto failover
+                          {t("openwrt.providerPanel.autoFailover")}
                         </div>
                         <div className="owt-provider-panel__config-value">
                           —

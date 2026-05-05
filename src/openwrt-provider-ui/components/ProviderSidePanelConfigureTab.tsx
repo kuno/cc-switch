@@ -1,5 +1,7 @@
 import { CheckCircle2, Loader2 } from "lucide-react";
+import type { TFunction } from "i18next";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   SharedProviderClaudeAuthSummary,
   SharedProviderCodexAuthSummary,
@@ -52,10 +54,7 @@ function ConfigureRow({
   value,
   valueClassName,
 }: ConfigureRowProps) {
-  const valueClasses = [
-    "owt-provider-panel__config-value",
-    valueClassName,
-  ]
+  const valueClasses = ["owt-provider-panel__config-value", valueClassName]
     .filter(Boolean)
     .join(" ");
 
@@ -79,23 +78,23 @@ function getClaudeAuthMode(authMode?: string): ClaudeAuthMode {
   return authMode === "claude_oauth" ? "claude_oauth" : "client_passthrough";
 }
 
-function normalizeExpiresAt(value: number | null | undefined): string | null {
+function normalizeExpiresAt(
+  value: number | null | undefined,
+  language: string,
+): string | null {
   if (!Number.isFinite(value) || value == null || value <= 0) {
     return null;
   }
 
   const epochMs = value > 1_000_000_000_000 ? value : value * 1000;
 
-  return new Intl.DateTimeFormat("en-US", {
+  return new Intl.DateTimeFormat(language, {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(epochMs));
 }
 
-function formatValue(
-  value: string | null | undefined,
-  fallback = "—",
-): string {
+function formatValue(value: string | null | undefined, fallback = "—"): string {
   const trimmed = value?.trim();
 
   return trimmed ? trimmed : fallback;
@@ -106,11 +105,25 @@ function getStoredAuthConnectionLabel(
     | SharedProviderCodexAuthSummary
     | SharedProviderClaudeAuthSummary
     | undefined,
+  t: TFunction,
 ): string {
-  return summary ? "Connected" : "Not connected";
+  return summary
+    ? t("openwrt.configure.connected")
+    : t("openwrt.configure.notConnected");
 }
 
-function getAuthJsonStatus(authContent: string | null | undefined): {
+function formatAuthContentSize(bytes: number, t: TFunction): string {
+  return bytes >= 1024
+    ? t("openwrt.configure.sizeKilobytes", {
+        value: (bytes / 1024).toFixed(1),
+      })
+    : t("openwrt.configure.sizeBytes", { value: bytes });
+}
+
+function getAuthJsonStatus(
+  authContent: string | null | undefined,
+  t: TFunction,
+): {
   invalid: boolean;
   label: string;
   tone: "fail" | "muted" | "success" | "warn";
@@ -118,7 +131,7 @@ function getAuthJsonStatus(authContent: string | null | undefined): {
   if (authContent === "") {
     return {
       invalid: false,
-      label: "Will clear on save",
+      label: t("openwrt.configure.authWillClearOnSave"),
       tone: "warn",
     };
   }
@@ -126,7 +139,7 @@ function getAuthJsonStatus(authContent: string | null | undefined): {
   if (!authContent) {
     return {
       invalid: false,
-      label: "No content",
+      label: t("openwrt.configure.noContent"),
       tone: "muted",
     };
   }
@@ -134,18 +147,17 @@ function getAuthJsonStatus(authContent: string | null | undefined): {
   try {
     JSON.parse(authContent);
     const bytes = new Blob([authContent]).size;
-    const sizeLabel =
-      bytes >= 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${bytes} B`;
+    const sizeLabel = formatAuthContentSize(bytes, t);
 
     return {
       invalid: false,
-      label: `Valid JSON · ${sizeLabel}`,
+      label: t("openwrt.configure.validJson", { size: sizeLabel }),
       tone: "success",
     };
   } catch {
     return {
       invalid: true,
-      label: "Invalid JSON",
+      label: t("openwrt.configure.invalidJson"),
       tone: "fail",
     };
   }
@@ -154,34 +166,38 @@ function getAuthJsonStatus(authContent: string | null | undefined): {
 function buildStoredAuthSummaryRows(
   appId: "claude" | "codex" | "gemini",
   provider: SharedProviderView | null,
+  t: TFunction,
+  language: string,
 ): Array<{ label: string; value: string }> {
   if (appId === "claude" && provider?.claudeAuth) {
     const summary = provider.claudeAuth;
     const rows = [
       {
-        label: "Refresh token",
-        value: summary.refreshTokenPresent ? "Present" : "Missing",
+        label: t("openwrt.configure.refreshToken"),
+        value: summary.refreshTokenPresent
+          ? t("openwrt.configure.present")
+          : t("openwrt.configure.missing"),
       },
     ];
-    const expiresAt = normalizeExpiresAt(summary.expiresAtMs);
+    const expiresAt = normalizeExpiresAt(summary.expiresAtMs, language);
 
     if (summary.scopes.length) {
       rows.push({
-        label: "Scopes",
+        label: t("openwrt.configure.scopes"),
         value: summary.scopes.join(", "),
       });
     }
 
     if (summary.subscriptionType) {
       rows.push({
-        label: "Subscription",
+        label: t("openwrt.configure.subscription"),
         value: summary.subscriptionType,
       });
     }
 
     if (expiresAt) {
       rows.push({
-        label: "Expires at",
+        label: t("openwrt.configure.expiresAt"),
         value: expiresAt,
       });
     }
@@ -193,15 +209,17 @@ function buildStoredAuthSummaryRows(
     const summary = provider.codexAuth;
     const rows = [
       {
-        label: "Refresh token",
-        value: summary.refreshTokenPresent ? "Present" : "Missing",
+        label: t("openwrt.configure.refreshToken"),
+        value: summary.refreshTokenPresent
+          ? t("openwrt.configure.present")
+          : t("openwrt.configure.missing"),
       },
     ];
-    const expiresAt = normalizeExpiresAt(summary.expiresAt);
+    const expiresAt = normalizeExpiresAt(summary.expiresAt, language);
 
     if (expiresAt) {
       rows.push({
-        label: "Expires at",
+        label: t("openwrt.configure.expiresAt"),
         value: expiresAt,
       });
     }
@@ -232,6 +250,8 @@ export function ProviderSidePanelConfigureTab({
   onPasteAuth,
   onSave,
 }: ProviderSidePanelConfigureTabProps) {
+  const { t, i18n: i18nextInstance } = useTranslation();
+  const language = i18nextInstance.language || "en";
   const isClaude = appId === "claude";
   const isCodex = appId === "codex";
   const codexAuthMode = getCodexAuthMode(draft.authMode);
@@ -242,16 +262,22 @@ export function ProviderSidePanelConfigureTab({
       draft.authMode === "claude_oauth");
   const authModeOptions = isCodex
     ? [
-        { label: "API key", value: "api_key" as const },
-        { label: "auth.json", value: "codex_oauth" as const },
+        { label: t("openwrt.configure.apiKey"), value: "api_key" as const },
+        {
+          label: t("openwrt.configure.authJson"),
+          value: "codex_oauth" as const,
+        },
       ]
     : showClaudeAuthModeSelector
       ? [
           {
-            label: "Client passthrough",
+            label: t("openwrt.configure.clientPassthrough"),
             value: "client_passthrough" as const,
           },
-          { label: "auth.json", value: "claude_oauth" as const },
+          {
+            label: t("openwrt.configure.authJson"),
+            value: "claude_oauth" as const,
+          },
         ]
       : [];
   const showAuthJsonFields =
@@ -261,29 +287,37 @@ export function ProviderSidePanelConfigureTab({
   const primaryEnvMapping =
     tokenFieldOptions.find((option) => option.value === draft.tokenField)
       ?.label ?? draft.tokenField;
-  const storedAuthSummaryRows = buildStoredAuthSummaryRows(appId, provider);
   const storedAuthConnectionLabel = getStoredAuthConnectionLabel(
     isClaude ? provider?.claudeAuth : provider?.codexAuth,
+    t,
   );
-  const authJsonStatus = getAuthJsonStatus(draft.authContent);
+  const storedAuthSummaryRows = buildStoredAuthSummaryRows(
+    appId,
+    provider,
+    t,
+    language,
+  );
+  const authJsonStatus = getAuthJsonStatus(draft.authContent, t);
   const tokenValue = provider?.tokenConfigured
-    ? provider.tokenMasked || "Configured"
-    : "Not configured";
+    ? provider.tokenMasked || t("openwrt.configure.configured")
+    : t("openwrt.configure.notConfigured");
   const authTextareaValue =
-    draft.authContent === "" ? "" : draft.authContent ?? "";
+    draft.authContent === "" ? "" : (draft.authContent ?? "");
 
   return (
     <div className="owt-provider-panel__config">
       <div className="owt-provider-panel__config-group">
-        <div className="owt-provider-panel__config-group-title">General</div>
+        <div className="owt-provider-panel__config-group-title">
+          {t("settings.general")}
+        </div>
 
         <ConfigureRow
           editing={editing}
           editable
-          label="Provider name"
+          label={t("provider.name")}
           input={
             <input
-              aria-label="Provider name"
+              aria-label={t("provider.name")}
               className="owt-provider-panel__config-input"
               type="text"
               value={draft.name}
@@ -301,10 +335,10 @@ export function ProviderSidePanelConfigureTab({
         <ConfigureRow
           editing={editing}
           editable
-          label="Model"
+          label={t("usage.model")}
           input={
             <input
-              aria-label="Model"
+              aria-label={t("usage.model")}
               className="owt-provider-panel__config-input"
               type="text"
               value={draft.model}
@@ -316,23 +350,23 @@ export function ProviderSidePanelConfigureTab({
               }
             />
           }
-          value={formatValue(draft.model, "Default model")}
+          value={formatValue(draft.model, t("openwrt.activity.defaultModel"))}
         />
 
         <ConfigureRow
           editing={editing}
-          label="Website URL"
-          value={formatValue(website, "Not available")}
+          label={t("provider.websiteUrl")}
+          value={formatValue(website, t("openwrt.configure.notAvailable"))}
           valueClassName="owt-provider-panel__config-value--mono owt-provider-panel__config-value--muted"
         />
 
         <ConfigureRow
           editing={editing}
           editable
-          label="Notes"
+          label={t("provider.notes")}
           input={
             <textarea
-              aria-label="Notes"
+              aria-label={t("provider.notes")}
               className="owt-provider-panel__config-input owt-provider-panel__config-textarea"
               value={draft.notes}
               onChange={(event) =>
@@ -349,15 +383,17 @@ export function ProviderSidePanelConfigureTab({
       </div>
 
       <div className="owt-provider-panel__config-group">
-        <div className="owt-provider-panel__config-group-title">Credentials</div>
+        <div className="owt-provider-panel__config-group-title">
+          {t("usageScript.credentialsConfig")}
+        </div>
 
         <ConfigureRow
           editing={editing}
           editable
-          label="Base URL"
+          label={t("usageScript.baseUrl")}
           input={
             <input
-              aria-label="Base URL"
+              aria-label={t("usageScript.baseUrl")}
               className="owt-provider-panel__config-input owt-provider-panel__config-input--mono"
               type="text"
               value={draft.baseUrl}
@@ -377,10 +413,10 @@ export function ProviderSidePanelConfigureTab({
           <ConfigureRow
             editing={editing}
             editable
-            label="Auth mode"
+            label={t("openwrt.configure.authMode")}
             input={
               <select
-                aria-label="Auth mode"
+                aria-label={t("openwrt.configure.authMode")}
                 className="owt-provider-panel__config-input"
                 value={authModeValue}
                 onChange={(event) =>
@@ -399,7 +435,7 @@ export function ProviderSidePanelConfigureTab({
             }
             value={
               authModeOptions.find((option) => option.value === authModeValue)
-                ?.label ?? "API key"
+                ?.label ?? t("openwrt.configure.apiKey")
             }
           />
         ) : null}
@@ -408,7 +444,7 @@ export function ProviderSidePanelConfigureTab({
           <>
             <ConfigureRow
               editing={editing}
-              label="Env mapping"
+              label={t("openwrt.configure.envMapping")}
               value={formatValue(primaryEnvMapping)}
               valueClassName="owt-provider-panel__config-value--mono"
             />
@@ -416,14 +452,14 @@ export function ProviderSidePanelConfigureTab({
             <ConfigureRow
               editing={editing}
               editable
-              label="API token"
+              label={t("openwrt.configure.apiToken")}
               input={
                 <input
-                  aria-label="API token"
+                  aria-label={t("openwrt.configure.apiToken")}
                   className="owt-provider-panel__config-input owt-provider-panel__config-input--mono"
                   type="password"
                   value={draft.token}
-                  placeholder="Enter the secret for this provider"
+                  placeholder={t("openwrt.configure.apiTokenPlaceholder")}
                   onChange={(event) =>
                     onDraftChange({
                       ...draft,
@@ -441,18 +477,16 @@ export function ProviderSidePanelConfigureTab({
             <ConfigureRow
               editing={editing}
               editable
-              label="auth.json"
+              label={t("openwrt.configure.authJson")}
               input={
                 <div className="owt-provider-panel__auth-editor">
                   <textarea
-                    aria-label="auth.json"
+                    aria-label={t("openwrt.configure.authJson")}
                     className="owt-provider-panel__config-input owt-provider-panel__config-input--mono owt-provider-panel__config-textarea owt-provider-panel__auth-textarea"
                     rows={8}
                     spellCheck={false}
                     value={authTextareaValue}
-                    placeholder={
-                      'Paste the contents of auth.json, e.g.\n{\n  "OPENAI_API_KEY": "sk-…",\n  "tokens": { … },\n  "account_id": "…"\n}'
-                    }
+                    placeholder={t("openwrt.configure.authJsonPlaceholder")}
                     onChange={(event) =>
                       onDraftChange({
                         ...draft,
@@ -475,21 +509,21 @@ export function ProviderSidePanelConfigureTab({
                         className="owt-provider-panel__button owt-provider-panel__button--ghost"
                         onClick={onPasteAuth}
                       >
-                        Paste from clipboard
+                        {t("openwrt.configure.pasteFromClipboard")}
                       </button>
                       <button
                         type="button"
                         className="owt-provider-panel__button owt-provider-panel__button--ghost"
                         onClick={onClearAuth}
                       >
-                        Clear auth
+                        {t("openwrt.configure.clearAuth")}
                       </button>
                     </div>
                   </div>
                   <div className="owt-provider-panel__auth-hint">
-                    Pasted contents are stored as this provider&apos;s{" "}
-                    <code>auth.json</code>. The daemon writes it to the
-                    app&apos;s config directory on save.
+                    {t("openwrt.configure.authJsonHintPrefix")}{" "}
+                    <code>auth.json</code>
+                    {t("openwrt.configure.authJsonHintSuffix")}
                   </div>
                 </div>
               }
@@ -504,7 +538,7 @@ export function ProviderSidePanelConfigureTab({
                     label={row.label}
                     value={row.value}
                     valueClassName={
-                      row.label === "Expires at"
+                      row.label === t("openwrt.configure.expiresAt")
                         ? "owt-provider-panel__config-value--mono"
                         : undefined
                     }
@@ -526,7 +560,7 @@ export function ProviderSidePanelConfigureTab({
               className="owt-provider-panel__button"
               onClick={onEdit}
             >
-              Edit
+              {t("common.edit")}
             </button>
           ) : (
             <>
@@ -535,7 +569,7 @@ export function ProviderSidePanelConfigureTab({
                 className="owt-provider-panel__button"
                 onClick={onCancel}
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 type="button"
@@ -550,7 +584,11 @@ export function ProviderSidePanelConfigureTab({
                 ) : showSaveFlash ? (
                   <CheckCircle2 className="h-4 w-4" />
                 ) : null}
-                {savePending ? "Saving…" : showSaveFlash ? "Saved" : "Save"}
+                {savePending
+                  ? t("openwrt.configure.saving")
+                  : showSaveFlash
+                    ? t("openwrt.configure.saved")
+                    : t("common.save")}
               </button>
             </>
           )}

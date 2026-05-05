@@ -1,6 +1,7 @@
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Plus, Search, Star } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type { SharedProviderPreset } from "@/shared/providers/domain";
 import {
   getCustomPresetUiMeta,
@@ -41,14 +42,14 @@ type PresetCardModel = {
   searchText: string;
 };
 
-const PRESET_FILTERS: Array<{ id: PresetFilterId; label: string }> = [
-  { id: "official", label: "Official" },
-  { id: "open_source", label: "Open-source" },
-  { id: "aggregator", label: "Aggregator" },
-  { id: "third_party", label: "Third Party" },
-  { id: "universal", label: "Universal" },
-  { id: "custom", label: "Custom" },
-  { id: "all", label: "All" },
+const PRESET_FILTERS: Array<{ id: PresetFilterId; labelKey: string }> = [
+  { id: "official", labelKey: "openwrt.presetTab.filters.official" },
+  { id: "open_source", labelKey: "openwrt.presetTab.filters.openSource" },
+  { id: "aggregator", labelKey: "openwrt.presetTab.filters.aggregator" },
+  { id: "third_party", labelKey: "openwrt.presetTab.filters.thirdParty" },
+  { id: "universal", labelKey: "openwrt.presetTab.filters.universal" },
+  { id: "custom", labelKey: "presetSelector.custom" },
+  { id: "all", labelKey: "common.all" },
 ];
 const DEFAULT_PRESET_FILTER_ID: PresetFilterId = PRESET_FILTERS[0]?.id ?? "all";
 
@@ -80,11 +81,14 @@ function buildSearchText(preset: SharedProviderPreset, uiMeta: PresetUiMeta) {
   ]);
 }
 
-function buildCustomSearchText(uiMeta: PresetUiMeta) {
+function buildCustomSearchText(
+  uiMeta: PresetUiMeta,
+  copy: { title: string; description: string; meta: string },
+) {
   return joinSearchParts([
-    "Custom Configuration",
-    "Manually fill all necessary fields",
-    "Manual endpoint and token configuration",
+    copy.title,
+    copy.description.replace(/\.$/, ""),
+    copy.meta,
     ...uiMeta.badges.map((badge) => badge.label),
     ...uiMeta.tags.map(getTagLabel),
   ]);
@@ -199,6 +203,7 @@ export function ProviderSidePanelPresetTab({
   onPresetSelect,
   onCancel = () => {},
 }: ProviderSidePanelPresetTabProps) {
+  const { t } = useTranslation();
   const [pendingPresetId, setPendingPresetId] = useState<string | null>(
     selectedPresetId,
   );
@@ -216,14 +221,21 @@ export function ProviderSidePanelPresetTab({
   const cards = useMemo<PresetCardModel[]>(() => {
     const firstPreset = groups[0]?.presets[0];
     const customUiMeta = getCustomPresetUiMeta();
+    const customTitle = t("providerPreset.custom");
+    const customDescription = t("openwrt.presetTab.customDescription");
+    const customMeta = t("openwrt.presetTab.customMeta");
     const customCard: PresetCardModel = {
       appId: firstPreset?.appId ?? "claude",
       id: "custom",
-      title: "Custom Configuration",
-      description: "Manually fill all necessary fields.",
-      meta: "Manual endpoint and token configuration",
+      title: customTitle,
+      description: customDescription,
+      meta: customMeta,
       uiMeta: customUiMeta,
-      searchText: buildCustomSearchText(customUiMeta),
+      searchText: buildCustomSearchText(customUiMeta, {
+        title: customTitle,
+        description: customDescription,
+        meta: customMeta,
+      }),
     };
 
     const presetCards = groups.flatMap((group) =>
@@ -237,7 +249,8 @@ export function ProviderSidePanelPresetTab({
           appId: preset.appId,
           id: preset.id,
           title: preset.providerName,
-          description: preset.description || "No extra notes provided.",
+          description:
+            preset.description || t("openwrt.presetTab.noExtraNotes"),
           meta,
           source: preset,
           uiMeta,
@@ -247,7 +260,7 @@ export function ProviderSidePanelPresetTab({
     );
 
     return [customCard, ...presetCards];
-  }, [groups]);
+  }, [groups, t]);
 
   const normalizedSearch = normalizeSearchValue(search);
   const visibleCards = cards.filter((card) => {
@@ -261,11 +274,14 @@ export function ProviderSidePanelPresetTab({
   });
   const stagedCard = cards.find((card) => card.id === pendingPresetId) ?? null;
   const footerCopy = stagedCard
-    ? `${stagedCard.title} · ${stagedCard.meta}`
-    : "No preset selected · Choose a preset or Custom Configuration to continue";
+    ? t("openwrt.presetTab.selectedPresetFooter", {
+        title: stagedCard.title,
+        meta: stagedCard.meta,
+      })
+    : t("openwrt.presetTab.noPresetSelected");
   const emptyCopy = search.trim()
-    ? `No presets match “${search.trim()}”.`
-    : "No presets match the current filters.";
+    ? t("openwrt.presetTab.noPresetSearchMatch", { search: search.trim() })
+    : t("openwrt.presetTab.noPresetFilterMatch");
 
   useEffect(() => {
     cardRefs.current = cardRefs.current.slice(0, visibleCards.length);
@@ -372,17 +388,19 @@ export function ProviderSidePanelPresetTab({
     <div className="owt-provider-panel__tab-stack owt-provider-panel__preset-picker">
       <header className="owt-provider-panel__detail-head owt-provider-panel__preset-picker-head">
         <div className="owt-provider-panel__detail-copy">
-          <h2 className="owt-provider-panel__detail-title">Provider Preset</h2>
+          <h2 className="owt-provider-panel__detail-title">
+            {t("providerPreset.label")}
+          </h2>
           <p className="owt-provider-panel__subtitle">
-            Choose a preset, then continue editing the fields below.
+            {t("openwrt.presetTab.subtitle")}
           </p>
         </div>
         <label className="owt-provider-panel__search owt-provider-panel__preset-search">
           <Search className="h-4 w-4" aria-hidden="true" />
           <input
             type="search"
-            aria-label="Search presets"
-            placeholder="Search presets, provider, or URL"
+            aria-label={t("openwrt.presetTab.searchPresetsAria")}
+            placeholder={t("openwrt.presetTab.searchPresetsPlaceholder")}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
@@ -392,7 +410,7 @@ export function ProviderSidePanelPresetTab({
       <div
         className="owt-provider-panel__preset-filters"
         role="radiogroup"
-        aria-label="Preset category filter"
+        aria-label={t("openwrt.presetTab.filterAria")}
       >
         {PRESET_FILTERS.map((filter, index) => {
           const active = filter.id === activeFilter;
@@ -410,7 +428,7 @@ export function ProviderSidePanelPresetTab({
               onKeyDown={(event) => handleFilterKeyDown(event, index)}
               ref={(element) => setFilterRef(index, element)}
             >
-              {filter.label}
+              {t(filter.labelKey)}
             </button>
           );
         })}
@@ -424,7 +442,7 @@ export function ProviderSidePanelPresetTab({
         <div
           className="owt-provider-panel__preset-grid"
           role="radiogroup"
-          aria-label="Provider presets"
+          aria-label={t("openwrt.presetTab.presetsAria")}
         >
           {visibleCards.map((card, index) => (
             <PresetCard
@@ -450,7 +468,7 @@ export function ProviderSidePanelPresetTab({
             className="owt-provider-panel__button"
             onClick={onCancel}
           >
-            Cancel
+            {t("common.cancel")}
           </button>
           <button
             type="button"
@@ -462,7 +480,7 @@ export function ProviderSidePanelPresetTab({
               }
             }}
           >
-            Select preset
+            {t("openwrt.presetTab.selectPreset")}
           </button>
         </div>
       </footer>

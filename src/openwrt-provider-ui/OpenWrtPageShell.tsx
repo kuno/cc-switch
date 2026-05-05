@@ -1,10 +1,5 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { SharedProviderAppId } from "@/shared/providers/domain";
 import {
   ActivityDrawerHost,
@@ -27,8 +22,6 @@ import type {
 
 const OPENWRT_PAGE_THEME_STORAGE_KEY = "ccswitch-openwrt-native-page-theme";
 
-/** Version strings surfaced in the daemon footer. */
-const LUCI_APP_VERSION = formatVersion(__OPENWRT_LUCI_APP_VERSION__, "unknown");
 const DAEMON_FALLBACK_VERSION = "v0.4.2";
 
 type HostDraft = OpenWrtHostConfigPayload;
@@ -140,13 +133,19 @@ function ThemeToggle({
   theme: OpenWrtPageTheme;
   onToggle: () => void;
 }) {
+  const { t } = useTranslation();
+
   return (
     <button
       type="button"
       className="owt-theme-toggle"
       data-theme={theme}
       onClick={onToggle}
-      aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+      aria-label={
+        theme === "dark"
+          ? t("openwrt.pageShell.switchToLightTheme")
+          : t("openwrt.pageShell.switchToDarkTheme")
+      }
     >
       <svg
         className="owt-theme-toggle__sun"
@@ -178,6 +177,7 @@ function ThemeToggle({
 }
 
 export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
+  const { t } = useTranslation();
   const shell = options.shell;
   const [snapshot, setSnapshot] = useState(() => getHostSnapshot(options));
   const [hostDraft, setHostDraft] = useState(() =>
@@ -274,6 +274,10 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
     snapshot.host.version,
     DAEMON_FALLBACK_VERSION,
   );
+  const luciAppVersion = formatVersion(
+    __OPENWRT_LUCI_APP_VERSION__,
+    t("openwrt.daemon.unknownVersion"),
+  );
 
   return (
     <div
@@ -297,7 +301,7 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
         </section>
 
         <div className="owt-page__title-row">
-          <h1 className="owt-page__title">CC Switch</h1>
+          <h1 className="owt-page__title">{t("app.title")}</h1>
           <ThemeToggle
             theme={theme}
             onToggle={() =>
@@ -307,7 +311,7 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
         </div>
 
         <h2 id="owt-apps-heading" className="owt-visually-hidden">
-          Apps
+          {t("openwrt.pageShell.appsHeading")}
         </h2>
 
         <section data-slot="apps-grid" aria-labelledby="owt-apps-heading">
@@ -322,12 +326,12 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
         <hr className="owt-page__section-divider" aria-hidden="true" />
 
         <h2 id="owt-daemon-heading" className="owt-visually-hidden">
-          Daemon
+          {t("openwrt.pageShell.daemonHeading")}
         </h2>
 
         <section data-slot="daemon-card" aria-labelledby="owt-daemon-heading">
           <DaemonCard
-            appVersion={LUCI_APP_VERSION}
+            appVersion={luciAppVersion}
             daemonVersion={daemonVersion}
             host={snapshot.host}
             draft={hostDraft}
@@ -359,7 +363,7 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
         className="owt-overlay-scrim"
         data-open={activityDrawerOpen || providerPanelOpen ? "true" : "false"}
         tabIndex={activityDrawerOpen || providerPanelOpen ? 0 : -1}
-        aria-label="Close open drawer"
+        aria-label={t("openwrt.pageShell.closeOpenDrawer")}
         onClick={handleCloseOverlay}
       />
 

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CheckCircle2, Loader2, RefreshCcw, Save } from "lucide-react";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 import type {
   OpenWrtHostConfigPayload,
   OpenWrtHostState,
@@ -51,21 +53,26 @@ function getHealthTone(health: OpenWrtHostState["health"]): string {
   }
 }
 
-function getHealthLabel(health: OpenWrtHostState["health"]): string {
+function getHealthLabel(
+  health: OpenWrtHostState["health"],
+  t: TFunction,
+): string {
   switch (health) {
     case "healthy":
-      return "Healthy";
+      return t("openwrt.daemon.health.healthy");
     case "degraded":
-      return "Degraded";
+      return t("health.degraded");
     case "stopped":
-      return "Stopped";
+      return t("openwrt.daemon.health.stopped");
     default:
-      return "Unknown";
+      return t("common.unknown");
   }
 }
 
-function getStatusLabel(isRunning: boolean): string {
-  return isRunning ? "Running" : "Stopped";
+function getStatusLabel(isRunning: boolean, t: TFunction): string {
+  return isRunning
+    ? t("openwrt.daemon.status.running")
+    : t("openwrt.daemon.status.stopped");
 }
 
 function getLogLevelOptions(value: string): string[] {
@@ -101,7 +108,7 @@ function DaemonField({
 
 export function DaemonCard({
   host,
-  appVersion = "unknown",
+  appVersion,
   daemonVersion,
   draft,
   isRunning,
@@ -114,13 +121,15 @@ export function DaemonCard({
   onSave,
   onRestart,
 }: DaemonCardProps) {
+  const { t } = useTranslation();
   const saveFlashTimeoutRef = useRef<number | null>(null);
   const previousSaveInFlightRef = useRef(saveInFlight);
   const [showSaveFlash, setShowSaveFlash] = useState(false);
-  const statusLabel = getStatusLabel(isRunning);
-  const healthLabel = getHealthLabel(host.health);
+  const statusLabel = getStatusLabel(isRunning, t);
+  const healthLabel = getHealthLabel(host.health, t);
   const healthTone = getHealthTone(host.health);
   const logLevelOptions = getLogLevelOptions(draft.logLevel);
+  const resolvedAppVersion = appVersion ?? t("openwrt.daemon.unknownVersion");
   const resolvedDaemonVersion =
     daemonVersion ?? formatVersion(host.version, DAEMON_FALLBACK_VERSION);
 
@@ -157,7 +166,7 @@ export function DaemonCard({
   return (
     <div
       className="owt-daemon-card"
-      aria-label={host.serviceLabel || "Daemon control"}
+      aria-label={host.serviceLabel || t("openwrt.daemon.controlAria")}
     >
       <div className="owt-daemon-row">
         <div
@@ -180,7 +189,7 @@ export function DaemonCard({
           <select
             value={draft.logLevel}
             onChange={(event) => onDraftChange("logLevel", event.target.value)}
-            aria-label="Log level"
+            aria-label={t("openwrt.daemon.logLevel")}
           >
             {logLevelOptions.map((level) => (
               <option key={level} value={level}>
@@ -203,7 +212,9 @@ export function DaemonCard({
           ) : (
             <RefreshCcw className="h-4 w-4" />
           )}
-          {restartInFlight ? "Restarting…" : "Restart"}
+          {restartInFlight
+            ? t("openwrt.daemon.restarting")
+            : t("openwrt.daemon.restart")}
         </button>
 
         <button
@@ -217,7 +228,7 @@ export function DaemonCard({
           }
           onClick={onSave}
           disabled={!isDirty || saveInFlight || showSaveFlash}
-          title="Persist current daemon config"
+          title={t("openwrt.daemon.persistConfig")}
         >
           {saveInFlight ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -226,7 +237,11 @@ export function DaemonCard({
           ) : (
             <Save className="h-4 w-4" />
           )}
-          {saveInFlight ? "Saving…" : showSaveFlash ? "Saved" : "Save"}
+          {saveInFlight
+            ? t("openwrt.daemon.saving")
+            : showSaveFlash
+              ? t("openwrt.daemon.saved")
+              : t("common.save")}
         </button>
       </div>
 
@@ -239,7 +254,10 @@ export function DaemonCard({
       <div className="owt-daemon-divider" />
 
       <div className="owt-daemon-grid">
-        <DaemonField label="Listen address" htmlFor="owt-listenAddr">
+        <DaemonField
+          label={t("openwrt.daemon.listenAddress")}
+          htmlFor="owt-listenAddr"
+        >
           <input
             id="owt-listenAddr"
             type="text"
@@ -251,7 +269,10 @@ export function DaemonCard({
           />
         </DaemonField>
 
-        <DaemonField label="Listen port" htmlFor="owt-listenPort">
+        <DaemonField
+          label={t("openwrt.daemon.listenPort")}
+          htmlFor="owt-listenPort"
+        >
           <input
             id="owt-listenPort"
             type="text"
@@ -264,7 +285,10 @@ export function DaemonCard({
           />
         </DaemonField>
 
-        <DaemonField label="HTTP proxy" htmlFor="owt-httpProxy">
+        <DaemonField
+          label={t("openwrt.daemon.httpProxy")}
+          htmlFor="owt-httpProxy"
+        >
           <input
             id="owt-httpProxy"
             type="text"
@@ -274,7 +298,10 @@ export function DaemonCard({
           />
         </DaemonField>
 
-        <DaemonField label="HTTPS proxy" htmlFor="owt-httpsProxy">
+        <DaemonField
+          label={t("openwrt.daemon.httpsProxy")}
+          htmlFor="owt-httpsProxy"
+        >
           <input
             id="owt-httpsProxy"
             type="text"
@@ -290,13 +317,13 @@ export function DaemonCard({
       <footer className="owt-daemon-card__footer">
         <span className="owt-daemon-card__footer-item">
           <span className="owt-daemon-card__footer-label">
-            luci-app-ccswitch
+            {t("openwrt.daemon.luciAppLabel")}
           </span>
           <span
             className="owt-daemon-card__footer-version"
-            title="luci-app-ccswitch version"
+            title={t("openwrt.daemon.luciAppVersion")}
           >
-            {appVersion}
+            {resolvedAppVersion}
           </span>
         </span>
         <span className="owt-daemon-card__footer-sep" aria-hidden="true">
@@ -304,11 +331,11 @@ export function DaemonCard({
         </span>
         <span className="owt-daemon-card__footer-item">
           <span className="owt-daemon-card__footer-label">
-            ccswitch daemon
+            {t("openwrt.daemon.daemonLabel")}
           </span>
           <span
             className="owt-daemon-card__footer-version"
-            title="ccswitch daemon version"
+            title={t("openwrt.daemon.daemonVersion")}
           >
             {resolvedDaemonVersion}
           </span>
