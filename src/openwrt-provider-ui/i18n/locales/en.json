@@ -2547,5 +2547,63 @@
     "expiredHint": "Run the {{tool}} command to refresh your login",
     "queryFailed": "Query failed",
     "refresh": "Refresh"
+  },
+  "openwrt": {
+    "providerPanel": {
+      "appSubtitles": {
+        "claude": "Anthropic · Claude Code",
+        "codex": "OpenAI · Codex CLI",
+        "gemini": "Google · Gemini CLI"
+      },
+      "active": "Active",
+      "newProvider": "New provider",
+      "providersDialogLabel": "{{app}} providers",
+      "routingModeAria": "{{app}} routing mode",
+      "normalModeTitle": "Manually use the selected active provider",
+      "normal": "Normal",
+      "failoverModeTitle": "Route through the ordered failover queue",
+      "failover": "Failover",
+      "closeProviderPanel": "Close provider panel",
+      "savedProviders": "Saved providers",
+      "searchProviderPlaceholder": "Search provider or endpoint",
+      "noProviders": "No providers yet. Create one from a preset or a custom draft.",
+      "noProviderSearchMatch": "No providers match “{{search}}”.",
+      "addProvider": "Add provider",
+      "notSavedYet": "Not saved yet",
+      "copyProviderId": "Copy provider ID {{providerId}}",
+      "copied": "Copied",
+      "removeFromFailoverQueue": "Remove {{provider}} from failover queue",
+      "addToFailoverQueue": "Add {{provider}} to failover queue",
+      "removeFromFailoverQueueTitle": "Remove from failover queue",
+      "addToFailoverQueueTitle": "Add to failover queue",
+      "setActive": "Set active",
+      "deleteProvider": "Delete provider",
+      "activitiesTab": "Activities",
+      "configureTab": "Configure",
+      "loadingWorkspace": "Loading provider workspace…",
+      "autoFailover": "Auto failover"
+    },
+    "presetTab": {
+      "filters": {
+        "official": "Official",
+        "openSource": "Open-source",
+        "aggregator": "Aggregator",
+        "thirdParty": "Third Party",
+        "universal": "Universal"
+      },
+      "customDescription": "Manually fill all necessary fields.",
+      "customMeta": "Manual endpoint and token configuration",
+      "noExtraNotes": "No extra notes provided.",
+      "selectedPresetFooter": "{{title}} · {{meta}}",
+      "noPresetSelected": "No preset selected · Choose a preset or Custom Configuration to continue",
+      "noPresetSearchMatch": "No presets match “{{search}}”.",
+      "noPresetFilterMatch": "No presets match the current filters.",
+      "subtitle": "Choose a preset, then continue editing the fields below.",
+      "searchPresetsAria": "Search presets",
+      "searchPresetsPlaceholder": "Search presets, provider, or URL",
+      "filterAria": "Preset category filter",
+      "presetsAria": "Provider presets",
+      "selectPreset": "Select preset"
+    }
   }
 }
