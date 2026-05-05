@@ -1326,7 +1326,6 @@ impl Database {
         Ok(())
     }
 
-<<<<<<< HEAD
     /// v10 -> v11：usage_daily_rollups 增加 request_model 维度（进入主键），
     /// proxy_request_logs 增加 pricing_model 列（写入时的计价基准，回填依据）。
     ///
