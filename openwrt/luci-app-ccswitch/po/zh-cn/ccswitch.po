@@ -1,0 +1,353 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: luci-app-cc-switch 0.2.0\n"
+"PO-Revision-Date: 2026-05-05 00:00+0800\n"
+"Last-Translator: Automatically generated\n"
+"Language-Team: Chinese (Simplified)\n"
+"Language: zh-cn\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+#. Menu title
+#: root/usr/share/luci/menu.d/luci-app-ccswitch.json:3
+msgid "CC Switch"
+msgstr "CC Switch"
+
+#. Preset labels and descriptions
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:49
+msgid "Claude Official"
+msgstr "Claude 官方"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:50
+msgid "Official Anthropic Claude endpoint. API key is optional — client credentials are forwarded automatically."
+msgstr "Anthropic 官方 Claude 端点。API Key 可不填 — 客户端凭证会自动转发。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:54
+msgid "DeepSeek Claude-compatible endpoint."
+msgstr "DeepSeek Claude 兼容端点。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:61
+msgid "Moonshot Kimi Claude-compatible endpoint."
+msgstr "Moonshot Kimi Claude 兼容端点。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:67
+msgid "MiniMax Claude-compatible endpoint."
+msgstr "MiniMax Claude 兼容端点。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:94
+msgid "OpenAI Official"
+msgstr "OpenAI 官方"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:95
+msgid "Official OpenAI endpoint. Choose either an API key or an uploaded auth.json for this provider."
+msgstr "OpenAI 官方端点。为此供应商选择 API Key 或上传 auth.json，二选一即可。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:99
+msgid "Azure OpenAI"
+msgstr "Azure OpenAI"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:100
+msgid "Azure OpenAI Codex endpoint template. Replace YOUR_RESOURCE_NAME before saving."
+msgstr "Azure OpenAI Codex 端点模板。保存前请替换 YOUR_RESOURCE_NAME。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:105
+msgid "PackyCode Codex-compatible endpoint."
+msgstr "PackyCode Codex 兼容端点。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:119
+msgid "OpenRouter Responses-compatible endpoint for Codex."
+msgstr "面向 Codex 的 OpenRouter Responses 兼容端点。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:124
+msgid "Google Official"
+msgstr "Google 官方"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:125
+msgid "Official Google Gemini API endpoint."
+msgstr "Google 官方 Gemini API 端点。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:128
+msgid "PackyCode Gemini-compatible endpoint."
+msgstr "PackyCode Gemini 兼容端点。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:137
+msgid "CTok Gemini-compatible endpoint."
+msgstr "CTok Gemini 兼容端点。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:140
+msgid "OpenRouter Gemini-compatible endpoint."
+msgstr "OpenRouter Gemini 兼容端点。"
+
+#. App metadata
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:151
+msgid "Claude Providers"
+msgstr "Claude 供应商"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:152
+msgid "Active Claude Provider"
+msgstr "当前 Claude 供应商"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:153
+msgid "Manage saved Claude-compatible providers for this router. Service settings, outbound proxy routing, and restart actions stay in LuCI."
+msgstr "管理此路由器上保存的 Claude 兼容供应商。服务设置、出站代理路由和重启操作仍保留在 LuCI 中。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:154
+msgid "Claude-compatible API endpoint."
+msgstr "Claude 兼容 API 端点。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:156
+msgid "Choose which Anthropic token env key this provider should use."
+msgstr "选择此供应商要使用的 Anthropic Token 环境变量键。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:157
+msgid "Token"
+msgstr "Token"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:159
+msgid "Optional. Leave blank to avoid a forced model override."
+msgstr "可选。留空可避免强制覆盖模型。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:160
+msgid "Optional model override"
+msgstr "可选模型覆盖"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:161
+msgid "The active Claude provider is ready to route traffic with the current outbound proxy settings."
+msgstr "当前 Claude 供应商已就绪，可使用现有出站代理设置路由流量。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:162
+msgid "Save a Claude-compatible provider below, then activate it when you are ready to route Claude traffic."
+msgstr "先在下方保存一个 Claude 兼容供应商，准备好路由 Claude 流量后再启用它。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:163
+msgid "Example: Claude Provider"
+msgstr "示例：Claude 供应商"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:164
+msgid "Display name for this Claude-compatible provider."
+msgstr "此 Claude 兼容供应商的显示名称。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:165
+msgid "Token is required for the first save."
+msgstr "首次保存需要 Token。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:171
+msgid "Codex Providers"
+msgstr "Codex 供应商"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:172
+msgid "Active Codex Provider"
+msgstr "当前 Codex 供应商"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:173
+msgid "Manage saved Codex / OpenAI Responses providers for this router. Service settings, outbound proxy routing, and restart actions stay in LuCI."
+msgstr "管理此路由器上保存的 Codex / OpenAI Responses 供应商。服务设置、出站代理路由和重启操作仍保留在 LuCI 中。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:174
+msgid "OpenAI-compatible Responses endpoint for Codex traffic."
+msgstr "面向 Codex 流量的 OpenAI 兼容 Responses 端点。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:176
+msgid "Codex providers use OPENAI_API_KEY."
+msgstr "Codex 供应商使用 OPENAI_API_KEY。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:177
+msgid "API Key"
+msgstr "API Key"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:179
+msgid "Optional. Leave blank to keep the current or default Codex model."
+msgstr "可选。留空则保持当前或默认 Codex 模型。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:181
+msgid "The active Codex provider is ready to route traffic with the current outbound proxy settings."
+msgstr "当前 Codex 供应商已就绪，可使用现有出站代理设置路由流量。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:182
+msgid "Save a Codex provider below, then activate it when you are ready to route Codex traffic."
+msgstr "先在下方保存一个 Codex 供应商，准备好路由 Codex 流量后再启用它。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:183
+msgid "Example: Codex Provider"
+msgstr "示例：Codex 供应商"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:184
+msgid "Display name for this Codex provider."
+msgstr "此 Codex 供应商的显示名称。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:185
+msgid "API key is required for the first save."
+msgstr "首次保存需要 API Key。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:191
+msgid "Gemini Providers"
+msgstr "Gemini 供应商"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:192
+msgid "Active Gemini Provider"
+msgstr "当前 Gemini 供应商"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:193
+msgid "Manage saved Gemini-compatible providers for this router. Service settings, outbound proxy routing, and restart actions stay in LuCI."
+msgstr "管理此路由器上保存的 Gemini 兼容供应商。服务设置、出站代理路由和重启操作仍保留在 LuCI 中。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:194
+msgid "Gemini-compatible API endpoint."
+msgstr "Gemini 兼容 API 端点。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:196
+msgid "Gemini providers use GEMINI_API_KEY. This can also hold OAuth access-token JSON when needed."
+msgstr "Gemini 供应商使用 GEMINI_API_KEY。需要时也可填写 OAuth 访问令牌 JSON。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:197
+msgid "Credential"
+msgstr "凭证"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:199
+msgid "Optional. Leave blank to keep the current or default Gemini model."
+msgstr "可选。留空则保持当前或默认 Gemini 模型。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:201
+msgid "The active Gemini provider is ready to route traffic with the current outbound proxy settings."
+msgstr "当前 Gemini 供应商已就绪，可使用现有出站代理设置路由流量。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:202
+msgid "Save a Gemini provider below, then activate it when you are ready to route Gemini traffic."
+msgstr "先在下方保存一个 Gemini 供应商，准备好路由 Gemini 流量后再启用它。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:203
+msgid "Example: Gemini Provider"
+msgstr "示例：Gemini 供应商"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:204
+msgid "Display name for this Gemini provider."
+msgstr "此 Gemini 供应商的显示名称。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:205
+msgid "Credential is required for the first save."
+msgstr "首次保存需要凭证。"
+
+#. Preset picker
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:904
+msgid "Preset selected. You can still adjust the fields below before saving."
+msgstr "已选择预设。保存前你仍可调整下方字段。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:905
+msgid "Use a preset to prefill the fields below. You can continue editing after selection."
+msgstr "使用预设预填下方字段。选择后仍可继续编辑。"
+
+#. Host and RPC status
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1209
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1528
+msgid "Failed to save host settings."
+msgstr "保存主机设置失败。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1282
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1300
+msgid "Router daemon"
+msgstr "路由器守护进程"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1434
+msgid "Failed to load usage summary."
+msgstr "加载用量摘要失败。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1445
+msgid "Failed to load provider stats."
+msgstr "加载供应商统计失败。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1456
+msgid "Failed to load recent activity."
+msgstr "加载最近活动失败。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1465
+msgid "Failed to load quota."
+msgstr "加载额度失败。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1478
+msgid "Failed to load request logs."
+msgstr "加载请求日志失败。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1488
+msgid "Request ID is required."
+msgstr "需要请求 ID。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1492
+msgid "Failed to load request detail."
+msgstr "加载请求详情失败。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1508
+msgid "Saving host settings..."
+msgstr "主机设置保存中…"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1521
+msgid "Host settings saved. Restart service to apply changes."
+msgstr "主机设置已保存。重启服务后生效。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1522
+msgid "Host settings saved."
+msgstr "主机设置已保存。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1537
+msgid "Restarting service..."
+msgstr "服务重启中…"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1542
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1555
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:2613
+msgid "Failed to restart service."
+msgstr "重启服务失败。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1547
+msgid "Service restarted."
+msgstr "服务已重启。"
+
+#. Native host page shell
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:2408
+msgid "OpenWrt Host Shell"
+msgstr "OpenWrt 主机 Shell"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:2409
+msgid "Router Host Controls"
+msgstr "路由器主机控制"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:2410
+msgid "Keep truthful router-backed service settings, service status, and restart actions in LuCI. The provider workspace is isolated below as the main product surface."
+msgstr "将真实的路由器服务设置、服务状态和重启操作保留在 LuCI 中。供应商工作区已隔离在下方，作为主要产品界面。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:2570
+msgid "The Phase 2 provider save RPC is not available in this build."
+msgstr "当前构建不提供 Phase 2 供应商保存 RPC。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:2595
+msgid "The Phase 2 provider delete RPC is not available in this build."
+msgstr "当前构建不提供 Phase 2 供应商删除 RPC。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:2604
+msgid "The Phase 2 provider activate RPC is not available in this build."
+msgstr "当前构建不提供 Phase 2 供应商启用 RPC。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:2856
+msgid "The shared provider bundle did not register a mount API."
+msgstr "共享供应商前端包未注册挂载 API。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:2868
+msgid "The shared provider bundle could not be loaded from "
+msgstr "无法从以下路径加载共享供应商前端包："
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:2903
+msgid "Loading the OpenWrt-native workspace..."
+msgstr "OpenWrt 原生工作区加载中…"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:2911
+msgid "The shared provider bundle did not register a page-shell mount API."
+msgstr "共享供应商前端包未注册页面外壳挂载 API。"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:2931
+msgid "Native page shell unavailable"
+msgstr "原生页面外壳不可用"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:2932
+msgid "The OpenWrt-native page shell failed to load. Reinstall the package or refresh the page after updating the browser bundle."
+msgstr "OpenWrt 原生页面外壳加载失败。请重新安装软件包，或在更新浏览器端 bundle 后刷新页面。"
