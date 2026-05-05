@@ -1,0 +1,352 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: luci-app-cc-switch 0.2.0\n"
+"PO-Revision-Date: 2026-05-05 00:00+0800\n"
+"Last-Translator: Automatically generated\n"
+"Language-Team: English\n"
+"Language: en\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#. Menu title
+#: root/usr/share/luci/menu.d/luci-app-ccswitch.json:3
+msgid "CC Switch"
+msgstr "CC Switch"
+
+#. Preset labels and descriptions
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:49
+msgid "Claude Official"
+msgstr "Claude Official"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:50
+msgid "Official Anthropic Claude endpoint. API key is optional — client credentials are forwarded automatically."
+msgstr "Official Anthropic Claude endpoint. API key is optional — client credentials are forwarded automatically."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:54
+msgid "DeepSeek Claude-compatible endpoint."
+msgstr "DeepSeek Claude-compatible endpoint."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:61
+msgid "Moonshot Kimi Claude-compatible endpoint."
+msgstr "Moonshot Kimi Claude-compatible endpoint."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:67
+msgid "MiniMax Claude-compatible endpoint."
+msgstr "MiniMax Claude-compatible endpoint."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:94
+msgid "OpenAI Official"
+msgstr "OpenAI Official"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:95
+msgid "Official OpenAI endpoint. Choose either an API key or an uploaded auth.json for this provider."
+msgstr "Official OpenAI endpoint. Choose either an API key or an uploaded auth.json for this provider."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:99
+msgid "Azure OpenAI"
+msgstr "Azure OpenAI"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:100
+msgid "Azure OpenAI Codex endpoint template. Replace YOUR_RESOURCE_NAME before saving."
+msgstr "Azure OpenAI Codex endpoint template. Replace YOUR_RESOURCE_NAME before saving."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:105
+msgid "PackyCode Codex-compatible endpoint."
+msgstr "PackyCode Codex-compatible endpoint."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:119
+msgid "OpenRouter Responses-compatible endpoint for Codex."
+msgstr "OpenRouter Responses-compatible endpoint for Codex."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:124
+msgid "Google Official"
+msgstr "Google Official"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:125
+msgid "Official Google Gemini API endpoint."
+msgstr "Official Google Gemini API endpoint."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:128
+msgid "PackyCode Gemini-compatible endpoint."
+msgstr "PackyCode Gemini-compatible endpoint."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:137
+msgid "CTok Gemini-compatible endpoint."
+msgstr "CTok Gemini-compatible endpoint."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:140
+msgid "OpenRouter Gemini-compatible endpoint."
+msgstr "OpenRouter Gemini-compatible endpoint."
+
+#. App metadata
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:151
+msgid "Claude Providers"
+msgstr "Claude Providers"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:152
+msgid "Active Claude Provider"
+msgstr "Active Claude Provider"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:153
+msgid "Manage saved Claude-compatible providers for this router. Service settings, outbound proxy routing, and restart actions stay in LuCI."
+msgstr "Manage saved Claude-compatible providers for this router. Service settings, outbound proxy routing, and restart actions stay in LuCI."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:154
+msgid "Claude-compatible API endpoint."
+msgstr "Claude-compatible API endpoint."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:156
+msgid "Choose which Anthropic token env key this provider should use."
+msgstr "Choose which Anthropic token env key this provider should use."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:157
+msgid "Token"
+msgstr "Token"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:159
+msgid "Optional. Leave blank to avoid a forced model override."
+msgstr "Optional. Leave blank to avoid a forced model override."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:160
+msgid "Optional model override"
+msgstr "Optional model override"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:161
+msgid "The active Claude provider is ready to route traffic with the current outbound proxy settings."
+msgstr "The active Claude provider is ready to route traffic with the current outbound proxy settings."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:162
+msgid "Save a Claude-compatible provider below, then activate it when you are ready to route Claude traffic."
+msgstr "Save a Claude-compatible provider below, then activate it when you are ready to route Claude traffic."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:163
+msgid "Example: Claude Provider"
+msgstr "Example: Claude Provider"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:164
+msgid "Display name for this Claude-compatible provider."
+msgstr "Display name for this Claude-compatible provider."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:165
+msgid "Token is required for the first save."
+msgstr "Token is required for the first save."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:171
+msgid "Codex Providers"
+msgstr "Codex Providers"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:172
+msgid "Active Codex Provider"
+msgstr "Active Codex Provider"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:173
+msgid "Manage saved Codex / OpenAI Responses providers for this router. Service settings, outbound proxy routing, and restart actions stay in LuCI."
+msgstr "Manage saved Codex / OpenAI Responses providers for this router. Service settings, outbound proxy routing, and restart actions stay in LuCI."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:174
+msgid "OpenAI-compatible Responses endpoint for Codex traffic."
+msgstr "OpenAI-compatible Responses endpoint for Codex traffic."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:176
+msgid "Codex providers use OPENAI_API_KEY."
+msgstr "Codex providers use OPENAI_API_KEY."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:177
+msgid "API Key"
+msgstr "API Key"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:179
+msgid "Optional. Leave blank to keep the current or default Codex model."
+msgstr "Optional. Leave blank to keep the current or default Codex model."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:181
+msgid "The active Codex provider is ready to route traffic with the current outbound proxy settings."
+msgstr "The active Codex provider is ready to route traffic with the current outbound proxy settings."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:182
+msgid "Save a Codex provider below, then activate it when you are ready to route Codex traffic."
+msgstr "Save a Codex provider below, then activate it when you are ready to route Codex traffic."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:183
+msgid "Example: Codex Provider"
+msgstr "Example: Codex Provider"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:184
+msgid "Display name for this Codex provider."
+msgstr "Display name for this Codex provider."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:185
+msgid "API key is required for the first save."
+msgstr "API key is required for the first save."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:191
+msgid "Gemini Providers"
+msgstr "Gemini Providers"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:192
+msgid "Active Gemini Provider"
+msgstr "Active Gemini Provider"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:193
+msgid "Manage saved Gemini-compatible providers for this router. Service settings, outbound proxy routing, and restart actions stay in LuCI."
+msgstr "Manage saved Gemini-compatible providers for this router. Service settings, outbound proxy routing, and restart actions stay in LuCI."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:194
+msgid "Gemini-compatible API endpoint."
+msgstr "Gemini-compatible API endpoint."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:196
+msgid "Gemini providers use GEMINI_API_KEY. This can also hold OAuth access-token JSON when needed."
+msgstr "Gemini providers use GEMINI_API_KEY. This can also hold OAuth access-token JSON when needed."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:197
+msgid "Credential"
+msgstr "Credential"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:199
+msgid "Optional. Leave blank to keep the current or default Gemini model."
+msgstr "Optional. Leave blank to keep the current or default Gemini model."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:201
+msgid "The active Gemini provider is ready to route traffic with the current outbound proxy settings."
+msgstr "The active Gemini provider is ready to route traffic with the current outbound proxy settings."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:202
+msgid "Save a Gemini provider below, then activate it when you are ready to route Gemini traffic."
+msgstr "Save a Gemini provider below, then activate it when you are ready to route Gemini traffic."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:203
+msgid "Example: Gemini Provider"
+msgstr "Example: Gemini Provider"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:204
+msgid "Display name for this Gemini provider."
+msgstr "Display name for this Gemini provider."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:205
+msgid "Credential is required for the first save."
+msgstr "Credential is required for the first save."
+
+#. Preset picker
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:904
+msgid "Preset selected. You can still adjust the fields below before saving."
+msgstr "Preset selected. You can still adjust the fields below before saving."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:905
+msgid "Use a preset to prefill the fields below. You can continue editing after selection."
+msgstr "Use a preset to prefill the fields below. You can continue editing after selection."
+
+#. Host and RPC status
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1209
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1528
+msgid "Failed to save host settings."
+msgstr "Failed to save host settings."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1282
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1300
+msgid "Router daemon"
+msgstr "Router daemon"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1434
+msgid "Failed to load usage summary."
+msgstr "Failed to load usage summary."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1445
+msgid "Failed to load provider stats."
+msgstr "Failed to load provider stats."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1456
+msgid "Failed to load recent activity."
+msgstr "Failed to load recent activity."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1465
+msgid "Failed to load quota."
+msgstr "Failed to load quota."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1478
+msgid "Failed to load request logs."
+msgstr "Failed to load request logs."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1488
+msgid "Request ID is required."
+msgstr "Request ID is required."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1492
+msgid "Failed to load request detail."
+msgstr "Failed to load request detail."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1508
+msgid "Saving host settings..."
+msgstr "Saving host settings..."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1521
+msgid "Host settings saved. Restart service to apply changes."
+msgstr "Host settings saved. Restart service to apply changes."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1522
+msgid "Host settings saved."
+msgstr "Host settings saved."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1537
+msgid "Restarting service..."
+msgstr "Restarting service..."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1542
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1555
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:2613
+msgid "Failed to restart service."
+msgstr "Failed to restart service."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:1547
+msgid "Service restarted."
+msgstr "Service restarted."
+
+#. Native host page shell
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:2408
+msgid "OpenWrt Host Shell"
+msgstr "OpenWrt Host Shell"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:2409
+msgid "Router Host Controls"
+msgstr "Router Host Controls"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:2410
+msgid "Keep truthful router-backed service settings, service status, and restart actions in LuCI. The provider workspace is isolated below as the main product surface."
+msgstr "Keep truthful router-backed service settings, service status, and restart actions in LuCI. The provider workspace is isolated below as the main product surface."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:2570
+msgid "The Phase 2 provider save RPC is not available in this build."
+msgstr "The Phase 2 provider save RPC is not available in this build."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:2595
+msgid "The Phase 2 provider delete RPC is not available in this build."
+msgstr "The Phase 2 provider delete RPC is not available in this build."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:2604
+msgid "The Phase 2 provider activate RPC is not available in this build."
+msgstr "The Phase 2 provider activate RPC is not available in this build."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:2856
+msgid "The shared provider bundle did not register a mount API."
+msgstr "The shared provider bundle did not register a mount API."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:2868
+msgid "The shared provider bundle could not be loaded from "
+msgstr "The shared provider bundle could not be loaded from "
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:2903
+msgid "Loading the OpenWrt-native workspace..."
+msgstr "Loading the OpenWrt-native workspace..."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:2911
+msgid "The shared provider bundle did not register a page-shell mount API."
+msgstr "The shared provider bundle did not register a page-shell mount API."
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:2931
+msgid "Native page shell unavailable"
+msgstr "Native page shell unavailable"
+
+#: htdocs/luci-static/resources/view/ccswitch/settings.js:2932
+msgid "The OpenWrt-native page shell failed to load. Reinstall the package or refresh the page after updating the browser bundle."
+msgstr "The OpenWrt-native page shell failed to load. Reinstall the package or refresh the page after updating the browser bundle."
