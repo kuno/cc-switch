@@ -585,11 +585,26 @@ async fn build_app_status(
 
     let mut provider_views = BTreeMap::new();
     for provider in providers.values() {
+        let settings = provider.settings_config.as_object();
+        let base_url = settings
+            .and_then(|o| o.get("base_url").or_else(|| o.get("baseURL")))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let token_field = settings
+            .and_then(|o| o.get("tokenField").or_else(|| o.get("token_field")))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         provider_views.insert(
             provider.id.clone(),
             ApiStatusProvider {
                 name: provider.name.clone(),
                 configured: true,
+                base_url,
+                icon: provider.icon.clone(),
+                icon_color: provider.icon_color.clone(),
+                token_field,
                 stats: build_provider_stats(provider_stats.get(&provider.id)),
                 quota: build_provider_quota(snapshots.rate_limits.get(&provider.id)),
             },
@@ -2112,6 +2127,45 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
         assert!(app.failover_status["p1"]
             .unavailable_reasons
             .contains(&"not_active_in_normal_mode".to_string()));
+    }
+
+    #[tokio::test]
+    async fn api_status_provider_view_includes_endpoint_and_icon_metadata() {
+        let db = Arc::new(Database::memory().expect("db"));
+        let mut provider = Provider::with_id(
+            "p_meta".to_string(),
+            "Provider Metadata".to_string(),
+            json!({
+                "base_url": "https://example.test/v1",
+                "tokenField": "apiKey"
+            }),
+            None,
+        );
+        provider.icon = Some("custom-provider".to_string());
+        provider.icon_color = Some("#336699".to_string());
+        db.save_provider("claude", &provider).expect("save provider");
+        db.set_current_provider("claude", "p_meta")
+            .expect("set current");
+        set_proxy_flags(&db, "claude", true, false).await;
+
+        let state = test_proxy_state(db);
+        let response = status_response(&state).await;
+        let app = response.apps.get("claude").expect("claude app");
+        let provider_view = app.providers.get("p_meta").expect("provider view");
+
+        assert_eq!(provider_view.base_url, "https://example.test/v1");
+        assert_eq!(provider_view.icon.as_deref(), Some("custom-provider"));
+        assert_eq!(provider_view.icon_color.as_deref(), Some("#336699"));
+        assert_eq!(provider_view.token_field, "apiKey");
+
+        let serialized = serde_json::to_value(provider_view).expect("serialize provider view");
+        assert_eq!(serialized["baseUrl"], "https://example.test/v1");
+        assert_eq!(serialized["icon"], "custom-provider");
+        assert_eq!(serialized["iconColor"], "#336699");
+        assert_eq!(serialized["tokenField"], "apiKey");
+        assert!(serialized.get("base_url").is_none());
+        assert!(serialized.get("icon_color").is_none());
+        assert!(serialized.get("token_field").is_none());
     }
 
     #[tokio::test]
