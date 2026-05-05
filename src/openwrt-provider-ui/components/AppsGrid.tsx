@@ -1,4 +1,6 @@
+import type { TFunction } from "i18next";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { createOpenWrtProviderAdapter } from "@/platform/openwrt/providers";
 import type {
   ProviderPlatformAdapter,
@@ -87,10 +89,10 @@ function createInitialCard(appId: OpenWrtHomeAppId): AppGridData {
   };
 }
 
-function getErrorMessage(error: unknown): string {
+function getErrorMessage(error: unknown, t: TFunction): string {
   if (error instanceof Error) return error.message;
   if (typeof error === "string" && error.trim()) return error;
-  return "Router data is unavailable right now.";
+  return t("openwrt.appsGrid.routerDataUnavailable");
 }
 
 function sortRecentActivity(
@@ -102,6 +104,7 @@ function sortRecentActivity(
 async function loadCardData(
   options: OpenWrtSharedPageMountOptions,
   appId: OpenWrtHomeAppId,
+  t: TFunction,
 ): Promise<AppGridLoadResult> {
   if (isInertHomeAppId(appId)) {
     return {
@@ -169,7 +172,7 @@ async function loadCardData(
     .filter(
       (result): result is PromiseRejectedResult => result.status === "rejected",
     )
-    .map((result) => getErrorMessage(result.reason));
+    .map((result) => getErrorMessage(result.reason, t));
 
   return {
     card: {
@@ -456,6 +459,7 @@ export function AppsGrid({
   onOpenProviderPanel,
   providerMutationVersion = 0,
 }: AppsGridProps) {
+  const { t } = useTranslation();
   const [cards, setCards] = useState<AppGridData[]>(() =>
     APP_OPTIONS.map(createInitialCard),
   );
@@ -492,7 +496,7 @@ export function AppsGrid({
     }));
     try {
       await adapter.setAutoFailoverEnabled(appId, enabled);
-      const nextResult = await loadCardData(options, appId);
+      const nextResult = await loadCardData(options, appId, t);
 
       setCards((currentCards) =>
         currentCards.map((card) =>
@@ -556,7 +560,7 @@ export function AppsGrid({
     }));
     try {
       await adapter.reorderProviders(appId, nextProviderIds);
-      const nextResult = await loadCardData(options, appId);
+      const nextResult = await loadCardData(options, appId, t);
 
       setCards((currentCards) =>
         currentCards.map((card) =>
@@ -582,7 +586,7 @@ export function AppsGrid({
     }
 
     void Promise.all([
-      Promise.all(APP_OPTIONS.map((appId) => loadCardData(options, appId))),
+      Promise.all(APP_OPTIONS.map((appId) => loadCardData(options, appId, t))),
       loadQuotaByProviderId(options.shell),
     ]).then(([nextResults, quotaMap]) => {
       if (cancelled) return;
@@ -609,7 +613,7 @@ export function AppsGrid({
     return () => {
       cancelled = true;
     };
-  }, [options, providerMutationVersion]);
+  }, [options, providerMutationVersion, t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -781,7 +785,12 @@ export function AppsGrid({
   const settledGridItems = [
     ...configured.map(renderCard),
     ...(unconfigured.length > 0
-      ? [<GroupHeader key="group-header-unconfigured" label="Not configured" />]
+      ? [
+          <GroupHeader
+            key="group-header-unconfigured"
+            label={t("openwrt.appsGrid.notConfigured")}
+          />,
+        ]
       : []),
     ...unconfigured.map(renderCard),
     ...(settledCards.length % 2 === 1
