@@ -626,7 +626,10 @@ function normalizeFailoverState(
       providerId: activeProviderId,
       proxyEnabled: getBoolean(app, ["proxyEnabled", "proxy_enabled"]) ?? false,
       autoFailoverEnabled: mode === "failover",
-      maxRetries: getNumber(app, ["maxRetries", "max_retries"]) ?? 0,
+      maxRetries:
+        typeof app.maxRetries === "number"
+          ? app.maxRetries
+          : (getNumber(app, ["max_retries"]) ?? 0),
       activeProviderId,
       inFailoverQueue:
         statusProviderIsQueued(activeProviderStatus) || queueIndex >= 0,

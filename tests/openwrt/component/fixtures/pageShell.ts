@@ -680,6 +680,7 @@ function createStatusResponse(
             proxyEnabled: true,
             health: true,
             healthReason: null,
+            maxRetries: 3,
             usage: usageSummary[appId],
             activeProvider: activeProvider.configured
               ? {

@@ -399,6 +399,12 @@ var callGetQuota = rpc.declare({
 	expect: { '': {} }
 });
 
+var callGetStatus = rpc.declare({
+	object: 'ccswitch',
+	method: 'get_status',
+	expect: { '': {} }
+});
+
 var callGetRequestLogs = rpc.declare({
 	object: 'ccswitch',
 	method: 'get_request_logs',
@@ -580,8 +586,12 @@ function daemonAdminOrFallback(apiCall, fallbackCall) {
 }
 
 function callOpenWrtStatus() {
-	return callDaemonApiJson('/api/status', {
-		timeoutMs: 5000
+	return daemonAdminOrFallback(function () {
+		return callDaemonApiJson('/api/status', {
+			timeoutMs: 5000
+		});
+	}, function () {
+		return L.resolveDefault(callGetStatus(), { ok: false });
 	});
 }
 

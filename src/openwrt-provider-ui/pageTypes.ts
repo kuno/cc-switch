@@ -199,7 +199,7 @@ export interface OpenWrtStatusApp {
   health?: boolean | null;
   healthReason?: string | null;
   health_reason?: string | null;
-  maxRetries?: number;
+  maxRetries: number;
   max_retries?: number;
   usage?: (Partial<OpenWrtUsageSummary> & { window?: unknown }) | null;
   activeProvider?: OpenWrtStatusActiveProvider | null;

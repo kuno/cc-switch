@@ -1066,6 +1066,7 @@ describe("OpenWrt provider UI bundle", () => {
             proxyEnabled: true,
             health: true,
             healthReason: null,
+            maxRetries: 3,
             usage: {
               totalRequests: 12,
               totalCost: "1.23",
@@ -1130,6 +1131,7 @@ describe("OpenWrt provider UI bundle", () => {
             proxyEnabled: true,
             health: true,
             healthReason: null,
+            maxRetries: 3,
             usage: {
               totalRequests: 0,
               totalCost: "0",
@@ -1149,6 +1151,7 @@ describe("OpenWrt provider UI bundle", () => {
             proxyEnabled: true,
             health: true,
             healthReason: null,
+            maxRetries: 3,
             usage: {
               totalRequests: 0,
               totalCost: "0",
@@ -1303,11 +1306,10 @@ describe("OpenWrt provider UI bundle", () => {
       logLevel: "debug",
     });
 
-    for (const appId of ["claude", "codex", "gemini"] as const) {
-      expect(shell.getUsageSummary).toHaveBeenCalledWith(appId);
-      expect(shell.getProviderStats).toHaveBeenCalledWith(appId);
-      expect(shell.getRecentActivity).toHaveBeenCalledWith(appId);
-    }
+    expect(shell.getStatus).toHaveBeenCalled();
+    expect(shell.getUsageSummary).not.toHaveBeenCalled();
+    expect(shell.getProviderStats).not.toHaveBeenCalled();
+    expect(shell.getRecentActivity).not.toHaveBeenCalled();
 
     await act(async () => {
       fireEvent.click(
@@ -1639,6 +1641,7 @@ describe("OpenWrt provider UI bundle", () => {
             proxyEnabled: true,
             health: true,
             healthReason: null,
+            maxRetries: 3,
             usage: {
               totalRequests: 0,
               totalCost: "0",
@@ -1684,6 +1687,7 @@ describe("OpenWrt provider UI bundle", () => {
             proxyEnabled: true,
             health: true,
             healthReason: null,
+            maxRetries: 3,
             usage: {
               totalRequests: 0,
               totalCost: "0",
@@ -1703,6 +1707,7 @@ describe("OpenWrt provider UI bundle", () => {
             proxyEnabled: true,
             health: true,
             healthReason: null,
+            maxRetries: 3,
             usage: {
               totalRequests: 0,
               totalCost: "0",

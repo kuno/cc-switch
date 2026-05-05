@@ -304,6 +304,7 @@ function createDefaultStatusResponse(
             proxyEnabled: true,
             health: true,
             healthReason: null,
+            maxRetries: 3,
             usage: options.usageSummary?.[appId] ?? DEFAULT_USAGE_SUMMARY,
             activeProvider: {
               providerId: provider.providerId,

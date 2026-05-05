@@ -613,6 +613,7 @@ async fn build_app_status(
         proxy_enabled: config.enabled,
         health,
         health_reason,
+        max_retries: config.max_retries,
         usage,
         active_provider,
         providers: provider_views,

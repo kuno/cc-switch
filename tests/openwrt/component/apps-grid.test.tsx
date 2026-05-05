@@ -1,7 +1,11 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi, type Mock } from "vitest";
-import type { OpenWrtHostState } from "@/openwrt-provider-ui/pageTypes";
+import type {
+  OpenWrtHostState,
+  OpenWrtStatusResponse,
+  OpenWrtUsageSummary,
+} from "@/openwrt-provider-ui/pageTypes";
 import type { OpenWrtProviderTransport } from "@/platform/openwrt/providers";
 import {
   APP_OPTIONS,
@@ -9,20 +13,12 @@ import {
 } from "@/openwrt-provider-ui/components/AppsGrid";
 import type { SharedProviderAppId } from "@/shared/providers/domain";
 import {
-  createProviderListResponse,
   createProviderTransportFixture,
   createUsageSummary,
   OPENWRT_APP_IDS,
 } from "../fixtures/openwrtProviderUi";
-import {
-  createProviderState,
-  createProviderView,
-} from "../provider-panel-fixtures";
 import { createBridgeFixture, DEFAULT_HOST_STATE } from "./fixtures/bridge";
-import {
-  createDeferred,
-  createProviderTransportFixture as createMutableProviderTransportFixture,
-} from "./fixtures/providerTransport";
+import { createDeferred } from "./fixtures/providerTransport";
 
 type RenderAppsGridOptions = {
   bridge?: ReturnType<typeof createBridgeFixture>;
@@ -114,6 +110,97 @@ function mockVisibilityState(
   };
 }
 
+const STATUS_APP_META: Record<
+  SharedProviderAppId,
+  { label: string; baseUrl: string; tokenField: string }
+> = {
+  claude: {
+    label: "Claude",
+    baseUrl: "https://claude.example.com/v1",
+    tokenField: "ANTHROPIC_AUTH_TOKEN",
+  },
+  codex: {
+    label: "Codex",
+    baseUrl: "https://api.openai.com/v1",
+    tokenField: "OPENAI_API_KEY",
+  },
+  gemini: {
+    label: "Gemini",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+    tokenField: "GEMINI_API_KEY",
+  },
+};
+
+function createStatusResponse(
+  options: {
+    configuredApps?: Partial<Record<SharedProviderAppId, boolean>>;
+    usageSummary?: Partial<Record<SharedProviderAppId, OpenWrtUsageSummary>>;
+  } = {},
+): OpenWrtStatusResponse {
+  return {
+    daemon: {
+      health: true,
+      running: true,
+      uptimeSeconds: 3600,
+      lastError: null,
+      checkedAt: "2026-04-22T00:00:00.000Z",
+    },
+    apps: Object.fromEntries(
+      OPENWRT_APP_IDS.map((appId) => {
+        const providerId = `${appId}-primary`;
+        const providerName = `${STATUS_APP_META[appId].label} Primary`;
+        const configured = options.configuredApps?.[appId] ?? true;
+
+        return [
+          appId,
+          {
+            mode: "normal",
+            proxyEnabled: true,
+            health: configured ? true : null,
+            healthReason: configured ? "ok" : "no_provider_configured",
+            maxRetries: 3,
+            usage: options.usageSummary?.[appId] ?? createUsageSummary(),
+            activeProvider: configured
+              ? {
+                  providerId,
+                  name: providerName,
+                }
+              : null,
+            providers: configured
+              ? {
+                  [providerId]: {
+                    providerId,
+                    name: providerName,
+                    configured: true,
+                    active: true,
+                    baseUrl: STATUS_APP_META[appId].baseUrl,
+                    tokenField: STATUS_APP_META[appId].tokenField,
+                    tokenConfigured: true,
+                    tokenMasked: "sk-****",
+                    stats: null,
+                    quota: null,
+                    health: {
+                      providerId,
+                      observed: true,
+                      healthy: true,
+                      consecutiveFailures: 0,
+                      lastSuccessAt: null,
+                      lastFailureAt: null,
+                      lastError: null,
+                      updatedAt: null,
+                    },
+                  },
+                }
+              : {},
+            failoverQueue: [],
+            failoverStatus: {},
+          },
+        ];
+      }),
+    ) as OpenWrtStatusResponse["apps"],
+  };
+}
+
 async function flushMicrotasks() {
   await act(async () => {
     await Promise.resolve();
@@ -198,7 +285,7 @@ describe("AppsGrid", () => {
     expect(setSelectedApp).toHaveBeenCalledWith("codex");
   });
 
-  it("renders five home cards while still fetching only the supported three backend apps", async () => {
+  it("renders five home cards while fetching one backend status snapshot", async () => {
     const transport = createProviderTransportFixture();
     const listProvidersSpy = vi.spyOn(transport, "listProviders");
     const weirdHostState = {
@@ -211,13 +298,14 @@ describe("AppsGrid", () => {
         getSelectedApp: vi.fn(() => "hermes" as unknown as SharedProviderAppId),
       },
     });
+    const getStatus = bridge.getStatus as unknown as Mock;
     const { container } = renderAppsGrid({
       bridge,
       transport,
     });
 
     await waitFor(() => {
-      expect(listProvidersSpy).toHaveBeenCalledTimes(OPENWRT_APP_IDS.length);
+      expect(getStatus).toHaveBeenCalledTimes(1);
     });
 
     expect(
@@ -231,9 +319,7 @@ describe("AppsGrid", () => {
     expect(
       screen.getByRole("button", { name: "OpenClaw not configured" }),
     ).toHaveAttribute("aria-disabled", "true");
-    expect(listProvidersSpy.mock.calls.map(([appId]) => appId)).toEqual(
-      OPENWRT_APP_IDS,
-    );
+    expect(listProvidersSpy).not.toHaveBeenCalled();
     expect(
       Array.from(
         container.querySelectorAll<HTMLElement>(".owt-app-card[data-app]"),
@@ -279,6 +365,7 @@ describe("AppsGrid", () => {
     const listProvidersSpy = vi.spyOn(transport, "listProviders");
     const listSavedProvidersSpy = vi.spyOn(transport, "listSavedProviders");
     const getActiveProviderSpy = vi.spyOn(transport, "getActiveProvider");
+    const getStatus = bridge.getStatus as unknown as Mock;
     const getUsageSummary = bridge.getUsageSummary as unknown as Mock;
     const getProviderStats = bridge.getProviderStats as unknown as Mock;
     const getRecentActivity = bridge.getRecentActivity as unknown as Mock;
@@ -286,27 +373,15 @@ describe("AppsGrid", () => {
     renderAppsGrid({ bridge, transport });
 
     await waitFor(() => {
-      expect(listProvidersSpy).toHaveBeenCalledTimes(OPENWRT_APP_IDS.length);
+      expect(getStatus).toHaveBeenCalledTimes(1);
     });
 
-    expect(listProvidersSpy.mock.calls.map(([appId]) => appId)).toEqual(
-      OPENWRT_APP_IDS,
-    );
-    expect(listSavedProvidersSpy.mock.calls.map(([appId]) => appId)).toEqual(
-      OPENWRT_APP_IDS,
-    );
-    expect(getActiveProviderSpy.mock.calls.map(([appId]) => appId)).toEqual(
-      OPENWRT_APP_IDS,
-    );
-    expect(getUsageSummary.mock.calls.map(([appId]) => appId)).toEqual(
-      OPENWRT_APP_IDS,
-    );
-    expect(getProviderStats.mock.calls.map(([appId]) => appId)).toEqual(
-      OPENWRT_APP_IDS,
-    );
-    expect(getRecentActivity.mock.calls.map(([appId]) => appId)).toEqual(
-      OPENWRT_APP_IDS,
-    );
+    expect(listProvidersSpy).not.toHaveBeenCalled();
+    expect(listSavedProvidersSpy).not.toHaveBeenCalled();
+    expect(getActiveProviderSpy).not.toHaveBeenCalled();
+    expect(getUsageSummary).not.toHaveBeenCalled();
+    expect(getProviderStats).not.toHaveBeenCalled();
+    expect(getRecentActivity).not.toHaveBeenCalled();
   });
 
   it("does not open the provider panel from inert placeholder card clicks", async () => {
@@ -328,7 +403,7 @@ describe("AppsGrid", () => {
     expect(onOpenProviderPanel).not.toHaveBeenCalled();
   });
 
-  it("polls usage summaries once per app every 10 seconds", async () => {
+  it("polls the aggregate status snapshot every 60 seconds", async () => {
     vi.useFakeTimers();
     const bridge = createBridgeFixture();
     renderAppsGrid({ bridge });
@@ -338,18 +413,15 @@ describe("AppsGrid", () => {
       screen.getByRole("button", { name: "Open Claude providers" }),
     ).toBeInTheDocument();
 
-    const getUsageSummary = bridge.getUsageSummary as unknown as Mock;
-    getUsageSummary.mockClear();
+    const getStatus = bridge.getStatus as unknown as Mock;
+    getStatus.mockClear();
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(60_000);
     });
     await flushMicrotasks();
 
-    expect(getUsageSummary).toHaveBeenCalledTimes(OPENWRT_APP_IDS.length);
-    expect(getUsageSummary.mock.calls.map(([appId]) => appId)).toEqual(
-      OPENWRT_APP_IDS,
-    );
+    expect(getStatus).toHaveBeenCalledTimes(1);
   });
 
   it("pauses polling while the page is hidden and refetches immediately when visible again", async () => {
@@ -363,8 +435,8 @@ describe("AppsGrid", () => {
       screen.getByRole("button", { name: "Open Claude providers" }),
     ).toBeInTheDocument();
 
-    const getUsageSummary = bridge.getUsageSummary as unknown as Mock;
-    getUsageSummary.mockClear();
+    const getStatus = bridge.getStatus as unknown as Mock;
+    getStatus.mockClear();
 
     visibility.set("hidden");
     act(() => {
@@ -375,7 +447,7 @@ describe("AppsGrid", () => {
       await vi.advanceTimersByTimeAsync(30_000);
     });
 
-    expect(getUsageSummary).not.toHaveBeenCalled();
+    expect(getStatus).not.toHaveBeenCalled();
 
     visibility.set("visible");
     act(() => {
@@ -383,27 +455,30 @@ describe("AppsGrid", () => {
     });
     await flushMicrotasks();
 
-    expect(getUsageSummary).toHaveBeenCalledTimes(OPENWRT_APP_IDS.length);
+    expect(getStatus).toHaveBeenCalledTimes(1);
 
-    getUsageSummary.mockClear();
+    getStatus.mockClear();
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(60_000);
     });
     await flushMicrotasks();
 
-    expect(getUsageSummary).toHaveBeenCalledTimes(OPENWRT_APP_IDS.length);
+    expect(getStatus).toHaveBeenCalledTimes(1);
     visibility.restore();
   });
 
-  it("preserves the previous summary for apps whose poll request fails", async () => {
+  it("preserves the previous summary when a status poll request fails", async () => {
     vi.useFakeTimers();
+    const initialUsage = {
+      claude: createUsageSummary({ totalRequests: 10 }),
+      codex: createUsageSummary({ totalRequests: 20 }),
+      gemini: createUsageSummary({ totalRequests: 30 }),
+    } satisfies Record<SharedProviderAppId, ReturnType<typeof createUsageSummary>>;
     const bridge = createBridgeFixture({
-      usageSummary: {
-        claude: createUsageSummary({ totalRequests: 10 }),
-        codex: createUsageSummary({ totalRequests: 20 }),
-        gemini: createUsageSummary({ totalRequests: 30 }),
-      },
+      status: createStatusResponse({
+        usageSummary: initialUsage,
+      }),
     });
     const { container } = renderAppsGrid({ bridge });
 
@@ -412,45 +487,24 @@ describe("AppsGrid", () => {
       screen.getByRole("button", { name: "Open Claude providers" }),
     ).toBeInTheDocument();
 
-    const getUsageSummary = bridge.getUsageSummary as unknown as Mock;
-    const firstPoll = {
+    const getStatus = bridge.getStatus as unknown as Mock;
+    const firstPollUsage = {
       claude: createUsageSummary({ totalRequests: 101 }),
       codex: createUsageSummary({ totalRequests: 202 }),
       gemini: createUsageSummary({ totalRequests: 303 }),
-    } satisfies Record<
-      SharedProviderAppId,
-      ReturnType<typeof createUsageSummary>
-    >;
-    const secondPoll = {
-      claude: createUsageSummary({ totalRequests: 111 }),
-      codex: new Error("Transient summary failure"),
-      gemini: createUsageSummary({ totalRequests: 333 }),
-    } satisfies Record<
-      SharedProviderAppId,
-      Error | ReturnType<typeof createUsageSummary>
-    >;
-    let pollBatch = 0;
-    let callsInBatch = 0;
+    } satisfies Record<SharedProviderAppId, ReturnType<typeof createUsageSummary>>;
 
-    getUsageSummary.mockClear();
-    getUsageSummary.mockImplementation(async (appId: SharedProviderAppId) => {
-      const nextValue = (pollBatch === 0 ? firstPoll : secondPoll)[appId];
-      callsInBatch += 1;
-
-      if (callsInBatch === OPENWRT_APP_IDS.length) {
-        callsInBatch = 0;
-        pollBatch += 1;
-      }
-
-      if (nextValue instanceof Error) {
-        throw nextValue;
-      }
-
-      return nextValue;
-    });
+    getStatus.mockClear();
+    getStatus
+      .mockResolvedValueOnce(
+        createStatusResponse({
+          usageSummary: firstPollUsage,
+        }),
+      )
+      .mockRejectedValueOnce(new Error("Transient status failure"));
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(60_000);
     });
     await flushMicrotasks();
 
@@ -465,28 +519,33 @@ describe("AppsGrid", () => {
     ).toBeInTheDocument();
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(60_000);
     });
     await flushMicrotasks();
 
     expect(
-      within(getAppCard(container, "claude")).getByText("111"),
+      within(getAppCard(container, "claude")).getByText("101"),
     ).toBeInTheDocument();
     expect(
       within(getAppCard(container, "codex")).getByText("202"),
     ).toBeInTheDocument();
     expect(
-      within(getAppCard(container, "gemini")).getByText("333"),
+      within(getAppCard(container, "gemini")).getByText("303"),
     ).toBeInTheDocument();
-    expect(
-      within(getAppCard(container, "codex")).queryByText("222"),
-    ).not.toBeInTheDocument();
   });
 
-  it("keeps configured cards out of the not-configured group when one provider-state RPC fails during refresh", async () => {
-    const transport = createProviderTransportFixture();
+  it("keeps configured cards out of the not-configured group when a status refresh fails", async () => {
+    const bridge = createBridgeFixture({
+      status: createStatusResponse({
+        usageSummary: {
+          claude: createUsageSummary({ totalRequests: 10 }),
+          codex: createUsageSummary({ totalRequests: 20 }),
+          gemini: createUsageSummary({ totalRequests: 30 }),
+        },
+      }),
+    });
     const { container, rerenderAppsGrid } = renderAppsGrid({
-      transport,
+      bridge,
       providerMutationVersion: 0,
     });
 
@@ -504,12 +563,8 @@ describe("AppsGrid", () => {
       Array.from(initialGrid.children).indexOf(initialHeader as HTMLElement),
     );
 
-    vi.spyOn(transport, "listSavedProviders").mockImplementation(
-      async (appId) =>
-        appId === "claude"
-          ? Promise.reject(new Error("Transient saved-provider failure"))
-          : createProviderListResponse(appId),
-    );
+    const getStatus = bridge.getStatus as unknown as Mock;
+    getStatus.mockRejectedValueOnce(new Error("Transient status failure"));
 
     rerenderAppsGrid(1);
 
@@ -533,14 +588,18 @@ describe("AppsGrid", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("keeps the same app-card node when a provider flips from unconfigured to configured", async () => {
-    const transportFixture = createMutableProviderTransportFixture({
-      claude: createProviderState("claude", [], null),
-      codex: createProviderState("codex", [], null),
-      gemini: createProviderState("gemini", [], null),
+  it("keeps the same app-card node when status changes an app from unconfigured to configured", async () => {
+    const bridge = createBridgeFixture({
+      status: createStatusResponse({
+        configuredApps: {
+          claude: false,
+          codex: false,
+          gemini: false,
+        },
+      }),
     });
     const { container, rerenderAppsGrid } = renderAppsGrid({
-      transport: transportFixture.transport,
+      bridge,
       providerMutationVersion: 0,
     });
 
@@ -549,20 +608,15 @@ describe("AppsGrid", () => {
     });
 
     const initialClaudeCard = getAppCard(container, "claude");
-
-    transportFixture.setProviderState(
-      "claude",
-      createProviderState(
-        "claude",
-        [
-          createProviderView("claude", {
-            active: true,
-            name: "Claude Primary",
-            providerId: "claude-primary",
-          }),
-        ],
-        "claude-primary",
-      ),
+    const getStatus = bridge.getStatus as unknown as Mock;
+    getStatus.mockResolvedValueOnce(
+      createStatusResponse({
+        configuredApps: {
+          claude: true,
+          codex: false,
+          gemini: false,
+        },
+      }),
     );
 
     rerenderAppsGrid(1);
@@ -576,13 +630,15 @@ describe("AppsGrid", () => {
     expect(getAppCard(container, "claude")).toBe(initialClaudeCard);
   });
 
-  it("preserves the previous summary during a provider-mutation refresh when one summary request fails", async () => {
+  it("preserves the previous summary during a provider-mutation refresh when the status request fails", async () => {
     const bridge = createBridgeFixture({
-      usageSummary: {
-        claude: createUsageSummary({ totalRequests: 10 }),
-        codex: createUsageSummary({ totalRequests: 20 }),
-        gemini: createUsageSummary({ totalRequests: 30 }),
-      },
+      status: createStatusResponse({
+        usageSummary: {
+          claude: createUsageSummary({ totalRequests: 10 }),
+          codex: createUsageSummary({ totalRequests: 20 }),
+          gemini: createUsageSummary({ totalRequests: 30 }),
+        },
+      }),
     });
     const { container, rerenderAppsGrid } = renderAppsGrid({
       bridge,
@@ -593,37 +649,29 @@ describe("AppsGrid", () => {
       name: "Open Claude providers",
     });
 
-    const getUsageSummary = bridge.getUsageSummary as unknown as Mock;
-    getUsageSummary.mockImplementation(async (appId: SharedProviderAppId) => {
-      if (appId === "claude") {
-        throw new Error("Transient summary failure");
-      }
-
-      return createUsageSummary({
-        totalRequests: appId === "codex" ? 222 : 333,
-      });
-    });
+    const getStatus = bridge.getStatus as unknown as Mock;
+    getStatus.mockRejectedValueOnce(new Error("Transient status failure"));
 
     rerenderAppsGrid(1);
 
     await waitFor(() =>
       expect(
-        within(getAppCard(container, "codex")).getByText("222"),
+        within(getAppCard(container, "claude")).getByText("10"),
       ).toBeInTheDocument(),
     );
 
     expect(
-      within(getAppCard(container, "claude")).getByText("10"),
+      within(getAppCard(container, "codex")).getByText("20"),
     ).toBeInTheDocument();
     expect(
-      within(getAppCard(container, "gemini")).getByText("333"),
+      within(getAppCard(container, "gemini")).getByText("30"),
     ).toBeInTheDocument();
   });
 
   it("does not flip existing cards back into loading state during a provider-mutation refresh", async () => {
-    const transport = createProviderTransportFixture();
+    const bridge = createBridgeFixture();
     const { container, rerenderAppsGrid } = renderAppsGrid({
-      transport,
+      bridge,
       providerMutationVersion: 0,
     });
 
@@ -631,13 +679,9 @@ describe("AppsGrid", () => {
       name: "Open Claude providers",
     });
 
-    const pendingProviderRefresh =
-      createDeferred<ReturnType<typeof createProviderListResponse>>();
-    vi.spyOn(transport, "listProviders").mockImplementation(async (appId) =>
-      appId === "claude"
-        ? pendingProviderRefresh.promise
-        : createProviderListResponse(appId),
-    );
+    const pendingStatusRefresh = createDeferred<OpenWrtStatusResponse>();
+    const getStatus = bridge.getStatus as unknown as Mock;
+    getStatus.mockReturnValueOnce(pendingStatusRefresh.promise);
 
     rerenderAppsGrid(1);
     await flushMicrotasks();
@@ -655,12 +699,32 @@ describe("AppsGrid", () => {
       "false",
     );
 
-    pendingProviderRefresh.resolve(createProviderListResponse("claude"));
+    pendingStatusRefresh.resolve(createStatusResponse());
 
     await waitFor(() => {
       expect(
         screen.getByRole("button", { name: "Open Claude providers" }),
       ).toBeInTheDocument();
     });
+  });
+
+  it("does not use stale per-app polling methods", async () => {
+    const bridge = createBridgeFixture({
+      usageSummary: {
+        claude: createUsageSummary({ totalRequests: 10 }),
+        codex: createUsageSummary({ totalRequests: 20 }),
+        gemini: createUsageSummary({ totalRequests: 30 }),
+      },
+    });
+    renderAppsGrid({ bridge });
+
+    await screen.findByRole("button", {
+      name: "Open Claude providers",
+    });
+
+    expect(bridge.getStatus).toHaveBeenCalledTimes(1);
+    expect(bridge.getUsageSummary).not.toHaveBeenCalled();
+    expect(bridge.getProviderStats).not.toHaveBeenCalled();
+    expect(bridge.getRecentActivity).not.toHaveBeenCalled();
   });
 });

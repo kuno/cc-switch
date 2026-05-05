@@ -50,6 +50,23 @@ const DEFAULT_QUOTA_RESPONSE: QuotaResponse = {
   timestamp: "2026-04-22T00:00:00.000Z",
 };
 
+const BACKEND_APP_IDS = ["claude", "codex", "gemini"] as const;
+const APP_LABELS: Record<SharedProviderAppId, string> = {
+  claude: "Claude",
+  codex: "Codex",
+  gemini: "Gemini",
+};
+const APP_BASE_URLS: Record<SharedProviderAppId, string> = {
+  claude: "https://claude.example.com/v1",
+  codex: "https://api.openai.com/v1",
+  gemini: "https://generativelanguage.googleapis.com/v1beta/openai",
+};
+const APP_TOKEN_FIELDS: Record<SharedProviderAppId, string> = {
+  claude: "ANTHROPIC_AUTH_TOKEN",
+  codex: "OPENAI_API_KEY",
+  gemini: "GEMINI_API_KEY",
+};
+
 export interface BridgeFixtureOptions {
   selectedApp?: SharedProviderAppId;
   host?: Partial<OpenWrtHostState>;
@@ -114,53 +131,58 @@ function createDefaultStatusResponse(
       lastError: null,
       checkedAt: "2026-04-22T00:00:00.000Z",
     },
-    apps: {
-      claude: {
-        mode: "normal",
-        proxyEnabled: true,
-        health: true,
-        healthReason: null,
-        usage: getAppRecord(
-          options.usageSummary,
-          "claude",
-          DEFAULT_USAGE_SUMMARY,
-        ),
-        activeProvider: null,
-        providers: {},
-        failoverQueue: [],
-        failoverStatus: {},
-      },
-      codex: {
-        mode: "normal",
-        proxyEnabled: true,
-        health: true,
-        healthReason: null,
-        usage: getAppRecord(
-          options.usageSummary,
-          "codex",
-          DEFAULT_USAGE_SUMMARY,
-        ),
-        activeProvider: null,
-        providers: {},
-        failoverQueue: [],
-        failoverStatus: {},
-      },
-      gemini: {
-        mode: "normal",
-        proxyEnabled: true,
-        health: true,
-        healthReason: null,
-        usage: getAppRecord(
-          options.usageSummary,
-          "gemini",
-          DEFAULT_USAGE_SUMMARY,
-        ),
-        activeProvider: null,
-        providers: {},
-        failoverQueue: [],
-        failoverStatus: {},
-      },
-    },
+    apps: Object.fromEntries(
+      BACKEND_APP_IDS.map((appId) => {
+        const providerId = `${appId}-primary`;
+        const providerName = `${APP_LABELS[appId]} Primary`;
+
+        return [
+          appId,
+          {
+            mode: "normal",
+            proxyEnabled: true,
+            health: true,
+            healthReason: null,
+            maxRetries: 3,
+            usage: getAppRecord(
+              options.usageSummary,
+              appId,
+              DEFAULT_USAGE_SUMMARY,
+            ),
+            activeProvider: {
+              providerId,
+              name: providerName,
+            },
+            providers: {
+              [providerId]: {
+                providerId,
+                name: providerName,
+                configured: true,
+                active: true,
+                baseUrl: APP_BASE_URLS[appId],
+                tokenField: APP_TOKEN_FIELDS[appId],
+                tokenConfigured: true,
+                tokenMasked: "sk-****",
+                stats: getAppRecord(options.providerStats, appId, [])[0] ?? null,
+                quota: null,
+                health: {
+                  providerId,
+                  observed: true,
+                  healthy: true,
+                  consecutiveFailures: 0,
+                  lastSuccessAt: null,
+                  lastFailureAt: null,
+                  lastError: null,
+                  updatedAt: null,
+                },
+              },
+            },
+            failoverQueue: [],
+            failoverStatus: {},
+          },
+        ];
+      }),
+    ) as OpenWrtStatusResponse["apps"],
   };
 }
 
