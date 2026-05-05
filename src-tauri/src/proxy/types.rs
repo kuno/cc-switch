@@ -260,6 +260,10 @@ pub struct ApiStatusActiveProvider {
 pub struct ApiStatusProvider {
     pub name: String,
     pub configured: bool,
+    pub base_url: String,
+    pub icon: Option<String>,
+    pub icon_color: Option<String>,
+    pub token_field: String,
     pub stats: Option<ApiStatusProviderStats>,
     pub quota: Option<ApiStatusQuota>,
 }
