@@ -35,6 +35,10 @@ use super::{
     ProxyError,
 };
 use crate::app_config::AppType;
+use crate::proxy::circuit_breaker::CircuitBreakerStats;
+use crate::proxy::rate_limit::{
+    quota_exhausted_reset, BalanceSnapshot, RateLimitSnapshot, RateLimitWindow,
+};
 use crate::services::oauth_refresh::storage::{
     load_codex_refresh_auth_for_provider, save_refreshed_codex_auth_for_provider,
 };
@@ -43,18 +47,39 @@ use crate::services::oauth_refresh::{
     OAuthTokenRefresher,
 };
 use crate::services::subscription::{query_claude_quota, query_codex_quota, SubscriptionQuota};
+use crate::services::usage_stats::{ProviderStats, UsageSummary};
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use bytes::Bytes;
 use futures::future::join_all;
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::future::Future;
+#[cfg(test)]
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 const CODEX_OFFICIAL_PROVIDER_ID: &str = "codex-official";
 const CODEX_OAUTH_AUTH_MODE: &str = "codex_oauth";
 const CODEX_LEGACY_CLIENT_PASSTHROUGH_AUTH_MODE: &str = "client_passthrough";
 const CLAUDE_OAUTH_AUTH_MODE: &str = "claude_oauth";
+
+#[cfg(test)]
+static LIVE_QUOTA_REFRESH_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(test)]
+pub(super) fn record_live_quota_refresh_call() {
+    LIVE_QUOTA_REFRESH_CALLS.fetch_add(1, Ordering::SeqCst);
+}
+
+#[cfg(test)]
+fn reset_live_quota_refresh_call_count() {
+    LIVE_QUOTA_REFRESH_CALLS.store(0, Ordering::SeqCst);
+}
+
+#[cfg(test)]
+fn live_quota_refresh_call_count() -> usize {
+    LIVE_QUOTA_REFRESH_CALLS.load(Ordering::SeqCst)
+}
 
 // ============================================================================
 // 健康检查和状态查询（简单端点）
@@ -170,6 +195,9 @@ async fn refresh_codex_quota_snapshots_with_query_and_refresher<F, Fut, R>(
     Fut: Future<Output = SubscriptionQuota>,
     R: OAuthTokenRefresher,
 {
+    #[cfg(test)]
+    record_live_quota_refresh_call();
+
     let providers = match state.db.get_all_providers("codex") {
         Ok(providers) => providers,
         Err(error) => {
@@ -279,6 +307,9 @@ async fn refresh_claude_quota_snapshots_with_query_and_refresher<F, Fut, R>(
     Fut: Future<Output = SubscriptionQuota>,
     R: OAuthTokenRefresher,
 {
+    #[cfg(test)]
+    record_live_quota_refresh_call();
+
     let providers = match state.db.get_all_providers("claude") {
         Ok(providers) => providers,
         Err(error) => {
@@ -386,6 +417,436 @@ pub async fn get_quota(State(state): State<ProxyState>) -> (StatusCode, Json<Val
             "timestamp": chrono::Utc::now().to_rfc3339(),
         })),
     )
+}
+
+struct StatusSnapshots {
+    proxy_status: ProxyStatus,
+    _current_providers: HashMap<String, (String, String)>,
+    rate_limits: HashMap<String, RateLimitSnapshot>,
+    checked_at: String,
+    now_secs: i64,
+}
+
+struct FailoverStatusContext<'a> {
+    auto_failover_enabled: bool,
+    active_provider_id: Option<&'a str>,
+    queue_positions: &'a HashMap<String, usize>,
+    health_records: &'a HashMap<String, ProviderHealth>,
+    circuit_stats: &'a HashMap<String, Option<CircuitBreakerStats>>,
+    rate_limits: &'a HashMap<String, RateLimitSnapshot>,
+    now_secs: i64,
+}
+
+async fn capture_status_snapshots(state: &ProxyState) -> StatusSnapshots {
+    let mut proxy_status = { state.status.read().await.clone() };
+
+    if let Some(start) = *state.start_time.read().await {
+        proxy_status.uptime_seconds = start.elapsed().as_secs();
+    }
+
+    let current_providers = { state.current_providers.read().await.clone() };
+    let rate_limits = { state.rate_limits.read().await.clone() };
+    let now = chrono::Utc::now();
+
+    StatusSnapshots {
+        proxy_status,
+        _current_providers: current_providers,
+        rate_limits,
+        checked_at: now.to_rfc3339(),
+        now_secs: now.timestamp(),
+    }
+}
+
+async fn build_api_status_response(state: &ProxyState) -> Result<ApiStatusResponse, ProxyError> {
+    let snapshots = capture_status_snapshots(state).await;
+    let daemon = ApiStatusDaemon {
+        health: snapshots.proxy_status.running,
+        running: snapshots.proxy_status.running,
+        uptime_seconds: snapshots.proxy_status.uptime_seconds,
+        last_error: snapshots.proxy_status.last_error.clone(),
+        checked_at: snapshots.checked_at.clone(),
+    };
+
+    let mut apps = BTreeMap::new();
+    for app_type in [AppType::Claude, AppType::Codex, AppType::Gemini] {
+        apps.insert(
+            app_type.as_str().to_string(),
+            build_app_status(state, app_type, &snapshots).await?,
+        );
+    }
+
+    Ok(ApiStatusResponse { daemon, apps })
+}
+
+async fn build_app_status(
+    state: &ProxyState,
+    app_type: AppType,
+    snapshots: &StatusSnapshots,
+) -> Result<ApiStatusApp, ProxyError> {
+    let app_key = app_type.as_str().to_string();
+    let config = state
+        .db
+        .get_proxy_config_for_app(&app_key)
+        .await
+        .map_err(|e| ProxyError::DatabaseError(e.to_string()))?;
+    let providers = state
+        .db
+        .get_all_providers_by_display_order(&app_key)
+        .map_err(|e| ProxyError::DatabaseError(e.to_string()))?;
+    // Inline precedence — §8 requires read-only; get_effective_current_provider clears stale settings.
+    let active_provider_id = if let Some(local_id) =
+        crate::settings::get_current_provider(&app_type).filter(|id| providers.contains_key(id))
+    {
+        Some(local_id)
+    } else {
+        state
+            .db
+            .get_current_provider(&app_key)
+            .map_err(|e| ProxyError::DatabaseError(e.to_string()))?
+    };
+    let active_provider = active_provider_id
+        .as_ref()
+        .and_then(|provider_id| {
+            providers
+                .get(provider_id)
+                .map(|provider| (provider_id, provider))
+        })
+        .map(|(provider_id, provider)| ApiStatusActiveProvider {
+            provider_id: provider_id.clone(),
+            name: provider.name.clone(),
+        });
+
+    let health_records: HashMap<String, ProviderHealth> = state
+        .db
+        .list_provider_health_records(&app_key)
+        .await
+        .map_err(|e| ProxyError::DatabaseError(e.to_string()))?
+        .into_iter()
+        .map(|record| (record.provider_id.clone(), record))
+        .collect();
+
+    let db_failover_queue = state
+        .db
+        .get_failover_queue(&app_key)
+        .map_err(|e| ProxyError::DatabaseError(e.to_string()))?;
+    let queue_positions: HashMap<String, usize> = db_failover_queue
+        .iter()
+        .enumerate()
+        .map(|(position, item)| (item.provider_id.clone(), position))
+        .collect();
+    let failover_queue = db_failover_queue
+        .iter()
+        .enumerate()
+        .map(|(position, item)| ApiStatusFailoverQueueItem {
+            provider_id: item.provider_id.clone(),
+            name: item.provider_name.clone(),
+            position,
+        })
+        .collect();
+
+    let usage = build_usage(
+        state
+            .db
+            .get_usage_summary(None, None, Some(&app_key))
+            .map_err(|e| ProxyError::DatabaseError(e.to_string()))?,
+    );
+    let provider_stats: HashMap<String, ProviderStats> = state
+        .db
+        .get_provider_stats(None, None, Some(&app_key))
+        .map_err(|e| ProxyError::DatabaseError(e.to_string()))?
+        .into_iter()
+        .map(|stats| (stats.provider_id.clone(), stats))
+        .collect();
+
+    let mut circuit_stats = HashMap::new();
+    for provider_id in providers.keys() {
+        circuit_stats.insert(
+            provider_id.clone(),
+            state
+                .provider_router
+                .get_circuit_breaker_stats(provider_id, &app_key)
+                .await,
+        );
+    }
+
+    let failover_context = FailoverStatusContext {
+        auto_failover_enabled: config.auto_failover_enabled,
+        active_provider_id: active_provider_id.as_deref(),
+        queue_positions: &queue_positions,
+        health_records: &health_records,
+        circuit_stats: &circuit_stats,
+        rate_limits: &snapshots.rate_limits,
+        now_secs: snapshots.now_secs,
+    };
+
+    let mut failover_status = BTreeMap::new();
+    for provider_id in providers.keys() {
+        failover_status.insert(
+            provider_id.clone(),
+            build_failover_status(provider_id, &failover_context),
+        );
+    }
+
+    let mut provider_views = BTreeMap::new();
+    for provider in providers.values() {
+        provider_views.insert(
+            provider.id.clone(),
+            ApiStatusProvider {
+                name: provider.name.clone(),
+                configured: true,
+                stats: build_provider_stats(provider_stats.get(&provider.id)),
+                quota: build_provider_quota(snapshots.rate_limits.get(&provider.id)),
+            },
+        );
+    }
+
+    let (health, health_reason) = derive_app_health(
+        provider_views.is_empty(),
+        config.enabled,
+        config.auto_failover_enabled,
+        active_provider_id.as_deref(),
+        &failover_status,
+    );
+
+    Ok(ApiStatusApp {
+        mode: if config.auto_failover_enabled {
+            "failover".to_string()
+        } else {
+            "normal".to_string()
+        },
+        proxy_enabled: config.enabled,
+        health,
+        health_reason,
+        usage,
+        active_provider,
+        providers: provider_views,
+        failover_queue,
+        failover_status,
+    })
+}
+
+fn build_usage(summary: UsageSummary) -> ApiStatusUsage {
+    ApiStatusUsage {
+        window: ApiStatusUsageWindow {
+            preset: "all_time".to_string(),
+            start: None,
+            end: None,
+        },
+        total_requests: summary.total_requests,
+        total_cost: summary.total_cost,
+        total_input_tokens: summary.total_input_tokens,
+        total_output_tokens: summary.total_output_tokens,
+        total_cache_creation_tokens: summary.total_cache_creation_tokens,
+        total_cache_read_tokens: summary.total_cache_read_tokens,
+        success_rate: summary.success_rate,
+    }
+}
+
+fn build_provider_quota(snapshot: Option<&RateLimitSnapshot>) -> Option<ApiStatusQuota> {
+    snapshot.map(|snapshot| ApiStatusQuota {
+        source: snapshot.source.clone(),
+        status: snapshot.status.clone(),
+        windows: snapshot.windows.iter().map(build_quota_window).collect(),
+        representative_claim: snapshot.representative_claim.clone(),
+        overage_status: snapshot.overage_status.clone(),
+        fallback_percentage: snapshot.fallback_percentage,
+        requests_limit: snapshot.requests_limit,
+        requests_remaining: snapshot.requests_remaining,
+        tokens_limit: snapshot.tokens_limit,
+        tokens_remaining: snapshot.tokens_remaining,
+        balances: snapshot
+            .balances
+            .as_ref()
+            .map(|balances| balances.iter().map(build_balance_snapshot).collect()),
+        captured_at: snapshot.captured_at,
+    })
+}
+
+fn build_quota_window(window: &RateLimitWindow) -> ApiStatusQuotaWindow {
+    ApiStatusQuotaWindow {
+        name: window.name.clone(),
+        status: window.status.clone(),
+        utilization: window.utilization,
+        reset: window.reset,
+    }
+}
+
+fn build_balance_snapshot(balance: &BalanceSnapshot) -> ApiStatusBalanceSnapshot {
+    ApiStatusBalanceSnapshot {
+        plan_name: balance.plan_name.clone(),
+        currency: balance.currency.clone(),
+        total: balance.total,
+        used: balance.used,
+        remaining: balance.remaining,
+        is_valid: balance.is_valid,
+        invalid_message: balance.invalid_message.clone(),
+    }
+}
+
+fn build_provider_stats(stats: Option<&ProviderStats>) -> Option<ApiStatusProviderStats> {
+    stats.map(|stats| ApiStatusProviderStats {
+        request_count: stats.request_count,
+        total_tokens: stats.total_tokens,
+        total_cost: stats.total_cost.clone(),
+        success_rate: stats.success_rate,
+        avg_latency_ms: stats.avg_latency_ms,
+    })
+}
+
+fn build_failover_status(
+    provider_id: &str,
+    context: &FailoverStatusContext<'_>,
+) -> ApiStatusFailoverProviderStatus {
+    let queue_position = context.queue_positions.get(provider_id).copied();
+    let in_failover_queue = queue_position.is_some();
+    let is_active = context.active_provider_id == Some(provider_id);
+    let health = build_provider_health(context.health_records.get(provider_id));
+    let circuit = build_provider_circuit(
+        context
+            .circuit_stats
+            .get(provider_id)
+            .and_then(Option::as_ref),
+    );
+    let quota = build_quota_gate(context.rate_limits.get(provider_id), context.now_secs);
+
+    let mut unavailable_reasons = Vec::new();
+    if context.auto_failover_enabled {
+        if !in_failover_queue {
+            unavailable_reasons.push("not_in_failover_queue".to_string());
+        }
+    } else if !is_active {
+        unavailable_reasons.push("not_active_in_normal_mode".to_string());
+    }
+    if !health.healthy {
+        unavailable_reasons.push("unhealthy".to_string());
+    }
+    if circuit.state.as_deref() == Some("open") {
+        unavailable_reasons.push("circuit_open".to_string());
+    }
+    if quota.exhausted {
+        unavailable_reasons.push("quota_exhausted".to_string());
+    }
+
+    let current_role = if context.auto_failover_enabled {
+        if queue_position == Some(0) {
+            "active"
+        } else if in_failover_queue {
+            "standby"
+        } else {
+            "skipped"
+        }
+    } else if is_active {
+        "active"
+    } else {
+        "skipped"
+    }
+    .to_string();
+
+    ApiStatusFailoverProviderStatus {
+        in_failover_queue,
+        queue_position,
+        current_role,
+        available: unavailable_reasons.is_empty(),
+        unavailable_reasons,
+        health,
+        circuit,
+        quota,
+    }
+}
+
+fn build_provider_health(record: Option<&ProviderHealth>) -> ApiStatusProviderHealth {
+    match record {
+        Some(record) => ApiStatusProviderHealth {
+            observed: true,
+            healthy: record.is_healthy,
+            consecutive_failures: record.consecutive_failures,
+            last_success_at: record.last_success_at.clone(),
+            last_failure_at: record.last_failure_at.clone(),
+            last_error: record.last_error.clone(),
+            updated_at: Some(record.updated_at.clone()),
+        },
+        None => ApiStatusProviderHealth {
+            observed: false,
+            healthy: true,
+            consecutive_failures: 0,
+            last_success_at: None,
+            last_failure_at: None,
+            last_error: None,
+            updated_at: None,
+        },
+    }
+}
+
+fn build_provider_circuit(stats: Option<&CircuitBreakerStats>) -> ApiStatusCircuit {
+    match stats {
+        Some(stats) => ApiStatusCircuit {
+            observed: true,
+            state: Some(stats.state.to_string()),
+            consecutive_failures: Some(stats.consecutive_failures),
+            consecutive_successes: Some(stats.consecutive_successes),
+            total_requests: Some(stats.total_requests),
+            failed_requests: Some(stats.failed_requests),
+        },
+        None => ApiStatusCircuit {
+            observed: false,
+            state: None,
+            consecutive_failures: None,
+            consecutive_successes: None,
+            total_requests: None,
+            failed_requests: None,
+        },
+    }
+}
+
+fn build_quota_gate(snapshot: Option<&RateLimitSnapshot>, now_secs: i64) -> ApiStatusQuotaGate {
+    let reset_at = snapshot.and_then(|snapshot| quota_exhausted_reset(snapshot, now_secs));
+    ApiStatusQuotaGate {
+        exhausted: reset_at.is_some(),
+        reset_at,
+    }
+}
+
+fn derive_app_health(
+    no_configured_providers: bool,
+    proxy_enabled: bool,
+    auto_failover_enabled: bool,
+    active_provider_id: Option<&str>,
+    failover_status: &BTreeMap<String, ApiStatusFailoverProviderStatus>,
+) -> (Option<bool>, String) {
+    if no_configured_providers {
+        return (None, "no_provider_configured".to_string());
+    }
+
+    if !proxy_enabled {
+        return (None, "proxy_disabled".to_string());
+    }
+
+    if auto_failover_enabled {
+        let has_available_provider = failover_status
+            .values()
+            .any(|status| status.in_failover_queue && status.available);
+        if has_available_provider {
+            (Some(true), "route_has_available_provider".to_string())
+        } else {
+            (
+                Some(false),
+                "all_failover_providers_unavailable".to_string(),
+            )
+        }
+    } else if active_provider_id
+        .and_then(|provider_id| failover_status.get(provider_id))
+        .is_some_and(|status| status.available)
+    {
+        (Some(true), "active_provider_healthy".to_string())
+    } else {
+        (Some(false), "active_provider_unhealthy".to_string())
+    }
+}
+
+pub async fn get_api_status(
+    State(state): State<ProxyState>,
+) -> Result<Json<ApiStatusResponse>, ProxyError> {
+    Ok(Json(build_api_status_response(&state).await?))
 }
 
 /// 获取服务状态
@@ -1522,12 +1983,15 @@ async fn log_usage(
 #[cfg(test)]
 mod tests {
     use super::{
-        is_claude_oauth_provider, is_codex_oauth_provider,
+        build_api_status_response, build_provider_quota, is_claude_oauth_provider,
+        is_codex_oauth_provider, live_quota_refresh_call_count,
         refresh_claude_quota_snapshots_with_query,
         refresh_claude_quota_snapshots_with_query_and_refresher,
-        refresh_codex_quota_snapshots_with_query_and_refresher, responses_sse_to_response_value,
+        refresh_codex_quota_snapshots_with_query_and_refresher,
+        reset_live_quota_refresh_call_count, responses_sse_to_response_value,
         should_use_claude_transform_streaming,
     };
+    use crate::app_config::AppType;
     use crate::database::Database;
     use crate::provider::Provider;
     use crate::proxy::{
@@ -1536,7 +2000,7 @@ mod tests {
         providers::{
             claude_oauth_store::save_claude_auth_for_provider, gemini_shadow::GeminiShadowStore,
         },
-        rate_limit::{new_rate_limit_store, RateLimitSnapshot, RateLimitWindow},
+        rate_limit::{new_rate_limit_store, BalanceSnapshot, RateLimitSnapshot, RateLimitWindow},
         server::ProxyState,
         types::{ProxyConfig, ProxyStatus},
         ProxyError,
@@ -1554,6 +2018,7 @@ mod tests {
     use serial_test::serial;
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex, OnceLock};
+    use std::time::{Duration, Instant};
     use tempfile::TempDir;
     use tokio::sync::RwLock;
 
@@ -1731,6 +2196,7 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
                 Some(value) => std::env::set_var("CC_SWITCH_DATA_DIR", value),
                 None => std::env::remove_var("CC_SWITCH_DATA_DIR"),
             }
+            let _ = crate::settings::reload_settings();
         }
     }
 
@@ -1781,6 +2247,187 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
             }),
             None,
         )
+    }
+
+    fn test_provider(provider_id: &str, name: &str) -> Provider {
+        Provider::with_id(
+            provider_id.to_string(),
+            name.to_string(),
+            json!({ "env": {} }),
+            None,
+        )
+    }
+
+    async fn set_proxy_flags(
+        db: &Database,
+        app_type: &str,
+        enabled: bool,
+        auto_failover_enabled: bool,
+    ) {
+        let mut config = db
+            .get_proxy_config_for_app(app_type)
+            .await
+            .expect("proxy config");
+        config.enabled = enabled;
+        config.auto_failover_enabled = auto_failover_enabled;
+        db.update_proxy_config_for_app(config)
+            .await
+            .expect("update proxy config");
+    }
+
+    async fn set_circuit_failure_threshold(db: &Database, app_type: &str, threshold: u32) {
+        let mut config = db
+            .get_proxy_config_for_app(app_type)
+            .await
+            .expect("proxy config");
+        config.circuit_failure_threshold = threshold;
+        db.update_proxy_config_for_app(config)
+            .await
+            .expect("update proxy config");
+    }
+
+    async fn status_response(state: &ProxyState) -> crate::proxy::types::ApiStatusResponse {
+        build_api_status_response(state)
+            .await
+            .expect("build api status")
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn insert_usage_log(
+        db: &Database,
+        request_id: &str,
+        provider_id: &str,
+        app_type: &str,
+        input_tokens: u64,
+        output_tokens: u64,
+        cache_creation_tokens: u64,
+        cache_read_tokens: u64,
+        total_cost: &str,
+        latency_ms: u64,
+        status_code: u16,
+        created_at: i64,
+    ) {
+        let conn = db.conn.lock().expect("db lock");
+        conn.execute(
+            "INSERT INTO proxy_request_logs (
+                request_id, provider_id, app_type, model, request_model,
+                input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+                total_cost_usd, latency_ms, status_code, created_at
+            ) VALUES (?1, ?2, ?3, 'test-model', 'requested-model',
+                ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            rusqlite::params![
+                request_id,
+                provider_id,
+                app_type,
+                input_tokens as i64,
+                output_tokens as i64,
+                cache_read_tokens as i64,
+                cache_creation_tokens as i64,
+                total_cost,
+                latency_ms as i64,
+                status_code as i64,
+                created_at,
+            ],
+        )
+        .expect("insert usage log");
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn insert_rollup(
+        db: &Database,
+        date: &str,
+        provider_id: &str,
+        app_type: &str,
+        request_count: u64,
+        success_count: u64,
+        input_tokens: u64,
+        output_tokens: u64,
+        total_cost: &str,
+        avg_latency_ms: u64,
+    ) {
+        let conn = db.conn.lock().expect("db lock");
+        conn.execute(
+            "INSERT OR REPLACE INTO usage_daily_rollups (
+                date, app_type, provider_id, model, request_count, success_count,
+                input_tokens, output_tokens, total_cost_usd, avg_latency_ms
+            ) VALUES (?1, ?2, ?3, 'test-model', ?4, ?5, ?6, ?7, ?8, ?9)",
+            rusqlite::params![
+                date,
+                app_type,
+                provider_id,
+                request_count as i64,
+                success_count as i64,
+                input_tokens as i64,
+                output_tokens as i64,
+                total_cost,
+                avg_latency_ms as i64,
+            ],
+        )
+        .expect("insert rollup");
+    }
+
+    fn insert_provider_health(
+        db: &Database,
+        provider_id: &str,
+        app_type: &str,
+        is_healthy: bool,
+        consecutive_failures: u32,
+        last_success_at: Option<&str>,
+        last_failure_at: Option<&str>,
+        last_error: Option<&str>,
+        updated_at: &str,
+    ) {
+        let conn = db.conn.lock().expect("db lock");
+        conn.execute(
+            "INSERT OR REPLACE INTO provider_health (
+                provider_id, app_type, is_healthy, consecutive_failures,
+                last_success_at, last_failure_at, last_error, updated_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            rusqlite::params![
+                provider_id,
+                app_type,
+                is_healthy as i64,
+                consecutive_failures as i64,
+                last_success_at,
+                last_failure_at,
+                last_error,
+                updated_at,
+            ],
+        )
+        .expect("insert provider health");
+    }
+
+    fn quota_snapshot(app_type: &str, provider_id: &str, provider_name: &str) -> RateLimitSnapshot {
+        RateLimitSnapshot {
+            app_type: app_type.to_string(),
+            provider_id: provider_id.to_string(),
+            provider_name: provider_name.to_string(),
+            source: Some("subscription_quota".to_string()),
+            status: Some("allowed".to_string()),
+            windows: vec![RateLimitWindow {
+                name: "five_hour".to_string(),
+                status: None,
+                utilization: Some(0.42),
+                reset: Some(4_102_444_800),
+            }],
+            representative_claim: Some("claim".to_string()),
+            overage_status: Some("allowed".to_string()),
+            fallback_percentage: Some(0.5),
+            requests_limit: Some(100),
+            requests_remaining: Some(20),
+            tokens_limit: Some(10_000),
+            tokens_remaining: Some(5_000),
+            balances: Some(vec![BalanceSnapshot {
+                plan_name: Some("pro".to_string()),
+                currency: Some("USD".to_string()),
+                total: Some(20.0),
+                used: Some(5.0),
+                remaining: Some(15.0),
+                is_valid: Some(true),
+                invalid_message: None,
+            }]),
+            captured_at: 1_777_971_123_456,
+        }
     }
 
     fn make_jwt(payload: serde_json::Value) -> String {
@@ -1836,6 +2483,631 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
             extra_usage: None,
             error: None,
             queried_at: Some(chrono::Utc::now().timestamp_millis()),
+        }
+    }
+
+    #[tokio::test]
+    async fn api_status_empty_db_includes_supported_apps_with_empty_state() {
+        let db = Arc::new(Database::memory().expect("db"));
+        let state = test_proxy_state(db);
+
+        let response = status_response(&state).await;
+
+        for app_key in ["claude", "codex", "gemini"] {
+            let app = response.apps.get(app_key).expect("supported app");
+            assert_eq!(app.health, None);
+            assert_eq!(app.health_reason, "no_provider_configured");
+            assert_eq!(app.active_provider, None);
+            assert!(app.providers.is_empty());
+            assert!(app.failover_queue.is_empty());
+            assert!(app.failover_status.is_empty());
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn api_status_normal_mode_uses_settings_active_provider_and_skips_non_active() {
+        let _env = TestEnv::new();
+        crate::settings::reload_settings().expect("reload test settings");
+        let db = Arc::new(Database::memory().expect("db"));
+        db.save_provider("claude", &test_provider("p1", "Provider One"))
+            .expect("save p1");
+        db.save_provider("claude", &test_provider("p2", "Provider Two"))
+            .expect("save p2");
+        db.set_current_provider("claude", "p1").expect("db current");
+        crate::settings::set_current_provider(&AppType::Claude, Some("p2"))
+            .expect("settings current");
+        set_proxy_flags(&db, "claude", true, false).await;
+
+        let state = test_proxy_state(db);
+        let response = status_response(&state).await;
+        let app = response.apps.get("claude").expect("claude app");
+
+        assert_eq!(app.mode, "normal");
+        assert_eq!(
+            app.active_provider
+                .as_ref()
+                .map(|provider| provider.provider_id.as_str()),
+            Some("p2")
+        );
+        assert_eq!(
+            app.failover_status["p2"].current_role, "active",
+            "settings-selected provider should be active"
+        );
+        assert_eq!(app.failover_status["p1"].current_role, "skipped");
+        assert!(app.failover_status["p1"]
+            .unavailable_reasons
+            .contains(&"not_active_in_normal_mode".to_string()));
+    }
+
+    #[tokio::test]
+    async fn api_status_failover_mode_uses_queue_order_and_roles() {
+        let db = Arc::new(Database::memory().expect("db"));
+        let desired_order = ["p_charlie", "p_alpha", "p_delta", "p_bravo"];
+        for (provider_id, sort_index) in [
+            ("p_bravo", 3),
+            ("p_unqueued", 4),
+            ("p_delta", 2),
+            ("p_alpha", 1),
+            ("p_charlie", 0),
+        ] {
+            let mut provider = test_provider(provider_id, provider_id);
+            provider.sort_index = Some(sort_index);
+            db.save_provider("claude", &provider)
+                .expect("save provider");
+        }
+        db.set_current_provider("claude", "p_charlie")
+            .expect("set current");
+        for provider_id in desired_order {
+            db.add_to_failover_queue("claude", provider_id)
+                .expect("queue provider");
+        }
+        set_proxy_flags(&db, "claude", true, true).await;
+
+        let state = test_proxy_state(db);
+        let response = status_response(&state).await;
+        let app = response.apps.get("claude").expect("claude app");
+
+        assert_eq!(app.mode, "failover");
+        let observed_order = app
+            .failover_queue
+            .iter()
+            .map(|item| item.provider_id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(observed_order, desired_order);
+        for (position, provider_id) in desired_order.iter().enumerate() {
+            assert_eq!(app.failover_queue[position].position, position);
+            assert_eq!(
+                app.failover_status[*provider_id].queue_position,
+                Some(position)
+            );
+        }
+        assert_eq!(app.failover_status["p_charlie"].current_role, "active");
+        assert_eq!(app.failover_status["p_alpha"].current_role, "standby");
+        assert_eq!(app.failover_status["p_delta"].current_role, "standby");
+        assert_eq!(app.failover_status["p_bravo"].current_role, "standby");
+        assert!(!app
+            .failover_queue
+            .iter()
+            .any(|item| item.provider_id == "p_unqueued"));
+        assert_eq!(app.failover_status["p_unqueued"].current_role, "skipped");
+        assert!(app.failover_status["p_unqueued"]
+            .unavailable_reasons
+            .contains(&"not_in_failover_queue".to_string()));
+    }
+
+    #[tokio::test]
+    async fn api_status_provider_health_maps_observed_and_missing_rows() {
+        let db = Arc::new(Database::memory().expect("db"));
+        db.save_provider("claude", &test_provider("observed", "Observed"))
+            .expect("save observed");
+        db.save_provider("claude", &test_provider("missing", "Missing"))
+            .expect("save missing");
+        db.set_current_provider("claude", "observed")
+            .expect("set current");
+        set_proxy_flags(&db, "claude", true, false).await;
+        insert_provider_health(
+            &db,
+            "observed",
+            "claude",
+            false,
+            4,
+            Some("2026-05-05T10:00:00Z"),
+            Some("2026-05-05T11:00:00Z"),
+            Some("upstream 500"),
+            "2026-05-05T11:00:00Z",
+        );
+
+        let state = test_proxy_state(db);
+        let response = status_response(&state).await;
+        let app = response.apps.get("claude").expect("claude app");
+        let observed = &app.failover_status["observed"].health;
+        let missing = &app.failover_status["missing"].health;
+
+        assert!(observed.observed);
+        assert!(!observed.healthy);
+        assert_eq!(observed.consecutive_failures, 4);
+        assert_eq!(
+            observed.last_success_at.as_deref(),
+            Some("2026-05-05T10:00:00Z")
+        );
+        assert_eq!(
+            observed.last_failure_at.as_deref(),
+            Some("2026-05-05T11:00:00Z")
+        );
+        assert_eq!(observed.last_error.as_deref(), Some("upstream 500"));
+        assert_eq!(observed.updated_at.as_deref(), Some("2026-05-05T11:00:00Z"));
+
+        assert!(!missing.observed);
+        assert!(missing.healthy);
+        assert_eq!(missing.updated_at, None);
+        assert_eq!(missing.last_success_at, None);
+        assert_eq!(missing.last_failure_at, None);
+    }
+
+    #[tokio::test]
+    async fn api_status_circuit_stats_map_observed_and_missing_breakers() {
+        let db = Arc::new(Database::memory().expect("db"));
+        db.save_provider("claude", &test_provider("open", "Open Circuit"))
+            .expect("save open provider");
+        db.save_provider("claude", &test_provider("missing", "Missing Circuit"))
+            .expect("save missing provider");
+        db.set_current_provider("claude", "open")
+            .expect("set current");
+        set_proxy_flags(&db, "claude", true, false).await;
+        set_circuit_failure_threshold(&db, "claude", 1).await;
+
+        let state = test_proxy_state(db);
+        state
+            .provider_router
+            .record_result("open", "claude", false, false, Some("boom".to_string()))
+            .await
+            .expect("record failure");
+
+        let response = status_response(&state).await;
+        let app = response.apps.get("claude").expect("claude app");
+        let open = &app.failover_status["open"].circuit;
+        let missing = &app.failover_status["missing"].circuit;
+
+        assert!(open.observed);
+        assert_eq!(open.state.as_deref(), Some("open"));
+        assert_eq!(open.total_requests, Some(1));
+        assert_eq!(open.failed_requests, Some(1));
+        assert!(!missing.observed);
+        assert_eq!(missing.state, None);
+        assert_eq!(missing.total_requests, None);
+        assert_eq!(missing.failed_requests, None);
+    }
+
+    #[test]
+    fn api_status_quota_mapping_trims_identity_and_uses_camel_case() {
+        let snapshot = quota_snapshot("claude", "quota-provider", "Quota Provider");
+        let quota = build_provider_quota(Some(&snapshot)).expect("quota");
+        let value = serde_json::to_value(&quota).expect("serialize quota");
+
+        assert_eq!(value["source"], "subscription_quota");
+        assert_eq!(value["representativeClaim"], "claim");
+        assert_eq!(value["overageStatus"], "allowed");
+        assert_eq!(value["fallbackPercentage"], 0.5);
+        assert_eq!(value["requestsLimit"], 100);
+        assert_eq!(value["requestsRemaining"], 20);
+        assert_eq!(value["tokensLimit"], 10_000);
+        assert_eq!(value["tokensRemaining"], 5_000);
+        assert_eq!(value["capturedAt"], 1_777_971_123_456i64);
+        assert_eq!(value["windows"][0]["name"], "five_hour");
+        assert_eq!(value["balances"][0]["planName"], "pro");
+        assert_eq!(value["balances"][0]["isValid"], true);
+        assert!(value.get("appType").is_none());
+        assert!(value.get("providerId").is_none());
+        assert!(value.get("providerName").is_none());
+    }
+
+    #[tokio::test]
+    async fn api_status_quota_exhaustion_sets_gate_and_reset() {
+        let db = Arc::new(Database::memory().expect("db"));
+        db.save_provider("claude", &test_provider("quota", "Quota Provider"))
+            .expect("save provider");
+        db.set_current_provider("claude", "quota")
+            .expect("set current");
+        set_proxy_flags(&db, "claude", true, false).await;
+        let state = test_proxy_state(db);
+        let reset_at = chrono::Utc::now().timestamp() + 3600;
+        let mut snapshot = quota_snapshot("claude", "quota", "Quota Provider");
+        snapshot.requests_remaining = Some(0);
+        snapshot.windows[0].reset = Some(reset_at);
+        state
+            .rate_limits
+            .write()
+            .await
+            .insert("quota".to_string(), snapshot);
+
+        let response = status_response(&state).await;
+        let quota = &response.apps["claude"].failover_status["quota"].quota;
+
+        assert!(quota.exhausted);
+        assert_eq!(quota.reset_at, Some(reset_at));
+        assert!(response.apps["claude"].failover_status["quota"]
+            .unavailable_reasons
+            .contains(&"quota_exhausted".to_string()));
+    }
+
+    #[tokio::test]
+    async fn api_status_usage_mapping_preserves_summary_fields_and_window() {
+        let db = Arc::new(Database::memory().expect("db"));
+        db.save_provider("claude", &test_provider("usage", "Usage Provider"))
+            .expect("save provider");
+        db.set_current_provider("claude", "usage")
+            .expect("set current");
+        insert_usage_log(
+            &db,
+            "usage-success",
+            "usage",
+            "claude",
+            100,
+            50,
+            5,
+            7,
+            "1.234567",
+            100,
+            200,
+            100,
+        );
+        insert_usage_log(
+            &db,
+            "usage-fail",
+            "usage",
+            "claude",
+            20,
+            10,
+            2,
+            3,
+            "0.000001",
+            200,
+            500,
+            101,
+        );
+
+        let state = test_proxy_state(db);
+        let response = status_response(&state).await;
+        let usage = &response.apps["claude"].usage;
+
+        assert_eq!(usage.window.preset, "all_time");
+        assert_eq!(usage.window.start, None);
+        assert_eq!(usage.window.end, None);
+        assert_eq!(usage.total_requests, 2);
+        assert_eq!(usage.total_cost, "1.234568");
+        assert_eq!(usage.total_input_tokens, 120);
+        assert_eq!(usage.total_output_tokens, 60);
+        assert_eq!(usage.total_cache_creation_tokens, 7);
+        assert_eq!(usage.total_cache_read_tokens, 10);
+        assert_eq!(usage.success_rate, 50.0);
+    }
+
+    #[tokio::test]
+    async fn api_status_usage_scope_is_all_time() {
+        let db = Arc::new(Database::memory().expect("db"));
+        db.save_provider("codex", &test_provider("ancient", "Ancient Provider"))
+            .expect("save provider");
+        insert_usage_log(
+            &db,
+            "ancient-log",
+            "ancient",
+            "codex",
+            1,
+            2,
+            0,
+            0,
+            "0.010000",
+            10,
+            200,
+            1,
+        );
+
+        let state = test_proxy_state(db);
+        let response = status_response(&state).await;
+
+        assert_eq!(response.apps["codex"].usage.total_requests, 1);
+        assert_eq!(response.apps["codex"].usage.total_cost, "0.010000");
+    }
+
+    #[tokio::test]
+    async fn api_status_provider_stats_mapping_omits_duplicate_identity() {
+        let db = Arc::new(Database::memory().expect("db"));
+        db.save_provider("claude", &test_provider("stats", "Stats Provider"))
+            .expect("save provider");
+        insert_usage_log(
+            &db,
+            "stats-success",
+            "stats",
+            "claude",
+            100,
+            50,
+            0,
+            0,
+            "1.000000",
+            100,
+            200,
+            100,
+        );
+        insert_usage_log(
+            &db,
+            "stats-fail",
+            "stats",
+            "claude",
+            20,
+            10,
+            0,
+            0,
+            "2.000000",
+            200,
+            500,
+            101,
+        );
+
+        let state = test_proxy_state(db);
+        let response = status_response(&state).await;
+        let stats = response.apps["claude"].providers["stats"]
+            .stats
+            .as_ref()
+            .expect("provider stats");
+        let value = serde_json::to_value(stats).expect("serialize stats");
+
+        assert_eq!(stats.request_count, 2);
+        assert_eq!(stats.total_tokens, 180);
+        assert_eq!(stats.total_cost, "3.000000");
+        assert_eq!(stats.success_rate, 50.0);
+        assert_eq!(stats.avg_latency_ms, 150);
+        assert_eq!(value["requestCount"], 2);
+        assert_eq!(value["totalTokens"], 180);
+        assert!(value.get("providerId").is_none());
+        assert!(value.get("providerName").is_none());
+    }
+
+    #[tokio::test]
+    async fn api_status_provider_with_no_stats_keeps_provider_with_null_stats() {
+        let db = Arc::new(Database::memory().expect("db"));
+        db.save_provider("gemini", &test_provider("no-stats", "No Stats"))
+            .expect("save provider");
+
+        let state = test_proxy_state(db);
+        let response = status_response(&state).await;
+        let provider = response.apps["gemini"]
+            .providers
+            .get("no-stats")
+            .expect("configured provider");
+
+        assert_eq!(provider.name, "No Stats");
+        assert!(provider.configured);
+        assert_eq!(provider.stats, None);
+    }
+
+    #[tokio::test]
+    async fn api_status_duplicate_provider_names_are_keyed_by_provider_id() {
+        let db = Arc::new(Database::memory().expect("db"));
+        db.save_provider("claude", &test_provider("dup-a", "Duplicate"))
+            .expect("save dup a");
+        db.save_provider("claude", &test_provider("dup-b", "Duplicate"))
+            .expect("save dup b");
+
+        let state = test_proxy_state(db);
+        let response = status_response(&state).await;
+        let app = &response.apps["claude"];
+
+        assert_eq!(app.providers["dup-a"].name, "Duplicate");
+        assert_eq!(app.providers["dup-b"].name, "Duplicate");
+        assert!(app.failover_status.contains_key("dup-a"));
+        assert!(app.failover_status.contains_key("dup-b"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn api_status_has_no_failover_active_health_circuit_or_quota_refresh_side_effects() {
+        let db = Arc::new(Database::memory().expect("db"));
+        db.save_provider(
+            "codex",
+            &codex_provider("codex-oauth", "codex_oauth", "Codex OAuth"),
+        )
+        .expect("save codex provider");
+        db.save_provider(
+            "codex",
+            &codex_provider("codex-standby", "codex_oauth", "Codex Standby"),
+        )
+        .expect("save standby provider");
+        db.set_current_provider("codex", "codex-oauth")
+            .expect("set current");
+        db.add_to_failover_queue("codex", "codex-oauth")
+            .expect("queue provider");
+        db.add_to_failover_queue("codex", "codex-standby")
+            .expect("queue standby");
+        set_proxy_flags(&db, "codex", true, true).await;
+
+        let state = test_proxy_state(db.clone());
+        state
+            .provider_router
+            .record_result("codex-oauth", "codex", false, true, None)
+            .await
+            .expect("seed circuit and health");
+        state
+            .provider_router
+            .record_result("codex-standby", "codex", false, true, None)
+            .await
+            .expect("seed standby circuit and health");
+        {
+            let mut store = state.rate_limits.write().await;
+            store.insert(
+                "codex-oauth".to_string(),
+                quota_snapshot("codex", "codex-oauth", "Codex OAuth"),
+            );
+            store.insert(
+                "codex-standby".to_string(),
+                quota_snapshot("codex", "codex-standby", "Codex Standby"),
+            );
+        }
+
+        let provider_ids = ["codex-oauth", "codex-standby"];
+        reset_live_quota_refresh_call_count();
+        let current_before = db.get_current_provider("codex").expect("current before");
+        let queue_before =
+            serde_json::to_value(db.get_failover_queue("codex").expect("queue before"))
+                .expect("serialize queue before");
+        let health_before = serde_json::to_value(
+            futures::future::join_all(
+                provider_ids
+                    .iter()
+                    .map(|provider_id| db.get_provider_health(provider_id, "codex")),
+            )
+            .await
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()
+            .expect("health before"),
+        )
+        .expect("serialize health before");
+        let circuit_before = serde_json::to_value(
+            futures::future::join_all(provider_ids.iter().map(|provider_id| {
+                state
+                    .provider_router
+                    .get_circuit_breaker_stats(provider_id, "codex")
+            }))
+            .await,
+        )
+        .expect("serialize circuit before");
+        let quota_store_before = serde_json::to_value(state.rate_limits.read().await.clone())
+            .expect("serialize quota store before");
+        let refresh_calls_before = live_quota_refresh_call_count();
+
+        let _response = status_response(&state).await;
+
+        assert_eq!(
+            db.get_current_provider("codex").expect("current after"),
+            current_before
+        );
+        assert_eq!(
+            serde_json::to_value(db.get_failover_queue("codex").expect("queue after"))
+                .expect("serialize queue after"),
+            queue_before
+        );
+        assert_eq!(
+            serde_json::to_value(
+                futures::future::join_all(
+                    provider_ids
+                        .iter()
+                        .map(|provider_id| { db.get_provider_health(provider_id, "codex") })
+                )
+                .await
+                .into_iter()
+                .collect::<Result<Vec<_>, _>>()
+                .expect("health after"),
+            )
+            .expect("serialize health after"),
+            health_before
+        );
+        assert_eq!(
+            serde_json::to_value(
+                futures::future::join_all(provider_ids.iter().map(|provider_id| {
+                    state
+                        .provider_router
+                        .get_circuit_breaker_stats(provider_id, "codex")
+                }))
+                .await,
+            )
+            .expect("serialize circuit after"),
+            circuit_before
+        );
+        assert_eq!(
+            serde_json::to_value(state.rate_limits.read().await.clone())
+                .expect("serialize quota store after"),
+            quota_store_before,
+            "status endpoint must not mutate quota snapshots"
+        );
+        assert_eq!(
+            live_quota_refresh_call_count(),
+            refresh_calls_before,
+            "status endpoint must not invoke live quota refresh helpers"
+        );
+    }
+
+    #[tokio::test]
+    async fn api_status_seeded_usage_across_supported_apps_completes_within_poll_budget() {
+        const PROVIDERS_PER_APP: usize = 4;
+        const REQUEST_LOGS_PER_PROVIDER: usize = 75;
+        const ROLLUP_REQUESTS_PER_PROVIDER: u64 = 25;
+        const CALLS: usize = 5;
+        // Defends a 60s LuCI poll cadence + swiftbar tick; measured worst over 5 calls: ~3ms.
+        // 250ms leaves ~80x headroom for slower routers and DB cache misses.
+        const POLL_BUDGET: Duration = Duration::from_millis(250);
+
+        let db = Arc::new(Database::memory().expect("db"));
+        for app_type in ["claude", "codex", "gemini"] {
+            for provider_index in 0..PROVIDERS_PER_APP {
+                let provider_id = format!("{app_type}-provider-{provider_index}");
+                db.save_provider(app_type, &test_provider(&provider_id, "Provider"))
+                    .expect("save provider");
+                for row_index in 0..REQUEST_LOGS_PER_PROVIDER {
+                    insert_usage_log(
+                        &db,
+                        &format!("{app_type}-{provider_index}-log-{row_index}"),
+                        &provider_id,
+                        app_type,
+                        10,
+                        5,
+                        0,
+                        0,
+                        "0.001000",
+                        20,
+                        200,
+                        1_700_000_000 + row_index as i64,
+                    );
+                }
+                insert_usage_log(
+                    &db,
+                    &format!("{app_type}-{provider_index}-failed-log"),
+                    &provider_id,
+                    app_type,
+                    10,
+                    5,
+                    0,
+                    0,
+                    "0.001000",
+                    20,
+                    500,
+                    1_700_000_100 + provider_index as i64,
+                );
+                insert_rollup(
+                    &db,
+                    "2026-05-01",
+                    &provider_id,
+                    app_type,
+                    ROLLUP_REQUESTS_PER_PROVIDER,
+                    ROLLUP_REQUESTS_PER_PROVIDER,
+                    250,
+                    125,
+                    "0.025000",
+                    20,
+                );
+            }
+        }
+
+        let state = test_proxy_state(db);
+        let expected_total_requests = PROVIDERS_PER_APP as u64
+            * (REQUEST_LOGS_PER_PROVIDER as u64 + 1 + ROLLUP_REQUESTS_PER_PROVIDER);
+
+        let mut worst_elapsed = Duration::ZERO;
+        for call in 0..CALLS {
+            let started = Instant::now();
+            let response = status_response(&state).await;
+            let elapsed = started.elapsed();
+            worst_elapsed = worst_elapsed.max(elapsed);
+
+            assert!(
+                elapsed < POLL_BUDGET,
+                "call {call} elapsed {elapsed:?}, worst {worst_elapsed:?}, budget {POLL_BUDGET:?}"
+            );
+            for app_type in ["claude", "codex", "gemini"] {
+                assert_eq!(
+                    response.apps[app_type].usage.total_requests,
+                    expected_total_requests
+                );
+            }
         }
     }
 
