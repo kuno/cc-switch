@@ -225,14 +225,16 @@ def menu_bar_title(apps):
         pct = None
         if quota:
             windows = quota.get("windows", [])
+            candidates = []
             for w in windows:
                 wname = get_field(w, "name", default="")
-                if "five" in wname.lower() or "5h" in wname.lower():
+                if "five" in wname.lower() or "5h" in wname.lower() or "seven" in wname.lower() or "7d" in wname.lower():
                     util = get_field(w, "utilization")
                     if util is not None:
-                        pct = int((1 - util) * 100)
-                        break
-            if pct is None:
+                        candidates.append(int((1 - util) * 100))
+            if candidates:
+                pct = min(candidates)
+            else:
                 _, pct = provider_headline(quota)
         parts.append(f"{icon} {pct}%" if pct is not None else f"{icon} {name}")
     # SwiftBar uses ASCII "|" to start item metadata, so use a Unicode vertical bar in title text.
