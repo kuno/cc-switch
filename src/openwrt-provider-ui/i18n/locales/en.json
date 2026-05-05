@@ -2500,6 +2500,84 @@
       "council": "Multi-model consensus agent. Runs multiple read-only councillors in parallel, then lets the master synthesize the final answer."
     }
   },
+  "openwrt": {
+    "alertStrip": {
+      "daemonNotReachableNoProxy": "The daemon at {{endpoint}} did not respond. Check the service and retry.",
+      "daemonNotReachableTitle": "Daemon not reachable.",
+      "daemonNotReachableWithProxy": "The daemon at {{endpoint}} did not respond while proxy routing points to {{proxy}}.",
+      "daemonStoppedDetail": "All app routing is offline until the CC Switch service is restarted.",
+      "daemonStoppedTitle": "Daemon stopped.",
+      "restartFailedTitle": "Restart failed:",
+      "restartFailureDetail": "The router daemon did not acknowledge the restart request.",
+      "restartNow": "Restart now",
+      "restartingDetail": "Waiting for OpenWrt to confirm the service at {{endpoint}}.",
+      "restartingTitle": "Restarting daemon…",
+      "retryRestart": "Retry restart"
+    },
+    "appCard": {
+      "aboutCostNumber": "About this cost number",
+      "activeProvider": "Active provider",
+      "addProviderArrow": "Add a provider →",
+      "addProviderForApp": "Add a {{app}} provider",
+      "amountRemaining": "{{amount}} remaining",
+      "appNotConfigured": "{{app}} not configured",
+      "autoFailoverOffSummary": "Auto-failover off · max {{maxRetries}} retries",
+      "autoFailoverOnSummary": "Auto-failover on · max {{maxRetries}} retries",
+      "costTooltipBody": "This figure is computed from local request logs and public API prices. Actual charges come from each provider's billing dashboard.",
+      "costTooltipTitle": "Estimated, not billed.",
+      "currencyUsd": "USD",
+      "dragToReorderProvider": "Drag to reorder {{provider}}",
+      "endpointUnavailable": "Endpoint unavailable",
+      "mode": {
+        "failover": "Failover",
+        "failoverTitle": "Route through the ordered failover queue",
+        "normal": "Normal",
+        "normalTitle": "Manually use the selected active provider"
+      },
+      "noProviderConfiguredYet": "No provider configured yet",
+      "noProvidersInFailoverQueue": "No providers in failover queue",
+      "notConfigured": "Not configured",
+      "notSupportedYet": "Not supported yet",
+      "openProviders": "Open {{app}} providers",
+      "percentRemaining": "{{percent}}% remaining",
+      "positionOfTotal": "{{position}} of {{total}}",
+      "providerCount_one": "{{count}} provider",
+      "providerCount_other": "{{count}} providers",
+      "queue": {
+        "active": "ACTIVE",
+        "servingTraffic": "Serving traffic",
+        "skipped": "SKIPPED",
+        "skippedByHealthCheck": "Skipped by health check",
+        "skippedWithFailures_one": "Skipped · {{count}} failure",
+        "skippedWithFailures_other": "Skipped · {{count}} failures",
+        "standby": "STANDBY",
+        "standbyRetriesUsed": "Standby · {{count}} retries used"
+      },
+      "queueHead": "Head: {{head}}",
+      "queueOrderUpdating": "Queue order is updating",
+      "quota": "Quota",
+      "reorderProvider": "Reorder {{provider}}",
+      "resets": "resets {{time}}",
+      "routingMode": "{{app}} routing mode",
+      "showRecentRequests": "Show recent requests",
+      "status": {
+        "loading": "Loading",
+        "standby": "Standby",
+        "unavailable": "Unavailable"
+      },
+      "subtitle": {
+        "claude": "Anthropic · Claude Code",
+        "codex": "OpenAI · Codex CLI",
+        "gemini": "Google · Gemini CLI"
+      },
+      "unnamedProvider": "Unnamed provider",
+      "updating": "Updating"
+    },
+    "appsGrid": {
+      "notConfigured": "Not configured",
+      "routerDataUnavailable": "Router data is unavailable right now."
+    }
+  },
   "openclawConfig": {
     "defaultModel": {
       "title": "Default Model",
