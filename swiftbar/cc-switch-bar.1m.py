@@ -148,9 +148,12 @@ def provider_headline(p):
 
 def normalize_window_name(name):
     normalized = (name or "").replace("_", "").replace("-", "").lower()
-    if normalized in ("5h", "fivehour"):
+    if normalized in ("5h", "fivehour") or normalized.startswith("fivehour"):
         return "5h"
-    if normalized in ("7d", "sevenday"):
+    if (
+        normalized in ("7d", "sevenday", "weekly", "weeklylimit")
+        or normalized.startswith("sevenday")
+    ):
         return "7d"
     return None
 
@@ -227,11 +230,11 @@ def menu_bar_title(apps):
             windows = quota.get("windows", [])
             candidates = []
             for w in windows:
-                wname = get_field(w, "name", default="")
-                if "five" in wname.lower() or "5h" in wname.lower() or "seven" in wname.lower() or "7d" in wname.lower():
-                    util = get_field(w, "utilization")
-                    if util is not None:
-                        candidates.append(int((1 - util) * 100))
+                if not normalize_window_name(get_field(w, "name")):
+                    continue
+                util = get_field(w, "utilization")
+                if util is not None:
+                    candidates.append(int((1 - util) * 100))
             if candidates:
                 pct = min(candidates)
             else:
@@ -423,6 +426,26 @@ def _self_test():
     assert quota_hex_color(15) == "#f87171"
     graph = bar_graph(1 - 0.3)
     assert graph.count("\u2588") == 7, f"expected 7 filled cells, got {graph.count(chr(0x2588))}"
+    assert normalize_window_name("five_hour") == "5h"
+    assert normalize_window_name("seven_day_sonnet") == "7d"
+    assert normalize_window_name("weekly_limit") == "7d"
+    apps = {
+        "claude": {
+            "activeProvider": {"providerId": "kimi"},
+            "providers": {
+                "kimi": {
+                    "name": "Kimi For Coding",
+                    "quota": {
+                        "windows": [
+                            {"name": "five_hour", "utilization": 0.25},
+                            {"name": "weekly_limit", "utilization": 0.3},
+                        ],
+                    },
+                },
+            },
+        },
+    }
+    assert menu_bar_title(apps) == "🅒 70%"
     print("self-test passed")
 
 
