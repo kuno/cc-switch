@@ -3888,7 +3888,7 @@ select.owt-provider-panel__input {
 }
 
 /* =====================================================================
- * ROUTING MODE — Normal / Failover segmented controls and queue summary
+ * ROUTING MODE — Manual / Failover segmented controls and queue summary
  * ===================================================================== */
 .owt-mode-toggle {
   display: inline-flex;
