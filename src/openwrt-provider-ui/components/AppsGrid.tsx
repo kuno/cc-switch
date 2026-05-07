@@ -816,7 +816,10 @@ function mergeCardData(
 export interface AppsGridProps {
   options: OpenWrtSharedPageMountOptions;
   onOpenActivity: (appId: SharedProviderAppId) => void;
-  onOpenProviderPanel: (appId: SharedProviderAppId) => void;
+  onOpenProviderPanel: (
+    appId: SharedProviderAppId,
+    providerId?: string,
+  ) => void;
   providerMutationVersion?: number;
 }
 

@@ -251,12 +251,15 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
     activityHostRef.current?.openForApp(appId);
   }
 
-  function handleOpenProviderPanel(appId: SharedProviderAppId) {
+  function handleOpenProviderPanel(
+    appId: SharedProviderAppId,
+    providerId?: string,
+  ) {
     shell.setSelectedApp(appId);
     setActivityDrawerOpen(false);
     setProviderPanelOpen(true);
     activityHostRef.current?.close();
-    providerPanelRef.current?.openForApp(appId);
+    providerPanelRef.current?.openForApp(appId, providerId);
   }
 
   function handleCloseOverlay() {
