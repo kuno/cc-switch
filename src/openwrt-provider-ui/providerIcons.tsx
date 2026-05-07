@@ -23,6 +23,12 @@ const APP_ICON_FILENAMES: Record<
   openclaw: "openclaw.svg",
 };
 
+const DEFAULT_PROVIDER_ICON_BY_APP: Record<SharedProviderAppId, string> = {
+  claude: "anthropic",
+  codex: "openai",
+  gemini: "gemini",
+};
+
 type OpenWrtProviderIconSource = Partial<
   Pick<
     SharedProviderView | SharedProviderPreset,
@@ -69,22 +75,23 @@ export function resolveOpenWrtProviderIcon(
   icon: string;
 } | null {
   const persistedIcon = createResolvedIcon(source?.icon, source?.iconColor);
-
-  if (persistedIcon) {
-    return persistedIcon;
-  }
-
   const presetId = inferSharedProviderPresetId(appId, {
     baseUrl: source?.baseUrl ?? "",
     tokenField: source?.tokenField as SharedProviderTokenField | undefined,
   });
+  const preset =
+    presetId === "custom" ? null : getSharedProviderPresetById(appId, presetId);
+  const presetIcon = createResolvedIcon(preset?.icon, preset?.iconColor);
 
-  if (presetId === "custom") {
-    return null;
+  if (
+    presetIcon &&
+    (!persistedIcon ||
+      persistedIcon.icon === DEFAULT_PROVIDER_ICON_BY_APP[appId])
+  ) {
+    return presetIcon;
   }
 
-  const preset = getSharedProviderPresetById(appId, presetId);
-  return createResolvedIcon(preset?.icon, preset?.iconColor);
+  return persistedIcon;
 }
 
 export function OpenWrtProviderIcon({

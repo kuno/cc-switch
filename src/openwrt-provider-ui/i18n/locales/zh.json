@@ -63,7 +63,7 @@
       "mode": {
         "failover": "故障转移",
         "failoverTitle": "按顺序通过故障转移队列路由",
-        "normal": "普通",
+        "normal": "手动",
         "normalTitle": "手动使用选中的当前服务商"
       },
       "noProviderConfiguredYet": "还没有配置服务商",
@@ -219,7 +219,7 @@
       "providersDialogLabel": "{{app}} 服务商",
       "routingModeAria": "{{app}} 路由模式",
       "normalModeTitle": "手动使用选中的当前服务商",
-      "normal": "普通",
+      "normal": "手动",
       "failoverModeTitle": "按顺序通过故障转移队列路由",
       "failover": "故障转移",
       "closeProviderPanel": "关闭服务商面板",

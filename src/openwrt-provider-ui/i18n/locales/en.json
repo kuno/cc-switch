@@ -63,7 +63,7 @@
       "mode": {
         "failover": "Failover",
         "failoverTitle": "Route through the ordered failover queue",
-        "normal": "Normal",
+        "normal": "Manual",
         "normalTitle": "Manually use the selected active provider"
       },
       "noProviderConfiguredYet": "No provider configured yet",
@@ -219,7 +219,7 @@
       "providersDialogLabel": "{{app}} providers",
       "routingModeAria": "{{app}} routing mode",
       "normalModeTitle": "Manually use the selected active provider",
-      "normal": "Normal",
+      "normal": "Manual",
       "failoverModeTitle": "Route through the ordered failover queue",
       "failover": "Failover",
       "closeProviderPanel": "Close provider panel",

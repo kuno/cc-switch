@@ -21,6 +21,10 @@ function renderAppCard(
     failoverState?: SharedProviderFailoverState | null;
     failoverPending?: boolean;
     optimisticAutoFailoverEnabled?: boolean | null;
+    onOpenProviderPanel?: (
+      appId: SharedProviderAppId,
+      providerId?: string,
+    ) => void;
     onSetAutoFailover?: (appId: SharedProviderAppId, enabled: boolean) => void;
   } = {},
 ) {
@@ -52,7 +56,7 @@ function renderAppCard(
       loading={false}
       error={null}
       onOpenActivity={bridge.setSelectedApp}
-      onOpenProviderPanel={bridge.setSelectedApp}
+      onOpenProviderPanel={options.onOpenProviderPanel ?? bridge.setSelectedApp}
       onSetAutoFailover={options.onSetAutoFailover}
     />,
   );
@@ -171,6 +175,20 @@ describe("AppCard", () => {
     expect(setSelectedApp).toHaveBeenCalledWith("claude");
   });
 
+  it("opens the active provider directly from the normal-mode provider section", async () => {
+    const onOpenProviderPanel = vi.fn();
+    const { user } = renderAppCard(createSharedProviderState("claude"), {
+      onOpenProviderPanel,
+    });
+
+    await user.click(screen.getByText("Claude Primary"));
+
+    expect(onOpenProviderPanel).toHaveBeenCalledWith(
+      "claude",
+      "claude-primary",
+    );
+  });
+
   it("renders the active provider icon when the provider state carries a persisted icon", () => {
     const { container } = renderAppCard(
       createSharedProviderState("claude", {
@@ -211,7 +229,7 @@ describe("AppCard", () => {
       screen.getByRole("tablist", { name: "Claude routing mode" }),
     );
 
-    expect(modeTabs.getByRole("tab", { name: "Normal" })).toHaveAttribute(
+    expect(modeTabs.getByRole("tab", { name: "Manual" })).toHaveAttribute(
       "aria-selected",
       "true",
     );
@@ -236,7 +254,7 @@ describe("AppCard", () => {
       screen.getByRole("tablist", { name: "Claude routing mode" }),
     );
 
-    expect(modeTabs.getByRole("tab", { name: "Normal" })).toHaveAttribute(
+    expect(modeTabs.getByRole("tab", { name: "Manual" })).toHaveAttribute(
       "aria-selected",
       "false",
     );
@@ -275,6 +293,19 @@ describe("AppCard", () => {
       screen.getByText("Auto-failover on · max 3 retries"),
     ).toBeInTheDocument();
     expect(screen.getByText("Head: 1 of 2")).toBeInTheDocument();
+  });
+
+  it("opens a failover queue provider directly from its queue row", async () => {
+    const onOpenProviderPanel = vi.fn();
+    const { user } = renderAppCard(createSharedProviderState("claude"), {
+      failoverState: createFailoverState({ autoFailoverEnabled: true }),
+      onOpenProviderPanel,
+      onSetAutoFailover: vi.fn(),
+    });
+
+    await user.click(screen.getByText("Claude Backup"));
+
+    expect(onOpenProviderPanel).toHaveBeenCalledWith("claude", "claude-backup");
   });
 
   it("stacks the routing mode switch below the running status chip", () => {

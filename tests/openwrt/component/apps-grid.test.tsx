@@ -23,7 +23,10 @@ import { createDeferred } from "./fixtures/providerTransport";
 type RenderAppsGridOptions = {
   bridge?: ReturnType<typeof createBridgeFixture>;
   onOpenActivity?: (appId: SharedProviderAppId) => void;
-  onOpenProviderPanel?: (appId: SharedProviderAppId) => void;
+  onOpenProviderPanel?: (
+    appId: SharedProviderAppId,
+    providerId?: string,
+  ) => void;
   providerMutationVersion?: number;
   transport?: OpenWrtProviderTransport;
 };
