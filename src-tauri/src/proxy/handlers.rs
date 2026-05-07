@@ -407,11 +407,15 @@ async fn refresh_claude_quota_snapshots(state: &ProxyState) {
     .await;
 }
 
-pub async fn get_quota(State(state): State<ProxyState>) -> (StatusCode, Json<Value>) {
+async fn refresh_live_quota_snapshots(state: &ProxyState) {
     refresh_codex_quota_snapshots(&state).await;
     refresh_claude_quota_snapshots(&state).await;
     super::third_party_quota::refresh_third_party_coding_plan_snapshots(&state).await;
     super::third_party_quota::refresh_third_party_balance_snapshots(&state).await;
+}
+
+pub async fn get_quota(State(state): State<ProxyState>) -> (StatusCode, Json<Value>) {
+    refresh_live_quota_snapshots(&state).await;
     let store = state.rate_limits.read().await;
     let providers: Vec<_> = store.values().cloned().collect();
     (
@@ -962,6 +966,7 @@ fn derive_app_health(
 pub async fn get_api_status(
     State(state): State<ProxyState>,
 ) -> Result<Json<ApiStatusResponse>, ProxyError> {
+    refresh_live_quota_snapshots(&state).await;
     Ok(Json(build_api_status_response(&state).await?))
 }
 
@@ -2332,7 +2337,8 @@ async fn log_usage(
 mod tests {
     use super::{
         build_api_status_response, build_provider_quota, codex_proxy_error_json,
-        is_claude_oauth_provider, is_codex_oauth_provider, live_quota_refresh_call_count,
+        get_api_status, is_claude_oauth_provider,
+        is_codex_oauth_provider, live_quota_refresh_call_count,
         refresh_claude_quota_snapshots_with_query,
         refresh_claude_quota_snapshots_with_query_and_refresher,
         refresh_codex_quota_snapshots_with_query_and_refresher,
@@ -2361,6 +2367,7 @@ mod tests {
         RefreshedCredentials,
     };
     use crate::services::subscription::{CredentialStatus, QuotaTier, SubscriptionQuota};
+    use axum::extract::State;
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
     use serde_json::json;
     use serial_test::serial;
@@ -3202,6 +3209,21 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
         assert!(response.apps["claude"].failover_status["quota"]
             .unavailable_reasons
             .contains(&"quota_exhausted".to_string()));
+    }
+
+    #[tokio::test]
+    async fn api_status_refreshes_live_quota_snapshots_before_rendering() {
+        reset_live_quota_refresh_call_count();
+        let db = Arc::new(Database::memory().expect("db"));
+        let state = test_proxy_state(db);
+
+        let _response = get_api_status(State(state)).await.expect("api status");
+
+        assert_eq!(
+            live_quota_refresh_call_count(),
+            4,
+            "/api/status should run the same cached quota refresh pass as /api/quota"
+        );
     }
 
     #[tokio::test]
