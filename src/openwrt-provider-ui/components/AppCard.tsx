@@ -394,6 +394,10 @@ interface FailoverQueueRowProps {
   index: number;
   provider: SharedProviderView | null;
   dragDisabled: boolean;
+  onOpenProviderPanel?: (
+    appId: SharedProviderAppId,
+    providerId?: string,
+  ) => void;
   setNodeRef?: (element: HTMLElement | null) => void;
   style?: CSSProperties;
   isDragging?: boolean;
@@ -407,6 +411,7 @@ function FailoverQueueRow({
   index,
   provider,
   dragDisabled,
+  onOpenProviderPanel,
   setNodeRef,
   style,
   isDragging = false,
@@ -421,9 +426,14 @@ function FailoverQueueRow({
     <div
       ref={setNodeRef}
       className="owt-app-card__queue-row"
+      data-provider-open="true"
       data-dragging={isDragging ? "true" : "false"}
       data-state={status.state}
       style={style}
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpenProviderPanel?.(appId, entry.providerId);
+      }}
     >
       <button
         type="button"
@@ -475,12 +485,17 @@ function SortableFailoverQueueRow({
   index,
   provider,
   dragDisabled,
+  onOpenProviderPanel,
 }: {
   appId: SharedProviderAppId;
   entry: SharedProviderFailoverQueueEntry;
   index: number;
   provider: SharedProviderView | null;
   dragDisabled: boolean;
+  onOpenProviderPanel?: (
+    appId: SharedProviderAppId,
+    providerId?: string,
+  ) => void;
 }) {
   const {
     attributes,
@@ -505,6 +520,7 @@ function SortableFailoverQueueRow({
       index={index}
       provider={provider}
       dragDisabled={dragDisabled}
+      onOpenProviderPanel={onOpenProviderPanel}
       setNodeRef={setNodeRef}
       style={style}
       isDragging={isDragging}
@@ -520,6 +536,7 @@ function FailoverQueueSummary({
   providerState,
   autoFailoverEnabled,
   reorderPending,
+  onOpenProviderPanel,
   onReorder,
 }: {
   appId: SharedProviderAppId;
@@ -527,6 +544,10 @@ function FailoverQueueSummary({
   providerState: SharedProviderState | null;
   autoFailoverEnabled: boolean;
   reorderPending: boolean;
+  onOpenProviderPanel?: (
+    appId: SharedProviderAppId,
+    providerId?: string,
+  ) => void;
   onReorder?: (providerIds: string[]) => void;
 }) {
   const { t } = useTranslation();
@@ -598,6 +619,7 @@ function FailoverQueueSummary({
                 index={index}
                 provider={providersById.get(entry.providerId) ?? null}
                 dragDisabled={!canReorder || reorderPending}
+                onOpenProviderPanel={onOpenProviderPanel}
               />
             ))}
           </div>
@@ -640,7 +662,10 @@ export interface AppCardProps {
   optimisticAutoFailoverEnabled?: boolean | null;
   failoverReorderPending?: boolean;
   onOpenActivity: (appId: SharedProviderAppId) => void;
-  onOpenProviderPanel: (appId: SharedProviderAppId) => void;
+  onOpenProviderPanel: (
+    appId: SharedProviderAppId,
+    providerId?: string,
+  ) => void;
   onSetAutoFailover?: (appId: SharedProviderAppId, enabled: boolean) => void;
   onReorderFailoverQueue?: (
     appId: SharedProviderAppId,
@@ -928,12 +953,23 @@ export function AppCard({
             providerState={providerState}
             autoFailoverEnabled={autoFailoverEnabled}
             reorderPending={failoverReorderPending}
+            onOpenProviderPanel={onOpenProviderPanel}
             onReorder={(providerIds) => {
               onReorderFailoverQueue?.(appId, providerIds);
             }}
           />
         ) : (
-          <div className="owt-app-card__active">
+          <div
+            className="owt-app-card__active"
+            data-provider-open="true"
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpenProviderPanel(
+                appId,
+                activeProvider.providerId ?? undefined,
+              );
+            }}
+          >
             <div className="owt-app-card__active-row">
               <div className="owt-app-card__mini-icon" aria-hidden="true">
                 <OpenWrtProviderIcon
