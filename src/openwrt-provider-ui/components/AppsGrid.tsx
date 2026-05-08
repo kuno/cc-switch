@@ -537,6 +537,10 @@ function normalizeFailoverQueueFromStatus(
           const currentRole = providerStatus
             ? getString(providerStatus, ["currentRole", "current_role"])
             : "";
+          const active =
+            providerState.activeProviderId != null
+              ? providerState.activeProviderId === providerId
+              : entry.active === true || currentRole === "active";
 
           return {
             providerId,
@@ -547,10 +551,7 @@ function normalizeFailoverQueueFromStatus(
             sortIndex:
               getNumber(entry, ["sortIndex", "sort_index", "position"]) ??
               index,
-            active:
-              entry.active === true ||
-              currentRole === "active" ||
-              providerState.activeProviderId === providerId,
+            active,
             health: providerStatus?.health ?? entry.health,
           };
         })
@@ -571,14 +572,16 @@ function normalizeFailoverQueueFromStatus(
             "currentRole",
             "current_role",
           ]);
+          const active =
+            providerState.activeProviderId != null
+              ? providerState.activeProviderId === providerId
+              : currentRole === "active";
 
           return {
             providerId,
             providerName: provider?.name || providerId,
             sortIndex: getStatusQueuePosition(status) ?? index,
-            active:
-              currentRole === "active" ||
-              providerState.activeProviderId === providerId,
+            active,
             health: status.health,
           };
         });
