@@ -330,6 +330,77 @@ describe("AppsGrid", () => {
     ).toEqual([...APP_OPTIONS]);
   });
 
+  it("uses activeProvider over stale failover currentRole when marking the active queue row", async () => {
+    const status = createStatusResponse();
+    status.apps.claude = {
+      ...status.apps.claude,
+      mode: "failover",
+      activeProvider: {
+        providerId: "kimi",
+        name: "Kimi For Coding",
+      },
+      providers: {
+        official: {
+          name: "Claude Official",
+          configured: true,
+          baseUrl: "https://api.anthropic.com",
+          tokenField: "ANTHROPIC_AUTH_TOKEN",
+          stats: null,
+          quota: null,
+        },
+        kimi: {
+          name: "Kimi For Coding",
+          configured: true,
+          baseUrl: "https://api.kimi.com/coding/",
+          tokenField: "ANTHROPIC_AUTH_TOKEN",
+          stats: null,
+          quota: null,
+        },
+      },
+      failoverQueue: [
+        {
+          providerId: "official",
+          name: "Claude Official",
+          position: 0,
+        },
+        {
+          providerId: "kimi",
+          name: "Kimi For Coding",
+          position: 1,
+        },
+      ],
+      failoverStatus: {
+        official: {
+          inFailoverQueue: true,
+          queuePosition: 0,
+          currentRole: "active",
+          available: false,
+          health: { observed: true, healthy: true, consecutiveFailures: 0 },
+        },
+        kimi: {
+          inFailoverQueue: true,
+          queuePosition: 1,
+          currentRole: "standby",
+          available: true,
+          health: { observed: true, healthy: true, consecutiveFailures: 0 },
+        },
+      },
+    };
+    const bridge = createBridgeFixture({ status });
+    const { container } = renderAppsGrid({ bridge });
+
+    await screen.findByText("Kimi For Coding");
+    const claudeCard = getAppCard(container, "claude");
+    const activeRows = claudeCard.querySelectorAll(
+      '.owt-app-card__queue-row[data-state="active"]',
+    );
+
+    expect(activeRows).toHaveLength(1);
+    expect(activeRows[0]).toHaveTextContent("Kimi For Coding");
+    expect(activeRows[0]).toHaveTextContent("openwrt.appCard.queue.active");
+    expect(within(claudeCard).getByText("Claude Official")).toBeInTheDocument();
+  });
+
   it("renders OpenCode and OpenClaw as unconfigured inert cards", async () => {
     const { container } = renderAppsGrid();
 

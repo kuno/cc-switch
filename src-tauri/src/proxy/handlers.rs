@@ -844,7 +844,7 @@ fn build_failover_status(
     }
 
     let current_role = if context.auto_failover_enabled {
-        if queue_position == Some(0) {
+        if is_active {
             "active"
         } else if in_failover_queue {
             "standby"
@@ -2348,6 +2348,33 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
         assert!(app.failover_status["p_unqueued"]
             .unavailable_reasons
             .contains(&"not_in_failover_queue".to_string()));
+    }
+
+    #[tokio::test]
+    async fn api_status_failover_role_follows_resolved_active_provider() {
+        let db = Arc::new(Database::memory().expect("db"));
+        for provider_id in ["p_primary", "p_failover"] {
+            db.save_provider("claude", &test_provider(provider_id, provider_id))
+                .expect("save provider");
+            db.add_to_failover_queue("claude", provider_id)
+                .expect("queue provider");
+        }
+        db.set_current_provider("claude", "p_failover")
+            .expect("set current");
+        set_proxy_flags(&db, "claude", true, true).await;
+
+        let state = test_proxy_state(db);
+        let response = status_response(&state).await;
+        let app = response.apps.get("claude").expect("claude app");
+
+        assert_eq!(
+            app.active_provider
+                .as_ref()
+                .map(|provider| provider.provider_id.as_str()),
+            Some("p_failover")
+        );
+        assert_eq!(app.failover_status["p_primary"].current_role, "standby");
+        assert_eq!(app.failover_status["p_failover"].current_role, "active");
     }
 
     #[tokio::test]
