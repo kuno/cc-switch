@@ -197,7 +197,7 @@ describe("ProviderSidePanelHost", () => {
     }
   });
 
-  it("opens saved providers on Activities and new drafts on Configure in edit mode", async () => {
+  it("opens saved providers on Statistics and new drafts on Configure in edit mode", async () => {
     const user = userEvent.setup();
     const savedShell = createBridgeFixture();
     const primaryProvider = createProviderView("claude", {
@@ -217,9 +217,8 @@ describe("ProviderSidePanelHost", () => {
     );
 
     expect(
-      within(await savedDialog).getByRole("button", { name: "Activities" }),
+      within(await savedDialog).getByRole("button", { name: "Statistics" }),
     ).toHaveAttribute("data-active", "true");
-    expect(screen.getByText("No recent activity")).toBeInTheDocument();
     expect(
       within(await savedDialog).queryByRole("button", { name: "Save" }),
     ).toBeNull();
@@ -242,7 +241,7 @@ describe("ProviderSidePanelHost", () => {
 
     const reopenedSavedDialog = await openPanel();
     expect(
-      within(reopenedSavedDialog).getByRole("button", { name: "Activities" }),
+      within(reopenedSavedDialog).getByRole("button", { name: "Statistics" }),
     ).toHaveAttribute("data-active", "true");
 
     await user.keyboard("{Escape}");
@@ -334,8 +333,12 @@ describe("ProviderSidePanelHost", () => {
       within(await dialog).getByRole("button", { name: "Edit" }),
     );
 
-    const nameInput = within(await dialog).getByLabelText("Provider name");
-    const authTextarea = within(await dialog).getByLabelText("auth.json");
+    const nameInput = await within(await dialog).findByLabelText(
+      "Provider Name",
+    );
+    const authTextarea = await within(await dialog).findByLabelText(
+      "auth.json",
+    );
 
     await user.clear(nameInput);
     await user.type(nameInput, "Temporary Name");
@@ -351,7 +354,7 @@ describe("ProviderSidePanelHost", () => {
       within(await dialog).getByRole("button", { name: "Edit" }),
     );
 
-    expect(within(await dialog).getByLabelText("Provider name")).toHaveValue(
+    expect(within(await dialog).getByLabelText("Provider Name")).toHaveValue(
       "OpenAI Official",
     );
     expect(within(await dialog).getByLabelText("auth.json")).toHaveValue("");
@@ -542,7 +545,7 @@ describe("ProviderSidePanelHost", () => {
     );
   });
 
-  it("resets back to Activities when switching to another provider", async () => {
+  it("resets back to Statistics when switching to another provider", async () => {
     const user = userEvent.setup();
     const shell = createBridgeFixture({ selectedApp: "claude" });
     const primaryProvider = createProviderView("claude", {
@@ -579,10 +582,9 @@ describe("ProviderSidePanelHost", () => {
 
     await waitFor(() =>
       expect(
-        within(dialog).getByRole("button", { name: "Activities" }),
+        within(dialog).getByRole("button", { name: "Statistics" }),
       ).toHaveAttribute("data-active", "true"),
     );
-    expect(within(dialog).getByText("No recent activity")).toBeInTheDocument();
     expect(
       within(dialog).getByRole("button", {
         name: "Copy provider ID claude-backup",
@@ -620,6 +622,7 @@ describe("ProviderSidePanelHost", () => {
     render(<HostHarness shell={shell} transport={transport} />);
 
     const dialog = await openPanel();
+    await user.click(within(dialog).getByRole("button", { name: "Activities" }));
 
     await waitFor(() =>
       expect(shell.getRequestLogs).toHaveBeenCalledWith(
@@ -638,6 +641,7 @@ describe("ProviderSidePanelHost", () => {
 
     expect(backupRow).not.toBeUndefined();
     await user.click(backupRow!);
+    await user.click(within(dialog).getByRole("button", { name: "Activities" }));
 
     await waitFor(() =>
       expect(shell.getRequestLogs).toHaveBeenLastCalledWith(
@@ -785,7 +789,7 @@ describe("ProviderSidePanelHost", () => {
         name: "Claude routing mode",
       }),
     );
-    const normalTab = modeTabs.getByRole("tab", { name: "Normal" });
+    const normalTab = modeTabs.getByRole("tab", { name: "Manual" });
     const failoverTab = modeTabs.getByRole("tab", { name: "Failover" });
 
     await waitFor(() => expect(failoverTab).toBeEnabled());
@@ -897,7 +901,7 @@ describe("ProviderSidePanelHost", () => {
         name: "Claude routing mode",
       }),
     );
-    const normalTab = modeTabs.getByRole("tab", { name: "Normal" });
+    const normalTab = modeTabs.getByRole("tab", { name: "Manual" });
     const failoverTab = modeTabs.getByRole("tab", { name: "Failover" });
     await waitFor(() =>
       expect(failoverTab).toHaveAttribute("aria-selected", "true"),
