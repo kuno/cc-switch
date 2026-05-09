@@ -2271,6 +2271,15 @@
   white-space: pre-wrap;
 }
 
+.owt-provider-panel__config-link {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.owt-provider-panel__config-link:hover {
+  text-decoration: underline;
+}
+
 .owt-provider-panel__config-input-wrap {
   min-width: 0;
 }

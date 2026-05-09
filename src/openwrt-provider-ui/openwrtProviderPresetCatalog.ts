@@ -21,6 +21,7 @@ type OpenWrtPresetDefinition = {
 
 type SourcePresetLike = {
   name: string;
+  websiteUrl?: string;
   category?: ProviderCategory;
   icon?: string;
   iconColor?: string;
@@ -455,6 +456,7 @@ function buildOpenWrtPreset(
     label: definition.label,
     providerName: definition.label,
     baseUrl: definition.baseUrl,
+    websiteUrl: sourcePreset?.websiteUrl,
     tokenField: definition.tokenField ?? DEFAULT_TOKEN_FIELDS[appId],
     model: definition.model ?? "",
     description: definition.description ?? "",
