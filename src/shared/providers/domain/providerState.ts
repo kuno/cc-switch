@@ -129,6 +129,7 @@ export function emptySharedProviderView(
     providerId: null,
     name: "",
     baseUrl: "",
+    websiteUrl: "",
     tokenField: DEFAULT_TOKEN_FIELD_BY_APP[appId],
     tokenConfigured: false,
     tokenMasked: "",
@@ -146,6 +147,7 @@ export function emptySharedProviderEditorPayload(
   return {
     name: "",
     baseUrl: "",
+    websiteUrl: "",
     tokenField: DEFAULT_TOKEN_FIELD_BY_APP[appId],
     token: "",
     model: "",
@@ -191,6 +193,7 @@ export function normalizeSharedProviderView(
     providerId,
     name: getString(provider, ["name"]),
     baseUrl: getString(provider, ["baseUrl", "base_url"]),
+    websiteUrl: getString(provider, ["websiteUrl", "website_url"]),
     icon: getString(provider, ["icon"]) || undefined,
     iconColor: getString(provider, ["iconColor", "icon_color"]) || undefined,
     tokenField:

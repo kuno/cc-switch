@@ -185,6 +185,7 @@ function createDraftFromPreset(
     ...draft,
     name: preset.providerName,
     baseUrl: preset.baseUrl,
+    websiteUrl: preset.websiteUrl ?? "",
     tokenField: preset.tokenField,
     model: preset.model,
     authMode: preset.authMode,
@@ -210,6 +211,7 @@ function applyPresetToDraft(
     ...draft,
     name: preset.providerName,
     baseUrl: preset.baseUrl,
+    websiteUrl: preset.websiteUrl ?? draft.websiteUrl,
     tokenField: preset.tokenField,
     model: preset.model,
     authMode: preset.authMode,
@@ -222,6 +224,7 @@ function createDraftFromProvider(
   return {
     name: provider.name,
     baseUrl: provider.baseUrl,
+    websiteUrl: provider.websiteUrl ?? "",
     tokenField: provider.tokenField,
     token: "",
     model: provider.model,
@@ -343,6 +346,7 @@ function trimDraft(
   return {
     name: draft.name.trim(),
     baseUrl: draft.baseUrl.trim(),
+    websiteUrl: (draft.websiteUrl ?? "").trim(),
     tokenField: draft.tokenField,
     token: draft.token.trim(),
     model: draft.model.trim(),

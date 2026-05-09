@@ -30,6 +30,7 @@ function createTransport(
 const SAMPLE_DRAFT: SharedProviderEditorPayload = {
   name: "OpenRouter",
   baseUrl: "https://openrouter.ai/api/v1",
+  websiteUrl: "https://openrouter.ai",
   tokenField: "OPENAI_API_KEY",
   token: "secret",
   model: "gpt-5.4",

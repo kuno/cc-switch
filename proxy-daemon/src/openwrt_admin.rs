@@ -68,6 +68,8 @@ pub struct OpenWrtProviderPayload {
     pub name: String,
     pub base_url: String,
     #[serde(default)]
+    pub website_url: Option<String>,
+    #[serde(default)]
     pub token_field: String,
     #[serde(default)]
     pub token: String,
@@ -105,6 +107,7 @@ pub struct OpenWrtProviderView {
     pub provider_id: Option<String>,
     pub name: String,
     pub base_url: String,
+    pub website_url: Option<String>,
     pub token_field: String,
     pub token_configured: bool,
     pub token_masked: String,
@@ -2065,7 +2068,14 @@ fn build_claude_provider(
     } else {
         resolve_token_value(profile, existing.as_ref(), &payload.token)?
     };
-    let mut provider = init_provider(existing, provider_id, name, payload.notes, profile);
+    let mut provider = init_provider(
+        existing,
+        provider_id,
+        name,
+        payload.notes,
+        payload.website_url,
+        profile,
+    );
 
     let root = ensure_settings_object(&mut provider, "Claude provider settings")?;
 
@@ -2130,7 +2140,14 @@ fn build_codex_provider(
     } else {
         resolve_token_value(profile, existing.as_ref(), &payload.token)?
     };
-    let mut provider = init_provider(existing, provider_id, name, payload.notes, profile);
+    let mut provider = init_provider(
+        existing,
+        provider_id,
+        name,
+        payload.notes,
+        payload.website_url,
+        profile,
+    );
     let model = resolve_model_value(profile, &provider, &payload.model);
     let provider_id_for_default = provider.id.clone();
     let provider_name_for_default = provider.name.clone();
@@ -2195,7 +2212,14 @@ fn build_gemini_provider(
     let base_url = require_trimmed("base URL", &payload.base_url)?;
     let _token_field = normalize_token_field(profile, &payload.token_field)?;
     let token_value = resolve_token_value(profile, existing.as_ref(), &payload.token)?;
-    let mut provider = init_provider(existing, provider_id, name, payload.notes, profile);
+    let mut provider = init_provider(
+        existing,
+        provider_id,
+        name,
+        payload.notes,
+        payload.website_url,
+        profile,
+    );
     let model = resolve_model_value(profile, &provider, &payload.model);
 
     let root = ensure_settings_object(&mut provider, "Gemini provider settings")?;
@@ -2222,6 +2246,7 @@ fn init_provider(
     provider_id: String,
     name: &str,
     notes: String,
+    website_url: Option<String>,
     profile: OpenWrtAppProfile,
 ) -> Provider {
     let mut provider = match existing {
@@ -2235,6 +2260,9 @@ fn init_provider(
 
     provider.name = name.to_string();
     provider.notes = normalize_optional(notes);
+    if let Some(website_url) = website_url {
+        provider.website_url = normalize_optional(website_url);
+    }
     if provider.created_at.is_none() {
         provider.created_at = Some(chrono::Utc::now().timestamp_millis());
     }
@@ -2394,6 +2422,7 @@ fn empty_provider_view(profile: OpenWrtAppProfile) -> OpenWrtProviderView {
         provider_id: None,
         name: String::new(),
         base_url: String::new(),
+        website_url: None,
         token_field: profile.default_token_field.to_string(),
         token_configured: false,
         token_masked: String::new(),
@@ -2464,6 +2493,7 @@ fn provider_to_view(
         provider_id: Some(provider.id.clone()),
         name: provider.name.clone(),
         base_url: extract_base_url(profile, provider).unwrap_or_default(),
+        website_url: provider.website_url.clone(),
         token_field: token_field.to_string(),
         token_configured: !token_value.is_empty()
             || claude_auth
@@ -2807,6 +2837,7 @@ mod tests {
             provider_id: None,
             name: name.to_string(),
             base_url: "https://example.test".to_string(),
+            website_url: None,
             token_field: DEFAULT_TOKEN_FIELD.to_string(),
             token: token.to_string(),
             model: "claude-sonnet".to_string(),
@@ -2821,6 +2852,7 @@ mod tests {
             provider_id: None,
             name: name.to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
+            website_url: None,
             token_field: CODEX_TOKEN_FIELD.to_string(),
             token: token.to_string(),
             model: "gpt-5.4".to_string(),
@@ -3279,6 +3311,7 @@ mod tests {
                 provider_id: None,
                 name: "Claude Official".to_string(),
                 base_url: "https://api.anthropic.com".to_string(),
+            website_url: None,
                 token_field: DEFAULT_TOKEN_FIELD.to_string(),
                 token: String::new(),
                 model: String::new(),
@@ -3349,6 +3382,7 @@ mod tests {
                 provider_id: None,
                 name: "Claude Official".to_string(),
                 base_url: "https://api.anthropic.com".to_string(),
+            website_url: None,
                 token_field: DEFAULT_TOKEN_FIELD.to_string(),
                 token: String::new(),
                 model: String::new(),
@@ -4001,6 +4035,7 @@ mod tests {
             provider_id: None,
             name: "Codex Relay".to_string(),
             base_url: "https://codex.example/v1".to_string(),
+            website_url: Some("https://codex.example".to_string()),
             token_field: CODEX_TOKEN_FIELD.to_string(),
             token: "sk-codex-secret".to_string(),
             model: "gpt-5.4".to_string(),
@@ -4015,6 +4050,7 @@ mod tests {
         assert_eq!(created.provider_id.as_deref(), Some("codex-a"));
         assert_eq!(created.token_field, CODEX_TOKEN_FIELD);
         assert_eq!(created.base_url, "https://codex.example/v1");
+        assert_eq!(created.website_url.as_deref(), Some("https://codex.example"));
         assert_eq!(created.model, "gpt-5.4");
         assert_eq!(created.token_masked, "********cret");
 
@@ -4037,6 +4073,10 @@ mod tests {
                 .and_then(Value::as_str),
             Some("https://codex.example/v1")
         );
+        assert_eq!(
+            stored.website_url.as_deref(),
+            Some("https://codex.example")
+        );
         assert!(stored
             .settings_config
             .get("config")
@@ -4054,6 +4094,7 @@ mod tests {
             provider_id: None,
             name: "Claude Official".to_string(),
             base_url: "https://api.anthropic.com".to_string(),
+            website_url: None,
             token_field: DEFAULT_TOKEN_FIELD.to_string(),
             token: String::new(),
             model: String::new(),
@@ -4084,6 +4125,7 @@ mod tests {
             provider_id: None,
             name: "Claude Official".to_string(),
             base_url: "https://api.anthropic.com".to_string(),
+            website_url: None,
             token_field: DEFAULT_TOKEN_FIELD.to_string(),
             token: String::new(),
             model: String::new(),
@@ -4122,6 +4164,7 @@ mod tests {
             provider_id: None,
             name: "Claude Official".to_string(),
             base_url: "https://api.anthropic.com".to_string(),
+            website_url: None,
             token_field: DEFAULT_TOKEN_FIELD.to_string(),
             token: String::new(),
             model: String::new(),
@@ -4197,6 +4240,7 @@ mod tests {
             provider_id: None,
             name: "OpenAI Official".to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
+            website_url: None,
             token_field: CODEX_TOKEN_FIELD.to_string(),
             token: String::new(),
             model: "gpt-5.4".to_string(),
@@ -4268,6 +4312,7 @@ mod tests {
             provider_id: None,
             name: "DeepSeek".to_string(),
             base_url: "https://api.deepseek.com/anthropic".to_string(),
+            website_url: None,
             token_field: DEFAULT_TOKEN_FIELD.to_string(),
             token: String::new(),
             model: "DeepSeek-V3.2".to_string(),
@@ -4293,6 +4338,7 @@ mod tests {
             provider_id: None,
             name: "Gemini A".to_string(),
             base_url: "https://gemini-a.example/v1beta".to_string(),
+            website_url: None,
             token_field: GEMINI_TOKEN_FIELD.to_string(),
             token: "gemini-a-secret".to_string(),
             model: "gemini-3.1-pro".to_string(),
@@ -4304,6 +4350,7 @@ mod tests {
             provider_id: None,
             name: "Gemini B".to_string(),
             base_url: "https://gemini-b.example/v1beta".to_string(),
+            website_url: None,
             token_field: GEMINI_TOKEN_FIELD.to_string(),
             token: "gemini-b-secret".to_string(),
             model: "gemini-3.1-pro".to_string(),
@@ -4363,6 +4410,7 @@ mod tests {
             provider_id: None,
             name: "Codex Relay".to_string(),
             base_url: "https://codex.example/v1".to_string(),
+            website_url: None,
             token_field: CODEX_TOKEN_FIELD.to_string(),
             token: "sk-codex-secret".to_string(),
             model: "gpt-5.4".to_string(),

@@ -145,6 +145,7 @@ function createDraftFromProvider(
     notes: provider.notes,
     token: "",
     tokenField: provider.tokenField,
+    websiteUrl: provider.websiteUrl ?? "",
   };
 }
 
@@ -158,6 +159,7 @@ function normalizeDraftForCompare(draft: SharedProviderEditorPayload) {
     notes: draft.notes,
     token: draft.token,
     tokenField: draft.tokenField,
+    websiteUrl: draft.websiteUrl ?? "",
   };
 }
 
@@ -171,6 +173,7 @@ function areDraftsEqual(
   return (
     normalizedLeft.name === normalizedRight.name &&
     normalizedLeft.baseUrl === normalizedRight.baseUrl &&
+    normalizedLeft.websiteUrl === normalizedRight.websiteUrl &&
     normalizedLeft.tokenField === normalizedRight.tokenField &&
     normalizedLeft.token === normalizedRight.token &&
     normalizedLeft.model === normalizedRight.model &&
@@ -200,6 +203,10 @@ function deriveWebsite(baseUrl: string): string {
   } catch {
     return trimmed;
   }
+}
+
+function getDisplayWebsite(draft: SharedProviderEditorPayload): string {
+  return (draft.websiteUrl ?? "").trim() || deriveWebsite(draft.baseUrl);
 }
 
 function getProviderById(
@@ -418,7 +425,7 @@ const ProviderSidePanelHostComponent = forwardRef<
       tokenField: draft.tokenField,
     });
   }, [appId, draft.baseUrl, draft.tokenField]);
-  const website = deriveWebsite(draft.baseUrl);
+  const website = getDisplayWebsite(draft);
   const hasValidSavePayload =
     getSaveValidity(mode, selectedProvider, draft) &&
     !hasInvalidAuthJson(draft.authContent);
@@ -774,6 +781,7 @@ const ProviderSidePanelHostComponent = forwardRef<
       name: preset.providerName,
       token: "",
       tokenField: preset.tokenField,
+      websiteUrl: preset.websiteUrl ?? "",
     };
 
     setMode("new");
