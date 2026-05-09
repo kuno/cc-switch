@@ -100,6 +100,18 @@ function formatValue(value: string | null | undefined, fallback = "—"): string
   return trimmed ? trimmed : fallback;
 }
 
+function normalizeExternalUrl(value: string): string {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return "";
+  }
+
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)
+    ? trimmed
+    : `https://${trimmed}`;
+}
+
 function getStoredAuthConnectionLabel(
   summary:
     | SharedProviderCodexAuthSummary
@@ -355,8 +367,37 @@ export function ProviderSidePanelConfigureTab({
 
         <ConfigureRow
           editing={editing}
+          editable
           label={t("provider.websiteUrl")}
-          value={formatValue(website, t("openwrt.configure.notAvailable"))}
+          input={
+            <input
+              aria-label={t("provider.websiteUrl")}
+              className="owt-provider-panel__config-input owt-provider-panel__config-input--mono"
+              placeholder={website || "https://example.com"}
+              type="url"
+              value={draft.websiteUrl ?? ""}
+              onChange={(event) =>
+                onDraftChange({
+                  ...draft,
+                  websiteUrl: event.target.value,
+                })
+              }
+            />
+          }
+          value={
+            website ? (
+              <a
+                className="owt-provider-panel__config-link"
+                href={normalizeExternalUrl(website)}
+                rel="noreferrer"
+                target="_blank"
+              >
+                {website}
+              </a>
+            ) : (
+              t("openwrt.configure.notAvailable")
+            )
+          }
           valueClassName="owt-provider-panel__config-value--mono owt-provider-panel__config-value--muted"
         />
 
