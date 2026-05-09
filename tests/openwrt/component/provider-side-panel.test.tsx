@@ -11,6 +11,10 @@ import {
   createProviderSidePanelProps,
   createProviderView,
 } from "../provider-panel-fixtures";
+import {
+  createPlainPageShellBridge,
+  REALISTIC_HOST_STATE,
+} from "./fixtures/pageShell";
 
 const { copyTextMock } = vi.hoisted(() => ({
   copyTextMock: vi.fn(),
@@ -22,14 +26,17 @@ vi.mock("@/lib/clipboard", () => ({
 
 function StatefulProviderSidePanel({
   initialTab = "activities",
+  shell,
 }: {
   initialTab?: ProviderSidePanelTab;
+  shell?: ReturnType<typeof createPlainPageShellBridge>;
 }) {
   const [tab, setTab] = useState<ProviderSidePanelTab>(initialTab);
 
   return (
     <ProviderSidePanel
       {...createProviderSidePanelProps({
+        shell,
         tab,
         callbacks: {
           onTabChange: setTab,
@@ -37,6 +44,20 @@ function StatefulProviderSidePanel({
       })}
     />
   );
+}
+
+function createEmptyActivityShell() {
+  return createPlainPageShellBridge({
+    host: {
+      ...REALISTIC_HOST_STATE,
+      app: "claude",
+    },
+    requestLogs: {
+      claude: [],
+      codex: [],
+      gemini: [],
+    },
+  });
 }
 
 describe("ProviderSidePanel", () => {
@@ -49,7 +70,7 @@ describe("ProviderSidePanel", () => {
     vi.useRealTimers();
   });
 
-  it("renders the shell with Activities and Configure tabs", async () => {
+  it("renders the shell with Statistics, Configure, and Activities tabs", async () => {
     const onClose = vi.fn();
     const onTabChange = vi.fn();
     const provider = createProviderView("claude", {
@@ -63,6 +84,7 @@ describe("ProviderSidePanel", () => {
           providers: [provider],
           selectedProvider: provider,
           selectedProviderId: provider.providerId,
+          shell: createEmptyActivityShell(),
           tab: "activities",
           callbacks: {
             onClose,
@@ -84,8 +106,9 @@ describe("ProviderSidePanel", () => {
 
     expect(dialog).toHaveAttribute("aria-modal", "true");
     expect(tabButtons.map((button) => button.textContent?.trim())).toEqual([
-      "Activities",
+      "Statistics",
       "Configure",
+      "Activities",
     ]);
     expect(
       within(dialog).queryByRole("button", { name: "Set active" }),
@@ -106,7 +129,12 @@ describe("ProviderSidePanel", () => {
   it("switches visible content between Activities and Configure", async () => {
     const user = userEvent.setup();
 
-    render(<StatefulProviderSidePanel initialTab="activities" />);
+    render(
+      <StatefulProviderSidePanel
+        initialTab="activities"
+        shell={createEmptyActivityShell()}
+      />,
+    );
 
     expect(await screen.findByText("No recent activity")).toBeInTheDocument();
 
@@ -116,8 +144,74 @@ describe("ProviderSidePanel", () => {
       }),
     );
 
-    expect(screen.getByText("Provider name")).toBeInTheDocument();
+    expect(screen.getByText("Provider Name")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
+  });
+
+  it("shows provider statistics and left token quota", async () => {
+    const provider = createProviderView("claude", {
+      active: true,
+      name: "Claude Primary",
+      providerId: "claude-primary",
+    });
+    const shell = createPlainPageShellBridge({
+      host: {
+        ...REALISTIC_HOST_STATE,
+        app: "claude",
+      },
+    });
+
+    shell.getStatus = vi.fn().mockResolvedValue({
+      apps: {
+        claude: {
+          maxRetries: 3,
+          providers: {
+            "claude-primary": {
+              name: "Claude Primary",
+              stats: {
+                avgLatencyMs: 684,
+                requestCount: 111,
+                successRate: 87.5,
+                totalCost: "1.01",
+                totalTokens: 236_400,
+              },
+              quota: {
+                tokensRemaining: 42_000,
+                tokensLimit: 100_000,
+                windows: [
+                  {
+                    name: "five_hour",
+                    utilization: 0.42,
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+    });
+
+    render(
+      <ProviderSidePanel
+        {...createProviderSidePanelProps({
+          providers: [provider],
+          selectedProvider: provider,
+          selectedProviderId: provider.providerId,
+          shell,
+          tab: "statistics",
+        })}
+      />,
+    );
+
+    expect(await screen.findByText("Requests")).toBeInTheDocument();
+    expect(screen.getByText("111")).toBeInTheDocument();
+    expect(screen.getByText("236.4K")).toBeInTheDocument();
+    expect(screen.getByText("87.5%")).toBeInTheDocument();
+    expect(screen.getByText("$1.01")).toBeInTheDocument();
+    expect(screen.getByText("684 ms")).toBeInTheDocument();
+    expect(screen.getByText("Left quota")).toBeInTheDocument();
+    expect(screen.getByText("42,000 / 100,000 tokens")).toBeInTheDocument();
+    expect(screen.getByText("58% remaining")).toBeInTheDocument();
   });
 
   it("renders routing mode tabs and failover queue actions", () => {
@@ -155,7 +249,7 @@ describe("ProviderSidePanel", () => {
         name: "Claude routing mode",
       }),
     );
-    const normalTab = modeTabs.getByRole("tab", { name: "Normal" });
+    const normalTab = modeTabs.getByRole("tab", { name: "Manual" });
     const failoverTab = modeTabs.getByRole("tab", { name: "Failover" });
     const addToQueueButton = within(dialog).getByRole("button", {
       name: "Add Claude Primary to failover queue",
@@ -174,7 +268,7 @@ describe("ProviderSidePanel", () => {
     expect(onToggleProviderFailoverQueue).toHaveBeenCalledWith(true);
   });
 
-  it("shows active actions only in normal routing mode", () => {
+  it("shows active actions only in manual routing mode", () => {
     const provider = createProviderView("claude", {
       active: false,
       name: "Claude Backup",

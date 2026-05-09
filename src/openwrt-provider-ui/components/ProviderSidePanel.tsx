@@ -20,13 +20,23 @@ import type {
 import { getOpenWrtAppIconUrl, OpenWrtProviderIcon } from "../providerIcons";
 import { ProviderSidePanelActivitiesTab } from "./ProviderSidePanelActivitiesTab";
 import { ProviderSidePanelConfigureTab } from "./ProviderSidePanelConfigureTab";
+import { ProviderSidePanelStatisticsTab } from "./ProviderSidePanelStatisticsTab";
 import { getActiveElementInTree } from "./focusTree";
 import {
   ProviderSidePanelPresetTab,
   type ProviderSidePanelPresetGroup,
 } from "./ProviderSidePanelPresetTab";
 
-export type ProviderSidePanelTab = "activities" | "configure";
+export type ProviderSidePanelTab = "activities" | "configure" | "statistics";
+
+export const PROVIDER_SIDE_PANEL_DETAIL_TABS = [
+  "statistics",
+  "configure",
+  "activities",
+] as const satisfies readonly ProviderSidePanelTab[];
+
+export const DEFAULT_PROVIDER_SIDE_PANEL_DETAIL_TAB =
+  PROVIDER_SIDE_PANEL_DETAIL_TABS[0];
 
 interface ProviderSidePanelProps {
   appId: SharedProviderAppId;
@@ -97,6 +107,12 @@ const APP_SUBTITLE_KEYS: Record<SharedProviderAppId, string> = {
   claude: "openwrt.providerPanel.appSubtitles.claude",
   codex: "openwrt.providerPanel.appSubtitles.codex",
   gemini: "openwrt.providerPanel.appSubtitles.gemini",
+};
+
+const DETAIL_TAB_LABEL_KEYS: Record<ProviderSidePanelTab, string> = {
+  activities: "openwrt.providerPanel.activitiesTab",
+  configure: "openwrt.providerPanel.configureTab",
+  statistics: "openwrt.providerPanel.statisticsTab",
 };
 
 const FOCUSABLE_SELECTOR = [
@@ -705,22 +721,17 @@ export function ProviderSidePanel({
                   </div>
 
                   <div className="owt-provider-panel__tabs" role="tablist">
-                    <button
-                      type="button"
-                      className="owt-provider-panel__tab"
-                      data-active={tab === "activities"}
-                      onClick={() => onTabChange("activities")}
-                    >
-                      {t("openwrt.providerPanel.activitiesTab")}
-                    </button>
-                    <button
-                      type="button"
-                      className="owt-provider-panel__tab"
-                      data-active={tab === "configure"}
-                      onClick={() => onTabChange("configure")}
-                    >
-                      {t("openwrt.providerPanel.configureTab")}
-                    </button>
+                    {PROVIDER_SIDE_PANEL_DETAIL_TABS.map((detailTab) => (
+                      <button
+                        key={detailTab}
+                        type="button"
+                        className="owt-provider-panel__tab"
+                        data-active={tab === detailTab}
+                        onClick={() => onTabChange(detailTab)}
+                      >
+                        {t(DETAIL_TAB_LABEL_KEYS[detailTab])}
+                      </button>
+                    ))}
                     <button
                       type="button"
                       className="owt-provider-panel__tab"
@@ -764,6 +775,17 @@ export function ProviderSidePanel({
                   />
                 ) : tab === "activities" ? (
                   <ProviderSidePanelActivitiesTab
+                    appId={appId}
+                    providerId={selectedProvider?.providerId ?? null}
+                    providerName={
+                      selectedProvider?.name ||
+                      selectedProvider?.providerId ||
+                      providerName
+                    }
+                    shell={shell}
+                  />
+                ) : tab === "statistics" ? (
+                  <ProviderSidePanelStatisticsTab
                     appId={appId}
                     providerId={selectedProvider?.providerId ?? null}
                     providerName={

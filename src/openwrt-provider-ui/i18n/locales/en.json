@@ -208,6 +208,24 @@
       "updated": "updated {{time}}",
       "updatedJustNow": "updated just now"
     },
+    "providerStatistics": {
+      "averageLatency": "Average response time",
+      "balance": "Balance",
+      "emptySubtitle": "This provider does not have recorded request statistics yet.",
+      "emptyTitle": "No statistics yet",
+      "leftQuota": "Left quota",
+      "loading": "Loading provider statistics",
+      "percent": "{{value}}%",
+      "quotaValue": "{{remaining}} tokens",
+      "quotaValueWithLimit": "{{remaining}} / {{limit}} tokens",
+      "requests": "Requests",
+      "subtitleForProvider": "Statistics for {{providerName}}",
+      "subtitleGeneric": "Statistics for this provider",
+      "successRate": "Success rate",
+      "tokenQuota": "Token quota",
+      "tokens": "Token consumption",
+      "totalCost": "Total cost"
+    },
     "providerPanel": {
       "appSubtitles": {
         "claude": "Anthropic · Claude Code",
@@ -239,6 +257,7 @@
       "deleteProvider": "Delete provider",
       "activitiesTab": "Activities",
       "configureTab": "Configure",
+      "statisticsTab": "Statistics",
       "loadingWorkspace": "Loading provider workspace…",
       "autoFailover": "Auto failover"
     }

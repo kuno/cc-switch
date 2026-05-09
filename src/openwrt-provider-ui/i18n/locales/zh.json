@@ -208,6 +208,24 @@
       "updated": "已更新 {{time}}",
       "updatedJustNow": "刚刚更新"
     },
+    "providerStatistics": {
+      "averageLatency": "平均响应时间",
+      "balance": "余额",
+      "emptySubtitle": "此服务商还没有记录到请求统计。",
+      "emptyTitle": "暂无统计",
+      "leftQuota": "剩余额度",
+      "loading": "正在加载服务商统计",
+      "percent": "{{value}}%",
+      "quotaValue": "{{remaining}} tokens",
+      "quotaValueWithLimit": "{{remaining}} / {{limit}} tokens",
+      "requests": "请求数",
+      "subtitleForProvider": "{{providerName}} 的统计",
+      "subtitleGeneric": "此服务商的统计",
+      "successRate": "成功率",
+      "tokenQuota": "Token 额度",
+      "tokens": "Token 消耗",
+      "totalCost": "总成本"
+    },
     "providerPanel": {
       "appSubtitles": {
         "claude": "Anthropic · Claude Code",
@@ -239,6 +257,7 @@
       "deleteProvider": "删除服务商",
       "activitiesTab": "活动",
       "configureTab": "配置",
+      "statisticsTab": "统计",
       "loadingWorkspace": "正在加载服务商工作区…",
       "autoFailover": "自动故障转移"
     }
