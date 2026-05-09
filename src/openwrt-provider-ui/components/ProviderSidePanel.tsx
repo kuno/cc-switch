@@ -1,4 +1,4 @@
-import { Copy, Loader2, Plus, Search, Trash2, X, Zap } from "lucide-react";
+import { Copy, Loader2, Minus, Plus, Search, Trash2, X, Zap } from "lucide-react";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   useEffect,
@@ -679,7 +679,7 @@ export function ProviderSidePanel({
                           {providerFailoverPending ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
                           ) : providerInFailoverQueue ? (
-                            <X className="h-4 w-4" />
+                            <Minus className="h-4 w-4" />
                           ) : (
                             <Plus className="h-4 w-4" />
                           )}
