@@ -332,8 +332,10 @@ describe("AppsGrid", () => {
 
   it("uses activeProvider over stale failover currentRole when marking the active queue row", async () => {
     const status = createStatusResponse();
+    const claudeStatus = status.apps.claude;
     status.apps.claude = {
-      ...status.apps.claude,
+      ...claudeStatus,
+      maxRetries: claudeStatus?.maxRetries ?? 3,
       mode: "failover",
       activeProvider: {
         providerId: "kimi",
