@@ -1,5 +1,6 @@
 import { type ReactElement, useRef } from "react";
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -115,8 +116,8 @@ function mockScrollbarWidth(width: number) {
   };
 }
 
-async function openPanel() {
-  await userEvent.setup().click(
+async function openPanel(user = userEvent.setup()) {
+  await user.click(
     screen.getByRole("button", {
       name: "Open provider panel",
     }),
@@ -325,7 +326,7 @@ describe("ProviderSidePanelHost", () => {
       <HostHarness selectedApp="codex" shell={shell} transport={transport} />,
     );
 
-    const dialog = await openPanel();
+    const dialog = await openPanel(user);
     await user.click(
       within(await dialog).getByRole("button", { name: "Configure" }),
     );
@@ -378,7 +379,7 @@ describe("ProviderSidePanelHost", () => {
       <HostHarness selectedApp="codex" shell={shell} transport={transport} />,
     );
 
-    const dialog = await openPanel();
+    const dialog = await openPanel(user);
     await user.click(
       within(await dialog).getByRole("button", { name: "Configure" }),
     );
@@ -464,13 +465,58 @@ describe("ProviderSidePanelHost", () => {
     );
   });
 
-  it("returns to read-only detail state and preserves the save message after saving an existing provider", async () => {
+  it("returns to read-only detail state and shows the automatic restart message after saving an existing provider", async () => {
     const user = userEvent.setup();
     const shell = createBridgeFixture({ selectedApp: "codex" });
     const codexProvider = createProviderView("codex", {
       active: true,
       authMode: "codex_oauth",
       codexAuth: createCodexAuthSummary(),
+      name: "OpenAI Official",
+      notes: "Initial note",
+      providerId: "codex-primary",
+    });
+    const { transport } = createProviderTransportFixture({
+      codex: createProviderState("codex", [codexProvider]),
+    });
+
+    render(
+      <HostHarness selectedApp="codex" shell={shell} transport={transport} />,
+    );
+
+    const dialog = await openPanel(user);
+    await user.click(within(dialog).getByRole("button", { name: "Configure" }));
+    await user.click(within(dialog).getByRole("button", { name: "Edit" }));
+    await user.type(within(dialog).getByLabelText("Notes"), " updated");
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(transport.upsertProviderByProviderId).toHaveBeenCalledTimes(1),
+    );
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", { name: "Configure" }),
+      ).toHaveAttribute("data-active", "true"),
+    );
+    expect(
+      within(dialog).getByText("Initial note updated"),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Edit" })).toBeEnabled();
+    expect(within(dialog).queryByRole("button", { name: "Save" })).toBeNull();
+    expect(shell.restartService).toHaveBeenCalledTimes(1);
+    expect(
+      within(dialog).getByText(
+        "OpenAI Official was saved. Service restarted to apply provider changes.",
+      ),
+    ).toBeInTheDocument();
+    expect(shell.showMessage).not.toHaveBeenCalled();
+  });
+
+  it("dismisses the automatic restart message after saving an existing provider", async () => {
+    const user = userEvent.setup();
+    const shell = createBridgeFixture({ selectedApp: "codex" });
+    const codexProvider = createProviderView("codex", {
+      active: true,
       name: "OpenAI Official",
       notes: "Initial note",
       providerId: "codex-primary",
@@ -490,22 +536,24 @@ describe("ProviderSidePanelHost", () => {
     await user.click(within(dialog).getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
-      expect(transport.upsertProviderByProviderId).toHaveBeenCalledTimes(1),
+      expect(
+        within(dialog).getByText(
+          "OpenAI Official was saved. Service restarted to apply provider changes.",
+        ),
+      ).toBeInTheDocument(),
     );
+
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 3100));
+    });
+
     await waitFor(() =>
       expect(
-        within(dialog).getByRole("button", { name: "Configure" }),
-      ).toHaveAttribute("data-active", "true"),
+        within(dialog).queryByText(
+          "OpenAI Official was saved. Service restarted to apply provider changes.",
+        ),
+      ).toBeNull(),
     );
-    expect(
-      within(dialog).getByText("Initial note updated"),
-    ).toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "Edit" })).toBeEnabled();
-    expect(within(dialog).queryByRole("button", { name: "Save" })).toBeNull();
-    expect(
-      within(dialog).getByText(/OpenAI Official was saved\./),
-    ).toBeInTheDocument();
-    expect(shell.showMessage).not.toHaveBeenCalled();
   });
 
   it("includes pasted authContent when saving a new oauth draft", async () => {
