@@ -20,7 +20,10 @@ import type {
   OpenWrtSharedPageShellApi,
 } from "@/openwrt-provider-ui/pageTypes";
 import type { ProviderSidePanelPresetGroup } from "@/openwrt-provider-ui/components/ProviderSidePanelPresetTab";
-import { createBridgeFixture } from "./component/fixtures/bridge";
+import {
+  createPlainPageShellBridge,
+  REALISTIC_HOST_STATE,
+} from "./component/fixtures/pageShell";
 
 const APP_LABELS: Record<SharedProviderAppId, string> = {
   claude: "Claude",
@@ -283,7 +286,14 @@ export function createProviderSidePanelProps(
   return {
     appId,
     open: options.open ?? true,
-    shell: options.shell ?? createBridgeFixture({ selectedApp: appId }),
+    shell:
+      options.shell ??
+      createPlainPageShellBridge({
+        host: {
+          ...REALISTIC_HOST_STATE,
+          app: appId,
+        },
+      }),
     loading: options.loading ?? false,
     error: options.error ?? null,
     mode,

@@ -4,7 +4,10 @@ import {
   getSharedProviderPresets,
   type SharedProviderAppId,
 } from "@/shared/providers/domain";
-import { createBridgeFixture } from "../../component/fixtures/bridge";
+import {
+  createPlainPageShellBridge,
+  REALISTIC_HOST_STATE,
+} from "../../component/fixtures/pageShell";
 import {
   createCodexAuthSummary,
   createProviderDraft,
@@ -64,41 +67,86 @@ const PROVIDERS_BY_APP: Record<SharedProviderAppId, ReturnType<typeof createProv
 };
 
 function createActivityShell(appId: SharedProviderAppId, providerId: string) {
-  return createBridgeFixture({
+  return createPlainPageShellBridge({
+    host: {
+      ...REALISTIC_HOST_STATE,
+      app: appId,
+    },
     requestLogs: {
+      claude: [],
+      codex: [],
+      gemini: [],
+      [appId]: [
+        {
+          appType: appId,
+          cacheCreationCostUsd: "0",
+          cacheCreationTokens: 0,
+          cacheReadCostUsd: "0",
+          cacheReadTokens: 0,
+          costMultiplier: "1",
+          createdAt: Date.now(),
+          inputCostUsd: "0.01",
+          inputTokens: 120,
+          isStreaming: false,
+          latencyMs: 240,
+          model: appId === "codex" ? "gpt-5.4" : "claude-sonnet-4-5",
+          outputCostUsd: "0.02",
+          outputTokens: 180,
+          providerId,
+          providerName:
+            PROVIDERS_BY_APP[appId].find(
+              (provider) => provider.providerId === providerId,
+            )?.name ?? providerId,
+          requestId: `${providerId}-req-1`,
+          statusCode: 200,
+          totalCostUsd: "0.03",
+        },
+      ],
+    },
+  });
+}
+
+function createStatisticsShell(appId: SharedProviderAppId, providerId: string) {
+  const shell = createActivityShell(appId, providerId);
+  const providerName =
+    PROVIDERS_BY_APP[appId].find((provider) => provider.providerId === providerId)
+      ?.name ?? providerId;
+
+  shell.getStatus = async () => ({
+    apps: {
       [appId]: {
-        data: [
-          {
-            appType: appId,
-            cacheCreationCostUsd: "0",
-            cacheCreationTokens: 0,
-            cacheReadCostUsd: "0",
-            cacheReadTokens: 0,
-            costMultiplier: "1",
-            createdAt: Date.now(),
-            inputCostUsd: "0.01",
-            inputTokens: 120,
-            isStreaming: false,
-            latencyMs: 240,
-            model: appId === "codex" ? "gpt-5.4" : "claude-sonnet-4-5",
-            outputCostUsd: "0.02",
-            outputTokens: 180,
-            providerId,
-            providerName:
-              PROVIDERS_BY_APP[appId].find((provider) => provider.providerId === providerId)
-                ?.name ?? providerId,
-            requestId: `${providerId}-req-1`,
-            statusCode: 200,
-            totalCostUsd: "0.03",
+        maxRetries: 3,
+        providers: {
+          [providerId]: {
+            name: providerName,
+            stats: {
+              avgLatencyMs: 684,
+              requestCount: 111,
+              successRate: 87.5,
+              totalCost: "1.01",
+              totalTokens: 236_400,
+            },
+            quota: {
+              tokensRemaining: 42_000,
+              tokensLimit: 100_000,
+              windows: [
+                {
+                  name: "five_hour",
+                  utilization: 0.42,
+                },
+                {
+                  name: "weekly_limit",
+                  utilization: 0.18,
+                },
+              ],
+            },
           },
-        ],
-        total: 1,
-        page: 0,
-        pageSize: 20,
+        },
       },
     },
-    selectedApp: appId,
   });
+
+  return shell;
 }
 
 function getOfficialPreset(appId: SharedProviderAppId) {
@@ -176,6 +224,18 @@ export const PROVIDER_SIDE_PANEL_HARNESSES: Record<
         selectedProviderId: CLAUDE_PRIMARY.providerId,
         shell: createActivityShell("claude", "claude-primary"),
         tab: "activities",
+      }),
+  },
+  statistics: {
+    canvasClassName: PANEL_CANVAS_CLASS,
+    render: () =>
+      renderPanel({
+        appId: "claude",
+        providers: PROVIDERS_BY_APP.claude,
+        selectedProvider: CLAUDE_PRIMARY,
+        selectedProviderId: CLAUDE_PRIMARY.providerId,
+        shell: createStatisticsShell("claude", "claude-primary"),
+        tab: "statistics",
       }),
   },
   "configure-read": {
