@@ -1,6 +1,7 @@
 import {
   forwardRef,
   memo,
+  useCallback,
   useDeferredValue,
   useEffect,
   useImperativeHandle,
@@ -130,6 +131,26 @@ function getMutationMessage(
   return {
     kind: "success",
     text: `${providerName} was ${verb}. Changes are available immediately.`,
+  };
+}
+
+function getAutoRestartMessage(
+  providerName: string,
+  phase: "restarting" | "restarted",
+): {
+  kind: "info" | "success";
+  text: string;
+} {
+  if (phase === "restarting") {
+    return {
+      kind: "info",
+      text: `${providerName} was saved. Restarting service to apply provider changes.`,
+    };
+  }
+
+  return {
+    kind: "success",
+    text: `${providerName} was saved. Service restarted to apply provider changes.`,
   };
 }
 
@@ -404,6 +425,7 @@ const ProviderSidePanelHostComponent = forwardRef<
   const loadRequestIdRef = useRef(0);
   const failoverRequestIdRef = useRef(0);
   const unlockBodyScrollRef = useRef<(() => void) | null>(null);
+  const panelMessageDismissTimeoutRef = useRef<number | null>(null);
   const deferredSearch = useDeferredValue(search);
   const selectedProvider = getProviderById(providerState, selectedProviderId);
   const presetGroups = useMemo(() => buildPresetGroups(appId), [appId]);
@@ -445,6 +467,24 @@ const ProviderSidePanelHostComponent = forwardRef<
     !selectedProvider?.active &&
     Boolean(providerState?.phase2Available);
 
+  const setPanelMessageWithDismiss = useCallback(
+    (message: OpenWrtPageMessage, delayMs = 3000) => {
+      if (panelMessageDismissTimeoutRef.current !== null) {
+        window.clearTimeout(panelMessageDismissTimeoutRef.current);
+        panelMessageDismissTimeoutRef.current = null;
+      }
+
+      setPanelMessage(message);
+      panelMessageDismissTimeoutRef.current = window.setTimeout(() => {
+        setPanelMessage((currentMessage) =>
+          currentMessage?.text === message.text ? null : currentMessage,
+        );
+        panelMessageDismissTimeoutRef.current = null;
+      }, delayMs);
+    },
+    [],
+  );
+
   const providerAdapter = useMemo(
     () =>
       createOpenWrtProviderAdapter(transport, {
@@ -452,6 +492,42 @@ const ProviderSidePanelHostComponent = forwardRef<
           return shell.getServiceStatus().isRunning;
         },
         async onProviderMutation(event) {
+          const providerName = getProviderName(
+            event.providerId,
+            event.providerState,
+          );
+
+          if (event.restartRequired && event.mutation === "save") {
+            shell.setRestartState?.({
+              inFlight: true,
+              pending: true,
+            });
+            setPanelMessage(getAutoRestartMessage(providerName, "restarting"));
+
+            try {
+              await shell.restartService();
+              shell.setRestartState?.({
+                inFlight: false,
+                pending: false,
+              });
+              setPanelMessageWithDismiss(
+                getAutoRestartMessage(providerName, "restarted"),
+              );
+            } catch (restartError) {
+              shell.setRestartState?.({
+                inFlight: false,
+                pending: true,
+              });
+              setPanelMessage({
+                kind: "error",
+                text: `${providerName} was saved, but service restart failed: ${formatErrorMessage(restartError)}`,
+              });
+            }
+
+            onProviderMutation?.();
+            return;
+          }
+
           if (event.restartRequired) {
             shell.setRestartState?.({
               pending: true,
@@ -460,7 +536,7 @@ const ProviderSidePanelHostComponent = forwardRef<
 
           const message = getMutationMessage(
             event.mutation,
-            getProviderName(event.providerId, event.providerState),
+            providerName,
             event.serviceRunning,
             event.restartRequired,
           );
@@ -468,7 +544,7 @@ const ProviderSidePanelHostComponent = forwardRef<
           onProviderMutation?.();
         },
       }),
-    [onProviderMutation, shell, transport],
+    [onProviderMutation, setPanelMessageWithDismiss, shell, transport],
   );
   const failoverAdapter = supportsMinimalOpenWrtFailoverControls(
     providerAdapter,
@@ -690,6 +766,16 @@ const ProviderSidePanelHostComponent = forwardRef<
   useEffect(() => {
     onOpenChange?.(open);
   }, [onOpenChange, open]);
+
+  useEffect(
+    () => () => {
+      if (panelMessageDismissTimeoutRef.current !== null) {
+        window.clearTimeout(panelMessageDismissTimeoutRef.current);
+        panelMessageDismissTimeoutRef.current = null;
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!open) {
