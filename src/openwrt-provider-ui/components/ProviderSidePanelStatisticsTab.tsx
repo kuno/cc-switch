@@ -1,4 +1,4 @@
-import { Loader2 } from "lucide-react";
+import { Info, Loader2 } from "lucide-react";
 import type { TFunction } from "i18next";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -384,6 +384,17 @@ export function ProviderSidePanelStatisticsTab({
             <div className="owt-provider-panel__stat-card">
               <div className="owt-provider-panel__stat-label">
                 {t("openwrt.providerStatistics.totalCost")}
+                <button
+                  type="button"
+                  className="owt-app-card__usage-info"
+                  aria-label={t("openwrt.appCard.aboutCostNumber")}
+                >
+                  <Info className="h-3 w-3" aria-hidden="true" />
+                  <span className="owt-app-card__usage-tip" role="tooltip">
+                    <strong>{t("openwrt.appCard.costTooltipTitle")}</strong>{" "}
+                    {t("openwrt.appCard.costTooltipBody")}
+                  </span>
+                </button>
               </div>
               <div className="owt-provider-panel__stat-value">
                 {formatCost(state.stat.totalCost)}
