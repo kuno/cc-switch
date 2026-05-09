@@ -2021,6 +2021,9 @@
 }
 
 .owt-provider-panel__stat-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   color: var(--muted);
   font-size: 11.5px;
   font-weight: 700;
