@@ -13,6 +13,15 @@ on:
           - aarch64
           - x86_64
           - arm_cortex-a7
+      package:
+        description: Package set to build
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - daemon
+          - luci
       skip_ui_rebuild:
         description: Use the staged OpenWrt provider UI bundle instead of rebuilding inside build-ipk.sh
         required: false
@@ -37,6 +46,12 @@ jobs:
         id: select
         run: |
           set -euo pipefail
+
+          if [ "${{ inputs.package }}" = "luci" ]; then
+            matrix='[{"name":"luci","rust_target":"","opkg_arch":""}]'
+            echo "matrix=${matrix}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           case "${{ inputs.architecture }}" in
             all)
@@ -81,14 +96,17 @@ jobs:
           git fetch upstream --tags
 
       - name: Setup Rust
+        if: ${{ inputs.package != 'luci' }}
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target.rust_target }}
 
       - name: Install cross
+        if: ${{ inputs.package != 'luci' }}
         run: cargo install cross --git https://github.com/cross-rs/cross
 
       - name: Cache Cargo registry and build
+        if: ${{ inputs.package != 'luci' }}
         uses: actions/cache@v5
         with:
           path: |
@@ -100,28 +118,34 @@ jobs:
             ${{ runner.os }}-cargo-${{ matrix.target.rust_target }}-
 
       - name: Setup pnpm
+        if: ${{ inputs.package != 'daemon' }}
         uses: pnpm/action-setup@v4
         with:
           version: 10.33.0
           run_install: false
 
       - name: Setup Node.js
+        if: ${{ inputs.package != 'daemon' }}
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: pnpm
 
       - name: Install dependencies
+        if: ${{ inputs.package != 'daemon' }}
         run: pnpm install --frozen-lockfile
 
       - name: Build OpenWrt provider UI bundle
+        if: ${{ inputs.package != 'daemon' }}
         run: pnpm build:openwrt-provider-ui
 
       - name: Build cc-switch binary
+        if: ${{ inputs.package != 'luci' }}
         working-directory: proxy-daemon
         run: cross build --release --target ${{ matrix.target.rust_target }}
 
       - name: Install po2lmo
+        if: ${{ inputs.package != 'daemon' }}
         run: |
           set -euo pipefail
           git clone --depth 1 https://github.com/openwrt/luci.git /tmp/luci
@@ -133,16 +157,22 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ "${{ inputs.skip_ui_rebuild }}" = "true" ]; then
-            CCSWITCH_IPK_SKIP_UI_REBUILD=1 openwrt/build-ipk.sh \
-              --rust-target "${{ matrix.target.rust_target }}" \
-              --opkg-arch "${{ matrix.target.opkg_arch }}" \
+          args=(--package "${{ inputs.package }}")
+
+          if [ "${{ inputs.package }}" != "luci" ]; then
+            args+=(
+              --rust-target "${{ matrix.target.rust_target }}"
+              --opkg-arch "${{ matrix.target.opkg_arch }}"
               --binary "proxy-daemon/target/${{ matrix.target.rust_target }}/release/cc-switch"
+            )
+          fi
+
+          if [ "${{ inputs.skip_ui_rebuild }}" = "true" ] && [ "${{ inputs.package }}" != "daemon" ]; then
+            CCSWITCH_IPK_SKIP_UI_REBUILD=1 openwrt/build-ipk.sh \
+              "${args[@]}"
           else
             openwrt/build-ipk.sh \
-              --rust-target "${{ matrix.target.rust_target }}" \
-              --opkg-arch "${{ matrix.target.opkg_arch }}" \
-              --binary "proxy-daemon/target/${{ matrix.target.rust_target }}/release/cc-switch"
+              "${args[@]}"
           fi
 
       - name: Upload IPK artifacts

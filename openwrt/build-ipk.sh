@@ -36,6 +36,7 @@ CC_SWITCH_LEGACY_OWNERS="luci-app-cc-switch, luci-app-open-cc-switch"
 VERSION="${PKG_VERSION_OVERRIDE:-}"
 PKG_RELEASE="${PKG_RELEASE_OVERRIDE:-$DEFAULT_RELEASE}"
 DIST_DIR="$SCRIPT_DIR/dist"
+PACKAGE_TARGET="all"
 ARCH_ALIAS=""
 RUST_TARGET=""
 OPKG_ARCH=""
@@ -47,6 +48,7 @@ usage() {
 Usage:
   $(basename "$0") [aarch64|x86_64]
   $(basename "$0") --rust-target <triple> --opkg-arch <arch> [--binary <path>]
+  $(basename "$0") --package daemon|luci|all [...]
 
 Known targets:
   aarch64  -> aarch64-unknown-linux-musl / aarch64_generic
@@ -55,6 +57,7 @@ Known targets:
 Options:
   --binary <path>       Use a prebuilt cc-switch binary instead of the default
   --dist-dir <path>     Output directory for generated .ipk files
+  --package <target>    Build daemon, luci, or all packages (default: all)
   --version <version>   Override the package version
   --release <release>   Override the package release
   --list-targets        Print the built-in target mappings
@@ -84,6 +87,14 @@ die() {
 
 require_command() {
 	command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+builds_daemon_package() {
+	[ "$PACKAGE_TARGET" = "all" ] || [ "$PACKAGE_TARGET" = "daemon" ]
+}
+
+builds_luci_package() {
+	[ "$PACKAGE_TARGET" = "all" ] || [ "$PACKAGE_TARGET" = "luci" ]
 }
 
 git_describe_version() {
@@ -154,6 +165,18 @@ parse_args() {
 				shift
 				[ "$#" -gt 0 ] || die "--dist-dir requires a value"
 				DIST_DIR="$1"
+				;;
+			--package)
+				shift
+				[ "$#" -gt 0 ] || die "--package requires a value"
+				case "$1" in
+					all|daemon|luci)
+						PACKAGE_TARGET="$1"
+						;;
+					*)
+						die "--package must be one of: all, daemon, luci"
+						;;
+				esac
 				;;
 			--version)
 				shift
@@ -237,20 +260,25 @@ validate_package_metadata() {
 	[ -n "$PKG_RELEASE" ] || die "effective package release is empty"
 }
 
-assert_inputs() {
+assert_common_inputs() {
 	require_command tar
 	require_command sed
 	require_command mktemp
-	require_command file
 	require_command install
 	require_command find
+}
 
+assert_daemon_inputs() {
+	require_command file
 	[ -f "$BINARY" ] || die "binary not found: $BINARY
 Build it first with:
   cd proxy-daemon && cargo build --release --target $RUST_TARGET"
 
 	[ -f "$DAEMON_SRC/etc/config/ccswitch" ] || die "missing daemon config template"
 	[ -f "$DAEMON_SRC/etc/init.d/ccswitch" ] || die "missing daemon init script"
+}
+
+assert_luci_inputs() {
 	[ -f "$LUCI_SRC/root/usr/share/rpcd/acl.d/luci-app-ccswitch.json" ] || die "missing rpcd ACL file"
 	[ -f "$LUCI_SRC/root/usr/share/rpcd/ucode/ccswitch" ] || die "missing rpcd ucode handler"
 	[ -f "$LUCI_SRC/root/usr/share/luci/menu.d/luci-app-ccswitch.json" ] || die "missing LuCI menu file"
@@ -268,7 +296,7 @@ install_openwrt_provider_ui_icons() {
 	[ -d "$source_dir" ] || return 0
 
 	while IFS= read -r -d '' icon_path; do
-		rel_path="${icon_path#$source_dir/}"
+		rel_path="${icon_path#"$source_dir"/}"
 		install -d "$(dirname "$dest_dir/$rel_path")"
 		install -m 0644 "$icon_path" "$dest_dir/$rel_path"
 	done < <(find "$source_dir" -type f -print0)
@@ -606,12 +634,21 @@ print_checksums() {
 }
 
 parse_args "$@"
-resolve_target
 validate_package_metadata
-ensure_openwrt_provider_ui_asset
-build_daemon_binary
-assert_inputs
-assert_static_binary
+assert_common_inputs
+
+if builds_daemon_package; then
+	resolve_target
+	build_daemon_binary
+	assert_daemon_inputs
+	assert_static_binary
+fi
+
+if builds_luci_package; then
+	ensure_openwrt_provider_ui_asset
+	assert_luci_inputs
+fi
+
 setup_tar_flags
 
 mkdir -p "$DIST_DIR"
@@ -620,30 +657,44 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 
 echo "Building OpenWrt IPKs"
 echo "  Version:      $VERSION-$PKG_RELEASE"
-echo "  Rust target:  $RUST_TARGET"
-echo "  OpenWrt arch: $OPKG_ARCH"
-echo "  Binary:       $BINARY"
+echo "  Package:      $PACKAGE_TARGET"
+if builds_daemon_package; then
+	echo "  Rust target:  $RUST_TARGET"
+	echo "  OpenWrt arch: $OPKG_ARCH"
+	echo "  Binary:       $BINARY"
+fi
 echo "  Dist dir:     $DIST_DIR"
 
-build_daemon_package
-build_luci_package
+BUILT_IPKS=()
 
-DAEMON_IPK="$DIST_DIR/cc-switch_${VERSION}-${PKG_RELEASE}_${OPKG_ARCH}.ipk"
-LUCI_IPK="$DIST_DIR/luci-app-cc-switch_${VERSION}-${PKG_RELEASE}_all.ipk"
+if builds_daemon_package; then
+	build_daemon_package
+	BUILT_IPKS+=("$DIST_DIR/cc-switch_${VERSION}-${PKG_RELEASE}_${OPKG_ARCH}.ipk")
+fi
+
+if builds_luci_package; then
+	build_luci_package
+	BUILT_IPKS+=("$DIST_DIR/luci-app-cc-switch_${VERSION}-${PKG_RELEASE}_all.ipk")
+fi
 
 echo
 echo "Built packages:"
-echo "  $DAEMON_IPK"
-echo "  $LUCI_IPK"
+for ipk in "${BUILT_IPKS[@]}"; do
+	echo "  $ipk"
+done
 
 if command -v ls >/dev/null 2>&1; then
-	ls -lh "$DAEMON_IPK" "$LUCI_IPK"
+	ls -lh "${BUILT_IPKS[@]}"
 fi
 
 echo
 echo "SHA256:"
-print_checksums "$DAEMON_IPK" "$LUCI_IPK"
+print_checksums "${BUILT_IPKS[@]}"
 
 echo
 echo "Install on router:"
-echo "  opkg install /tmp/$(basename "$DAEMON_IPK") /tmp/$(basename "$LUCI_IPK")"
+printf '  opkg install'
+for ipk in "${BUILT_IPKS[@]}"; do
+	printf ' /tmp/%s' "$(basename "$ipk")"
+done
+printf '\n'
