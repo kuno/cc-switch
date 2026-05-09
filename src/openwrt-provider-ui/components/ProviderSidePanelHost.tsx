@@ -31,6 +31,7 @@ import {
 import type { OpenWrtSharedPageShellApi } from "../pageTypes";
 import { lockBodyScroll } from "../utils/bodyScrollLock";
 import {
+  DEFAULT_PROVIDER_SIDE_PANEL_DETAIL_TAB,
   ProviderSidePanel,
   type ProviderSidePanelTab,
 } from "./ProviderSidePanel";
@@ -368,7 +369,9 @@ const ProviderSidePanelHostComponent = forwardRef<
   const [baselineDraft, setBaselineDraft] =
     useState<SharedProviderEditorPayload | null>(null);
   const [editing, setEditing] = useState(false);
-  const [tab, setTab] = useState<ProviderSidePanelTab>("activities");
+  const [tab, setTab] = useState<ProviderSidePanelTab>(
+    DEFAULT_PROVIDER_SIDE_PANEL_DETAIL_TAB,
+  );
   const [panelMode, setPanelMode] =
     useState<ProviderSidePanelViewMode>("detail");
   const [search, setSearch] = useState("");
@@ -504,7 +507,7 @@ const ProviderSidePanelHostComponent = forwardRef<
           setEditing(false);
           setPanelMode("detail");
           setPickerSelectedPresetId(null);
-          setTab("activities");
+          setTab(DEFAULT_PROVIDER_SIDE_PANEL_DETAIL_TAB);
         }
         return;
       }
@@ -655,7 +658,7 @@ const ProviderSidePanelHostComponent = forwardRef<
     setPanelMode("detail");
     setPickerSelectedPresetId(null);
     setEditing(false);
-    setTab("activities");
+    setTab(DEFAULT_PROVIDER_SIDE_PANEL_DETAIL_TAB);
   }
 
   function openForApp(nextAppId: SharedProviderAppId, providerId?: string) {
@@ -664,7 +667,7 @@ const ProviderSidePanelHostComponent = forwardRef<
     setPanelMessage(null);
     setPanelMode("detail");
     setPickerSelectedPresetId(null);
-    setTab("activities");
+    setTab(DEFAULT_PROVIDER_SIDE_PANEL_DETAIL_TAB);
     void loadWorkspace(
       nextAppId,
       providerId ?? null,
