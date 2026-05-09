@@ -852,6 +852,8 @@ const ProviderSidePanelHostComponent = forwardRef<
         mode === "edit" ? (selectedProvider?.providerId ?? null) : null,
         draft,
       );
+      setTab("configure");
+      setEditing(false);
     } catch (saveError) {
       setPanelMessage({
         kind: "error",

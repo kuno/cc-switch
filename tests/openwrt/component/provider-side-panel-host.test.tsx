@@ -443,6 +443,9 @@ describe("ProviderSidePanelHost", () => {
     );
 
     await user.click(
+      within(await dialog).getByRole("button", { name: "Edit" }),
+    );
+    await user.click(
       within(await dialog).getByRole("button", { name: "Clear auth" }),
     );
     await user.click(
@@ -461,7 +464,7 @@ describe("ProviderSidePanelHost", () => {
     );
   });
 
-  it("keeps the Configure view open after saving an existing provider", async () => {
+  it("returns to read-only detail state and preserves the save message after saving an existing provider", async () => {
     const user = userEvent.setup();
     const shell = createBridgeFixture({ selectedApp: "codex" });
     const codexProvider = createProviderView("codex", {
@@ -494,13 +497,11 @@ describe("ProviderSidePanelHost", () => {
         within(dialog).getByRole("button", { name: "Configure" }),
       ).toHaveAttribute("data-active", "true"),
     );
-    expect(within(dialog).getByLabelText("Notes")).toHaveValue(
-      "Initial note updated",
-    );
-    expect(within(dialog).queryByRole("button", { name: "Edit" })).toBeNull();
     expect(
-      within(dialog).getByRole("button", { name: /Save|Saved/ }),
+      within(dialog).getByText("Initial note updated"),
     ).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Edit" })).toBeEnabled();
+    expect(within(dialog).queryByRole("button", { name: "Save" })).toBeNull();
     expect(
       within(dialog).getByText(/OpenAI Official was saved\./),
     ).toBeInTheDocument();

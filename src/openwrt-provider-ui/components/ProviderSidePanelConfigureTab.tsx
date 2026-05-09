@@ -112,6 +112,16 @@ function normalizeExternalUrl(value: string): string {
     : `https://${trimmed}`;
 }
 
+function openExternalUrl(value: string) {
+  const url = normalizeExternalUrl(value);
+
+  if (!url) {
+    return;
+  }
+
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
 function getStoredAuthConnectionLabel(
   summary:
     | SharedProviderCodexAuthSummary
@@ -386,14 +396,17 @@ export function ProviderSidePanelConfigureTab({
           }
           value={
             website ? (
-              <a
+              <button
                 className="owt-provider-panel__config-link"
-                href={normalizeExternalUrl(website)}
-                rel="noreferrer"
-                target="_blank"
+                type="button"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  openExternalUrl(website);
+                }}
               >
                 {website}
-              </a>
+              </button>
             ) : (
               t("openwrt.configure.notAvailable")
             )

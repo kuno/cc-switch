@@ -2272,7 +2272,14 @@
 }
 
 .owt-provider-panel__config-link {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
   text-decoration: none;
 }
 
