@@ -33,6 +33,7 @@ export interface SharedProviderPreset {
   label: string;
   providerName: string;
   baseUrl: string;
+  websiteUrl?: string;
   tokenField: SharedProviderTokenField;
   model: string;
   description: string;
@@ -71,6 +72,7 @@ export interface SharedProviderView {
   providerId: string | null;
   name: string;
   baseUrl: string;
+  websiteUrl?: string;
   icon?: string;
   iconColor?: string;
   tokenField: SharedProviderTokenField;
@@ -127,6 +129,7 @@ export interface SharedProviderState {
 export interface SharedProviderEditorPayload {
   name: string;
   baseUrl: string;
+  websiteUrl?: string;
   tokenField: SharedProviderTokenField;
   token: string;
   model: string;
