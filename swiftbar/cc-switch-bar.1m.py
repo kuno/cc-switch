@@ -5,12 +5,17 @@
 
 import base64
 import json
+import os
 import urllib.request
 from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 
-DAEMON = "http://istoreos:15721"
+DEFAULT_DAEMONS = [
+    "http://istoreos:15721",
+    "http://100.94.68.118:15721",
+]
+DAEMONS = [os.environ["CC_SWITCH_DAEMON"]] if os.environ.get("CC_SWITCH_DAEMON") else DEFAULT_DAEMONS
 TIMEOUT = 5
 
 APP_ORDER = ["claude", "codex", "gemini"]
@@ -45,10 +50,20 @@ APP_ICON_FILES = {
 APP_ICON_CACHE = {}
 
 def fetch_json(path):
-    url = f"{DAEMON}{path}"
-    req = urllib.request.Request(url)
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-        return json.loads(resp.read())
+    errors = []
+    for daemon in DAEMONS:
+        url = f"{daemon}{path}"
+        req = urllib.request.Request(url)
+        try:
+            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+                fetch_json.last_daemon = daemon
+                return json.loads(resp.read())
+        except Exception as e:
+            errors.append(f"{daemon}: {e}")
+    raise RuntimeError("; ".join(errors))
+
+
+fetch_json.last_daemon = DAEMONS[0]
 
 
 def get_field(data, *names, default=None):
@@ -320,7 +335,7 @@ def main():
         print(f"cc-switch: error | color=#f87171")
         print("---")
         print(f"Cannot reach daemon | color=#f87171")
-        print(f"{DAEMON} | size=11 color=#a1a1aa")
+        print(f"{', '.join(DAEMONS)} | size=11 color=#a1a1aa")
         print(f"{e} | size=10 color=#71717a")
         print("---")
         print("Refresh | refresh=true")
