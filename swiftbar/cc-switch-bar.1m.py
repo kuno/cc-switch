@@ -163,6 +163,8 @@ def provider_headline(p):
 
 def normalize_window_name(name):
     normalized = (name or "").replace("_", "").replace("-", "").lower()
+    if "design" in normalized:
+        return None
     if normalized in ("5h", "fivehour") or normalized.startswith("fivehour"):
         return "5h"
     if (
@@ -252,8 +254,6 @@ def menu_bar_title(apps):
                     candidates.append(int((1 - util) * 100))
             if candidates:
                 pct = min(candidates)
-            else:
-                _, pct = provider_headline(quota)
         parts.append(f"{icon} {pct}%" if pct is not None else f"{icon} {name}")
     # SwiftBar uses ASCII "|" to start item metadata, so use a Unicode vertical bar in title text.
     return sanitize_title_text(" ｜ ".join(parts) if parts else "--")
@@ -443,6 +443,7 @@ def _self_test():
     assert graph.count("\u2588") == 7, f"expected 7 filled cells, got {graph.count(chr(0x2588))}"
     assert normalize_window_name("five_hour") == "5h"
     assert normalize_window_name("seven_day_sonnet") == "7d"
+    assert normalize_window_name("seven_day_claude_design") is None
     assert normalize_window_name("weekly_limit") == "7d"
     apps = {
         "claude": {
@@ -454,6 +455,7 @@ def _self_test():
                         "windows": [
                             {"name": "five_hour", "utilization": 0.25},
                             {"name": "weekly_limit", "utilization": 0.3},
+                            {"name": "claude_design_tokens", "utilization": 0.95},
                         ],
                     },
                 },
@@ -461,6 +463,10 @@ def _self_test():
         },
     }
     assert menu_bar_title(apps) == "🅒 70%"
+    apps["claude"]["providers"]["kimi"]["quota"]["windows"] = [
+        {"name": "claude_design_tokens", "utilization": 0.95},
+    ]
+    assert menu_bar_title(apps) == "🅒 Kimi For Coding"
     print("self-test passed")
 
 
