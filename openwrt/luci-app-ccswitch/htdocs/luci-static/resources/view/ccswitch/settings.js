@@ -269,6 +269,13 @@ var callSetAutoFailoverEnabled = rpc.declare({
 	expect: { '': {} }
 });
 
+var callSetProxyEnabled = rpc.declare({
+	object: 'ccswitch',
+	method: 'set_proxy_enabled',
+	params: ['app', 'enabled'],
+	expect: { '': {} }
+});
+
 var callReorderFailoverQueue = rpc.declare({
 	object: 'ccswitch',
 	method: 'reorder_failover_queue',
@@ -868,6 +875,21 @@ function callOpenWrtSetAutoFailoverEnabled(appId, enabled) {
 		});
 	}, function () {
 		return L.resolveDefault(callSetAutoFailoverEnabled(appId, enabled), { ok: false });
+	});
+}
+
+function callOpenWrtSetProxyEnabled(appId, enabled) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/config')
+			.then(function (config) {
+				config.enabled = enabled;
+				return callDaemonAdminJson('/apps/' + encodeURIComponent(appId) + '/config', {
+					method: 'PUT',
+					body: config
+				});
+			});
+	}, function () {
+		return L.resolveDefault(callSetProxyEnabled(appId, enabled), { ok: false });
 	});
 }
 
@@ -2754,6 +2776,9 @@ return view.extend({
 			},
 			setAutoFailoverEnabled: function (appId, enabled) {
 				return callOpenWrtSetAutoFailoverEnabled(appId, enabled);
+			},
+			setProxyEnabled: function (appId, enabled) {
+				return callOpenWrtSetProxyEnabled(appId, enabled);
 			},
 			reorderFailoverQueue: function (appId, providerIds) {
 				return callOpenWrtReorderFailoverQueue(appId, providerIds);

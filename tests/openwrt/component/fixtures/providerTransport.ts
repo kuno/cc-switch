@@ -17,6 +17,7 @@ type ProviderStateMap = Partial<
   Record<SharedProviderAppId, SharedProviderState>
 >;
 type FailoverFixtureState = {
+  proxyEnabled: boolean;
   autoFailoverEnabled: boolean;
   maxRetries: number;
   queue: string[];
@@ -91,6 +92,7 @@ export function createProviderTransportFixture(
 
   function getFailoverState(appId: SharedProviderAppId): FailoverFixtureState {
     failoverStates[appId] ??= {
+      proxyEnabled: true,
       autoFailoverEnabled: false,
       maxRetries: 3,
       queue: [],
@@ -270,7 +272,7 @@ export function createProviderTransportFixture(
     return {
       ok: true,
       providerId,
-      proxyEnabled: true,
+      proxyEnabled: failoverState.proxyEnabled,
       autoFailoverEnabled: failoverState.autoFailoverEnabled,
       maxRetries: failoverState.maxRetries,
       activeProviderId: providerState.activeProviderId,
@@ -409,6 +411,15 @@ export function createProviderTransportFixture(
           createProviderState(appId, currentState.providers, effectiveQueue[0]),
         );
       }
+
+      return {
+        ok: true,
+      };
+    }),
+    setProxyEnabled: vi.fn(async (appId, enabled) => {
+      setFailoverState(appId, {
+        proxyEnabled: enabled,
+      });
 
       return {
         ok: true,
