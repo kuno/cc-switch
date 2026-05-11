@@ -81,14 +81,8 @@ function getAppCard(container: HTMLElement, appId: string) {
   return card;
 }
 
-function getSettledGrid(container: HTMLElement) {
-  const grid = container.querySelector<HTMLElement>(".owt-group-grid");
-
-  if (!grid) {
-    throw new Error("Missing settled apps grid");
-  }
-
-  return grid;
+function getGroupGrids(container: HTMLElement) {
+  return Array.from(container.querySelectorAll<HTMLElement>(".owt-group-grid"));
 }
 
 function padToEven(count: number): number {
@@ -244,6 +238,15 @@ describe("AppsGrid", () => {
       name: /Open (Claude|Codex|Gemini) providers/,
     });
 
+    const groupGrids = getGroupGrids(container);
+
+    expect(groupGrids).toHaveLength(2);
+    expect(groupGrids[0].querySelectorAll(".owt-app-card")).toHaveLength(
+      padToEven(OPENWRT_APP_IDS.length),
+    );
+    expect(groupGrids[1].querySelectorAll(".owt-app-card")).toHaveLength(
+      APP_OPTIONS.length - OPENWRT_APP_IDS.length,
+    );
     expect(container.querySelectorAll(".owt-app-card")).toHaveLength(
       padToEven(OPENWRT_APP_IDS.length) +
         (APP_OPTIONS.length - OPENWRT_APP_IDS.length),
@@ -409,13 +412,15 @@ describe("AppsGrid", () => {
     await screen.findByRole("button", {
       name: "OpenCode not configured",
     });
-    const settledGrid = getSettledGrid(container);
+    const groupGrids = getGroupGrids(container);
+    const unconfiguredGrid = groupGrids[1];
 
     expect(
-      settledGrid.querySelector(".owt-group-head .owt-group-label"),
+      container.querySelector(".owt-group-head .owt-group-label"),
     ).toHaveTextContent("Not configured");
-    expect(within(settledGrid).getByText("OpenCode")).toBeInTheDocument();
-    expect(within(settledGrid).getByText("OpenClaw")).toBeInTheDocument();
+    expect(groupGrids).toHaveLength(2);
+    expect(within(unconfiguredGrid).getByText("OpenCode")).toBeInTheDocument();
+    expect(within(unconfiguredGrid).getByText("OpenClaw")).toBeInTheDocument();
     const opencodeCard = getAppCard(container, "opencode");
     const openclawCard = getAppCard(container, "openclaw");
 
@@ -550,7 +555,10 @@ describe("AppsGrid", () => {
       claude: createUsageSummary({ totalRequests: 10 }),
       codex: createUsageSummary({ totalRequests: 20 }),
       gemini: createUsageSummary({ totalRequests: 30 }),
-    } satisfies Record<SharedProviderAppId, ReturnType<typeof createUsageSummary>>;
+    } satisfies Record<
+      SharedProviderAppId,
+      ReturnType<typeof createUsageSummary>
+    >;
     const bridge = createBridgeFixture({
       status: createStatusResponse({
         usageSummary: initialUsage,
@@ -568,7 +576,10 @@ describe("AppsGrid", () => {
       claude: createUsageSummary({ totalRequests: 101 }),
       codex: createUsageSummary({ totalRequests: 202 }),
       gemini: createUsageSummary({ totalRequests: 303 }),
-    } satisfies Record<SharedProviderAppId, ReturnType<typeof createUsageSummary>>;
+    } satisfies Record<
+      SharedProviderAppId,
+      ReturnType<typeof createUsageSummary>
+    >;
 
     getStatus.mockClear();
     getStatus
@@ -628,15 +639,11 @@ describe("AppsGrid", () => {
     await screen.findByRole("button", {
       name: "Open Claude providers",
     });
-    const initialGrid = getSettledGrid(container);
-    const initialHeader = initialGrid.querySelector<HTMLElement>(
-      ".owt-group-head",
-    );
-    expect(initialHeader).not.toBeNull();
-    expect(
-      Array.from(initialGrid.children).indexOf(getAppCard(container, "claude")),
-    ).toBeLessThan(
-      Array.from(initialGrid.children).indexOf(initialHeader as HTMLElement),
+    const initialGrids = getGroupGrids(container);
+    expect(initialGrids).toHaveLength(2);
+    expect(initialGrids[0]).toContainElement(getAppCard(container, "claude"));
+    expect(initialGrids[1]).not.toContainElement(
+      getAppCard(container, "claude"),
     );
 
     const getStatus = bridge.getStatus as unknown as Mock;
@@ -649,15 +656,11 @@ describe("AppsGrid", () => {
         screen.getByRole("button", { name: "Open Claude providers" }),
       ).toBeInTheDocument();
     });
-    const refreshedGrid = getSettledGrid(container);
-    const refreshedHeader = refreshedGrid.querySelector<HTMLElement>(
-      ".owt-group-head",
-    );
-    expect(refreshedHeader).not.toBeNull();
-    expect(
-      Array.from(refreshedGrid.children).indexOf(getAppCard(container, "claude")),
-    ).toBeLessThan(
-      Array.from(refreshedGrid.children).indexOf(refreshedHeader as HTMLElement),
+    const refreshedGrids = getGroupGrids(container);
+    expect(refreshedGrids).toHaveLength(2);
+    expect(refreshedGrids[0]).toContainElement(getAppCard(container, "claude"));
+    expect(refreshedGrids[1]).not.toContainElement(
+      getAppCard(container, "claude"),
     );
     expect(
       screen.queryByRole("button", { name: "Add a Claude provider" }),

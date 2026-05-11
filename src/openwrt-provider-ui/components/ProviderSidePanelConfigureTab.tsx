@@ -1,4 +1,4 @@
-import { CheckCircle2, Loader2 } from "lucide-react";
+import { CheckCircle2, Loader2, Pencil, Save, X } from "lucide-react";
 import type { TFunction } from "i18next";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -611,23 +611,25 @@ export function ProviderSidePanelConfigureTab({
           {mode === "edit" && !editing ? (
             <button
               type="button"
-              className="owt-provider-panel__button"
+              className="owt-provider-panel__button owt-provider-panel__button--compact"
               onClick={onEdit}
             >
+              <Pencil className="h-4 w-4" aria-hidden="true" />
               {t("common.edit")}
             </button>
           ) : (
             <>
               <button
                 type="button"
-                className="owt-provider-panel__button"
+                className="owt-provider-panel__button owt-provider-panel__button--compact"
                 onClick={onCancel}
               >
+                <X className="h-4 w-4" aria-hidden="true" />
                 {t("common.cancel")}
               </button>
               <button
                 type="button"
-                className="owt-provider-panel__button owt-provider-panel__button--primary"
+                className="owt-provider-panel__button owt-provider-panel__button--primary owt-provider-panel__button--compact"
                 data-idle={saveIdle && !showSaveFlash ? "true" : "false"}
                 data-saved={showSaveFlash ? "true" : "false"}
                 disabled={!canSave || savePending || authJsonStatus.invalid}
@@ -637,7 +639,9 @@ export function ProviderSidePanelConfigureTab({
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : showSaveFlash ? (
                   <CheckCircle2 className="h-4 w-4" />
-                ) : null}
+                ) : (
+                  <Save className="h-4 w-4" aria-hidden="true" />
+                )}
                 {savePending
                   ? t("openwrt.configure.saving")
                   : showSaveFlash
