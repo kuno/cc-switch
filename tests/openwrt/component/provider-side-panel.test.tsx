@@ -25,7 +25,7 @@ vi.mock("@/lib/clipboard", () => ({
 }));
 
 function StatefulProviderSidePanel({
-  initialTab = "activities",
+  initialTab = "status",
   shell,
 }: {
   initialTab?: ProviderSidePanelTab;
@@ -70,7 +70,7 @@ describe("ProviderSidePanel", () => {
     vi.useRealTimers();
   });
 
-  it("renders the shell with Statistics, Configure, and Activities tabs", async () => {
+  it("renders the shell with Status, Statistics, Configure, and Activities tabs", async () => {
     const onClose = vi.fn();
     const onTabChange = vi.fn();
     const provider = createProviderView("claude", {
@@ -85,7 +85,7 @@ describe("ProviderSidePanel", () => {
           selectedProvider: provider,
           selectedProviderId: provider.providerId,
           shell: createEmptyActivityShell(),
-          tab: "activities",
+          tab: "status",
           callbacks: {
             onClose,
             onTabChange,
@@ -102,10 +102,11 @@ describe("ProviderSidePanel", () => {
       hidden: false,
     });
 
-    expect(await screen.findByText("No recent activity")).toBeInTheDocument();
+    expect(await screen.findByText("Provider state")).toBeInTheDocument();
 
     expect(dialog).toHaveAttribute("aria-modal", "true");
     expect(tabButtons.map((button) => button.textContent?.trim())).toEqual([
+      "Status",
       "Statistics",
       "Configure",
       "Activities",
@@ -146,6 +147,92 @@ describe("ProviderSidePanel", () => {
 
     expect(screen.getByText("Provider Name")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
+  });
+
+  it("shows provider status summary as the first workspace tab", async () => {
+    const provider = createProviderView("claude", {
+      active: true,
+      name: "Claude Primary",
+      providerId: "claude-primary",
+    });
+    const shell = createPlainPageShellBridge({
+      host: {
+        ...REALISTIC_HOST_STATE,
+        app: "claude",
+      },
+    });
+
+    shell.getStatus = vi.fn().mockResolvedValue({
+      apps: {
+        claude: {
+          activeProvider: {
+            providerId: "claude-primary",
+            name: "Claude Primary",
+          },
+          failoverStatus: {
+            "claude-primary": {
+              inFailoverQueue: true,
+            },
+          },
+          health: true,
+          maxRetries: 3,
+          providers: {
+            "claude-primary": {
+              name: "Claude Primary",
+              health: {
+                healthy: true,
+                lastError: null,
+              },
+              stats: {
+                avgLatencyMs: 684,
+                requestCount: 111,
+                successRate: 87.5,
+                totalCost: "1.01",
+                totalTokens: 236_400,
+              },
+              quota: {
+                tokensRemaining: 42_000,
+                tokensLimit: 100_000,
+                windows: [
+                  {
+                    name: "five_hour",
+                    utilization: 0.42,
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+    });
+
+    render(
+      <ProviderSidePanel
+        {...createProviderSidePanelProps({
+          providers: [provider],
+          selectedProvider: provider,
+          selectedProviderId: provider.providerId,
+          shell,
+          tab: "status",
+        })}
+      />,
+    );
+
+    expect(await screen.findByText("Provider state")).toBeInTheDocument();
+    expect(screen.getAllByText("Active").length).toBeGreaterThan(0);
+    expect(screen.getByText("Success rate")).toBeInTheDocument();
+    expect(screen.getByText("87.5%")).toBeInTheDocument();
+    expect(screen.getByText("P50 latency")).toBeInTheDocument();
+    expect(screen.getByText("684 ms")).toBeInTheDocument();
+    expect(screen.getByText("Requests")).toBeInTheDocument();
+    expect(screen.getByText("111")).toBeInTheDocument();
+    expect(screen.getByText("236.4K")).toBeInTheDocument();
+    expect(screen.getByText("$1.01")).toBeInTheDocument();
+    expect(screen.getByText("Left quota")).toBeInTheDocument();
+    expect(screen.getByText("42,000 / 100,000 tokens")).toBeInTheDocument();
+    expect(screen.getByText("58% remaining")).toBeInTheDocument();
+    expect(screen.getByText("Health checks")).toBeInTheDocument();
+    expect(screen.getAllByText("OK").length).toBeGreaterThan(0);
   });
 
   it("shows provider statistics and left token quota", async () => {
