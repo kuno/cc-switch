@@ -747,6 +747,14 @@ export function createOpenWrtProviderAdapter(
       );
   }
 
+  if (typeof transport.setProxyEnabled === "function") {
+    adapter.setProxyEnabled = async (appId, enabled) =>
+      runOpenWrtMutation(
+        () => transport.setProxyEnabled!(appId, enabled),
+        `Failed to update ${appId} proxy.`,
+      );
+  }
+
   if (typeof transport.reorderFailoverQueue === "function") {
     adapter.reorderFailoverQueue = async (appId, providerIds) =>
       runOpenWrtMutation(

@@ -668,6 +668,7 @@ export interface AppCardProps {
   failoverState?: SharedProviderFailoverState | null;
   failoverPending?: boolean;
   optimisticAutoFailoverEnabled?: boolean | null;
+  optimisticProxyEnabled?: boolean | null;
   failoverReorderPending?: boolean;
   onOpenActivity: (appId: SharedProviderAppId) => void;
   onOpenProviderPanel: (
@@ -675,10 +676,19 @@ export interface AppCardProps {
     providerId?: string,
   ) => void;
   onSetAutoFailover?: (appId: SharedProviderAppId, enabled: boolean) => void;
+  onSetProxyEnabled?: (appId: SharedProviderAppId, enabled: boolean) => void;
   onReorderFailoverQueue?: (
     appId: SharedProviderAppId,
     providerIds: string[],
   ) => void;
+  appReorderHandle?: {
+    isDragging: boolean;
+    dropPosition: "before" | "after" | null;
+    rootProps: HTMLAttributes<HTMLElement>;
+    handleProps: HTMLAttributes<HTMLButtonElement> & {
+      draggable: true;
+    };
+  };
 }
 
 export function AppCard({
@@ -694,11 +704,14 @@ export function AppCard({
   failoverState,
   failoverPending = false,
   optimisticAutoFailoverEnabled = null,
+  optimisticProxyEnabled = null,
   failoverReorderPending = false,
   onOpenActivity,
   onOpenProviderPanel,
   onSetAutoFailover,
+  onSetProxyEnabled,
   onReorderFailoverQueue,
+  appReorderHandle,
 }: AppCardProps) {
   const { t } = useTranslation();
   const appCopy = APP_COPY[appId];
@@ -709,7 +722,10 @@ export function AppCard({
   const activeProvider = providerState?.activeProvider.configured
     ? providerState.activeProvider
     : null;
-  const proxyEnabled = failoverState?.proxyEnabled ?? hostState.proxyEnabled;
+  const proxyEnabled =
+    optimisticProxyEnabled ??
+    failoverState?.proxyEnabled ??
+    hostState.proxyEnabled;
   const appIconUrl = getOpenWrtAppIconUrl(appId);
   const autoFailoverEnabled =
     optimisticAutoFailoverEnabled ??
@@ -722,6 +738,10 @@ export function AppCard({
     proxyEnabled &&
     Boolean(failoverState) &&
     typeof onSetAutoFailover === "function";
+  const canChangeProxy =
+    !isInert &&
+    Boolean(failoverState) &&
+    typeof onSetProxyEnabled === "function";
 
   if (!activeProvider) {
     const handleEmptyCardClick: MouseEventHandler<HTMLDivElement> = () => {
@@ -826,11 +846,19 @@ export function AppCard({
 
     onSetAutoFailover?.(appId, nextMode === "failover");
   };
+  const handleProxyToggleClick: MouseEventHandler<HTMLButtonElement> = (
+    event,
+  ) => {
+    event.stopPropagation();
+    if (!canChangeProxy || isInertHomeAppId(appId)) return;
+
+    onSetProxyEnabled?.(appId, !proxyEnabled);
+  };
 
   const handleCardClick: MouseEventHandler<HTMLDivElement> = (event) => {
     if (
       (event.target as HTMLElement).closest(
-        "[data-owt-chip], [data-mode-toggle], [data-cost-info]",
+        "[data-owt-chip], [data-mode-toggle], [data-cost-info], [data-app-reorder-handle], [data-proxy-toggle]",
       )
     ) {
       return;
@@ -842,7 +870,7 @@ export function AppCard({
     if (event.key === "Enter" || event.key === " ") {
       if (
         (event.target as HTMLElement).closest(
-          "[data-owt-chip], [data-mode-toggle], [data-cost-info]",
+          "[data-owt-chip], [data-mode-toggle], [data-cost-info], [data-app-reorder-handle], [data-proxy-toggle]",
         )
       ) {
         return;
@@ -858,12 +886,29 @@ export function AppCard({
       data-app={appId}
       data-loading={loading ? "true" : "false"}
       data-proxy-enabled={proxyEnabled ? "true" : "false"}
+      data-reorderable={appReorderHandle ? "true" : "false"}
+      data-dragging={appReorderHandle?.isDragging ? "true" : "false"}
+      data-drop-position={appReorderHandle?.dropPosition ?? undefined}
       role="button"
       tabIndex={0}
       onClick={handleCardClick}
       onKeyDown={handleCardKey}
       aria-label={t("openwrt.appCard.openProviders", { app: appLabel })}
+      {...appReorderHandle?.rootProps}
     >
+      {appReorderHandle ? (
+        <button
+          type="button"
+          className="owt-app-card__drag-handle"
+          data-app-reorder-handle="true"
+          title={t("openwrt.appCard.dragToReorderApp", { app: appLabel })}
+          aria-label={t("openwrt.appCard.reorderApp", { app: appLabel })}
+          {...appReorderHandle.handleProps}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <GripVertical className="h-4 w-4" aria-hidden="true" />
+        </button>
+      ) : null}
       <div className="owt-app-card__head">
         <div className="owt-app-card__icon" aria-hidden="true">
           <img src={appIconUrl} alt="" />
@@ -883,10 +928,21 @@ export function AppCard({
         </div>
         <span className="owt-app-card__spacer" aria-hidden="true" />
         <div className="owt-app-card__head-actions">
-          <span
+          <button
+            type="button"
             className="owt-app-card__proxy-toggle"
+            data-proxy-toggle="true"
             data-proxy-enabled={proxyEnabled ? "true" : "false"}
-            aria-hidden="true"
+            role="switch"
+            aria-checked={proxyEnabled}
+            aria-label={t(
+              proxyEnabled
+                ? "openwrt.appCard.proxyEnabledTitle"
+                : "openwrt.appCard.proxyBypassedTitle",
+              { app: appLabel },
+            )}
+            disabled={!canChangeProxy || failoverPending}
+            onClick={handleProxyToggleClick}
             title={t(
               proxyEnabled
                 ? "openwrt.appCard.proxyEnabledTitle"

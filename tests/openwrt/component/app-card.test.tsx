@@ -26,6 +26,7 @@ function renderAppCard(
       providerId?: string,
     ) => void;
     onSetAutoFailover?: (appId: SharedProviderAppId, enabled: boolean) => void;
+    onSetProxyEnabled?: (appId: SharedProviderAppId, enabled: boolean) => void;
   } = {},
 ) {
   const bridge = createBridgeFixture({
@@ -58,6 +59,7 @@ function renderAppCard(
       onOpenActivity={bridge.setSelectedApp}
       onOpenProviderPanel={options.onOpenProviderPanel ?? bridge.setSelectedApp}
       onSetAutoFailover={options.onSetAutoFailover}
+      onSetProxyEnabled={options.onSetProxyEnabled}
     />,
   );
 
@@ -281,6 +283,7 @@ describe("AppCard", () => {
         autoFailoverEnabled: true,
       }),
       onSetAutoFailover: vi.fn(),
+      onSetProxyEnabled: vi.fn(),
     });
     const card = container.querySelector(".owt-app-card");
 
@@ -291,12 +294,28 @@ describe("AppCard", () => {
     expect(
       container.querySelector(".owt-app-card__proxy-toggle"),
     ).toHaveAttribute("data-proxy-enabled", "false");
+    expect(screen.getByRole("switch")).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
     expect(
       screen.queryByRole("tablist", { name: "Claude routing mode" }),
     ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /Proxy .* Claude/i }),
-    ).not.toBeInTheDocument();
+  });
+
+  it("toggles app-level proxy state from the card switch", async () => {
+    const onSetProxyEnabled = vi.fn();
+    const onOpenProviderPanel = vi.fn();
+    const { user } = renderAppCard(createSharedProviderState("claude"), {
+      failoverState: createFailoverState({ proxyEnabled: true }),
+      onOpenProviderPanel,
+      onSetProxyEnabled,
+    });
+
+    await user.click(screen.getByRole("switch"));
+
+    expect(onSetProxyEnabled).toHaveBeenCalledWith("claude", false);
+    expect(onOpenProviderPanel).not.toHaveBeenCalled();
   });
 
   it("renders queue priority instead of active provider details in failover mode", () => {

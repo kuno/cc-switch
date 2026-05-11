@@ -718,6 +718,34 @@ function setAutoFailoverEnabled(app, enabled) {
 	);
 }
 
+function setProxyEnabled(app, enabled) {
+	let normalizedApp = normalizeApp(app);
+	let normalizedEnabled = normalizeEnabled(enabled);
+	let config;
+
+	if (normalizedEnabled == null)
+		return { ok: false, error: 'enabled must be a boolean' };
+
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
+
+	config = runAdminHttpJson(
+		'GET',
+		`${adminAppPath(normalizedApp)}/config`
+	);
+
+	if (!config.ok)
+		return config;
+
+	config.enabled = normalizedEnabled;
+
+	return runAdminHttpJson(
+		'PUT',
+		`${adminAppPath(normalizedApp)}/config`,
+		config
+	);
+}
+
 function setMaxRetries(app, value) {
 	let normalizedApp = normalizeApp(app);
 
@@ -1065,6 +1093,17 @@ return {
 
 			call: function(request) {
 				return setAutoFailoverEnabled(request.args.app, request.args.enabled);
+			}
+		},
+
+		set_proxy_enabled: {
+			args: {
+				app: 'claude',
+				enabled: true
+			},
+
+			call: function(request) {
+				return setProxyEnabled(request.args.app, request.args.enabled);
 			}
 		},
 

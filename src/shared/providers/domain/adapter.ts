@@ -34,6 +34,10 @@ export interface ProviderPlatformAdapter {
     appId: SharedProviderAppId,
     enabled: boolean,
   ): Promise<void>;
+  setProxyEnabled?(
+    appId: SharedProviderAppId,
+    enabled: boolean,
+  ): Promise<void>;
   reorderFailoverQueue?(
     appId: SharedProviderAppId,
     providerIds: string[],

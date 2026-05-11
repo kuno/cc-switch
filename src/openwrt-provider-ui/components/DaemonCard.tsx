@@ -9,11 +9,8 @@ import type {
 } from "../pageTypes";
 
 const DEFAULT_LOG_LEVELS = ["error", "warn", "info", "debug", "trace"];
-const DAEMON_FALLBACK_VERSION = "v0.4.2";
 
 export interface DaemonCardProps {
-  appVersion?: string;
-  daemonVersion?: string;
   host: OpenWrtHostState;
   draft: OpenWrtHostConfigPayload;
   isRunning: boolean;
@@ -29,15 +26,6 @@ export interface DaemonCardProps {
   ) => void;
   onSave: () => void;
   onRestart: () => void;
-}
-
-function formatVersion(
-  raw: string | null | undefined,
-  fallback: string,
-): string {
-  const trimmed = (raw ?? "").trim();
-  if (!trimmed) return fallback;
-  return trimmed.startsWith("v") ? trimmed : `v${trimmed}`;
 }
 
 function getHealthTone(health: OpenWrtHostState["health"]): string {
@@ -108,8 +96,6 @@ function DaemonField({
 
 export function DaemonCard({
   host,
-  appVersion,
-  daemonVersion,
   draft,
   isRunning,
   isDirty,
@@ -129,9 +115,6 @@ export function DaemonCard({
   const healthLabel = getHealthLabel(host.health, t);
   const healthTone = getHealthTone(host.health);
   const logLevelOptions = getLogLevelOptions(draft.logLevel);
-  const resolvedAppVersion = appVersion ?? t("openwrt.daemon.unknownVersion");
-  const resolvedDaemonVersion =
-    daemonVersion ?? formatVersion(host.version, DAEMON_FALLBACK_VERSION);
 
   useEffect(() => {
     if (saveInFlight) {
@@ -313,34 +296,6 @@ export function DaemonCard({
           />
         </DaemonField>
       </div>
-
-      <footer className="owt-daemon-card__footer">
-        <span className="owt-daemon-card__footer-item">
-          <span className="owt-daemon-card__footer-label">
-            {t("openwrt.daemon.luciAppLabel")}
-          </span>
-          <span
-            className="owt-daemon-card__footer-version"
-            title={t("openwrt.daemon.luciAppVersion")}
-          >
-            {resolvedAppVersion}
-          </span>
-        </span>
-        <span className="owt-daemon-card__footer-sep" aria-hidden="true">
-          ·
-        </span>
-        <span className="owt-daemon-card__footer-item">
-          <span className="owt-daemon-card__footer-label">
-            {t("openwrt.daemon.daemonLabel")}
-          </span>
-          <span
-            className="owt-daemon-card__footer-version"
-            title={t("openwrt.daemon.daemonVersion")}
-          >
-            {resolvedDaemonVersion}
-          </span>
-        </span>
-      </footer>
     </div>
   );
 }

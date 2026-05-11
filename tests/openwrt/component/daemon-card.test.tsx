@@ -290,27 +290,31 @@ describe("DaemonCard", () => {
       health: string;
       message?: string;
     };
-  }>)("renders the expected daemon labels for $name", ({ options, expected }) => {
-    const { card } = renderDaemonCard(options);
-    const { statusChip, healthChip, message, restartButton } =
-      getCardElements(card);
+  }>)(
+    "renders the expected daemon labels for $name",
+    ({ options, expected }) => {
+      const { card } = renderDaemonCard(options);
+      const { statusChip, healthChip, message, restartButton } =
+        getCardElements(card);
 
-    expect(statusChip).toHaveTextContent(expected.status);
-    expect(healthChip).toHaveTextContent(expected.health);
+      expect(statusChip).toHaveTextContent(expected.status);
+      expect(healthChip).toHaveTextContent(expected.health);
 
-    if (expected.message) {
-      expect(message).toHaveTextContent(expected.message);
-    } else {
-      expect(message).toBeNull();
-    }
+      if (expected.message) {
+        expect(message).toHaveTextContent(expected.message);
+      } else {
+        expect(message).toBeNull();
+      }
 
-    if (options.restartState?.inFlight) {
-      expect(restartButton).toHaveAccessibleName("Restarting…");
-      expect(restartButton).toBeDisabled();
-    } else {
-      expect(restartButton).toHaveAccessibleName("Restart");
-    }
-  });
+      if (options.restartState?.inFlight) {
+        expect(restartButton).toHaveAccessibleName("Restarting…");
+        expect(restartButton).toBeDisabled();
+      } else {
+        expect(restartButton).toHaveAccessibleName("Restart");
+      }
+      expect(card.querySelector(".owt-daemon-card__footer")).toBeNull();
+    },
+  );
 
   it("keeps restart enabled when stopped and disables it while restart is in flight", () => {
     const stoppedRender = renderDaemonCard({

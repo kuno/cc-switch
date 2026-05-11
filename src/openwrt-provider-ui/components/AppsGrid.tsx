@@ -1,4 +1,5 @@
 import type { TFunction } from "i18next";
+import type { DragEventHandler, HTMLAttributes } from "react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { createOpenWrtProviderAdapter } from "@/platform/openwrt/providers";
@@ -52,6 +53,7 @@ const BACKEND_APP_OPTIONS = APP_OPTIONS.filter(
 );
 const POLL_INTERVAL_MS = 10_000;
 const POLL_INTERVAL_BACKGROUND_MS = 0;
+const APP_CARD_ORDER_STORAGE_KEY = "ccswitch-openwrt-app-card-order";
 
 type AppGridData = {
   appId: OpenWrtHomeAppId;
@@ -75,6 +77,65 @@ type AppGridLoadResult = {
 
 function isInertHomeAppId(appId: OpenWrtHomeAppId): appId is InertHomeAppId {
   return appId === "opencode" || appId === "openclaw";
+}
+
+function normalizeAppOrder(candidate: readonly unknown[]): OpenWrtHomeAppId[] {
+  const validAppIds = new Set<OpenWrtHomeAppId>(APP_OPTIONS);
+  const seen = new Set<OpenWrtHomeAppId>();
+  const ordered: OpenWrtHomeAppId[] = [];
+
+  for (const value of candidate) {
+    if (
+      typeof value === "string" &&
+      validAppIds.has(value as OpenWrtHomeAppId) &&
+      !seen.has(value as OpenWrtHomeAppId)
+    ) {
+      const appId = value as OpenWrtHomeAppId;
+      seen.add(appId);
+      ordered.push(appId);
+    }
+  }
+
+  for (const appId of APP_OPTIONS) {
+    if (!seen.has(appId)) {
+      ordered.push(appId);
+    }
+  }
+
+  return ordered;
+}
+
+function readStoredAppOrder(): OpenWrtHomeAppId[] {
+  if (typeof window === "undefined") {
+    return [...APP_OPTIONS];
+  }
+
+  try {
+    const stored = window.localStorage.getItem(APP_CARD_ORDER_STORAGE_KEY);
+    if (!stored) {
+      return [...APP_OPTIONS];
+    }
+
+    const parsed: unknown = JSON.parse(stored);
+    return Array.isArray(parsed) ? normalizeAppOrder(parsed) : [...APP_OPTIONS];
+  } catch {
+    return [...APP_OPTIONS];
+  }
+}
+
+function writeStoredAppOrder(appOrder: readonly OpenWrtHomeAppId[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      APP_CARD_ORDER_STORAGE_KEY,
+      JSON.stringify(appOrder),
+    );
+  } catch {
+    // Local storage is a preference cache; failing to persist should not block UI reorder.
+  }
 }
 
 function supportsOpenWrtProviderReorder(
@@ -921,6 +982,30 @@ function mergeStatusCards(
   });
 }
 
+function sortCardsByOrder(
+  cardsToSort: AppGridData[],
+  orderedAppIds: readonly OpenWrtHomeAppId[],
+): AppGridData[] {
+  const orderIndex = new Map(
+    orderedAppIds.map((appId, index) => [appId, index]),
+  );
+
+  return [...cardsToSort].sort(
+    (left, right) =>
+      (orderIndex.get(left.appId) ?? Number.MAX_SAFE_INTEGER) -
+      (orderIndex.get(right.appId) ?? Number.MAX_SAFE_INTEGER),
+  );
+}
+
+type AppReorderHandle = {
+  isDragging: boolean;
+  dropPosition: "before" | "after" | null;
+  rootProps: HTMLAttributes<HTMLElement>;
+  handleProps: HTMLAttributes<HTMLButtonElement> & {
+    draggable: true;
+  };
+};
+
 export function AppsGrid({
   options,
   onOpenActivity,
@@ -942,8 +1027,19 @@ export function AppsGrid({
     optimisticAutoFailoverEnabledByApp,
     setOptimisticAutoFailoverEnabledByApp,
   ] = useState<Partial<Record<SharedProviderAppId, boolean>>>({});
+  const [optimisticProxyEnabledByApp, setOptimisticProxyEnabledByApp] =
+    useState<Partial<Record<SharedProviderAppId, boolean>>>({});
   const [failoverReorderPendingByApp, setFailoverReorderPendingByApp] =
     useState<Partial<Record<SharedProviderAppId, boolean>>>({});
+  const [appOrder, setAppOrder] =
+    useState<OpenWrtHomeAppId[]>(readStoredAppOrder);
+  const [appDropTarget, setAppDropTarget] = useState<{
+    appId: OpenWrtHomeAppId;
+    position: "before" | "after";
+  } | null>(null);
+  const [draggingAppId, setDraggingAppId] = useState<OpenWrtHomeAppId | null>(
+    null,
+  );
 
   async function refreshStatusSnapshot() {
     const nextStatus = await loadStatusGridData(options, t);
@@ -977,6 +1073,34 @@ export function AppsGrid({
     } finally {
       setFailoverPendingByApp((current) => ({ ...current, [appId]: false }));
       setOptimisticAutoFailoverEnabledByApp((current) => {
+        const next = { ...current };
+        delete next[appId];
+        return next;
+      });
+    }
+  }
+
+  async function handleSetProxyEnabled(
+    appId: SharedProviderAppId,
+    enabled: boolean,
+  ) {
+    const adapter = createOpenWrtProviderAdapter(options.transport);
+
+    if (typeof adapter.setProxyEnabled !== "function") {
+      return;
+    }
+
+    setFailoverPendingByApp((current) => ({ ...current, [appId]: true }));
+    setOptimisticProxyEnabledByApp((current) => ({
+      ...current,
+      [appId]: enabled,
+    }));
+    try {
+      await adapter.setProxyEnabled(appId, enabled);
+      await refreshStatusSnapshot();
+    } finally {
+      setFailoverPendingByApp((current) => ({ ...current, [appId]: false }));
+      setOptimisticProxyEnabledByApp((current) => {
         const next = { ...current };
         delete next[appId];
         return next;
@@ -1068,7 +1192,7 @@ export function AppsGrid({
     return () => {
       cancelled = true;
     };
-  }, [options, providerMutationVersion, t]);
+  }, [options, providerMutationVersion]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1137,7 +1261,7 @@ export function AppsGrid({
       clearPollingInterval();
       doc.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [options, t]);
+  }, [options]);
 
   const hostState = options.shell.getHostState();
   const serviceRunning = options.shell.getServiceStatus().isRunning;
@@ -1147,10 +1271,133 @@ export function AppsGrid({
   const settledCards = cards.filter(
     (card) => !card.loading || card.providerState,
   );
-  const configured = settledCards.filter(isConfigured);
-  const unconfigured = settledCards.filter((card) => !isConfigured(card));
+  const orderedLoadingCards = sortCardsByOrder(loadingCards, appOrder);
+  const orderedSettledCards = sortCardsByOrder(settledCards, appOrder);
+  const configured = orderedSettledCards.filter(isConfigured);
+  const unconfigured = orderedSettledCards.filter(
+    (card) => !isConfigured(card),
+  );
+  const configuredAppIds = configured.map((card) => card.appId);
 
-  const renderCard = (card: AppGridData) => {
+  function clearAppDragState() {
+    setDraggingAppId(null);
+    setAppDropTarget(null);
+  }
+
+  function reorderConfiguredApps(
+    activeId: OpenWrtHomeAppId,
+    overId: OpenWrtHomeAppId,
+    position: "before" | "after",
+  ) {
+    if (
+      activeId === overId ||
+      !configuredAppIds.includes(activeId) ||
+      !configuredAppIds.includes(overId)
+    ) {
+      return;
+    }
+
+    setAppOrder((currentOrder) => {
+      const oldIndex = currentOrder.indexOf(activeId);
+      const newIndex = currentOrder.indexOf(overId);
+
+      if (oldIndex < 0 || newIndex < 0) {
+        return currentOrder;
+      }
+
+      const nextOrder = [...currentOrder];
+      const [movedAppId] = nextOrder.splice(oldIndex, 1);
+      const overIndexAfterRemoval = nextOrder.indexOf(overId);
+
+      if (overIndexAfterRemoval < 0) {
+        return currentOrder;
+      }
+
+      nextOrder.splice(
+        overIndexAfterRemoval + (position === "after" ? 1 : 0),
+        0,
+        movedAppId,
+      );
+      writeStoredAppOrder(nextOrder);
+      return nextOrder;
+    });
+  }
+
+  function updateAppDropTarget(
+    activeId: OpenWrtHomeAppId,
+    overId: OpenWrtHomeAppId,
+    position: "before" | "after",
+  ) {
+    if (
+      activeId === overId ||
+      !configuredAppIds.includes(activeId) ||
+      !configuredAppIds.includes(overId)
+    ) {
+      setAppDropTarget(null);
+      return;
+    }
+
+    setAppDropTarget({
+      appId: overId,
+      position,
+    });
+  }
+
+  function buildAppReorderHandle(card: AppGridData): AppReorderHandle {
+    const handleDragStart: DragEventHandler<HTMLButtonElement> = (event) => {
+      setDraggingAppId(card.appId);
+      event.dataTransfer.effectAllowed = "move";
+      try {
+        event.dataTransfer.setData("text/plain", card.appId);
+      } catch {
+        // Some browser implementations do not allow setting drag data.
+      }
+    };
+
+    const rootProps: HTMLAttributes<HTMLElement> = {
+      onDragOver(event) {
+        if (!draggingAppId) {
+          return;
+        }
+
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        const rect = event.currentTarget.getBoundingClientRect();
+        const position =
+          event.clientX - rect.left > rect.width / 2 ? "after" : "before";
+        updateAppDropTarget(draggingAppId, card.appId, position);
+      },
+      onDrop(event) {
+        if (!draggingAppId) {
+          return;
+        }
+
+        event.preventDefault();
+        const rect = event.currentTarget.getBoundingClientRect();
+        const position =
+          event.clientX - rect.left > rect.width / 2 ? "after" : "before";
+        reorderConfiguredApps(draggingAppId, card.appId, position);
+        clearAppDragState();
+      },
+    };
+
+    return {
+      isDragging: draggingAppId === card.appId,
+      dropPosition:
+        appDropTarget?.appId === card.appId ? appDropTarget.position : null,
+      rootProps,
+      handleProps: {
+        draggable: true,
+        onDragStart: handleDragStart,
+        onDragEnd: clearAppDragState,
+      },
+    };
+  }
+
+  const renderCard = (
+    card: AppGridData,
+    appReorderHandle?: AppReorderHandle,
+  ) => {
     const activeProviderId = card.providerState?.activeProvider.configured
       ? card.providerState.activeProvider.providerId
       : undefined;
@@ -1182,6 +1429,11 @@ export function AppsGrid({
             ? null
             : (optimisticAutoFailoverEnabledByApp[card.appId] ?? null)
         }
+        optimisticProxyEnabled={
+          isInertHomeAppId(card.appId)
+            ? null
+            : (optimisticProxyEnabledByApp[card.appId] ?? null)
+        }
         failoverReorderPending={
           isInertHomeAppId(card.appId)
             ? false
@@ -1192,9 +1444,13 @@ export function AppsGrid({
         onSetAutoFailover={(nextAppId, enabled) => {
           void handleSetAutoFailover(nextAppId, enabled);
         }}
+        onSetProxyEnabled={(nextAppId, enabled) => {
+          void handleSetProxyEnabled(nextAppId, enabled);
+        }}
         onReorderFailoverQueue={(nextAppId, providerIds) => {
           void handleReorderFailoverQueue(nextAppId, providerIds);
         }}
+        appReorderHandle={appReorderHandle}
       />
     );
   };
@@ -1203,7 +1459,7 @@ export function AppsGrid({
     <div className="owt-apps-grid">
       {loadingCards.length > 0 && (
         <div className="owt-group-grid">
-          {loadingCards.map((card) => (
+          {orderedLoadingCards.map((card) => (
             <SkeletonCard key={`${card.appId}-loading`} />
           ))}
           {loadingCards.length % 2 === 1 && <SkeletonCard key="loading-pad" />}
@@ -1211,8 +1467,10 @@ export function AppsGrid({
       )}
 
       {configured.length > 0 && (
-        <div className="owt-group-grid">
-          {configured.map(renderCard)}
+        <div className="owt-group-grid" data-app-reorder-grid="true">
+          {configured.map((card) =>
+            renderCard(card, buildAppReorderHandle(card)),
+          )}
           {configured.length % 2 === 1 && <SkeletonCard key="configured-pad" />}
         </div>
       )}
@@ -1221,7 +1479,7 @@ export function AppsGrid({
         <>
           <GroupHeader label={t("openwrt.appsGrid.notConfigured")} />
           <div className="owt-group-grid">
-            {unconfigured.map(renderCard)}
+            {unconfigured.map((card) => renderCard(card))}
             {unconfigured.length % 2 === 1 && (
               <SkeletonCard key="unconfigured-pad" kind="empty" />
             )}

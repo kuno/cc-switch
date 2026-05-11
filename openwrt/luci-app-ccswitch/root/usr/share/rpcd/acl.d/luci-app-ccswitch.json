@@ -38,6 +38,7 @@
 					"add_to_failover_queue",
 					"remove_from_failover_queue",
 					"set_auto_failover_enabled",
+					"set_proxy_enabled",
 					"reorder_failover_queue",
 					"reorder_providers",
 					"set_max_retries",

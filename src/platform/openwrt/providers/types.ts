@@ -99,6 +99,10 @@ export interface OpenWrtProviderTransport {
     appId: SharedProviderAppId,
     enabled: boolean,
   ): Promise<OpenWrtRpcResult | null>;
+  setProxyEnabled?(
+    appId: SharedProviderAppId,
+    enabled: boolean,
+  ): Promise<OpenWrtRpcResult | null>;
   reorderFailoverQueue?(
     appId: SharedProviderAppId,
     providerIds: string[],

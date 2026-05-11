@@ -59,6 +59,7 @@
       "costTooltipBody": "此数字根据本地请求日志和公开 API 价格计算。实际费用以各服务商的账单面板为准。",
       "costTooltipTitle": "估算值，非账单金额。",
       "currencyUsd": "USD",
+      "dragToReorderApp": "拖拽以重新排序 {{app}}",
       "dragToReorderProvider": "拖拽以重新排序 {{provider}}",
       "endpointUnavailable": "端点不可用",
       "mode": {
@@ -91,6 +92,7 @@
       "queueHead": "队首：{{head}}",
       "queueOrderUpdating": "队列顺序正在更新",
       "quota": "配额",
+      "reorderApp": "重新排序 {{app}}",
       "reorderProvider": "重新排序 {{provider}}",
       "resets": "{{time}} 重置",
       "routingMode": "{{app}} 路由模式",
@@ -175,8 +177,10 @@
       "appsHeading": "应用",
       "closeOpenDrawer": "关闭已打开的抽屉",
       "daemonHeading": "守护进程",
+      "footerCreditPrefix": "感谢上游桌面项目及其作者和贡献者 —",
       "switchToDarkTheme": "切换到暗色主题",
-      "switchToLightTheme": "切换到亮色主题"
+      "switchToLightTheme": "切换到亮色主题",
+      "versionsAria": "版本"
     },
     "presetTab": {
       "filters": {
