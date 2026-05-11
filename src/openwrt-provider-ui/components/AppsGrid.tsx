@@ -1198,26 +1198,6 @@ export function AppsGrid({
       />
     );
   };
-  const settledGridItems = [
-    ...configured.map(renderCard),
-    ...(unconfigured.length > 0
-      ? [
-          <GroupHeader
-            key="group-header-unconfigured"
-            label={t("openwrt.appsGrid.notConfigured")}
-          />,
-        ]
-      : []),
-    ...unconfigured.map(renderCard),
-    ...(settledCards.length % 2 === 1
-      ? [
-          <SkeletonCard
-            key="settled-pad"
-            kind={unconfigured.length > 0 ? "empty" : "configured"}
-          />,
-        ]
-      : []),
-  ];
 
   return (
     <div className="owt-apps-grid">
@@ -1230,8 +1210,23 @@ export function AppsGrid({
         </div>
       )}
 
-      {settledCards.length > 0 && (
-        <div className="owt-group-grid">{settledGridItems}</div>
+      {configured.length > 0 && (
+        <div className="owt-group-grid">
+          {configured.map(renderCard)}
+          {configured.length % 2 === 1 && <SkeletonCard key="configured-pad" />}
+        </div>
+      )}
+
+      {unconfigured.length > 0 && (
+        <>
+          <GroupHeader label={t("openwrt.appsGrid.notConfigured")} />
+          <div className="owt-group-grid">
+            {unconfigured.map(renderCard)}
+            {unconfigured.length % 2 === 1 && (
+              <SkeletonCard key="unconfigured-pad" kind="empty" />
+            )}
+          </div>
+        </>
       )}
     </div>
   );

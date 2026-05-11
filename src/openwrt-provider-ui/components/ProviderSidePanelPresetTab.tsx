@@ -1,6 +1,6 @@
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Plus, Search, Star } from "lucide-react";
+import { Check, Plus, Search, Star, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { SharedProviderPreset } from "@/shared/providers/domain";
 import {
@@ -417,7 +417,7 @@ export function ProviderSidePanelPresetTab({
 
           return (
             <button
-              className="owt-activity-drawer__filter-button"
+              className="owt-provider-panel__preset-filter-button"
               data-active={active ? "true" : "false"}
               type="button"
               role="radio"
@@ -465,14 +465,15 @@ export function ProviderSidePanelPresetTab({
         <div className="owt-provider-panel__config-footer-actions">
           <button
             type="button"
-            className="owt-provider-panel__button"
+            className="owt-provider-panel__button owt-provider-panel__button--compact"
             onClick={onCancel}
           >
+            <X className="h-4 w-4" aria-hidden="true" />
             {t("common.cancel")}
           </button>
           <button
             type="button"
-            className="owt-provider-panel__button owt-provider-panel__button--primary"
+            className="owt-provider-panel__button owt-provider-panel__button--primary owt-provider-panel__button--compact"
             disabled={!pendingPresetId}
             onClick={() => {
               if (pendingPresetId) {
@@ -480,6 +481,7 @@ export function ProviderSidePanelPresetTab({
               }
             }}
           >
+            <Check className="h-4 w-4" aria-hidden="true" />
             {t("openwrt.presetTab.selectPreset")}
           </button>
         </div>
