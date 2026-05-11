@@ -55,6 +55,7 @@
       "appNotConfigured": "{{app}} 未配置",
       "autoFailoverOffSummary": "自动故障转移已关闭 · 最多重试 {{maxRetries}} 次",
       "autoFailoverOnSummary": "自动故障转移已开启 · 最多重试 {{maxRetries}} 次",
+      "bypassed": "已绕过",
       "costTooltipBody": "此数字根据本地请求日志和公开 API 价格计算。实际费用以各服务商的账单面板为准。",
       "costTooltipTitle": "估算值，非账单金额。",
       "currencyUsd": "USD",
@@ -75,6 +76,8 @@
       "positionOfTotal": "{{position}} / {{total}}",
       "providerCount_one": "{{count}} 个服务商",
       "providerCount_other": "{{count}} 个服务商",
+      "proxyBypassedTitle": "{{app}} 代理已关闭 — 流量绕过 CC Switch",
+      "proxyEnabledTitle": "{{app}} 代理已开启",
       "queue": {
         "active": "活跃",
         "servingTraffic": "正在处理流量",
@@ -233,6 +236,8 @@
         "gemini": "Google · Gemini CLI"
       },
       "active": "当前",
+      "inQueue": "队列中",
+      "standby": "待命",
       "newProvider": "新服务商",
       "providersDialogLabel": "{{app}} 服务商",
       "routingModeAria": "{{app}} 路由模式",

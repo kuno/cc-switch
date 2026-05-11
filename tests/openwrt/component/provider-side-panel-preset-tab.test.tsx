@@ -393,6 +393,7 @@ describe("ProviderSidePanelPresetTab", () => {
         notes: "",
         token: "",
         tokenField: "OPENAI_API_KEY",
+        websiteUrl: "https://chatgpt.com/codex",
       }),
     );
   });

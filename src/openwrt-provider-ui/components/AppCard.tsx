@@ -87,7 +87,12 @@ function formatAdaptive(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return "0";
   const abs = Math.abs(n);
   if (abs < 1000) return Math.round(n).toString();
-  const units: [number, string][] = [[1e12, "T"], [1e9, "B"], [1e6, "M"], [1e3, "k"]];
+  const units: [number, string][] = [
+    [1e12, "T"],
+    [1e9, "B"],
+    [1e6, "M"],
+    [1e3, "k"],
+  ];
   for (const [base, suffix] of units) {
     if (abs >= base) {
       const v = n / base;
@@ -168,7 +173,10 @@ function getStatus({
     if (providerHealth.healthy) {
       return { labelKey: "settings.advanced.proxy.running", tone: "success" };
     }
-    if (providerHealth.lastSuccessAt === null && providerHealth.lastFailureAt === null) {
+    if (
+      providerHealth.lastSuccessAt === null &&
+      providerHealth.lastFailureAt === null
+    ) {
       return {
         labelKey: "openwrt.appCard.status.unavailable",
         tone: "neutral",
@@ -701,6 +709,7 @@ export function AppCard({
   const activeProvider = providerState?.activeProvider.configured
     ? providerState.activeProvider
     : null;
+  const proxyEnabled = failoverState?.proxyEnabled ?? hostState.proxyEnabled;
   const appIconUrl = getOpenWrtAppIconUrl(appId);
   const autoFailoverEnabled =
     optimisticAutoFailoverEnabled ??
@@ -710,6 +719,7 @@ export function AppCard({
   const canChangeRunMode =
     !isInert &&
     Boolean(activeProvider) &&
+    proxyEnabled &&
     Boolean(failoverState) &&
     typeof onSetAutoFailover === "function";
 
@@ -844,9 +854,10 @@ export function AppCard({
 
   return (
     <div
-      className="owt-app-card"
+      className={`owt-app-card${proxyEnabled ? "" : " owt-app-card--bypassed"}`}
       data-app={appId}
       data-loading={loading ? "true" : "false"}
+      data-proxy-enabled={proxyEnabled ? "true" : "false"}
       role="button"
       tabIndex={0}
       onClick={handleCardClick}
@@ -872,36 +883,61 @@ export function AppCard({
         </div>
         <span className="owt-app-card__spacer" aria-hidden="true" />
         <div className="owt-app-card__head-actions">
-          <button
-            type="button"
-            className="owt-status-pill owt-status-pill--button"
-            data-owt-chip="true"
-            data-tone={status.tone}
-            onClick={(event) => {
-              event.stopPropagation();
-              onOpenActivity(appId);
-            }}
-            title={t("openwrt.appCard.showRecentRequests")}
-          >
-            <span className="owt-status-pill__dot" aria-hidden="true" />
-            {t(status.labelKey)}
-            <svg
-              className="owt-status-pill__caret"
-              viewBox="0 0 12 12"
-              width="10"
-              height="10"
-              aria-hidden="true"
+          <span
+            className="owt-app-card__proxy-toggle"
+            data-proxy-enabled={proxyEnabled ? "true" : "false"}
+            aria-hidden="true"
+            title={t(
+              proxyEnabled
+                ? "openwrt.appCard.proxyEnabledTitle"
+                : "openwrt.appCard.proxyBypassedTitle",
+              { app: appLabel },
+            )}
+          />
+          {proxyEnabled ? (
+            <button
+              type="button"
+              className="owt-status-pill owt-status-pill--button"
+              data-owt-chip="true"
+              data-tone={status.tone}
+              onClick={(event) => {
+                event.stopPropagation();
+                onOpenActivity(appId);
+              }}
+              title={t("openwrt.appCard.showRecentRequests")}
             >
-              <path
-                d="M3 5l3 3 3-3"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </button>
+              <span className="owt-status-pill__dot" aria-hidden="true" />
+              {t(status.labelKey)}
+              <svg
+                className="owt-status-pill__caret"
+                viewBox="0 0 12 12"
+                width="10"
+                height="10"
+                aria-hidden="true"
+              >
+                <path
+                  d="M3 5l3 3 3-3"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          ) : (
+            <span
+              className="owt-status-pill owt-status-pill--bypassed"
+              data-owt-chip="true"
+              data-tone="neutral"
+              title={t("openwrt.appCard.proxyBypassedTitle", {
+                app: appLabel,
+              })}
+            >
+              <span className="owt-status-pill__dot" aria-hidden="true" />
+              {t("openwrt.appCard.bypassed")}
+            </span>
+          )}
           {canChangeRunMode ? (
             <div
               className="owt-mode-toggle"
@@ -1002,15 +1038,11 @@ export function AppCard({
 
       <div className="owt-app-card__usage">
         <div className="owt-app-card__usage-cell">
-          <div className="owt-app-card__usage-label">
-            {t("usage.tokens")}
-          </div>
+          <div className="owt-app-card__usage-label">{t("usage.tokens")}</div>
           <div className="owt-app-card__usage-value">{tokensValue}</div>
         </div>
         <div className="owt-app-card__usage-cell">
-          <div className="owt-app-card__usage-label">
-            {t("usage.requests")}
-          </div>
+          <div className="owt-app-card__usage-label">{t("usage.requests")}</div>
           <div className="owt-app-card__usage-value">{requestsValue}</div>
         </div>
         <div className="owt-app-card__usage-cell">

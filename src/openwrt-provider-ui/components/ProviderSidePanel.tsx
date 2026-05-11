@@ -1,4 +1,13 @@
-import { Copy, Loader2, Minus, Plus, Search, Trash2, X, Zap } from "lucide-react";
+import {
+  Copy,
+  Loader2,
+  Minus,
+  Plus,
+  Search,
+  Trash2,
+  X,
+  Zap,
+} from "lucide-react";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   useEffect,
@@ -76,6 +85,7 @@ interface ProviderSidePanelProps {
   appAutoFailoverEnabled?: boolean;
   appFailoverPending?: boolean;
   providerInFailoverQueue?: boolean;
+  failoverQueueProviderIds?: string[];
   providerFailoverPending?: boolean;
   footerText: string;
   onClose: () => void;
@@ -150,7 +160,7 @@ interface SortableProviderRailItemProps {
   appId: SharedProviderAppId;
   provider: SharedProviderView;
   selectedProviderId: string | null;
-  showActiveBadge: boolean;
+  railBadge: "active" | "queued" | "standby" | null;
   onSelectProvider: (providerId: string) => void;
 }
 
@@ -158,12 +168,21 @@ function ProviderRailRow({
   appId,
   provider,
   selectedProviderId,
-  showActiveBadge,
+  railBadge,
   onSelectProvider,
 }: SortableProviderRailItemProps) {
   const { t } = useTranslation();
   const providerLabel =
     provider.name || provider.providerId || t("provider.tabProvider");
+  const railBadgeCopy =
+    railBadge === "active"
+      ? t("openwrt.providerPanel.active")
+      : railBadge === "queued"
+        ? t("openwrt.providerPanel.inQueue")
+        : railBadge === "standby"
+          ? t("openwrt.providerPanel.standby")
+          : null;
+  const railBadgeTone = railBadge === "standby" ? "neutral" : "success";
 
   return (
     <div className="owt-provider-panel__provider-item" data-reorderable="false">
@@ -190,10 +209,10 @@ function ProviderRailRow({
             {providerLabel}
           </div>
         </div>
-        {showActiveBadge && provider.active ? (
-          <span className="owt-status-pill" data-tone="success">
+        {railBadgeCopy ? (
+          <span className="owt-status-pill" data-tone={railBadgeTone}>
             <span className="owt-status-pill__dot" aria-hidden="true" />
-            {t("openwrt.providerPanel.active")}
+            {railBadgeCopy}
           </span>
         ) : null}
       </button>
@@ -235,6 +254,7 @@ export function ProviderSidePanel({
   appAutoFailoverEnabled = false,
   appFailoverPending = false,
   providerInFailoverQueue = false,
+  failoverQueueProviderIds = [],
   providerFailoverPending = false,
   footerText,
   showScrim = true,
@@ -427,13 +447,23 @@ export function ProviderSidePanel({
     }
   }
 
+  const failoverQueueProviderIdSet = new Set(failoverQueueProviderIds);
   const providerRows = railProviders.map((provider) => (
     <ProviderRailRow
       key={provider.providerId || provider.name}
       appId={appId}
       provider={provider}
       selectedProviderId={selectedProviderId}
-      showActiveBadge={!appAutoFailoverEnabled}
+      railBadge={
+        appAutoFailoverEnabled
+          ? provider.providerId &&
+            failoverQueueProviderIdSet.has(provider.providerId)
+            ? "queued"
+            : "standby"
+          : provider.active
+            ? "active"
+            : null
+      }
       onSelectProvider={onSelectProvider}
     />
   ));
