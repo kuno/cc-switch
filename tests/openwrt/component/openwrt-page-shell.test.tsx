@@ -26,8 +26,22 @@ describe("OpenWrtPageShell", () => {
       screen.getByRole("heading", { level: 2, name: /^Apps\b/ }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { level: 2, name: /^Daemon\b/ }),
-    ).toBeInTheDocument();
+      screen.queryByRole("heading", { level: 2, name: /^Daemon\b/ }),
+    ).not.toBeInTheDocument();
+    const versionsFooter = screen.getByRole("contentinfo", {
+      name: "Versions",
+    });
+    expect(within(versionsFooter).getByText("luci-app-ccswitch")).toBeVisible();
+    expect(within(versionsFooter).getByText("vtest")).toBeVisible();
+    expect(within(versionsFooter).getByText("ccswitch daemon")).toBeVisible();
+    expect(
+      within(versionsFooter).getByText("v3.13.0-213-gbe1a81ae"),
+    ).toBeVisible();
+    expect(
+      within(versionsFooter).getByRole("link", {
+        name: "farion1231/cc-switch",
+      }),
+    ).toHaveAttribute("href", "https://github.com/farion1231/cc-switch");
     expect(
       screen.getByRole("button", { name: "Switch to light theme" }),
     ).toBeInTheDocument();
@@ -178,9 +192,7 @@ describe("OpenWrtPageShell", () => {
     await waitFor(() => {
       expect(
         Array.from(
-          new Set(
-            listProviders.mock.calls.map(([appId]) => appId as string),
-          ),
+          new Set(listProviders.mock.calls.map(([appId]) => appId as string)),
         ).sort(),
       ).toEqual([...OPENWRT_APP_IDS]);
     });
