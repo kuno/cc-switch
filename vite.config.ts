@@ -18,6 +18,8 @@ const openWrtProviderUiIconDir = path.resolve(
   __dirname,
   "src/openwrt-provider-ui/icons",
 );
+const openWrtProviderUiIconBaseUrl =
+  "/luci-static/resources/ccswitch/provider-ui/icons";
 const openWrtVisualHarnessRoot = path.resolve(
   __dirname,
   "tests/openwrt/visual/harness",
@@ -50,6 +52,9 @@ export default defineConfig(({ command }) => {
     __OPENWRT_LUCI_APP_VERSION__: JSON.stringify(
       resolveOpenWrtLuciAppVersion(),
     ),
+    __OPENWRT_PROVIDER_UI_ICON_BASE_URL__: JSON.stringify(
+      isOpenWrtVisualHarnessBuild ? "./icons" : openWrtProviderUiIconBaseUrl,
+    ),
     ...(isOpenWrtProviderUiBuild
       ? {
           "process.env.NODE_ENV": JSON.stringify("production"),
@@ -67,7 +72,7 @@ export default defineConfig(({ command }) => {
         ? openWrtVisualHarnessRoot
         : "src",
     plugins: [
-      isOpenWrtProviderUiBuild && {
+      (isOpenWrtProviderUiBuild || isOpenWrtVisualHarnessBuild) && {
         name: "emit-openwrt-provider-icons",
         generateBundle() {
           const emittedByImports = new Set([

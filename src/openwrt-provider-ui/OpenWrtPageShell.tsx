@@ -176,6 +176,62 @@ function ThemeToggle({
   );
 }
 
+function PageFooter({
+  luciAppVersion,
+  daemonVersion,
+}: {
+  luciAppVersion: string;
+  daemonVersion: string;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <footer
+      className="owt-page-foot"
+      role="contentinfo"
+      aria-label={t("openwrt.pageShell.versionsAria")}
+    >
+      <div className="owt-page-foot__versions">
+        <span className="owt-page-foot__item">
+          <span className="owt-page-foot__label">
+            {t("openwrt.daemon.luciAppLabel")}
+          </span>
+          <span
+            className="owt-page-foot__version"
+            title={t("openwrt.daemon.luciAppVersion")}
+          >
+            {luciAppVersion}
+          </span>
+        </span>
+        <span className="owt-page-foot__sep" aria-hidden="true">
+          ·
+        </span>
+        <span className="owt-page-foot__item">
+          <span className="owt-page-foot__label">
+            {t("openwrt.daemon.daemonLabel")}
+          </span>
+          <span
+            className="owt-page-foot__version"
+            title={t("openwrt.daemon.daemonVersion")}
+          >
+            {daemonVersion}
+          </span>
+        </span>
+      </div>
+      <div className="owt-page-foot__credit">
+        {t("openwrt.pageShell.footerCreditPrefix")}{" "}
+        <a
+          href="https://github.com/farion1231/cc-switch"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          farion1231/cc-switch
+        </a>
+      </div>
+    </footer>
+  );
+}
+
 export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
   const { t } = useTranslation();
   const shell = options.shell;
@@ -326,39 +382,38 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
           />
         </section>
 
-        <hr className="owt-page__section-divider" aria-hidden="true" />
-
-        <h2 id="owt-daemon-heading" className="owt-visually-hidden">
-          {t("openwrt.pageShell.daemonHeading")}
-        </h2>
-
-        <section data-slot="daemon-card" aria-labelledby="owt-daemon-heading">
-          <DaemonCard
-            appVersion={luciAppVersion}
-            daemonVersion={daemonVersion}
-            host={snapshot.host}
-            draft={hostDraft}
-            isRunning={snapshot.isRunning}
-            isDirty={isDirty}
-            saveInFlight={saveInFlight}
-            restartInFlight={snapshot.restartInFlight}
-            restartPending={snapshot.restartPending}
-            message={snapshot.message}
-            messageToneClass={getMessageToneClass(snapshot.message)}
-            onDraftChange={(key, value) =>
-              setHostDraft((current) => ({
-                ...current,
-                [key]: value,
-              }))
-            }
-            onSave={() => {
-              void handleSave();
-            }}
-            onRestart={() => {
-              void handleRestart();
-            }}
-          />
+        <section data-slot="daemon-section">
+          <div data-slot="daemon-card">
+            <DaemonCard
+              host={snapshot.host}
+              draft={hostDraft}
+              isRunning={snapshot.isRunning}
+              isDirty={isDirty}
+              saveInFlight={saveInFlight}
+              restartInFlight={snapshot.restartInFlight}
+              restartPending={snapshot.restartPending}
+              message={snapshot.message}
+              messageToneClass={getMessageToneClass(snapshot.message)}
+              onDraftChange={(key, value) =>
+                setHostDraft((current) => ({
+                  ...current,
+                  [key]: value,
+                }))
+              }
+              onSave={() => {
+                void handleSave();
+              }}
+              onRestart={() => {
+                void handleRestart();
+              }}
+            />
+          </div>
         </section>
+
+        <PageFooter
+          luciAppVersion={luciAppVersion}
+          daemonVersion={daemonVersion}
+        />
       </main>
 
       <button
