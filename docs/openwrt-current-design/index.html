@@ -4,6 +4,32 @@
 <meta charset="utf-8" />
 <title>CC Switch · Revised</title>
 <meta name="viewport" content="width=device-width,initial-scale=1" />
+<!--
+  CC Switch — single-file design prototype for developer handoff.
+
+  File layout (top → bottom):
+    1. <style>  Design tokens, then components in roughly this order:
+                 shell → pills/chips/buttons → activity drawer →
+                 alert strip → app cards → apps grid → preset picker →
+                 daemon card → side panel (status / configure / failover) →
+                 mode switch → tweaks panel → theme toggle → animations.
+    2. <body>   Markup, then data + render functions, then event wiring.
+    3. JS data: APPS, PRESETS, QUOTAS, ICONS live near the bottom of <script>;
+                they're the seed data your real state store should replace.
+
+  Notes for devs:
+    - State is a flat module-local object plus a `currentApp` pointer; renderers
+      read from it and re-paint imperatively. The React port should mirror this
+      shape but with hooks.
+    - The Tweaks panel (bottom-right when toggled on) drives visual variations
+      via a TWEAKS object — none of those values should ship as user settings;
+      they're for design iteration only.
+    - The #langToggle button is wired to body[data-lang] + localStorage but
+      does NOT yet swap any visible strings. Wire an i18n dictionary on the
+      React side; the toggle and persistence pattern are in place.
+    - Icons live in /icons as inline-friendly SVGs, mapped by vendor key in
+      the ICONS constant.
+-->
 <style>
   /* ---------- TOKENS ---------- */
   :root {
@@ -157,7 +183,7 @@
     cursor: default;
   }
   .pill.is-idle:hover { border-color: var(--line); }
-  .pill.is-idle svg { opacity: 0.55; }
+  .pill.is-idle svg { opacity: 0.85; }
   .pill.danger {
     background: var(--fail-soft);
     color: var(--fail);
@@ -238,13 +264,14 @@
   .ap-close {
     grid-column: 2;
     grid-row: 1 / span 2;
-    width: 32px; height: 32px;
+    width: 34px; height: 34px;
     border: 1px solid var(--line);
-    background: var(--panel-softer);
-    border-radius: 10px;
+    background: var(--button);
+    border-radius: 999px;
     color: var(--muted);
     cursor: pointer;
     display: inline-flex; align-items: center; justify-content: center;
+    font-family: inherit;
     transition: background 120ms, color 120ms, border-color 120ms;
   }
   .ap-close:hover { color: var(--text); border-color: var(--line-strong); }
@@ -744,8 +771,11 @@
     text-align: left;
     font: inherit;
     color: inherit;
+    display: flex;
+    flex-direction: column;
     transition: transform 160ms ease, border-color 160ms, box-shadow 200ms;
   }
+  .group-grid > .app-card { height: 100%; }
   .app-card:hover {
     transform: translateY(-2px);
     border-color: var(--line-strong);
@@ -859,7 +889,8 @@
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 0;
-    margin-top: 4px;
+    margin-top: auto;
+    padding-top: 4px;
   }
   .usage-cell {
     padding: 2px 14px;
@@ -872,6 +903,66 @@
     letter-spacing: 0.1em;
     text-transform: uppercase;
     color: var(--muted);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .usage-info {
+    appearance: none;
+    background: transparent;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    color: var(--soft-text);
+    cursor: help;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    line-height: 0;
+    border-radius: 999px;
+    transition: color 140ms;
+  }
+  .usage-info:hover { color: var(--accent); }
+  .usage-info-tip {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%) translateY(4px);
+    width: 240px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: var(--panel-strong);
+    color: var(--text);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow);
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+    line-height: 1.45;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 140ms, transform 140ms;
+    z-index: 20;
+    white-space: normal;
+    text-align: left;
+  }
+  .usage-info-tip strong { color: var(--text); font-weight: 720; }
+  .usage-info-tip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 6px solid transparent;
+    border-top-color: var(--panel-strong);
+    filter: drop-shadow(0 1px 0 var(--line));
+  }
+  .usage-info:hover .usage-info-tip,
+  .usage-info:focus-visible .usage-info-tip {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
   }
   .usage-value {
     font-size: 20px;
@@ -886,6 +977,558 @@
     font-size: 12px;
     font-weight: 600;
     margin-left: 3px;
+  }
+
+  /* ---------- CONFIGURE TAB grouping ---------- */
+  .sp-section--config { padding-bottom: 64px; position: relative; }
+  .config-list { display: flex; flex-direction: column; }
+  .config-list-group {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+    padding: 18px 0 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  .config-list-group:first-child { padding-top: 4px; }
+  .config-row {
+    display: grid;
+    grid-template-columns: 180px 1fr;
+    align-items: center;
+    gap: 24px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--line);
+    min-height: 56px;
+  }
+  .config-row-label {
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .config-row-value { min-width: 0; }
+  .config-row-value > .field-input,
+  .config-row-value > textarea.field-input { width: 100%; }
+  .sp-detail.is-readonly .config-row-value .field-input,
+  .sp-detail.is-readonly .config-row-value textarea.field-input,
+  .sp-detail.is-readonly .config-row-value select.field-input {
+    border-color: transparent;
+    background: transparent;
+    padding-left: 0;
+    padding-right: 0;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .sp-detail.is-readonly .config-row-value .field-input.mono,
+  .sp-detail.is-readonly .config-row-value textarea.field-input.mono {
+    color: var(--accent-text);
+  }
+  .config-tab-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 4px;
+  }
+  .config-tab-actions:empty,
+  .config-tab-actions:has(> [hidden]:only-child) { display: none; }
+  .config-tab-actions--bottom {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    padding-top: 18px;
+  }
+  .config-group-label {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 4px 0 12px;
+  }
+  .config-divider {
+    height: 1px;
+    background: var(--line);
+    margin: 22px 0 18px;
+  }
+
+  /* ---------- QUEUE BUTTON (failover mode) ---------- */
+  .queue-btn {
+    width: 34px; height: 34px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--button);
+    color: var(--muted);
+    cursor: pointer;
+    font-family: inherit;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+  }
+  .queue-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .prov-del-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px;
+    border-radius: 999px;
+    font-family: inherit;
+    padding: 0;
+    border: 1px solid var(--line);
+    background: var(--button);
+    color: var(--muted);
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+  }
+  .prov-del-btn:hover {
+    background: color-mix(in srgb, var(--fail) 14%, transparent);
+    border-color: color-mix(in srgb, var(--fail) 35%, var(--line));
+    color: var(--fail);
+  }
+
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 4px 0 12px;
+  }
+  .config-divider {
+    height: 1px;
+    background: var(--line);
+    margin: 22px 0 18px;
+  }
+
+  /* ---------- STATUS TAB (per-provider live status) ---------- */
+  .status-grid { display: flex; flex-direction: column; gap: 18px; }
+  .status-eyebrow {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .status-hero {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 24px;
+    padding: 16px 18px;
+    background: var(--panel-soft);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-control);
+  }
+  .status-hero-line {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 22px; font-weight: 720; letter-spacing: -0.02em;
+    margin-top: 6px;
+  }
+  .status-dot {
+    width: 9px; height: 9px; border-radius: 999px;
+    background: var(--success);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--success) 18%, transparent);
+  }
+  .status-dot.warn { background: var(--warn); box-shadow: 0 0 0 4px color-mix(in srgb, var(--warn) 18%, transparent); }
+  .status-dot.fail { background: var(--fail); box-shadow: 0 0 0 4px color-mix(in srgb, var(--fail) 18%, transparent); }
+  .status-dot.idle { background: var(--soft-text); box-shadow: 0 0 0 4px color-mix(in srgb, var(--soft-text) 14%, transparent); }
+  .status-hero-sub { color: var(--muted); font-size: 12.5px; margin-top: 4px; }
+  .status-hero-r { text-align: right; }
+  .status-hero-time { font-variant-numeric: tabular-nums; font-size: 18px; font-weight: 700; margin-top: 6px; }
+
+  .status-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-control);
+    overflow: hidden;
+  }
+  .metric-cell {
+    padding: 12px 14px;
+    border-left: 1px solid var(--line);
+    border-top: 1px solid var(--line);
+  }
+  .metric-cell:nth-child(3n+1) { border-left: 0; }
+  .metric-cell:nth-child(-n+3) { border-top: 0; }
+  .metric-label { font-size: 10.5px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+  .metric-value { font-size: 22px; font-weight: 720; letter-spacing: -0.02em; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .metric-unit { color: var(--muted); font-size: 12px; font-weight: 600; margin-left: 4px; }
+
+  .status-block {
+    display: flex; flex-direction: column; gap: 8px;
+    padding: 14px 16px;
+    background: var(--panel-soft);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-control);
+  }
+  .status-recent { display: flex; flex-direction: column; gap: 6px; }
+  .recent-item {
+    display: grid;
+    grid-template-columns: 56px 1fr auto auto;
+    gap: 10px;
+    align-items: center;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: var(--panel-strong);
+    border: 1px solid var(--line);
+    font-size: 12.5px;
+  }
+  .recent-code { font-family: var(--mono); font-weight: 700; }
+  .recent-code.success { color: var(--success); }
+  .recent-code.warn    { color: var(--warn); }
+  .recent-code.fail    { color: var(--fail); }
+  .recent-model { font-family: var(--mono); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .recent-tokens { font-variant-numeric: tabular-nums; color: var(--text); }
+  .recent-ago { font-variant-numeric: tabular-nums; color: var(--soft-text); }
+
+  .health-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 0;
+    border-bottom: 1px dashed var(--line);
+    font-size: 13px;
+  }
+  .health-row:last-child { border-bottom: 0; }
+  .health-name { color: var(--muted); font-weight: 600; }
+  .health-val { color: var(--text); font-size: 12px; }
+  .chip.dot.idle { color: var(--muted); }
+
+  .page-foot {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    align-items: center;
+    gap: 10px;
+    margin: 40px 0 8px;
+    color: var(--soft-text);
+    font-size: 12px;
+  }
+  .page-foot-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .page-foot-label {
+    font-weight: 600;
+    color: var(--muted);
+    letter-spacing: 0.01em;
+  }
+  .page-foot-ver {
+    font-family: var(--mono);
+    font-weight: 600;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--panel-softer);
+    border: 1px solid var(--line);
+    color: var(--text);
+  }
+  .page-foot-sep { opacity: 0.6; }
+  .page-foot-versions { display: inline-flex; align-items: center; gap: 10px; }
+  .page-foot-credit { color: var(--muted); font-size: 11.5px; line-height: 1.5; text-align: center; }
+  .page-foot-credit a {
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 600;
+    border-bottom: 1px dashed color-mix(in srgb, var(--accent) 50%, transparent);
+    padding-bottom: 1px;
+  }
+  .page-foot-credit a:hover { border-bottom-style: solid; }
+
+  /* ---------- PROXY TOGGLE (top-level per-app switch) ---------- */  .app-toggle {
+    position: relative;
+    width: 40px;
+    height: 22px;
+    border-radius: 999px;
+    background: var(--line);
+    border: 1px solid var(--line-strong);
+    cursor: pointer;
+    padding: 0;
+    flex: 0 0 auto;
+    transition: background 180ms ease, border-color 180ms ease;
+  }
+  .app-toggle::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #ffffff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15), 0 1px 3px rgba(0, 0, 0, 0.06);
+    transition: transform 220ms cubic-bezier(0.32, 0.72, 0.16, 1);
+  }
+  .app-toggle[aria-pressed="true"] {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+  .app-toggle[aria-pressed="true"]::after {
+    transform: translateX(18px);
+  }
+  .app-toggle:hover {
+    border-color: color-mix(in srgb, var(--accent) 40%, var(--line-strong));
+  }
+  .app-toggle:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+  }
+  body[data-theme="dark"] .app-toggle::after {
+    background: #f0f4fb;
+  }
+  /* Bypassed state — proxy off */
+  .app-card.is-bypassed .app-icon img,
+  .app-card.is-bypassed .mini-icon img {
+    filter: grayscale(0.85);
+    opacity: 0.55;
+  }
+  .app-card.is-bypassed .app-active,
+  .app-card.is-bypassed .app-usage,
+  .app-card.is-bypassed .app-failover,
+  .app-card.is-bypassed .app-manual {
+    opacity: 0.55;
+  }
+
+  /* ---------- FAILOVER MODE — ranked provider list ---------- */
+  .app-failover {
+    border: 1px solid var(--line);
+    border-radius: var(--radius-control);
+    background: var(--panel-soft);
+    padding: 4px 0 0;
+    margin-bottom: 18px;
+    overflow: hidden;
+  }
+  .fail-row {
+    display: grid;
+    grid-template-columns: 18px 22px 32px 1fr auto;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px dashed var(--line);
+  }
+  .fail-row:last-of-type { border-bottom: 0; }
+  .fail-drag {
+    color: var(--soft-text);
+    font-size: 14px;
+    line-height: 1;
+    letter-spacing: -2px;
+    cursor: grab;
+    user-select: none;
+  }
+  .fail-rank {
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    color: var(--muted);
+    font-size: 13px;
+    text-align: center;
+  }
+  .fail-icon {
+    width: 32px; height: 32px;
+    border-radius: 10px;
+    background: var(--panel-strong);
+    border: 1px solid var(--line);
+    display: grid;
+    place-items: center;
+  }
+  .fail-icon img { width: 18px; height: 18px; }
+  .fail-meta { min-width: 0; }
+  .fail-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .fail-status-line {
+    font-size: 12px;
+    margin-top: 2px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .fail-status-line.active { color: var(--success); font-weight: 600; }
+  .fail-foot {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    border-top: 1px solid var(--line);
+    background: var(--panel-softer);
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .fail-foot-r {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  /* ---------- MANUAL MODE — current provider + quotas ---------- */
+  .app-manual {
+    border: 1px solid var(--line);
+    border-radius: var(--radius-control);
+    background: var(--panel-soft);
+    padding: 14px 16px 12px;
+    margin-bottom: 18px;
+  }
+  .manual-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  .manual-icon {
+    width: 36px; height: 36px;
+    border-radius: 10px;
+    background: var(--panel-strong);
+    border: 1px solid var(--line);
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+  }
+  .manual-icon img { width: 20px; height: 20px; }
+  .manual-meta { min-width: 0; flex: 1; }
+  .manual-eyebrow {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .manual-name {
+    font-size: 15px;
+    font-weight: 720;
+    color: var(--text);
+    margin-top: 2px;
+    letter-spacing: -0.01em;
+  }
+  .manual-url {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    color: var(--accent-text);
+    font-size: 12px;
+    font-weight: 600;
+    margin-top: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .manual-quotas {
+    margin-top: 12px;
+    display: grid;
+    gap: 10px;
+  }
+  .quota-row {
+    display: grid;
+    gap: 5px;
+  }
+  .quota-line {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 12px;
+  }
+  .quota-name {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .quota-rem {
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .quota-rem strong { color: var(--text); font-weight: 700; }
+  .quota-reset {
+    margin-left: auto;
+    color: var(--soft-text);
+    font-variant-numeric: tabular-nums;
+  }
+  .quota-bar {
+    height: 4px;
+    background: var(--line);
+    border-radius: 999px;
+    overflow: hidden;
+    position: relative;
+  }
+  .quota-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    background: var(--success);
+    border-radius: 999px;
+  }
+  .quota-fill.warn { background: var(--warn); }
+  .quota-fill.fail { background: var(--fail); }
+  .app-card.is-bypassed .app-name,
+  .app-card.is-bypassed .app-prov-count,
+  .app-card.is-bypassed .app-sub {
+    color: var(--soft-text);
+  }
+  .chip.bypassed {
+    background: var(--button);
+    color: var(--soft-text);
+    border-color: var(--line);
+    border-style: dashed;
+  }
+
+  /* ---------- MODE SWITCH (manual / failover) ---------- */
+  .mode-switch {
+    display: inline-flex;
+    align-items: center;
+    height: 28px;
+    padding: 3px;
+    border-radius: 999px;
+    background: var(--button);
+    border: 1px solid var(--line);
+    gap: 0;
+  }
+  .mode-switch-opt {
+    height: 22px;
+    padding: 0 10px;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    border-radius: 999px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    transition: background 160ms, color 160ms, box-shadow 160ms;
+  }
+  .mode-switch-opt::before {
+    content: "";
+    width: 5px;
+    height: 5px;
+    border-radius: 999px;
+    background: currentColor;
+    display: inline-block;
+    opacity: 0.55;
+  }
+  .mode-switch-opt[aria-pressed="true"] {
+    background: var(--panel-strong);
+    color: var(--text);
+    box-shadow: 0 1px 2px rgba(50, 72, 103, 0.10), 0 0 0 1px var(--line);
+  }
+  .mode-switch-opt[aria-pressed="true"]::before {
+    opacity: 1;
+    background: var(--text);
+  }
+  .mode-switch-opt:hover:not([aria-pressed="true"]) {
+    color: var(--text);
+  }
+  .mode-switch-opt:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+  }
+  body[data-theme="dark"] .mode-switch-opt[aria-pressed="true"] {
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 0 0 1px var(--line-strong);
+  }
+  .app-card.is-bypassed .mode-switch {
+    opacity: 0.5;
+    pointer-events: none;
   }
 
   .app-card .open-affordance {
@@ -943,6 +1586,16 @@
     align-items: center;
     gap: 14px;
   }
+  .sp-head-meta { min-width: 0; }
+  .sp-head-name-row { display: inline-flex; align-items: center; gap: 14px; }
+  .sp-head-spacer { flex: 1; }
+  .sp-head #spModeSwitch { align-self: center; }
+  .sp-head-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 0 0 auto;
+  }
   .sp-head .app-icon { width: 40px; height: 40px; }
   .sp-head .app-icon img { width: 22px; height: 22px; }
   .sp-head h3 {
@@ -958,18 +1611,20 @@
   }
   .sp-close {
     margin-left: auto;
-    width: 36px; height: 36px;
+    width: 34px; height: 34px;
     border-radius: 999px;
     border: 1px solid var(--line);
     background: var(--button);
-    color: var(--text);
+    color: var(--muted);
     cursor: pointer;
-    font-size: 18px;
+    font-size: 16px;
+    line-height: 1;
     display: inline-grid;
     place-items: center;
     font-family: inherit;
+    transition: background 120ms, color 120ms, border-color 120ms;
   }
-  .sp-close:hover { border-color: var(--line-strong); }
+  .sp-close:hover { color: var(--text); border-color: var(--line-strong); }
 
   .sp-body {
     flex: 1;
@@ -1105,6 +1760,8 @@
     background: var(--button);
   }
   .prov-badge.active  { background: var(--success-soft); color: var(--success); border-color: var(--success-line); }
+  .prov-badge.queued  { background: color-mix(in srgb, var(--success) 14%, transparent); color: var(--success); border-color: color-mix(in srgb, var(--success) 35%, var(--line)); }
+  .prov-badge.standby { background: var(--panel-strong); color: var(--muted); border-color: var(--line); }
 
   .sp-detail {
     padding: 22px 26px 26px;
@@ -1202,7 +1859,20 @@
     justify-content: space-between;
     align-items: center;
   }
-  .sp-foot .muted { color: var(--muted); font-size: 12.5px; }
+  .sp-foot .muted { color: var(--muted); font-size: 12.5px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sp-foot-actions { display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+  .sp-foot .pill:disabled { opacity: 0.45; cursor: not-allowed; }
+  .sp-foot .pill.primary:disabled:hover { background: var(--accent); }
+  .sp-detail.is-readonly .field-input[readonly],
+  .sp-detail.is-readonly .field-input:disabled {
+    background: transparent;
+    border-color: transparent;
+    cursor: default;
+    box-shadow: none;
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .sp-detail.is-readonly .authjson-actions { opacity: 0.5; pointer-events: none; }
 
   /* ---------- PRESET BROWSER ---------- */
   .sp-preset { padding-bottom: 8px; }
@@ -1225,6 +1895,62 @@
   }
   body[data-theme="dark"] .preset-intro { background: #0b1017; color: #cbd6e5; }
   .preset-sub { color: var(--muted); font-size: 13px; margin: 10px 2px 22px; }
+  .preset-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+    margin-bottom: 18px;
+  }
+  .preset-title { font-size: 22px; font-weight: 720; letter-spacing: -0.01em; }
+  .preset-subtitle { color: var(--muted); font-size: 12.5px; margin-top: 4px; }
+  .preset-search {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: var(--panel-soft);
+    border: 1px solid var(--line);
+    min-width: 280px;
+    color: var(--muted);
+    transition: border-color 120ms;
+  }
+  .preset-search:focus-within { border-color: var(--accent); color: var(--text); }
+  .preset-search input {
+    border: 0; outline: 0; background: transparent;
+    flex: 1; min-width: 0;
+    font-size: 13px; color: var(--text);
+  }
+  .preset-filters {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    margin-bottom: 18px;
+  }
+  .preset-filter {
+    height: 34px;
+    padding: 0 14px;
+    font-size: 13px;
+    font-weight: 700;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--button);
+    color: var(--muted);
+    cursor: pointer;
+    font-family: inherit;
+    display: inline-flex;
+    align-items: center;
+    transition: background 120ms, color 120ms, border-color 120ms;
+  }
+  .preset-filter:hover { color: var(--text); border-color: var(--line-strong); }
+  .preset-filter.active {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 35%, var(--line));
+    color: var(--accent);
+  }
+  .preset-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+  @media (max-width: 1100px) { .preset-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .preset-group { margin-top: 18px; }
   .preset-group-label {
     font-size: 10.5px;
@@ -1236,24 +1962,47 @@
   }
   .preset-group-desc { font-size: 12.5px; color: var(--muted); margin-bottom: 10px; }
   .preset-card {
-    display: block;
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
     width: 100%;
     text-align: left;
-    background: var(--panel-strong);
+    padding: 10px 12px;
+    background: var(--panel-soft);
     border: 1px solid var(--line);
-    border-radius: var(--radius-card);
-    padding: 14px 16px;
-    margin-bottom: 10px;
+    border-radius: var(--radius-control);
     cursor: pointer;
-    font: inherit;
-    color: inherit;
     transition: border-color 140ms, background 140ms;
   }
+  .preset-card-icon {
+    flex-shrink: 0;
+    width: 28px; height: 28px;
+    border-radius: 8px;
+    background: var(--panel-strong);
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--line);
+  }
+  .preset-card-icon img { width: 16px; height: 16px; }
+  .preset-card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .preset-card:hover { border-color: var(--line-strong); }
   .preset-card.selected { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent); }
-  .preset-card-title { font-size: 15px; font-weight: 720; color: var(--text); margin-bottom: 4px; }
-  .preset-card-desc { font-size: 13px; color: var(--muted); line-height: 1.45; }
-  .preset-card-meta { font-size: 12.5px; color: var(--soft-text); margin-top: 10px; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  .preset-card-title { font-size: 13px; font-weight: 700; color: var(--text); line-height: 1.3; }
+  .preset-card-desc {
+    font-size: 11.5px; color: var(--muted); line-height: 1.35;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .preset-card-meta {
+    font-size: 11px; color: var(--soft-text);
+    margin-top: 2px;
+    font-family: var(--mono);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    line-height: 1.35;
+  }
 
   /* contents wrapper for grid-passthrough groups */
   .contents { display: contents; }
@@ -1308,20 +2057,29 @@
 
   /* ---------- THEME TOGGLE (icon-based so the label isn't backwards) ---------- */
   .theme-toggle {
-    width: 36px; height: 36px;
+    width: 34px; height: 34px;
     border-radius: 999px;
     border: 1px solid var(--line);
     background: var(--button);
     cursor: pointer;
     display: inline-grid;
     place-items: center;
-    color: var(--text);
+    color: var(--muted);
     font-family: inherit;
+    transition: background 120ms, color 120ms, border-color 120ms;
   }
+  .theme-toggle:hover { color: var(--text); border-color: var(--line-strong); }
   .theme-toggle svg { width: 18px; height: 18px; display: block; }
   .theme-toggle .moon { display: none; }
   body[data-theme="dark"] .theme-toggle .sun { display: none; }
   body[data-theme="dark"] .theme-toggle .moon { display: block; }
+
+  .head-tools { display: inline-flex; align-items: center; gap: 8px; }
+  #langToggle { font-size: 12px; font-weight: 720; letter-spacing: 0.02em; }
+  #langToggle .lang-en { display: none; }
+  #langToggle .lang-zh { display: block; }
+  body[data-lang="zh"] #langToggle .lang-zh { display: none; }
+  body[data-lang="zh"] #langToggle .lang-en { display: block; }
 
   /* Hide elements with .hidden */
   [hidden] { display: none !important; }
@@ -1353,9 +2111,17 @@
   }
   .tw-title { font-weight: 760; letter-spacing: -0.01em; font-size: 14px; }
   .tw-reset {
+    height: 28px;
+    padding: 0 12px;
+    border-radius: 999px;
     border: 1px solid var(--line);
     background: var(--button);
     color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 120ms, color 120ms, border-color 120ms;
     padding: 4px 10px;
     border-radius: 999px;
     font: inherit;
@@ -1399,23 +2165,26 @@
   </div>
 
   <!-- ===== APPS ===== -->
-  <div class="section-head">
-    <h2>Apps <span class="daemon-ver-inline" title="luci-app-ccswitch version">v0.2.4</span></h2>
-    <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
-      <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
-      <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-    </button>
+  <div class="section-head section-head--title">
+    <h1 class="title" style="font-size: 34px;">CC Switch</h1>
+    <div class="head-tools">
+      <button class="theme-toggle" id="langToggle" aria-label="Toggle language" title="Toggle language">
+        <span class="lang-en">EN</span>
+        <span class="lang-zh">中</span>
+      </button>
+      <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+        <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+        <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </button>
+    </div>
   </div>
 
   <div class="apps-grid" id="appsGrid"><!-- populated by JS --></div>
 
   <!-- ===== DAEMON CARD (moved to bottom — experiment) ===== -->
-  <div class="section-head" style="margin-top: 34px">
-    <h2>Daemon <span class="daemon-ver-inline" title="ccswitch daemon version">v0.4.2</span></h2>
-  </div>
-  <section class="daemon-card" aria-label="Daemon control">
+  <section class="daemon-card" aria-label="Daemon control" style="margin-top: 34px">
     <div class="daemon-row">
-      <div class="daemon-status"><span class="dot"></span>Running</div>
+      <div class="daemon-status"><span class="dot"></span>Daemon</div>
       <span class="chip success dot">Healthy</span>
       <label class="chip-select">
         <select id="logLevel">
@@ -1426,7 +2195,10 @@
         </select>
       </label>
       <span></span>
-      <button class="pill primary" id="restartBtn">Restart</button>
+            <button class="pill primary" id="restartBtn">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:-2px"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
+        Restart
+      </button>
       <button class="pill" id="saveConfigBtn" title="Persist current daemon config to /etc/config/ccswitch via UCI">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:-2px"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
         Save
@@ -1455,6 +2227,17 @@
       </div>
     </div>
   </section>
+  <footer class="page-foot" aria-label="Versions">
+    <div class="page-foot-versions">
+      <span class="page-foot-item"><span class="page-foot-label">luci-app-ccswitch</span><span class="page-foot-ver">v0.2.4</span></span>
+      <span class="page-foot-sep" aria-hidden="true">·</span>
+      <span class="page-foot-item"><span class="page-foot-label">ccswitch daemon</span><span class="page-foot-ver">v0.4.2</span></span>
+    </div>
+    <div class="page-foot-credit">
+      Forked with gratitude from the upstream desktop project · thanks to its authors and contributors —
+      <a href="https://github.com/farion1231/cc-switch" target="_blank" rel="noopener noreferrer">farion1231/cc-switch</a>
+    </div>
+  </footer>
 </div>
 
 <!-- ===== SIDE PANEL ===== -->
@@ -1478,11 +2261,20 @@
 <aside class="side-panel" id="sidePanel" aria-hidden="true" role="dialog" aria-label="App providers">
   <header class="sp-head">
     <div class="app-icon" id="spAppIcon"><img alt="" id="spAppIconImg" /></div>
-    <div>
-      <h3 id="spAppName">—</h3>
+    <div class="sp-head-meta">
+      <div class="sp-head-name-row">
+        <h3 id="spAppName">—</h3>
+        <div class="mode-switch" role="group" aria-label="Running mode" id="spModeSwitch">
+          <button type="button" class="mode-switch-opt" role="radio" aria-pressed="false" data-sp-mode="manual">Manual</button>
+          <button type="button" class="mode-switch-opt" role="radio" aria-pressed="true" data-sp-mode="failover">Failover</button>
+        </div>
+      </div>
       <div class="sp-sub" id="spAppSub">—</div>
     </div>
-    <button class="sp-close" id="spClose" aria-label="Close">×</button>
+    <div class="sp-head-spacer"></div>
+    <div class="sp-head-actions">
+      <button class="sp-close" id="spClose" aria-label="Close">×</button>
+    </div>
   </header>
 
   <div class="sp-body">
@@ -1500,10 +2292,18 @@
     <section class="sp-detail">
       <!-- PRESET BROWSER (shown when adding a new provider) -->
       <div class="sp-preset" id="spPreset" hidden>
-        <div class="preset-eyebrow">Preset browser</div>
-        <div class="preset-intro">Start from an official endpoint, a platform template, or a compatible gateway.</div>
-        <div class="preset-sub">Presets speed up setup but never save automatically.</div>
-        <div id="spPresetGroups"></div>
+        <div class="preset-head">
+          <div class="preset-head-l">
+            <div class="preset-title">Provider presets</div>
+            <div class="preset-subtitle">Pick a preset to seed the form, then keep editing the fields below.</div>
+          </div>
+          <div class="preset-search">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input id="spPresetSearch" type="text" placeholder="Search presets, vendors, or URL" />
+          </div>
+        </div>
+        <div class="preset-filters" id="spPresetFilters"></div>
+        <div class="preset-grid" id="spPresetGroups"></div>
       </div>
 
       <header class="sp-detail-head">
@@ -1517,90 +2317,146 @@
           </button>
         </div>
         <span class="chip success dot" id="spProvStatus">Active</span>
+        <button type="button" class="queue-btn" id="spQueueBtn" hidden title="Add to failover queue" aria-label="Add to failover queue">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" id="spQueueBtnIcon"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+        <button type="button" class="prov-del-btn" id="spProvDelete" title="Delete provider" aria-label="Delete provider">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+        </button>
       </header>
 
       <nav class="seg" id="spSeg" role="tablist">
-        <button class="active" data-sec="general">General</button>
-        <button data-sec="credentials">Credentials</button>
+        <button class="active" data-sec="status">Status</button>
+        <button data-sec="configure">Configure</button>
         <button data-sec="failover" hidden>Failover</button>
       </nav>
 
-      <!-- GENERAL -->
-      <div class="sp-section" data-sec="general">
-        <div class="fields-grid">
-          <div>
-            <div class="label-row">Provider name</div>
-            <input class="field-input" id="f_name" />
+      <!-- STATUS — per-provider live status (read-only) -->
+      <div class="sp-section" data-sec="status">
+        <div class="status-grid">
+          <div class="status-hero">
+            <div class="status-hero-l">
+              <div class="status-eyebrow">Provider state</div>
+              <div class="status-hero-line"><span class="status-dot" id="st_dot"></span><span id="st_state_label">—</span></div>
+              <div class="status-hero-sub" id="st_state_sub">—</div>
+            </div>
+            <div class="status-hero-r">
+              <div class="status-eyebrow">Last request</div>
+              <div class="status-hero-time" id="st_last_ago">—</div>
+              <div class="status-hero-sub" id="st_last_meta">—</div>
+            </div>
           </div>
-          <div>
-            <div class="label-row">Model</div>
-            <input class="field-input" id="f_model" />
+
+          <div class="status-metrics">
+            <div class="metric-cell"><div class="metric-label">Success rate · 24h</div><div class="metric-value" id="st_success">—<span class="metric-unit">%</span></div></div>
+            <div class="metric-cell"><div class="metric-label">P50 latency</div><div class="metric-value" id="st_p50">—<span class="metric-unit">ms</span></div></div>
+            <div class="metric-cell"><div class="metric-label">P95 latency</div><div class="metric-value" id="st_p95">—<span class="metric-unit">ms</span></div></div>
+            <div class="metric-cell"><div class="metric-label">Requests · 24h</div><div class="metric-value" id="st_reqs">—</div></div>
+            <div class="metric-cell"><div class="metric-label">Tokens · 24h</div><div class="metric-value" id="st_tokens">—</div></div>
+            <div class="metric-cell"><div class="metric-label">Cost · 24h</div><div class="metric-value" id="st_cost">—<span class="metric-unit" id="st_cost_unit">USD</span></div></div>
           </div>
-          <div class="wide">
-            <div class="label-row">Website URL <span class="aux">· presentation only, not saved</span></div>
-            <div class="field-value muted" id="f_website">—</div>
+
+          <div class="status-block">
+            <div class="status-eyebrow">Recent requests</div>
+            <div class="status-recent" id="st_recent"></div>
           </div>
-          <div class="wide">
-            <div class="label-row">Notes</div>
-            <textarea class="field-input" id="f_notes"></textarea>
+
+          <div class="status-block">
+            <div class="status-eyebrow">Health checks</div>
+            <div class="health-row"><span class="health-name">Reachability</span><span class="chip success dot" id="st_reach">OK</span></div>
+            <div class="health-row"><span class="health-name">Auth</span><span class="chip success dot" id="st_auth">Valid</span></div>
+            <div class="health-row"><span class="health-name">Circuit breaker</span><span class="chip dot" id="st_circuit">Closed</span></div>
+            <div class="health-row"><span class="health-name">Last error</span><span class="health-val mono" id="st_lasterr">—</span></div>
           </div>
         </div>
       </div>
 
-      <!-- CREDENTIALS -->
-      <div class="sp-section" data-sec="credentials" hidden>
-        <div class="fields-grid">
-          <div class="wide">
-            <div class="label-row">Base URL</div>
-            <input class="field-input mono" id="f_baseurl" />
+      <!-- CONFIGURE — name + endpoint + credentials in one tab -->
+      <div class="sp-section sp-section--config" data-sec="configure" hidden>
+        <div class="config-list">
+          <div class="config-list-group">General</div>
+          <div class="config-row">
+            <div class="config-row-label">Provider name</div>
+            <div class="config-row-value"><input class="field-input" id="f_name" /></div>
           </div>
-          <div class="wide" id="f_authmode_row" hidden>
-            <div class="label-row">Authentication mode</div>
-            <select class="field-input" id="f_authmode">
-              <option value="apikey">API key</option>
-              <option value="authjson">Uploaded auth.json</option>
-            </select>
+          <div class="config-row">
+            <div class="config-row-label">Model</div>
+            <div class="config-row-value"><input class="field-input" id="f_model" /></div>
+          </div>
+          <div class="config-row">
+            <div class="config-row-label">Website URL</div>
+            <div class="config-row-value"><span class="field-value muted" id="f_website">—</span></div>
+          </div>
+          <div class="config-row">
+            <div class="config-row-label">Notes</div>
+            <div class="config-row-value"><textarea class="field-input" id="f_notes"></textarea></div>
           </div>
 
-          <!-- API key mode -->
+          <div class="config-list-group">Credentials</div>
+          <div class="config-row">
+            <div class="config-row-label">Base URL</div>
+            <div class="config-row-value"><input class="field-input mono" id="f_baseurl" /></div>
+          </div>
+          <div class="config-row" id="f_authmode_row" hidden>
+            <div class="config-row-label">Auth mode</div>
+            <div class="config-row-value">
+              <select class="field-input" id="f_authmode">
+                <option value="apikey">API key</option>
+                <option value="authjson">Uploaded auth.json</option>
+              </select>
+            </div>
+          </div>
+
           <div id="f_mode_apikey" class="contents">
-            <div class="wide">
-              <div class="label-row">Primary env mapping</div>
-              <div class="field-value mono" id="f_envmap">—</div>
+            <div class="config-row">
+              <div class="config-row-label">Env mapping</div>
+              <div class="config-row-value"><span class="field-value mono" id="f_envmap">—</span></div>
             </div>
-            <div>
-              <div class="label-row">Token field</div>
-              <input class="field-input mono" id="f_envkey" />
+            <div class="config-row">
+              <div class="config-row-label">Token field</div>
+              <div class="config-row-value"><input class="field-input mono" id="f_envkey" /></div>
             </div>
-            <div>
-              <div class="label-row" id="f_apikey_label">API token</div>
-              <input class="field-input mono" id="f_apikey" placeholder="Enter the secret for this provider" />
+            <div class="config-row">
+              <div class="config-row-label" id="f_apikey_label">API token</div>
+              <div class="config-row-value"><input class="field-input mono" id="f_apikey" placeholder="Enter the secret for this provider" /></div>
             </div>
-            <div class="wide">
-              <div class="label-row">Secret policy <span class="aux">· blank preserves stored value</span></div>
-              <input class="field-input" id="f_secretpol" value="Blank preserves stored secret" />
+            <div class="config-row">
+              <div class="config-row-label">Secret policy</div>
+              <div class="config-row-value"><input class="field-input" id="f_secretpol" value="Blank preserves stored secret" /></div>
             </div>
           </div>
 
-          <!-- auth.json mode (Codex only) -->
           <div id="f_mode_authjson" class="contents" hidden>
-            <div class="wide">
-              <div class="label-row">auth.json</div>
-              <div class="authjson-file">
-                <input type="file" id="f_authjson_file" accept="application/json,.json" />
-                <span class="authjson-filename" id="f_authjson_filename">No file chosen</span>
-              </div>
-            </div>
-            <div class="wide">
-              <div class="authjson-hint" id="f_authjson_hint">Save this provider first, then upload <code>auth.json</code> for the saved provider ID.</div>
-            </div>
-            <div class="wide">
-              <div class="authjson-actions">
-                <button type="button" class="pill ghost" id="f_authjson_upload" disabled>Upload auth.json</button>
-                <button type="button" class="pill ghost" id="f_authjson_remove" disabled>Remove</button>
+            <div class="config-row">
+              <div class="config-row-label">auth.json</div>
+              <div class="config-row-value">
+                <div class="authjson-file">
+                  <input type="file" id="f_authjson_file" accept="application/json,.json" />
+                  <span class="authjson-filename" id="f_authjson_filename">No file chosen</span>
+                </div>
+                <div class="authjson-hint" id="f_authjson_hint">Save this provider first, then upload <code>auth.json</code> for the saved provider ID.</div>
+                <div class="authjson-actions">
+                  <button type="button" class="pill ghost" id="f_authjson_upload" disabled>Upload auth.json</button>
+                  <button type="button" class="pill ghost" id="f_authjson_remove" disabled>Remove</button>
+                </div>
               </div>
             </div>
           </div>
+        </div>
+
+        <div class="config-tab-actions config-tab-actions--bottom">
+          <button class="pill" id="spEdit" hidden>
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:-2px"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+            Edit
+          </button>
+          <button class="pill" id="spCancel">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:-2px"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+            Cancel
+          </button>
+          <button class="pill primary" id="spSave">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:-2px"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>
+            Save
+          </button>
         </div>
       </div>
 
@@ -1642,11 +2498,16 @@
   </div>
 
   <footer class="sp-foot">
-    <span class="muted" id="spFootMuted">Editing <span id="spFootProv">—</span></span>
-    <div style="display:flex; gap:10px">
-      <button class="pill danger" id="spDelete" hidden>Delete</button>
-      <button class="pill" id="spCancel">Cancel</button>
-      <button class="pill primary" id="spSave">Save</button>
+    <span class="muted" id="spFootMuted"><span id="spFootMode">Viewing</span> <span id="spFootProv">—</span></span>
+    <div class="sp-foot-actions" id="spPresetActions" hidden>
+      <button type="button" class="pill ghost" id="spPresetCancel">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:-2px"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+        Cancel
+      </button>
+      <button type="button" class="pill primary" id="spPresetContinue" disabled>
+        Continue
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:-2px"><path d="M5 12h14"/><path d="m13 5 7 7-7 7"/></svg>
+      </button>
     </div>
   </footer>
 </aside>
@@ -1779,13 +2640,29 @@
   ];
 
   const ICONS = {
-    claude:    "icons/claude.svg",
-    openai:    "icons/openai.svg",
-    gemini:    "icons/gemini.svg",
-    minimax:   "icons/minimax.svg",
-    deepseek:  "icons/deepseek.svg",
-    qwen:      "icons/qwen.svg",
-    packycode: "icons/packycode.svg",
+    claude:       "icons/claude.svg",
+    anthropic:    "icons/anthropic.svg",
+    openai:       "icons/openai.svg",
+    azure:        "icons/azure.svg",
+    gemini:       "icons/gemini.svg",
+    minimax:      "icons/minimax.svg",
+    deepseek:     "icons/deepseek.svg",
+    qwen:         "icons/qwen.svg",
+    packycode:    "icons/packycode.svg",
+    aihubmix:     "icons/aihubmix.svg",
+    openrouter:   "icons/openrouter.svg",
+    siliconflow:  "icons/siliconflow.svg",
+    bailian:      "icons/bailian.svg",
+    longcat:      "icons/longcat.svg",
+    doubao:       "icons/doubao.svg",
+    zhipu:        "icons/zhipu.svg",
+    kimi:         "icons/kimi.svg",
+    aicodemirror: "icons/aicodemirror.svg",
+    aicoding:     "icons/aicoding.svg",
+    aigocode:     "icons/aigocode.svg",
+    crazyrouter:  "icons/crazyrouter.svg",
+    ctok:         "icons/ctok.svg",
+    cubence:      "icons/cubence.svg",
   };
 
   // Provider presets per app. Each app gets a universal "Custom draft" card
@@ -1878,6 +2755,88 @@
   // ---------- APPS GRID ----------
   const appsGrid = document.getElementById('appsGrid');
 
+  // Quota mock data (per app, used in Manual mode). Realistic per-window plan limits.
+  const QUOTAS = {
+    claude: [
+      { name: 'five_hour',     pct: 78, reset: '3h41m' },
+      { name: 'seven_day',     pct: 54, reset: '92h05m' },
+    ],
+    codex: [
+      { name: 'five_hour',                        pct: 94, reset: '4h13m' },
+      { name: 'seven_day',                        pct: 67, reset: '44h10m' },
+      { name: 'GPT-5.3-Codex-Spark_five_hour',    pct: 100, reset: '4h59m' },
+      { name: 'GPT-5.3-Codex-Spark_seven_day',    pct: 100, reset: '167h59m' },
+    ],
+    gemini: [
+      { name: 'five_hour',     pct: 12, reset: '2h08m' },
+      { name: 'one_day',       pct: 30, reset: '18h22m' },
+    ],
+  };
+
+  function failoverBodyMarkup(app) {
+    const ranked = app.providers
+      .filter(p => p.status !== 'draft')
+      .slice(0, 4);
+    const rows = ranked.map((p, i) => {
+      const isActive = i === 0 && p.status === 'active';
+      const statusLine = isActive
+        ? `<div class="fail-status-line active">Handling traffic now</div>`
+        : `<div class="fail-status-line">Standby · ${p.status === 'preset' ? 'Preset' : p.status === 'saved' ? 'Saved' : 'Ready'} · 0 retries used</div>`;
+      const pillClass = isActive ? 'success' : '';
+      const pillLabel = isActive ? 'Active' : 'Standby';
+      return `
+        <div class="fail-row">
+          <span class="fail-drag" aria-hidden="true">⋮⋮</span>
+          <span class="fail-rank">${i + 1}</span>
+          <div class="fail-icon"><img src="${ICONS[p.iconKey]}" alt="" /></div>
+          <div class="fail-meta">
+            <div class="fail-name">${p.name}</div>
+            ${statusLine}
+          </div>
+          <span class="chip ${pillClass} dot">${pillLabel}</span>
+        </div>`;
+    }).join('');
+    const f = app.failover || {};
+    return `
+      <div class="app-failover">
+        ${rows}
+        <div class="fail-foot">
+          <span>Auto failover ${f.autoFailover === false ? 'off' : 'on'} · max retries ${f.maxRetries ?? 3}</span>
+          <span class="fail-foot-r">Queue: ${f.queuePosition || `${ranked.length ? 1 : 0} of ${ranked.length}`}</span>
+        </div>
+      </div>`;
+  }
+
+  function manualBodyMarkup(app) {
+    const quotas = QUOTAS[app.id] || [];
+    const quotaRows = quotas.map(q => {
+      const tone = q.pct >= 90 ? '' : q.pct >= 60 ? 'warn' : 'fail';
+      // Visual logic: high "remaining" = green; low remaining = warn/fail.
+      const fillClass = q.pct >= 70 ? '' : q.pct >= 30 ? 'warn' : 'fail';
+      return `
+        <div class="quota-row">
+          <div class="quota-line">
+            <span class="quota-name">${q.name}</span>
+            <span class="quota-rem">remaining <strong>${q.pct}%</strong></span>
+            <span class="quota-reset">${q.reset} reset</span>
+          </div>
+          <div class="quota-bar"><span class="quota-fill ${fillClass}" style="width:${q.pct}%"></span></div>
+        </div>`;
+    }).join('');
+    return `
+      <div class="app-manual">
+        <div class="manual-head">
+          <div class="manual-icon"><img src="${ICONS[app.active.iconKey]}" alt="" /></div>
+          <div class="manual-meta">
+            <div class="manual-eyebrow">Current provider</div>
+            <div class="manual-name">${app.active.name}</div>
+            <div class="manual-url">${app.active.url}</div>
+          </div>
+        </div>
+        ${quotas.length ? `<div class="manual-quotas">${quotaRows}</div>` : ''}
+      </div>`;
+  }
+
   function cardForApp(app) {
     if (app.state === 'placeholder') {
       return emptySkeletonCard();
@@ -1908,8 +2867,14 @@
     }
     // Configured (running or idle)
     const card = document.createElement('button');
-    card.className = 'app-card';
+    card.className = 'app-card' + (app.proxyEnabled === false ? ' is-bypassed' : '');
     card.type = 'button';
+    const proxyOn = app.proxyEnabled !== false;
+    const chipMarkup = proxyOn
+      ? `<button type="button" class="chip ${app.status.tone} dot chip-btn" data-activity-for="${app.id}" title="Show recent requests">${app.status.label}<svg class="chip-caret" viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M3 5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`
+      : `<span class="chip bypassed dot" title="Proxy disabled — traffic bypasses CC Switch">Bypassed</span>`;
+    const mode = app.mode || 'failover';
+    const bodyMarkup = mode === 'manual' ? manualBodyMarkup(app) : failoverBodyMarkup(app);
     card.innerHTML = `
       <div class="open-affordance" hidden>Open providers →</div>
       <div class="app-head">
@@ -1920,26 +2885,41 @@
         </div>
         <div class="spacer"></div>
         <div class="app-head-right">
-          <button type="button" class="chip ${app.status.tone} dot chip-btn" data-activity-for="${app.id}" title="Show recent requests">${app.status.label}<svg class="chip-caret" viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M3 5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <button type="button" class="app-toggle" role="switch" aria-pressed="${proxyOn}" aria-label="Proxy ${proxyOn ? 'on' : 'off'} for ${app.name}" title="${proxyOn ? 'Proxy on — click to bypass' : 'Proxy off — click to enable'}" data-proxy-toggle="${app.id}"></button>
+          ${chipMarkup}
+          <div class="mode-switch" role="group" aria-label="Running mode for ${app.name}">
+            <button type="button" class="mode-switch-opt" role="radio" aria-pressed="${mode === 'manual'}" data-mode-set="${app.id}" data-mode-value="manual">Manual</button>
+            <button type="button" class="mode-switch-opt" role="radio" aria-pressed="${mode === 'failover'}" data-mode-set="${app.id}" data-mode-value="failover">Failover</button>
+          </div>
         </div>
       </div>
-      <div class="app-active">
-        <div class="mini-icon"><img src="${ICONS[app.active.iconKey]}" alt="" /></div>
-        <div class="labels">
-          <div class="label-top">Active provider</div>
-          <div class="label-main">${app.active.name}</div>
-          <div class="endpoint">${app.active.url}</div>
-        </div>
-      </div>
+      ${bodyMarkup}
       <div class="app-usage">
         <div class="usage-cell"><div class="usage-label">Tokens</div><div class="usage-value">${app.usage.tokens}</div></div>
         <div class="usage-cell"><div class="usage-label">Requests</div><div class="usage-value">${app.usage.requests}</div></div>
-        <div class="usage-cell"><div class="usage-label">Cost</div><div class="usage-value">${app.usage.cost}<span class="usage-unit">${app.usage.unit}</span></div></div>
+        <div class="usage-cell"><div class="usage-label">Cost <button type="button" class="usage-info" aria-label="About cost estimate" tabindex="-1"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg><span class="usage-info-tip" role="tooltip"><strong>Estimated value, not billed amount.</strong> Calculated from local request logs and public API prices. Actual costs follow each provider’s billing dashboard.</span></button></div><div class="usage-value">${app.usage.cost}<span class="usage-unit">${app.usage.unit}</span></div></div>
       </div>
     `;
     card.addEventListener('click', (e) => {
+      if (e.target.closest('.app-toggle')) return; // toggle handles its own click
+      if (e.target.closest('.mode-switch')) return; // mode switch handles its own click
       if (e.target.closest('.chip-btn')) return; // chip handles its own click
       openPanel(app.id);
+    });
+    const toggleBtn = card.querySelector('.app-toggle');
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        app.proxyEnabled = !(app.proxyEnabled !== false); // flip
+        renderApps();
+      });
+    }
+    card.querySelectorAll('[data-mode-set]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        app.mode = btn.dataset.modeValue;
+        renderApps();
+      });
     });
     const chipBtn = card.querySelector('.chip-btn');
     if (chipBtn) {
@@ -2043,10 +3023,12 @@
 
   let currentApp = null;
   let currentProv = 0;
+  let provEditMode = false;
 
   function openPanel(appId) {
     currentApp = APPS.find(a => a.id === appId);
     if (!currentApp) return;
+    provEditMode = false;
 
     const isUnconfigured = currentApp.state === 'unconfigured' || !currentApp.providers || !currentApp.providers.length;
 
@@ -2056,6 +3038,16 @@
     document.getElementById('spAppSub').textContent = isUnconfigured
       ? 'Not configured — add a provider to get started'
       : `${currentApp.providers.length} providers configured · ${currentApp.failover.queuePosition} in failover`;
+
+    // Sync running-mode switch in header
+    const spMode = document.getElementById('spModeSwitch');
+    if (spMode) {
+      const mode = currentApp.mode || 'failover';
+      spMode.querySelectorAll('[data-sp-mode]').forEach(b => {
+        b.setAttribute('aria-pressed', String(b.dataset.spMode === mode));
+      });
+      spMode.style.display = isUnconfigured ? 'none' : '';
+    }
 
     // Toggle an "empty" class on the panel for unconfigured apps
     panel.classList.toggle('is-empty', isUnconfigured);
@@ -2086,8 +3078,7 @@
       renderProvList('');
       renderProvDetail();
     }
-    setSection('general');
-
+    setSection('status');
     panel.classList.add('open');
     panel.setAttribute('aria-hidden', 'false');
     scrim.classList.add('open');
@@ -2109,6 +3100,19 @@
 
   scrim.addEventListener('click', closePanel);
   spClose.addEventListener('click', closePanel);
+
+  // Running-mode switch in side panel header
+  document.getElementById('spModeSwitch').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-sp-mode]');
+    if (!btn || !currentApp) return;
+    currentApp.mode = btn.dataset.spMode;
+    document.querySelectorAll('#spModeSwitch [data-sp-mode]').forEach(b => {
+      b.setAttribute('aria-pressed', String(b.dataset.spMode === currentApp.mode));
+    });
+    renderApps();
+    renderProvList(spSearch.value || '');
+    renderProvDetail();
+  });
   spCancel.addEventListener('click', () => {
     const detail = document.querySelector('.sp-detail');
     if (detail && detail.classList.contains('is-picking')) {
@@ -2128,6 +3132,12 @@
         `;
         if (typeof refreshProvFooter === 'function') refreshProvFooter();
       }
+      return;
+    }
+    // Saved provider — exit edit mode and revert form to baseline
+    if (provEditMode) {
+      provEditMode = false;
+      renderProvDetail();
       return;
     }
     closePanel();
@@ -2214,17 +3224,28 @@
       row.className = 'prov-row' + (i === currentProv ? ' active' : '');
       row.type = 'button';
       const isActive = p.status === 'active';
+      const appMode = currentApp.mode || 'failover';
+      const inQueue = p.status === 'active' || p.status === 'preset' || p.inQueue === true;
+      let badgeMarkup = '';
+      if (p.status !== 'draft') {
+        if (appMode === 'manual') {
+          if (isActive) badgeMarkup = '<span class="prov-badge active">Active</span>';
+        } else {
+          badgeMarkup = inQueue
+            ? '<span class="prov-badge queued">In queue</span>'
+            : '<span class="prov-badge standby">Standby</span>';
+        }
+      }
       row.innerHTML = `
         <div class="prov-icon"><img src="${ICONS[p.iconKey]}" alt="" /></div>
         <div style="min-width:0">
           <div class="prov-name">${p.name}</div>
-          <div class="prov-url">${p.url || '—'}</div>
-          ${p.id ? `<div class="prov-id">${p.id}</div>` : ''}
         </div>
-        ${isActive ? '<span class="prov-badge active">Active</span>' : ''}
+        ${badgeMarkup}
       `;
       row.addEventListener('click', () => {
         currentProv = i;
+        provEditMode = false;
         renderProvList(spSearch.value);
         renderProvDetail();
       });
@@ -2246,8 +3267,15 @@
     const detail = document.querySelector('.sp-detail');
     detail.classList.add('is-picking');
     document.getElementById('spPreset').hidden = false;
+    presetFilter = 'all';
+    presetSearch = '';
+    const ps = document.getElementById('spPresetSearch');
+    if (ps) ps.value = '';
     document.getElementById('spFootMuted').innerHTML = 'Pick a preset to start';
     document.getElementById('spSave').hidden = true;
+    document.getElementById('spPresetActions').hidden = false;
+    selectedPresetKey = null;
+    refreshPresetContinueBtn();
     refreshProvFooter();
   }
 
@@ -2256,50 +3284,102 @@
     detail.classList.remove('is-picking');
     document.getElementById('spPreset').hidden = true;
     document.getElementById('spSave').hidden = false;
+    document.getElementById('spPresetActions').hidden = true;
+    selectedPresetKey = null;
+  }
+
+  let presetFilter = 'all';
+  let presetSearch = '';
+  let selectedPresetKey = null;
+  let presetCardsFlat = [];
+
+  function refreshPresetContinueBtn() {
+    const btn = document.getElementById('spPresetContinue');
+    const muted = document.getElementById('spFootMuted');
+    if (!btn) return;
+    const sel = selectedPresetKey && presetCardsFlat.find(p => p.key === selectedPresetKey);
+    btn.disabled = !sel;
+    if (sel) {
+      const meta = sel.kind === 'custom' ? sel.baseUrl : `${sel.baseUrl}${sel.model ? ' · ' + sel.model : ''}`;
+      muted.innerHTML = `<strong style="color:var(--text); font-weight:700;">${sel.name}</strong> &nbsp;·&nbsp; ${meta}`;
+    } else {
+      muted.innerHTML = 'Pick a preset to start';
+    }
   }
 
   function renderPresetPicker() {
     const host = document.getElementById('spPresetGroups');
+    const filtersEl = document.getElementById('spPresetFilters');
     const sections = PRESETS[currentApp.id] || [];
-    const blocks = [];
-    blocks.push(`
-      <div class="preset-group">
-        <div class="preset-group-label">Custom</div>
-        <button class="preset-card" data-kind="custom">
-          <div class="preset-card-title">Custom draft</div>
-          <div class="preset-card-desc">Keep the current fields editable without applying a preset.</div>
-          <div class="preset-card-meta">Manual endpoint and token configuration</div>
-        </button>
-      </div>
-    `);
-    sections.forEach(sec => {
-      if (!sec.items || !sec.items.length) return;
-      blocks.push(`
-        <div class="preset-group">
-          <div class="preset-group-label">${sec.label}</div>
-          ${sec.desc ? `<div class="preset-group-desc">${sec.desc}</div>` : ''}
-          ${sec.items.map(p => presetCard(p)).join('')}
-        </div>
-      `);
+
+    // Build filter pills: All + section labels + Custom
+    const filters = [{ key: 'all', label: 'All' }, ...sections.map(s => ({ key: s.key, label: s.label })), { key: 'custom', label: 'Custom' }];
+    filtersEl.innerHTML = filters.map(f =>
+      `<button class="preset-filter${f.key === presetFilter ? ' active' : ''}" data-filter-key="${f.key}">${f.label}</button>`
+    ).join('');
+    filtersEl.querySelectorAll('.preset-filter').forEach(b => {
+      b.addEventListener('click', () => { presetFilter = b.dataset.filterKey; renderPresetPicker(); });
     });
-    host.innerHTML = blocks.join('');
-    const all = sections.flatMap(s => s.items || []);
+
+    // Build flat card list with category metadata
+    const customCard = {
+      key: '__custom', kind: 'custom', section: 'custom',
+      name: 'Custom draft', iconKey: currentApp.iconKey,
+      desc: 'Keep the current fields editable without applying a preset.',
+      baseUrl: 'Manual endpoint and token configuration', model: '',
+    };
+    const all = [
+      customCard,
+      ...sections.flatMap(s => (s.items || []).map(p => ({ ...p, kind: 'preset', section: s.key }))),
+    ];
+
+    const q = presetSearch.trim().toLowerCase();
+    const items = all.filter(p => {
+      if (presetFilter !== 'all' && p.section !== presetFilter) return false;
+      if (!q) return true;
+      return p.name.toLowerCase().includes(q)
+        || (p.desc || '').toLowerCase().includes(q)
+        || (p.baseUrl || '').toLowerCase().includes(q)
+        || (p.model || '').toLowerCase().includes(q);
+    });
+
+    host.innerHTML = items.length
+      ? items.map(p => presetCard(p)).join('')
+      : `<div class="preset-empty" style="grid-column:1/-1; padding:24px; text-align:center; color:var(--muted); font-size:13px;">No presets match this filter.</div>`;
+    presetCardsFlat = all;
     host.querySelectorAll('.preset-card').forEach(el => {
+      const key = el.dataset.presetKey;
+      if (key === selectedPresetKey) el.classList.add('selected');
       el.addEventListener('click', () => {
-        const kind = el.dataset.kind;
-        const key = el.dataset.presetKey;
-        if (kind === 'custom') applyPreset(null);
-        else applyPreset(all.find(p => p.key === key) || null);
+        selectedPresetKey = key;
+        host.querySelectorAll('.preset-card').forEach(c => c.classList.toggle('selected', c.dataset.presetKey === key));
+        refreshPresetContinueBtn();
+      });
+      el.addEventListener('dblclick', () => {
+        selectedPresetKey = key;
+        commitPresetSelection();
       });
     });
+    refreshPresetContinueBtn();
+  }
+
+  function commitPresetSelection() {
+    const sel = selectedPresetKey && presetCardsFlat.find(p => p.key === selectedPresetKey);
+    if (!sel) return;
+    if (sel.kind === 'custom') applyPreset(null);
+    else applyPreset(sel);
   }
 
   function presetCard(p) {
+    const meta = p.kind === 'custom' ? p.baseUrl : `${p.baseUrl}${p.model ? ' · ' + p.model : ''}`;
     return `
-      <button class="preset-card" data-kind="preset" data-preset-key="${p.key}">
-        <div class="preset-card-title">${p.name}</div>
-        <div class="preset-card-desc">${p.desc}</div>
-        <div class="preset-card-meta">${p.baseUrl}${p.model ? ' · ' + p.model : ''}</div>
+      <button class="preset-card" data-kind="${p.kind}" data-preset-key="${p.key}">
+        <div class="preset-card-icon"><img src="${ICONS[p.iconKey] || ''}" alt="" /></div>
+        <div class="preset-card-body">
+          <div class="preset-card-title">${p.name}</div>
+          <div class="preset-card-desc">${p.desc || ''}</div>
+          <div class="preset-card-meta">${meta}</div>
+        </div>
       </button>
     `;
   }
@@ -2329,12 +3409,19 @@
     if (!Array.isArray(currentApp.providers)) currentApp.providers = [];
     currentApp.providers.push(draft);
     currentProv = currentApp.providers.length - 1;
+    provEditMode = true;
     spSearch.value = '';
     renderProvList('');
     exitPresetPicker();
+    setSection('configure');
     renderProvDetail();
-    setSection('general');
-    document.getElementById('spFootMuted').innerHTML = 'Editing <span id="spFootProv">new provider</span>';
+    // Defensive: ensure the configure tab and section are visible even if a
+    // later renderer toggled them. Some flows (unconfigured app → add) leave
+    // is-empty / is-picking residue that masks the section without setSection.
+    spSeg.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.sec === 'configure'));
+    document.querySelectorAll('.sp-section').forEach(el => { el.hidden = el.dataset.sec !== 'configure'; });
+    refreshProvFooter();
+    document.getElementById('spFootMuted').innerHTML = `Editing <span id="spFootProv">${draft.name}</span>`;
     setTimeout(() => {
       const nameInput = document.getElementById('f_name');
       if (nameInput) { nameInput.focus(); nameInput.select(); }
@@ -2388,8 +3475,44 @@
     document.getElementById('spProvUrl').textContent = a.url;
     renderProvIdChip(p.id);
     const statusChip = document.getElementById('spProvStatus');
-    statusChip.className = 'chip dot ' + (isActive ? 'success' : '');
-    statusChip.textContent = isActive ? 'Active' : 'Inactive';
+    const queueBtn = document.getElementById('spQueueBtn');
+    const mode = currentApp.mode || 'failover';
+    const ic = document.getElementById('spQueueBtnIcon');
+    if (p.status === 'draft') {
+      // Draft path falls through (caller renders Draft chip elsewhere). Hide button.
+      queueBtn.hidden = true;
+      statusChip.hidden = false;
+      statusChip.className = 'chip dot warn';
+      statusChip.textContent = 'Draft';
+    } else if (mode === 'failover') {
+      // Failover: chip hidden, button toggles in/out of queue
+      statusChip.hidden = true;
+      queueBtn.hidden = false;
+      queueBtn.dataset.action = 'queue';
+      const inQueue = p.status === 'active' || p.status === 'preset' || p.inQueue === true;
+      const tip = inQueue ? 'Remove from failover queue' : 'Add to failover queue';
+      queueBtn.title = tip;
+      queueBtn.setAttribute('aria-label', tip);
+      ic.innerHTML = inQueue
+        ? '<path d="M5 12h14"/>'
+        : '<path d="M12 5v14M5 12h14"/>';
+    } else if (isActive) {
+      // Manual + active: only the Active chip, no action button
+      queueBtn.hidden = true;
+      statusChip.hidden = false;
+      statusChip.className = 'chip dot success';
+      statusChip.textContent = 'Active';
+    } else {
+      // Manual + not active: hide chip, show "set as active" button
+      statusChip.hidden = true;
+      queueBtn.hidden = false;
+      queueBtn.dataset.action = 'activate';
+      const tip = 'Set as active provider';
+      queueBtn.title = tip;
+      queueBtn.setAttribute('aria-label', tip);
+      // Forward arrow → "route here / use this provider"
+      ic.innerHTML = '<path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>';
+    }
 
     document.getElementById('f_name').value = a.name;
     document.getElementById('f_model').value = a.model || '';
@@ -2415,6 +3538,80 @@
     document.getElementById('f_queueorder').textContent = fo.queueOrder;
 
     document.getElementById('spFootProv').textContent = a.name;
+    renderStatusTab(p, isActive);
+  }
+
+  function renderStatusTab(p, isActive) {
+    if (!p) return;
+    const acts = (currentApp.activity || []).filter(x => x.provider === p.name);
+    const dot = document.getElementById('st_dot');
+    const lab = document.getElementById('st_state_label');
+    const sub = document.getElementById('st_state_sub');
+    if (isActive) {
+      const tone = currentApp.status.tone;
+      dot.className = 'status-dot ' + (tone === 'success' ? '' : tone);
+      lab.textContent = currentApp.status.label;
+      sub.textContent = `Active route for ${currentApp.name} · handling live traffic`;
+    } else if (p.status === 'preset') {
+      dot.className = 'status-dot idle';
+      lab.textContent = 'Preset · standby';
+      sub.textContent = 'Ready to take over on failover';
+    } else if (p.status === 'draft') {
+      dot.className = 'status-dot warn';
+      lab.textContent = 'Draft';
+      sub.textContent = 'Not yet saved to the daemon';
+    } else {
+      dot.className = 'status-dot idle';
+      lab.textContent = 'Saved · standby';
+      sub.textContent = 'Available in the failover queue';
+    }
+    const last = acts[0];
+    document.getElementById('st_last_ago').textContent = last ? last.ago : '—';
+    document.getElementById('st_last_meta').textContent = last
+      ? `${last.statusCode} · ${last.tokens} · ${last.ms}ms`
+      : 'No requests routed yet';
+
+    const total = acts.length;
+    const ok = acts.filter(a => a.statusTone === 'success').length;
+    const sr = total ? Math.round((ok / total) * 100) : (isActive ? 100 : 0);
+    document.getElementById('st_success').firstChild.textContent = total ? sr : '—';
+    const lats = acts.map(a => a.ms).sort((a,b) => a-b);
+    const p50 = lats.length ? lats[Math.floor(lats.length * 0.5)] : null;
+    const p95 = lats.length ? lats[Math.min(lats.length - 1, Math.floor(lats.length * 0.95))] : null;
+    document.getElementById('st_p50').firstChild.textContent = p50 ?? '—';
+    document.getElementById('st_p95').firstChild.textContent = p95 ?? '—';
+    document.getElementById('st_reqs').firstChild.textContent = isActive ? currentApp.usage.requests : (total || '—');
+    document.getElementById('st_tokens').firstChild.textContent = isActive ? currentApp.usage.tokens : '—';
+    document.getElementById('st_cost').firstChild.textContent = isActive ? currentApp.usage.cost : '—';
+    document.getElementById('st_cost_unit').textContent = isActive ? currentApp.usage.unit : '';
+
+    const recent = document.getElementById('st_recent');
+    const rows = acts.slice(0, 5);
+    recent.innerHTML = rows.length
+      ? rows.map(a => `
+          <div class="recent-item">
+            <span class="recent-code ${a.statusTone}">${a.statusCode}</span>
+            <span class="recent-model">${a.model}</span>
+            <span class="recent-tokens">${a.tokens}</span>
+            <span class="recent-ago">${a.ago}</span>
+          </div>`).join('')
+      : `<div class="recent-item" style="grid-template-columns:1fr;color:var(--muted)">No recent traffic for this provider.</div>`;
+
+    // Health checks (synthesized from status)
+    const tone = isActive ? currentApp.status.tone : 'idle';
+    const reach = document.getElementById('st_reach');
+    reach.className = 'chip dot ' + (tone === 'fail' ? 'fail' : 'success');
+    reach.textContent = tone === 'fail' ? 'Unreachable' : 'OK';
+    const auth = document.getElementById('st_auth');
+    auth.className = 'chip dot ' + (tone === 'fail' ? 'fail' : 'success');
+    auth.textContent = tone === 'fail' ? 'Rejected' : 'Valid';
+    const circ = document.getElementById('st_circuit');
+    circ.className = 'chip dot ' + (tone === 'warn' ? 'warn' : tone === 'fail' ? 'fail' : '');
+    circ.textContent = tone === 'fail' ? 'Open' : tone === 'warn' ? 'Half-open' : 'Closed';
+    const lastFail = acts.find(a => a.statusTone === 'fail' || a.statusTone === 'warn');
+    document.getElementById('st_lasterr').textContent = lastFail
+      ? `${lastFail.statusCode} · ${lastFail.ago}`
+      : '—';
   }
 
   function setSection(sec) {
@@ -2576,6 +3773,18 @@
   const THEME_KEY = 'ccswitch-theme';
   const saved = localStorage.getItem(THEME_KEY);
   if (saved) document.body.dataset.theme = saved;
+  // Language toggle — stub. Persists preference and flips body[data-lang],
+  // but does NOT yet translate any UI copy. Devs: hook an i18n dictionary
+  // here (e.g. tr(key) returning EN or ZH string keyed off data-i18n attrs
+  // on each translatable element) and call it after dataset.lang changes.
+  const LANG_KEY = 'ccswitch-lang';
+  const savedLang = localStorage.getItem(LANG_KEY);
+  if (savedLang) document.body.dataset.lang = savedLang;
+  document.getElementById('langToggle').addEventListener('click', () => {
+    const next = document.body.dataset.lang === 'zh' ? 'en' : 'zh';
+    document.body.dataset.lang = next;
+    localStorage.setItem(LANG_KEY, next);
+  });
   document.getElementById('themeToggle').addEventListener('click', () => {
     const next = document.body.dataset.theme === 'dark' ? 'light' : 'dark';
     document.body.dataset.theme = next;
@@ -2711,39 +3920,74 @@
     });
   }
   function refreshProvFooter() {
-    const delBtn = document.getElementById('spDelete');
+    const delBtn = document.getElementById('spDelete') || { style: {}, classList: { add(){}, remove(){}, toggle(){} } };
+    const editBtn = document.getElementById('spEdit');
     const cancelBtn = document.getElementById('spCancel');
     const saveBtn = document.getElementById('spSave');
     const detail = document.querySelector('.sp-detail');
     const picking = detail && detail.classList.contains('is-picking');
     const p = currentApp && currentApp.providers && currentApp.providers[currentProv];
+    const modeEl = document.getElementById('spFootMode');
+    if (modeEl) modeEl.textContent = (p && (p.isDraft || provEditMode)) ? 'Editing' : 'Viewing';
 
     if (picking || !p) {
       delBtn.hidden = true;
+      editBtn.hidden = true;
       cancelBtn.hidden = false;
       saveBtn.hidden = picking ? true : false;
+      applyEditableState(false);
       return;
     }
     if (p.isDraft) {
-      // New provider: Cancel + Save (primary)
+      // New provider: always editing
       delBtn.hidden = true;
+      editBtn.hidden = true;
       cancelBtn.hidden = false;
       saveBtn.hidden = false;
       saveBtn.textContent = 'Save';
       saveBtn.classList.add('primary');
       saveBtn.classList.remove('is-idle');
       saveBtn.disabled = false;
+      applyEditableState(true);
       return;
     }
-    // Saved provider: Delete + Save (idle unless dirty)
+    // Saved provider
+    if (!provEditMode) {
+      // Read-only: show only Edit
+      delBtn.hidden = true;
+      cancelBtn.hidden = true;
+      saveBtn.hidden = true;
+      editBtn.hidden = false;
+      applyEditableState(false);
+      return;
+    }
+    // Editing: Delete + Cancel + Save (idle unless dirty)
     delBtn.hidden = false;
-    cancelBtn.hidden = true;
+    editBtn.hidden = true;
+    cancelBtn.hidden = false;
     saveBtn.hidden = false;
     const dirty = isProvDirty();
     saveBtn.textContent = 'Save';
     saveBtn.classList.toggle('primary', dirty);
     saveBtn.classList.toggle('is-idle', !dirty);
     saveBtn.disabled = false;
+    applyEditableState(true);
+  }
+
+  function applyEditableState(editable) {
+    const detail = document.querySelector('.sp-detail');
+    if (detail) detail.classList.toggle('is-readonly', !editable);
+    const ids = ['f_name','f_model','f_notes','f_baseurl','f_authmode','f_envkey','f_apikey','f_secretpol'];
+    ids.forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (el.tagName === 'SELECT') {
+        el.disabled = !editable;
+      } else {
+        if (editable) el.removeAttribute('readonly');
+        else el.setAttribute('readonly', '');
+      }
+    });
   }
 
   // Re-run footer state whenever detail re-renders
@@ -2763,7 +4007,65 @@
   });
 
   // Delete handler
-  document.getElementById('spDelete').addEventListener('click', () => {
+  document.getElementById('spQueueBtn').addEventListener('click', () => {
+    const p = currentApp && currentApp.providers && currentApp.providers[currentProv];
+    if (!p) return;
+    const action = document.getElementById('spQueueBtn').dataset.action;
+    if (action === 'activate') {
+      // Manual mode: switch the active provider
+      currentApp.providers.forEach(pp => {
+        if (pp.status === 'active') pp.status = 'saved';
+      });
+      p.status = 'active';
+      // Reflect on the app's "active" snapshot used elsewhere in the UI
+      if (currentApp.active) {
+        currentApp.active = { ...currentApp.active, name: p.name, iconKey: p.iconKey, url: p.url, baseUrl: p.url };
+      }
+    } else {
+      const inQueue = p.status === 'active' || p.status === 'preset' || p.inQueue === true;
+      if (inQueue) {
+        p.inQueue = false;
+        if (p.status === 'preset' || p.status === 'active') p.status = 'inactive';
+      } else {
+        p.inQueue = true;
+        if (p.status === 'inactive') p.status = 'preset';
+      }
+    }
+    renderApps();
+    renderProvList(spSearch.value || '');
+    renderProvDetail();
+  });
+
+  document.getElementById('spPresetCancel').addEventListener('click', () => {
+    exitPresetPicker();
+    const hasReal = currentApp && currentApp.providers && currentApp.providers.some(p => !p.isDraft);
+    if (hasReal) {
+      currentProv = currentApp.providers.findIndex(p => !p.isDraft && p.status === 'active');
+      if (currentProv < 0) currentProv = currentApp.providers.findIndex(p => !p.isDraft);
+      renderProvDetail();
+    } else {
+      panel.classList.add('is-empty');
+    }
+  });
+  document.getElementById('spPresetContinue').addEventListener('click', commitPresetSelection);
+
+  document.getElementById('spPresetSearch').addEventListener('input', (e) => {
+    presetSearch = e.target.value;
+    renderPresetPicker();
+  });
+
+  document.getElementById('spEdit').addEventListener('click', () => {
+    provEditMode = true;
+    refreshProvFooter();
+    const first = document.getElementById('f_name');
+    if (first && !first.readOnly) first.focus();
+  });
+
+  document.getElementById('spProvDelete').addEventListener('click', () => {
+    deleteCurrentProvider();
+  });
+
+  function deleteCurrentProvider() {
     if (!currentApp || !currentApp.providers) return;
     const p = currentApp.providers[currentProv];
     if (!p) return;
@@ -2795,7 +4097,7 @@
     if (currentProv >= currentApp.providers.length) currentProv = currentApp.providers.length - 1;
     renderProvList(spSearch.value || '');
     renderProvDetail();
-  });
+  }
 
   // Save feedback (non-destructive — it's a mock)
   document.getElementById('spSave').addEventListener('click', (e) => {
@@ -2829,6 +4131,7 @@
     setTimeout(() => {
       btn.textContent = prev;
       btn.disabled = false;
+      provEditMode = false;
       refreshProvFooter();
     }, 1200);
   });
