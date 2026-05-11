@@ -274,6 +274,31 @@ describe("AppCard", () => {
     ).toBeInTheDocument();
   });
 
+  it("renders proxy-off as a bypassed visual state without interactive mode controls", () => {
+    const { container } = renderAppCard(createSharedProviderState("claude"), {
+      failoverState: createFailoverState({
+        proxyEnabled: false,
+        autoFailoverEnabled: true,
+      }),
+      onSetAutoFailover: vi.fn(),
+    });
+    const card = container.querySelector(".owt-app-card");
+
+    expect(card).toHaveClass("owt-app-card--bypassed");
+    expect(
+      screen.getByText(/^(Bypassed|openwrt\.appCard\.bypassed)$/),
+    ).toBeInTheDocument();
+    expect(
+      container.querySelector(".owt-app-card__proxy-toggle"),
+    ).toHaveAttribute("data-proxy-enabled", "false");
+    expect(
+      screen.queryByRole("tablist", { name: "Claude routing mode" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Proxy .* Claude/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("renders queue priority instead of active provider details in failover mode", () => {
     renderAppCard(createSharedProviderState("claude"), {
       failoverState: createFailoverState({ autoFailoverEnabled: true }),

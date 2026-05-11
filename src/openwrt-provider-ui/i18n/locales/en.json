@@ -55,6 +55,7 @@
       "appNotConfigured": "{{app}} not configured",
       "autoFailoverOffSummary": "Auto-failover off · max {{maxRetries}} retries",
       "autoFailoverOnSummary": "Auto-failover on · max {{maxRetries}} retries",
+      "bypassed": "Bypassed",
       "costTooltipBody": "This figure is computed from local request logs and public API prices. Actual charges come from each provider's billing dashboard.",
       "costTooltipTitle": "Estimated, not billed.",
       "currencyUsd": "USD",
@@ -75,6 +76,8 @@
       "positionOfTotal": "{{position}} of {{total}}",
       "providerCount_one": "{{count}} provider",
       "providerCount_other": "{{count}} providers",
+      "proxyBypassedTitle": "Proxy disabled for {{app}} — traffic bypasses CC Switch",
+      "proxyEnabledTitle": "Proxy enabled for {{app}}",
       "queue": {
         "active": "ACTIVE",
         "servingTraffic": "Serving traffic",
@@ -233,6 +236,8 @@
         "gemini": "Google · Gemini CLI"
       },
       "active": "Active",
+      "inQueue": "In queue",
+      "standby": "Standby",
       "newProvider": "New provider",
       "providersDialogLabel": "{{app}} providers",
       "routingModeAria": "{{app}} routing mode",

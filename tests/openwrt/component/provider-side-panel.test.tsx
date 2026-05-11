@@ -222,6 +222,11 @@ describe("ProviderSidePanel", () => {
       name: "Claude Primary",
       providerId: "claude-primary",
     });
+    const standbyProvider = createProviderView("claude", {
+      active: false,
+      name: "Claude Standby",
+      providerId: "claude-standby",
+    });
 
     render(
       <ProviderSidePanel
@@ -230,7 +235,7 @@ describe("ProviderSidePanel", () => {
           failoverControlsAvailable: true,
           failoverControlsReady: true,
           providerInFailoverQueue: false,
-          providers: [provider],
+          providers: [provider, standbyProvider],
           selectedProvider: provider,
           selectedProviderId: provider.providerId,
           callbacks: {
@@ -238,6 +243,7 @@ describe("ProviderSidePanel", () => {
             onToggleProviderFailoverQueue,
           },
         })}
+        failoverQueueProviderIds={["claude-primary"]}
       />,
     );
 
@@ -260,6 +266,20 @@ describe("ProviderSidePanel", () => {
     expect(
       within(dialog).queryByRole("button", { name: "Set active" }),
     ).toBeNull();
+    const primaryRailRow = within(dialog)
+      .getAllByRole("button", { name: /Claude Primary/i })
+      .find((button) =>
+        button.classList.contains("owt-provider-panel__provider-row"),
+      );
+    expect(primaryRailRow).toBeDefined();
+    expect(within(primaryRailRow!).getByText("In queue")).toHaveClass(
+      "owt-status-pill",
+    );
+    expect(
+      within(
+        within(dialog).getByRole("button", { name: /Claude Standby/i }),
+      ).getByText("Standby"),
+    ).toHaveClass("owt-status-pill");
 
     fireEvent.click(normalTab);
     fireEvent.click(addToQueueButton);

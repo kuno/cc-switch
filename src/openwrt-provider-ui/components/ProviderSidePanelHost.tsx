@@ -1181,6 +1181,9 @@ const ProviderSidePanelHostComponent = forwardRef<
       )}
       appFailoverPending={failoverPendingAction === "app-auto"}
       providerInFailoverQueue={Boolean(failoverState?.inFailoverQueue)}
+      failoverQueueProviderIds={
+        failoverState?.failoverQueue.map((entry) => entry.providerId) ?? []
+      }
       providerFailoverPending={failoverPendingAction === "provider-queue"}
       footerText={footerText}
       onClose={closePanel}
