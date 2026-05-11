@@ -30,15 +30,21 @@ import { getOpenWrtAppIconUrl, OpenWrtProviderIcon } from "../providerIcons";
 import { ProviderSidePanelActivitiesTab } from "./ProviderSidePanelActivitiesTab";
 import { ProviderSidePanelConfigureTab } from "./ProviderSidePanelConfigureTab";
 import { ProviderSidePanelStatisticsTab } from "./ProviderSidePanelStatisticsTab";
+import { ProviderSidePanelStatusTab } from "./ProviderSidePanelStatusTab";
 import { getActiveElementInTree } from "./focusTree";
 import {
   ProviderSidePanelPresetTab,
   type ProviderSidePanelPresetGroup,
 } from "./ProviderSidePanelPresetTab";
 
-export type ProviderSidePanelTab = "activities" | "configure" | "statistics";
+export type ProviderSidePanelTab =
+  | "activities"
+  | "configure"
+  | "statistics"
+  | "status";
 
 export const PROVIDER_SIDE_PANEL_DETAIL_TABS = [
+  "status",
   "statistics",
   "configure",
   "activities",
@@ -123,6 +129,7 @@ const DETAIL_TAB_LABEL_KEYS: Record<ProviderSidePanelTab, string> = {
   activities: "openwrt.providerPanel.activitiesTab",
   configure: "openwrt.providerPanel.configureTab",
   statistics: "openwrt.providerPanel.statisticsTab",
+  status: "openwrt.providerPanel.statusTab",
 };
 
 const FOCUSABLE_SELECTOR = [
@@ -802,6 +809,15 @@ export function ProviderSidePanel({
                     selectedPresetId={selectedPresetId}
                     onPresetSelect={onPresetSelect}
                     onCancel={onPresetCancel ?? onCancel}
+                  />
+                ) : tab === "status" ? (
+                  <ProviderSidePanelStatusTab
+                    appId={appId}
+                    provider={selectedProvider}
+                    providerId={selectedProvider?.providerId ?? null}
+                    providerInFailoverQueue={providerInFailoverQueue}
+                    failoverQueueProviderIds={failoverQueueProviderIds ?? []}
+                    shell={shell}
                   />
                 ) : tab === "activities" ? (
                   <ProviderSidePanelActivitiesTab

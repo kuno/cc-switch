@@ -15,7 +15,7 @@ const FORBIDDEN_TEXT = [
   "sharedprovidermanager",
 ] as const;
 
-function renderTab(tab: "preset-picker" | "activities" | "configure") {
+function renderTab(tab: "preset-picker" | "status" | "activities" | "configure") {
   const appId = tab === "configure" ? "codex" : "claude";
   const selectedProvider = createProviderView(appId, {
     active: true,
@@ -38,14 +38,19 @@ function renderTab(tab: "preset-picker" | "activities" | "configure") {
         panelMode: tab === "preset-picker" ? "preset-picker" : "detail",
         selectedProvider,
         selectedProviderId: selectedProvider.providerId,
-        tab: tab === "configure" ? "configure" : "activities",
+        tab:
+          tab === "configure"
+            ? "configure"
+            : tab === "status"
+              ? "status"
+              : "activities",
       })}
     />,
   );
 }
 
 describe("ProviderSidePanel hard rules", () => {
-  it.each(["preset-picker", "activities", "configure"] as const)(
+  it.each(["preset-picker", "status", "activities", "configure"] as const)(
     "%s state does not leak forbidden legacy surfaces",
     async (tab) => {
       const { container } = renderTab(tab);
@@ -61,9 +66,13 @@ describe("ProviderSidePanel hard rules", () => {
         expect(screen.queryByRole("tablist")).toBeNull();
         expect(screen.getByText("Provider Preset")).toBeInTheDocument();
       } else {
+        if (tab === "status") {
+          expect(await screen.findByText("Provider state")).toBeInTheDocument();
+        }
+
         if (tab === "activities") {
           expect(
-            await screen.findByText("No recent activity"),
+            await screen.findByText("Recent requests for Claude Primary"),
           ).toBeInTheDocument();
         }
 
@@ -72,8 +81,13 @@ describe("ProviderSidePanel hard rules", () => {
           .getAllByRole("button", { hidden: false })
           .map((button) => button.textContent?.trim());
 
-        expect(labels).toEqual(["Activities", "Configure"]);
-        expect(labels).toHaveLength(2);
+        expect(labels).toEqual([
+          "Status",
+          "Statistics",
+          "Configure",
+          "Activities",
+        ]);
+        expect(labels).toHaveLength(4);
       }
     },
   );
