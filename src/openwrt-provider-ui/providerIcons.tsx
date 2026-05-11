@@ -9,8 +9,12 @@ import {
   type SharedProviderView,
 } from "@/shared/providers/domain";
 
+declare const __OPENWRT_PROVIDER_UI_ICON_BASE_URL__: string;
+
 export const OPENWRT_PROVIDER_UI_ICON_BASE_URL =
-  "/luci-static/resources/ccswitch/provider-ui/icons";
+  typeof __OPENWRT_PROVIDER_UI_ICON_BASE_URL__ === "string"
+    ? __OPENWRT_PROVIDER_UI_ICON_BASE_URL__
+    : "/luci-static/resources/ccswitch/provider-ui/icons";
 
 const APP_ICON_FILENAMES: Record<
   SharedProviderAppId | "opencode" | "openclaw",
