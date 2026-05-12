@@ -102,6 +102,10 @@ impl RequestContext {
             .await
             .map_err(|e| ProxyError::DatabaseError(e.to_string()))?;
 
+        if !app_config.enabled {
+            return Err(ProxyError::ProxyDisabled(app_type_str.to_string()));
+        }
+
         // 从数据库读取整流器配置
         let rectifier_config = state.db.get_rectifier_config().unwrap_or_default();
         let optimizer_config = state.db.get_optimizer_config().unwrap_or_default();

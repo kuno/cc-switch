@@ -18,7 +18,10 @@ import {
   OPENWRT_APP_IDS,
 } from "../fixtures/openwrtProviderUi";
 import { createBridgeFixture, DEFAULT_HOST_STATE } from "./fixtures/bridge";
-import { createDeferred } from "./fixtures/providerTransport";
+import {
+  createDeferred,
+  createProviderTransportFixture as createComponentProviderTransportFixture,
+} from "./fixtures/providerTransport";
 
 type RenderAppsGridOptions = {
   bridge?: ReturnType<typeof createBridgeFixture>;
@@ -289,6 +292,21 @@ describe("AppsGrid", () => {
     await user.click(codexButton);
 
     expect(setSelectedApp).toHaveBeenCalledWith("codex");
+  });
+
+  it("toggles only per-app proxy state without restarting the daemon", async () => {
+    const bridge = createBridgeFixture();
+    const { transport } = createComponentProviderTransportFixture();
+    const { user } = renderAppsGrid({ bridge, transport });
+
+    const claudeProxySwitch = await screen.findByRole("switch", {
+      name: "Proxy enabled for Claude",
+    });
+
+    await user.click(claudeProxySwitch);
+
+    expect(transport.setProxyEnabled).toHaveBeenCalledWith("claude", false);
+    expect(bridge.restartService).not.toHaveBeenCalled();
   });
 
   it("renders five home cards while fetching one backend status snapshot", async () => {
