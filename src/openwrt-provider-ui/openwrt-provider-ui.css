@@ -109,9 +109,16 @@
   box-sizing: border-box;
 }
 
-.ccswitch-openwrt-provider-ui-host,
-.ccswitch-openwrt-provider-ui-host * {
+.ccswitch-openwrt-provider-ui-host {
   color: var(--text);
+}
+
+:host button svg,
+.ccswitch-openwrt-provider-ui-host button svg,
+body .ccswitch-openwrt-provider-ui-dialog button svg,
+body .ccswitch-openwrt-provider-ui-overlay button svg,
+#ccswitch-openwrt-native-page-root button svg {
+  color: inherit;
 }
 
 .ccswitch-openwrt-provider-ui-host h1,
