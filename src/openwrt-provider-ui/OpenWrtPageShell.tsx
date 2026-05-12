@@ -346,19 +346,19 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
           : "ccswitch-openwrt-provider-ui-shell ccswitch-openwrt-page-shell"
       }
     >
-      <main className="owt-main">
-        <section data-slot="alert-strip">
-          <AlertStrip
-            host={snapshot.host}
-            isRunning={snapshot.isRunning}
-            restartInFlight={snapshot.restartInFlight}
-            message={snapshot.message}
-            onRestart={() => {
-              void handleRestart();
-            }}
-          />
-        </section>
+      <div className="owt-alert-overlay" data-slot="alert-strip">
+        <AlertStrip
+          host={snapshot.host}
+          isRunning={snapshot.isRunning}
+          restartInFlight={snapshot.restartInFlight}
+          message={snapshot.message}
+          onRestart={() => {
+            void handleRestart();
+          }}
+        />
+      </div>
 
+      <main className="owt-main">
         <div className="owt-page__title-row">
           <h1 className="owt-page__title">{t("app.title")}</h1>
           <ThemeToggle
