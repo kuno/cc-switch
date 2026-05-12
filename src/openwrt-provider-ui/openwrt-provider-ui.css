@@ -3763,11 +3763,12 @@ select.owt-provider-panel__input {
 
 /* Alert strip — Task F */
 .owt-alert-overlay {
-  position: absolute;
+  position: fixed;
   top: 8px;
   left: 0;
   right: 0;
-  z-index: 5;
+  z-index: 30;
+  width: 100%;
   max-width: 1600px;
   margin: 0 auto;
   padding: 0 28px;
@@ -3796,6 +3797,7 @@ select.owt-provider-panel__input {
   border-radius: var(--radius-control);
   background: var(--owt-alert-bg);
   box-shadow: 0 20px 48px -40px rgba(23, 33, 51, 0.26);
+  pointer-events: auto;
   animation: owt-alert-strip-drop 220ms ease-out both;
 }
 
