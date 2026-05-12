@@ -370,6 +370,11 @@ body .ccswitch-openwrt-provider-ui-overlay button svg,
     padding-right: 20px;
   }
 
+  .owt-alert-overlay {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+
   .owt-header {
     flex-direction: column;
     align-items: stretch;
@@ -3757,6 +3762,22 @@ select.owt-provider-panel__input {
 }
 
 /* Alert strip — Task F */
+.owt-alert-overlay {
+  position: absolute;
+  top: 8px;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 0 28px;
+  pointer-events: none;
+}
+
+.owt-alert-overlay > .owt-alert-strip {
+  pointer-events: auto;
+}
+
 .owt-alert-strip {
   --owt-alert-bg: var(--fail-soft, var(--owt-fail-soft));
   --owt-alert-border: var(--fail-line, var(--owt-fail-line));
@@ -3775,7 +3796,25 @@ select.owt-provider-panel__input {
   border-radius: var(--radius-control);
   background: var(--owt-alert-bg);
   box-shadow: 0 20px 48px -40px rgba(23, 33, 51, 0.26);
-  animation: owt-panel-enter 180ms ease-out both;
+  animation: owt-alert-strip-drop 220ms ease-out both;
+}
+
+@keyframes owt-alert-strip-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .owt-alert-strip {
+    animation-duration: 0ms;
+  }
 }
 
 .owt-alert-strip--unreachable,
@@ -3941,6 +3980,7 @@ select.owt-provider-panel__input {
 
 /* ---- Fallback tokens (no-op when the real vars are already defined) ---- */
 .ccswitch-openwrt-page-shell {
+  position: relative;
   --owt-panel-softer: var(
     --panel-softer,
     color-mix(in srgb, var(--panel-strong) 70%, var(--panel-soft) 30%)
