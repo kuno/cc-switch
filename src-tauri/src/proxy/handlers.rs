@@ -2117,6 +2117,7 @@ mod tests {
     use crate::provider::Provider;
     use crate::proxy::{
         failover_switch::FailoverSwitchManager,
+        handler_context::RequestContext,
         provider_router::ProviderRouter,
         providers::{
             claude_oauth_store::save_claude_auth_for_provider, gemini_shadow::GeminiShadowStore,
@@ -2412,6 +2413,71 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
         build_api_status_response(state)
             .await
             .expect("build api status")
+    }
+
+    #[tokio::test]
+    async fn disabled_app_proxy_rejects_requests_before_provider_selection() {
+        let db = Arc::new(Database::memory().expect("database"));
+        db.save_provider("claude", &test_provider("claude-primary", "Claude Primary"))
+            .expect("save claude provider");
+        db.add_to_failover_queue("claude", "claude-primary")
+            .expect("queue claude provider");
+        set_proxy_flags(&db, "claude", false, true).await;
+        let state = test_proxy_state(db);
+
+        let result = RequestContext::new(
+            &state,
+            &json!({ "model": "claude-opus-4-7", "messages": [] }),
+            &axum::http::HeaderMap::new(),
+            AppType::Claude,
+            "Claude",
+            "claude",
+        )
+        .await;
+
+        assert!(matches!(result, Err(ProxyError::ProxyDisabled(app)) if app == "claude"));
+        assert!(
+            state
+                .provider_router
+                .get_circuit_breaker_stats("claude-primary", "claude")
+                .await
+                .is_none(),
+            "disabled app must stop before provider selection creates circuit state"
+        );
+        assert!(
+            state
+                .db
+                .list_provider_health_records("claude")
+                .await
+                .expect("health records")
+                .is_empty(),
+            "disabled app must not update provider health"
+        );
+    }
+
+    #[tokio::test]
+    async fn disabled_app_proxy_does_not_affect_other_apps() {
+        let db = Arc::new(Database::memory().expect("database"));
+        db.save_provider("codex", &test_provider("codex-primary", "Codex Primary"))
+            .expect("save codex provider");
+        db.add_to_failover_queue("codex", "codex-primary")
+            .expect("queue codex provider");
+        set_proxy_flags(&db, "claude", false, true).await;
+        set_proxy_flags(&db, "codex", true, true).await;
+        let state = test_proxy_state(db);
+
+        let result = RequestContext::new(
+            &state,
+            &json!({ "model": "gpt-5.4", "messages": [] }),
+            &axum::http::HeaderMap::new(),
+            AppType::Codex,
+            "Codex",
+            "codex",
+        )
+        .await;
+
+        let context = result.expect("enabled codex app should still build a request context");
+        assert_eq!(context.provider.id, "codex-primary");
     }
 
     #[allow(clippy::too_many_arguments)]
