@@ -69,6 +69,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 const CODEX_OFFICIAL_PROVIDER_ID: &str = "codex-official";
 const CODEX_OAUTH_AUTH_MODE: &str = "codex_oauth";
 const CODEX_LEGACY_CLIENT_PASSTHROUGH_AUTH_MODE: &str = "client_passthrough";
+const CLAUDE_MODEL_LIST: &[(&str, &str)] = &[
+    ("claude-haiku-4-5-20251001", "Claude Haiku 4.5"),
+    ("claude-sonnet-4-6", "Claude Sonnet 4.6"),
+    ("claude-opus-4-7", "Claude Opus 4.7"),
+];
 const CLAUDE_OAUTH_AUTH_MODE: &str = "claude_oauth";
 const CLAUDE_DEFAULT_TOKEN_FIELD: &str = "ANTHROPIC_AUTH_TOKEN";
 const CLAUDE_ALT_TOKEN_FIELD: &str = "ANTHROPIC_API_KEY";
@@ -106,6 +111,40 @@ pub async fn health_check() -> (StatusCode, Json<Value>) {
             "timestamp": chrono::Utc::now().to_rfc3339(),
         })),
     )
+}
+
+/// Claude-compatible model list.
+///
+/// OpenWrt uses this to satisfy Claude clients that probe `GET /v1/models`.
+pub async fn get_claude_models() -> (StatusCode, Json<Value>) {
+    let data: Vec<Value> = CLAUDE_MODEL_LIST
+        .iter()
+        .map(|(id, display_name)| {
+            json!({
+                "type": "model",
+                "id": id,
+                "display_name": display_name,
+                "created_at": "2026-01-01T00:00:00Z",
+            })
+        })
+        .collect();
+
+    (
+        StatusCode::OK,
+        Json(json!({
+            "data": data,
+            "has_more": false,
+            "first_id": CLAUDE_MODEL_LIST.first().map(|(id, _)| *id),
+            "last_id": CLAUDE_MODEL_LIST.last().map(|(id, _)| *id),
+        })),
+    )
+}
+
+fn normalize_claude_gateway_endpoint(endpoint: &str) -> String {
+    endpoint
+        .strip_prefix("/gateway/claude/")
+        .map(|suffix| format!("/{suffix}"))
+        .unwrap_or_else(|| endpoint.to_string())
 }
 
 fn is_codex_oauth_provider(provider: &crate::provider::Provider) -> bool {
@@ -1111,6 +1150,7 @@ async fn handle_messages_for_app(
     let endpoint = strip_prefix
         .and_then(|prefix| raw_endpoint.strip_prefix(prefix))
         .unwrap_or(raw_endpoint);
+    let endpoint = normalize_claude_gateway_endpoint(endpoint);
 
     let is_stream = body
         .get("stream")
@@ -1123,7 +1163,7 @@ async fn handle_messages_for_app(
         .forward_with_retry(
             &app_type,
             method,
-            endpoint,
+            &endpoint,
             body.clone(),
             headers,
             extensions,
@@ -3593,6 +3633,7 @@ mod tests {
         body_looks_like_sse, chat_sse_to_response_value, classify_body_for_diagnostics,
         codex_proxy_error_json, is_claude_oauth_provider, is_codex_oauth_provider,
         live_quota_refresh_call_count,
+        normalize_claude_gateway_endpoint,
         refresh_claude_quota_snapshots_with_query,
         refresh_claude_quota_snapshots_with_query_and_refresher,
         refresh_codex_quota_snapshots_with_query_and_refresher,
@@ -3631,6 +3672,22 @@ mod tests {
     use std::time::{Duration, Instant};
     use tempfile::TempDir;
     use tokio::sync::RwLock;
+
+    #[test]
+    fn normalize_claude_gateway_endpoint_strips_gateway_prefix() {
+        assert_eq!(
+            normalize_claude_gateway_endpoint("/gateway/claude/v1/messages"),
+            "/v1/messages"
+        );
+        assert_eq!(
+            normalize_claude_gateway_endpoint("/gateway/claude/v1/messages?beta=true"),
+            "/v1/messages?beta=true"
+        );
+        assert_eq!(
+            normalize_claude_gateway_endpoint("/v1/messages"),
+            "/v1/messages"
+        );
+    }
 
     #[test]
     fn body_looks_like_sse_detects_unlabeled_sse_prefixes() {
