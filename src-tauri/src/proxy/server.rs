@@ -420,8 +420,18 @@ impl ProxyServer {
             .route("/api/status", get(handlers::get_api_status))
             .route("/api/quota", get(handlers::get_quota))
             // Claude API (支持带前缀和不带前缀两种格式)
+            .route("/v1/models", get(handlers::get_claude_models))
+            .route("/claude/v1/models", get(handlers::get_claude_models))
+            .route(
+                "/gateway/claude/v1/models",
+                get(handlers::get_claude_models),
+            )
             .route("/v1/messages", post(handlers::handle_messages))
             .route("/claude/v1/messages", post(handlers::handle_messages))
+            .route(
+                "/gateway/claude/v1/messages",
+                post(handlers::handle_messages),
+            )
             // Claude Desktop 3P 本地 gateway（独立 provider namespace）
             .route(
                 "/claude-desktop/v1/models",
@@ -607,6 +617,59 @@ mod tests {
         assert!(body["apps"].get("claude").is_some());
         assert!(body["apps"]["claude"].get("activeProvider").is_some());
         assert!(body["apps"]["claude"].get("active_provider").is_none());
+    }
+
+    #[tokio::test]
+    async fn claude_models_route_returns_official_models() {
+        let db = Arc::new(Database::memory().expect("init db"));
+        let server = ProxyServer::new(
+            ProxyConfig::default(),
+            db,
+            None,
+            None,
+            #[cfg(feature = "tauri-desktop")]
+            None,
+        );
+
+        for uri in ["/v1/models", "/claude/v1/models", "/gateway/claude/v1/models"] {
+            let mut app = server.build_router();
+            let response = app
+                .call(
+                    Request::builder()
+                        .uri(uri)
+                        .body(Body::empty())
+                        .expect("request"),
+                )
+                .await
+                .expect("route response");
+
+            assert_eq!(response.status(), StatusCode::OK);
+            let bytes = response
+                .into_body()
+                .collect()
+                .await
+                .expect("body")
+                .to_bytes();
+            let body: serde_json::Value = serde_json::from_slice(&bytes).expect("json body");
+            let model_ids: Vec<&str> = body["data"]
+                .as_array()
+                .expect("data array")
+                .iter()
+                .filter_map(|entry| entry["id"].as_str())
+                .collect();
+
+            assert_eq!(
+                model_ids,
+                vec![
+                    "claude-haiku-4-5-20251001",
+                    "claude-sonnet-4-6",
+                    "claude-opus-4-7"
+                ],
+                "{uri}"
+            );
+            assert_eq!(body["first_id"], "claude-haiku-4-5-20251001", "{uri}");
+            assert_eq!(body["last_id"], "claude-opus-4-7", "{uri}");
+        }
     }
 
     #[tokio::test]
