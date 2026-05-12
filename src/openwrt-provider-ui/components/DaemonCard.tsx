@@ -54,10 +54,8 @@ function getHealthLabel(
   }
 }
 
-function getStatusLabel(isRunning: boolean, t: TFunction): string {
-  return isRunning
-    ? t("openwrt.daemon.status.running")
-    : t("openwrt.daemon.status.stopped");
+function getStatusLabel(t: TFunction): string {
+  return t("openwrt.pageShell.daemonHeading");
 }
 
 function getLogLevelOptions(value: string): string[] {
@@ -106,7 +104,7 @@ export function DaemonCard({
   const saveFlashTimeoutRef = useRef<number | null>(null);
   const previousSaveInFlightRef = useRef(saveInFlight);
   const [showSaveFlash, setShowSaveFlash] = useState(false);
-  const statusLabel = getStatusLabel(isRunning, t);
+  const statusLabel = getStatusLabel(t);
   const healthLabel = restartInFlight
     ? t("openwrt.daemon.restarting")
     : getHealthLabel(host.health, t);

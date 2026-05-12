@@ -173,7 +173,8 @@ describe("DaemonCard", () => {
         },
       },
       expected: {
-        status: "Running",
+        status: "Daemon",
+        dataRunning: "true",
         health: "Healthy",
       },
     },
@@ -189,7 +190,8 @@ describe("DaemonCard", () => {
         },
       },
       expected: {
-        status: "Stopped",
+        status: "Daemon",
+        dataRunning: "false",
         health: "Stopped",
       },
     },
@@ -209,7 +211,8 @@ describe("DaemonCard", () => {
         },
       },
       expected: {
-        status: "Running",
+        status: "Daemon",
+        dataRunning: "true",
         health: "Healthy",
       },
     },
@@ -229,7 +232,8 @@ describe("DaemonCard", () => {
         },
       },
       expected: {
-        status: "Running",
+        status: "Daemon",
+        dataRunning: "true",
         health: "Restarting…",
       },
     },
@@ -245,7 +249,8 @@ describe("DaemonCard", () => {
         },
       },
       expected: {
-        status: "Running",
+        status: "Daemon",
+        dataRunning: "true",
         health: "Unknown",
       },
     },
@@ -254,6 +259,7 @@ describe("DaemonCard", () => {
     options: BridgeFixtureOptions;
     expected: {
       status: string;
+      dataRunning: string;
       health: string;
     };
   }>)(
@@ -263,6 +269,7 @@ describe("DaemonCard", () => {
       const { statusChip, healthChip, restartButton } = getCardElements(card);
 
       expect(statusChip).toHaveTextContent(expected.status);
+      expect(statusChip).toHaveAttribute("data-running", expected.dataRunning);
       expect(healthChip).toHaveTextContent(expected.health);
       expect(
         card.querySelector(".ccswitch-openwrt-page-note"),
