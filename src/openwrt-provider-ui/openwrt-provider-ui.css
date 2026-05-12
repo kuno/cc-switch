@@ -3644,10 +3644,6 @@ select.owt-provider-panel__input {
   color: var(--accent-text);
 }
 
-[data-slot="daemon-card"] .ccswitch-openwrt-page-note {
-  margin: 0;
-}
-
 .owt-page-foot {
   display: grid;
   justify-items: center;

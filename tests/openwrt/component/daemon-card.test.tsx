@@ -9,7 +9,6 @@ import {
 import type {
   OpenWrtHostConfigPayload,
   OpenWrtHostState,
-  OpenWrtPageMessage,
   OpenWrtSharedPageShellApi,
 } from "@/openwrt-provider-ui/pageTypes";
 import {
@@ -27,28 +26,11 @@ function createDraft(host: OpenWrtHostState): OpenWrtHostConfigPayload {
   };
 }
 
-function getMessageToneClass(message: OpenWrtPageMessage | null): string {
-  if (!message) {
-    return "";
-  }
-
-  if (message.kind === "success") {
-    return "ccswitch-openwrt-page-note--success";
-  }
-
-  if (message.kind === "error") {
-    return "ccswitch-openwrt-page-note--error";
-  }
-
-  return "ccswitch-openwrt-page-note--info";
-}
-
 function buildDaemonCardProps(
   bridge: OpenWrtSharedPageShellApi,
   overrides: Partial<DaemonCardProps> = {},
 ): DaemonCardProps {
   const host = bridge.getHostState();
-  const message = bridge.getMessage();
 
   return {
     host,
@@ -58,8 +40,6 @@ function buildDaemonCardProps(
     saveInFlight: false,
     restartInFlight: bridge.getRestartState?.().inFlight ?? false,
     restartPending: bridge.getRestartState?.().pending ?? false,
-    message,
-    messageToneClass: getMessageToneClass(message),
     onDraftChange: vi.fn(),
     onSave: vi.fn(),
     onRestart: vi.fn(() => {
@@ -94,7 +74,6 @@ function getCardElements(card: HTMLElement) {
   return {
     statusChip: card.querySelector(".owt-daemon-status"),
     healthChip: card.querySelector(".owt-daemon-health"),
-    message: card.querySelector(".ccswitch-openwrt-page-note"),
     restartButton: within(card).getByRole("button", { name: /Restart/ }),
   };
 }
@@ -114,9 +93,6 @@ function InteractiveDaemonCard({
       inFlight: false,
     },
   );
-  const [message, setMessage] = useState<OpenWrtPageMessage | null>(
-    bridge.getMessage(),
-  );
 
   async function handleRestart() {
     if (restartState.inFlight) {
@@ -130,7 +106,6 @@ function InteractiveDaemonCard({
 
     bridge.setRestartState?.(optimisticState);
     setRestartState(optimisticState);
-    setMessage(null);
 
     try {
       const nextStatus = await bridge.restartService();
@@ -158,7 +133,6 @@ function InteractiveDaemonCard({
       bridge.setRestartState?.(settledState);
       bridge.showMessage("error", `Restart failed: ${detail}`);
       setRestartState(settledState);
-      setMessage(bridge.getMessage());
     }
   }
 
@@ -171,8 +145,6 @@ function InteractiveDaemonCard({
       saveInFlight={false}
       restartInFlight={restartState.inFlight}
       restartPending={restartState.pending}
-      message={message}
-      messageToneClass={getMessageToneClass(message)}
       onDraftChange={(key, value) =>
         setDraft((current) => ({
           ...current,
@@ -271,15 +243,10 @@ describe("DaemonCard", () => {
         serviceStatus: {
           isRunning: true,
         },
-        message: {
-          kind: "error",
-          text: "Restart failed: daemon status unavailable.",
-        },
       },
       expected: {
         status: "Running",
         health: "Unknown",
-        message: "Restart failed: daemon status unavailable.",
       },
     },
   ] satisfies Array<{
@@ -288,23 +255,18 @@ describe("DaemonCard", () => {
     expected: {
       status: string;
       health: string;
-      message?: string;
     };
   }>)(
     "renders the expected daemon labels for $name",
     ({ options, expected }) => {
       const { card } = renderDaemonCard(options);
-      const { statusChip, healthChip, message, restartButton } =
-        getCardElements(card);
+      const { statusChip, healthChip, restartButton } = getCardElements(card);
 
       expect(statusChip).toHaveTextContent(expected.status);
       expect(healthChip).toHaveTextContent(expected.health);
-
-      if (expected.message) {
-        expect(message).toHaveTextContent(expected.message);
-      } else {
-        expect(message).toBeNull();
-      }
+      expect(
+        card.querySelector(".ccswitch-openwrt-page-note"),
+      ).toBeNull();
 
       if (options.restartState?.inFlight) {
         expect(restartButton).toHaveAccessibleName("Restarting…");
@@ -402,7 +364,7 @@ describe("DaemonCard", () => {
     expect(onRestart).toHaveBeenCalledTimes(2);
   });
 
-  it("renders the error note and keeps restart reachable when status is unknown", () => {
+  it("never renders an inline message note and keeps restart reachable when status is unknown", () => {
     const { card } = renderDaemonCard({
       host: {
         status: "running",
@@ -416,11 +378,9 @@ describe("DaemonCard", () => {
         text: "Restart failed: daemon status unavailable.",
       },
     });
-    const { message, restartButton } = getCardElements(card);
+    const { restartButton } = getCardElements(card);
 
-    expect(message).toHaveTextContent(
-      "Restart failed: daemon status unavailable.",
-    );
+    expect(card.querySelector(".ccswitch-openwrt-page-note")).toBeNull();
     expect(restartButton).toBeEnabled();
   });
 });
