@@ -230,7 +230,7 @@ describe("DaemonCard", () => {
       },
       expected: {
         status: "Running",
-        health: "Healthy",
+        health: "Restarting…",
       },
     },
     {
