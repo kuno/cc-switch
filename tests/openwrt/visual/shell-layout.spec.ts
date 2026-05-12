@@ -4,6 +4,27 @@ function getTheme(projectName: string): "light" | "dark" {
   return projectName === "openwrt-dark" ? "dark" : "light";
 }
 
+async function getShellLayoutMetrics(page: import("@playwright/test").Page) {
+  const appsGrid = await page.locator('[data-slot="apps-grid"]').boundingBox();
+  const daemonCard = await page
+    .locator('[data-slot="daemon-card"]')
+    .boundingBox();
+  const main = await page.locator(".owt-main").boundingBox();
+
+  if (!appsGrid || !daemonCard || !main) {
+    throw new Error("Shell layout metrics are unavailable.");
+  }
+
+  return {
+    appsGridTop: appsGrid.y,
+    daemonCardTop: daemonCard.y,
+    mainHeight: main.height,
+    scrollHeight: await page.evaluate(
+      () => document.documentElement.scrollHeight,
+    ),
+  };
+}
+
 test.describe("@shell OpenWrt page shell", () => {
   test("renders the default shell layout", async ({ page }, testInfo) => {
     const theme = getTheme(testInfo.project.name);
@@ -61,7 +82,47 @@ test.describe("@shell OpenWrt page shell", () => {
     await page.goto(`/?component=shell&state=stopped&theme=${theme}`);
 
     await expect(page.getByText("Daemon stopped.")).toBeVisible();
-    await expect(page).toHaveScreenshot("shell-alert-strip.png");
+    await expect(page.locator(".owt-alert-overlay")).toHaveCSS(
+      "position",
+      "fixed",
+    );
+    await expect(page.locator(".owt-alert-overlay")).toHaveCSS(
+      "pointer-events",
+      "none",
+    );
+    await expect(page.locator(".owt-alert-strip")).toHaveCSS(
+      "pointer-events",
+      "auto",
+    );
+  });
+
+  test("keeps shell content positions stable when the alert is visible", async ({
+    page,
+  }, testInfo) => {
+    const theme = getTheme(testInfo.project.name);
+
+    await page.goto(`/?component=shell&state=default&theme=${theme}`);
+    const hiddenAlertMetrics = await getShellLayoutMetrics(page);
+
+    await page.goto(`/?component=shell&state=stopped&theme=${theme}`);
+    await expect(page.getByText("Daemon stopped.")).toBeVisible();
+    const visibleAlertMetrics = await getShellLayoutMetrics(page);
+
+    expect(visibleAlertMetrics.appsGridTop).toBeCloseTo(
+      hiddenAlertMetrics.appsGridTop,
+      1,
+    );
+    expect(visibleAlertMetrics.daemonCardTop).toBeCloseTo(
+      hiddenAlertMetrics.daemonCardTop,
+      1,
+    );
+    expect(visibleAlertMetrics.mainHeight).toBeCloseTo(
+      hiddenAlertMetrics.mainHeight,
+      1,
+    );
+    expect(visibleAlertMetrics.scrollHeight).toBe(
+      hiddenAlertMetrics.scrollHeight,
+    );
   });
 
   test("renders the responsive shell at 720px width", async ({
