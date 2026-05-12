@@ -109,13 +109,6 @@ function clearTheme(target: HTMLElement) {
   }
 }
 
-function getMessageToneClass(message: OpenWrtPageMessage | null): string {
-  if (!message) return "";
-  if (message.kind === "success") return "ccswitch-openwrt-page-note--success";
-  if (message.kind === "error") return "ccswitch-openwrt-page-note--error";
-  return "ccswitch-openwrt-page-note--info";
-}
-
 function formatVersion(
   raw: string | null | undefined,
   fallback: string,
@@ -392,8 +385,6 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
               saveInFlight={saveInFlight}
               restartInFlight={snapshot.restartInFlight}
               restartPending={snapshot.restartPending}
-              message={snapshot.message}
-              messageToneClass={getMessageToneClass(snapshot.message)}
               onDraftChange={(key, value) =>
                 setHostDraft((current) => ({
                   ...current,

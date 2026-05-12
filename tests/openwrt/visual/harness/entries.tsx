@@ -501,22 +501,6 @@ function createDraft(host: OpenWrtHostState): OpenWrtHostConfigPayload {
   };
 }
 
-function getMessageToneClass(message: OpenWrtPageMessage | null): string {
-  if (!message) {
-    return "";
-  }
-
-  if (message.kind === "success") {
-    return "ccswitch-openwrt-page-note--success";
-  }
-
-  if (message.kind === "error") {
-    return "ccswitch-openwrt-page-note--error";
-  }
-
-  return "ccswitch-openwrt-page-note--info";
-}
-
 function renderAlertStrip({
   host = READY_HOST,
   isRunning = true,
@@ -542,13 +526,11 @@ function renderAlertStrip({
 function renderDaemonCardScenario({
   host,
   isRunning,
-  message = null,
   restartInFlight = false,
   restartPending = false,
 }: {
   host: OpenWrtHostState;
   isRunning: boolean;
-  message?: OpenWrtPageMessage | null;
   restartInFlight?: boolean;
   restartPending?: boolean;
 }) {
@@ -561,8 +543,6 @@ function renderDaemonCardScenario({
       saveInFlight={false}
       restartInFlight={restartInFlight}
       restartPending={restartPending}
-      message={message}
-      messageToneClass={getMessageToneClass(message)}
       onDraftChange={() => {}}
       onSave={() => {}}
       onRestart={() => {}}
@@ -819,10 +799,6 @@ const HARNESSES: Record<string, Record<string, HarnessScenario>> = {
           host: READY_HOST,
           isRunning: true,
           restartPending: true,
-          message: {
-            kind: "info",
-            text: "Provider changes were saved and need a restart.",
-          },
         }),
     },
     restarting: {
@@ -840,10 +816,6 @@ const HARNESSES: Record<string, Record<string, HarnessScenario>> = {
         renderDaemonCardScenario({
           host: UNKNOWN_HOST,
           isRunning: true,
-          message: {
-            kind: "error",
-            text: "Restart failed: daemon status unavailable.",
-          },
         }),
     },
   },

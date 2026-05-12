@@ -38,8 +38,6 @@ function renderCard(host: Partial<OpenWrtHostState> = {}) {
       saveInFlight={false}
       restartInFlight={false}
       restartPending={false}
-      message={null}
-      messageToneClass=""
       onDraftChange={() => {}}
       onSave={() => {}}
       onRestart={() => {}}

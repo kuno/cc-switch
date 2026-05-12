@@ -5,7 +5,6 @@ import { useTranslation } from "react-i18next";
 import type {
   OpenWrtHostConfigPayload,
   OpenWrtHostState,
-  OpenWrtPageMessage,
 } from "../pageTypes";
 
 const DEFAULT_LOG_LEVELS = ["error", "warn", "info", "debug", "trace"];
@@ -18,8 +17,6 @@ export interface DaemonCardProps {
   saveInFlight: boolean;
   restartInFlight: boolean;
   restartPending: boolean;
-  message: OpenWrtPageMessage | null;
-  messageToneClass: string;
   onDraftChange: <Key extends keyof OpenWrtHostConfigPayload>(
     key: Key,
     value: OpenWrtHostConfigPayload[Key],
@@ -101,8 +98,6 @@ export function DaemonCard({
   isDirty,
   saveInFlight,
   restartInFlight,
-  message,
-  messageToneClass,
   onDraftChange,
   onSave,
   onRestart,
@@ -227,12 +222,6 @@ export function DaemonCard({
               : t("common.save")}
         </button>
       </div>
-
-      {message ? (
-        <div className={`ccswitch-openwrt-page-note ${messageToneClass}`}>
-          {message.text}
-        </div>
-      ) : null}
 
       <div className="owt-daemon-divider" />
 
