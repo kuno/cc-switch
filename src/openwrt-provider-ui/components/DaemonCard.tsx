@@ -112,8 +112,10 @@ export function DaemonCard({
   const previousSaveInFlightRef = useRef(saveInFlight);
   const [showSaveFlash, setShowSaveFlash] = useState(false);
   const statusLabel = getStatusLabel(isRunning, t);
-  const healthLabel = getHealthLabel(host.health, t);
-  const healthTone = getHealthTone(host.health);
+  const healthLabel = restartInFlight
+    ? t("openwrt.daemon.restarting")
+    : getHealthLabel(host.health, t);
+  const healthTone = restartInFlight ? "accent" : getHealthTone(host.health);
   const logLevelOptions = getLogLevelOptions(draft.logLevel);
 
   useEffect(() => {
