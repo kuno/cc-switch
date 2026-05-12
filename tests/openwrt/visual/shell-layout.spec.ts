@@ -84,7 +84,7 @@ test.describe("@shell OpenWrt page shell", () => {
     await expect(page.getByText("Daemon stopped.")).toBeVisible();
     await expect(page.locator(".owt-alert-overlay")).toHaveCSS(
       "position",
-      "fixed",
+      "absolute",
     );
     await expect(page.locator(".owt-alert-overlay")).toHaveCSS(
       "pointer-events",
@@ -124,6 +124,43 @@ test.describe("@shell OpenWrt page shell", () => {
       hiddenAlertMetrics.scrollHeight,
     );
   });
+
+  for (const viewport of [
+    { label: "wide", width: 1920, height: 1000 },
+    { label: "desktop", width: 1280, height: 900 },
+    { label: "narrow", width: 720, height: 900 },
+  ] as const) {
+    test(`aligns the alert overlay horizontally with .owt-main at ${viewport.label} width`, async ({
+      page,
+    }, testInfo) => {
+      const theme = getTheme(testInfo.project.name);
+
+      await page.setViewportSize({
+        width: viewport.width,
+        height: viewport.height,
+      });
+      await page.goto(`/?component=shell&state=stopped&theme=${theme}`);
+      await expect(page.getByText("Daemon stopped.")).toBeVisible();
+
+      const overlay = await page
+        .locator(".owt-alert-overlay")
+        .boundingBox();
+      const main = await page.locator(".owt-main").boundingBox();
+
+      if (!overlay || !main) {
+        throw new Error("Alert overlay or main bounding box unavailable.");
+      }
+
+      const overlayCenter = overlay.x + overlay.width / 2;
+      const mainCenter = main.x + main.width / 2;
+
+      expect(overlayCenter).toBeCloseTo(mainCenter, 0);
+      expect(overlay.x).toBeCloseTo(main.x, 0);
+      expect(overlay.x + overlay.width).toBeCloseTo(main.x + main.width, 0);
+      expect(overlay.x).toBeGreaterThanOrEqual(0);
+      expect(overlay.x + overlay.width).toBeLessThanOrEqual(viewport.width);
+    });
+  }
 
   test("renders the responsive shell at 720px width", async ({
     page,
