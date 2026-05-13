@@ -36,6 +36,7 @@ jobs:
       version: ${{ steps.meta.outputs.version }}
       tag_name: ${{ steps.meta.outputs.tag_name }}
       package_release: ${{ steps.meta.outputs.package_release }}
+      package_version: ${{ steps.meta.outputs.package_version }}
       prerelease: ${{ steps.meta.outputs.prerelease }}
     steps:
       - name: Determine release metadata
@@ -73,10 +74,13 @@ jobs:
             exit 1
           fi
 
+          package_version="${version}-${package_release}"
+
           {
             echo "version=$version"
             echo "tag_name=$tag_name"
             echo "package_release=$package_release"
+            echo "package_version=$package_version"
             echo "prerelease=$prerelease"
           } >> "$GITHUB_OUTPUT"
 
@@ -86,6 +90,7 @@ jobs:
             echo "- Version: \`$version\`"
             echo "- Tag: \`$tag_name\`"
             echo "- Package release: \`$package_release\`"
+            echo "- Package version: \`$package_version\`"
             echo "- Prerelease: \`$prerelease\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -141,6 +146,9 @@ jobs:
 
       - name: Build cc-switch binary
         working-directory: proxy-daemon
+        env:
+          CCSWITCH_BUILD_VERSION: ${{ needs.prepare.outputs.package_version }}
+          CCSWITCH_PRODUCT_VERSION: ${{ needs.prepare.outputs.version }}
         run: cross build --release --target ${{ matrix.target.rust_target }}
 
       - name: Build daemon IPK
@@ -194,6 +202,8 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build OpenWrt provider UI bundle
+        env:
+          OPENWRT_LUCI_APP_VERSION: ${{ needs.prepare.outputs.package_version }}
         run: pnpm build:openwrt-provider-ui
 
       - name: Install po2lmo
