@@ -101,7 +101,7 @@ builds_luci_package() {
 }
 
 git_describe_version() {
-	git -C "$PROJECT_DIR" describe --tags --always --dirty 2>/dev/null || true
+	git -C "$PROJECT_DIR" describe --tags --match 'v[0-9]*' --always --dirty 2>/dev/null || true
 }
 
 rebuild_openwrt_provider_ui_bundle() {
