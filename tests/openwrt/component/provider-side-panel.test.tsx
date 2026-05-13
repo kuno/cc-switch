@@ -70,7 +70,7 @@ describe("ProviderSidePanel", () => {
     vi.useRealTimers();
   });
 
-  it("renders the shell with Status, Statistics, Configure, and Activities tabs", async () => {
+  it("renders the shell with visible Status and Configure tabs", async () => {
     const onClose = vi.fn();
     const onTabChange = vi.fn();
     const provider = createProviderView("claude", {
@@ -107,10 +107,14 @@ describe("ProviderSidePanel", () => {
     expect(dialog).toHaveAttribute("aria-modal", "true");
     expect(tabButtons.map((button) => button.textContent?.trim())).toEqual([
       "Status",
-      "Statistics",
       "Configure",
-      "Activities",
     ]);
+    expect(
+      within(tablist).queryByRole("button", { name: "Statistics" }),
+    ).toBeNull();
+    expect(
+      within(tablist).queryByRole("button", { name: "Activities" }),
+    ).toBeNull();
     expect(
       within(dialog).queryByRole("button", { name: "Set active" }),
     ).toBeNull();
