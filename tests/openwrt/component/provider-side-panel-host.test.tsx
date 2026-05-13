@@ -198,7 +198,7 @@ describe("ProviderSidePanelHost", () => {
     }
   });
 
-  it("opens saved providers on Statistics and new drafts on Configure in edit mode", async () => {
+  it("opens saved providers on Status and new drafts on Configure in edit mode", async () => {
     const user = userEvent.setup();
     const savedShell = createBridgeFixture();
     const primaryProvider = createProviderView("claude", {
@@ -218,7 +218,7 @@ describe("ProviderSidePanelHost", () => {
     );
 
     expect(
-      within(await savedDialog).getByRole("button", { name: "Statistics" }),
+      within(await savedDialog).getByRole("button", { name: "Status" }),
     ).toHaveAttribute("data-active", "true");
     expect(
       within(await savedDialog).queryByRole("button", { name: "Save" }),
@@ -242,7 +242,7 @@ describe("ProviderSidePanelHost", () => {
 
     const reopenedSavedDialog = await openPanel();
     expect(
-      within(reopenedSavedDialog).getByRole("button", { name: "Statistics" }),
+      within(reopenedSavedDialog).getByRole("button", { name: "Status" }),
     ).toHaveAttribute("data-active", "true");
 
     await user.keyboard("{Escape}");
@@ -594,7 +594,7 @@ describe("ProviderSidePanelHost", () => {
     );
   });
 
-  it("resets back to Statistics when switching to another provider", async () => {
+  it("resets back to Status when switching to another provider", async () => {
     const user = userEvent.setup();
     const shell = createBridgeFixture({ selectedApp: "claude" });
     const primaryProvider = createProviderView("claude", {
@@ -631,7 +631,7 @@ describe("ProviderSidePanelHost", () => {
 
     await waitFor(() =>
       expect(
-        within(dialog).getByRole("button", { name: "Statistics" }),
+        within(dialog).getByRole("button", { name: "Status" }),
       ).toHaveAttribute("data-active", "true"),
     );
     expect(
@@ -641,8 +641,7 @@ describe("ProviderSidePanelHost", () => {
     ).toBeInTheDocument();
   });
 
-  it("requests activities with the selected provider id", async () => {
-    const user = userEvent.setup();
+  it("does not expose the hidden Activities tab in the provider workspace", async () => {
     const shell = createBridgeFixture({
       requestLogs: {
         claude: {
@@ -671,35 +670,16 @@ describe("ProviderSidePanelHost", () => {
     render(<HostHarness shell={shell} transport={transport} />);
 
     const dialog = await openPanel();
-    await user.click(within(dialog).getByRole("button", { name: "Activities" }));
+    const tablist = within(dialog)
+      .getAllByRole("tablist")
+      .find((candidate) =>
+        candidate.classList.contains("owt-provider-panel__tabs"),
+      );
 
-    await waitFor(() =>
-      expect(shell.getRequestLogs).toHaveBeenCalledWith(
-        "claude",
-        0,
-        20,
-        "claude-primary",
-      ),
-    );
-
-    const backupRow = Array.from(
-      dialog.querySelectorAll<HTMLButtonElement>(
-        ".owt-provider-panel__provider-row",
-      ),
-    ).find((row) => within(row).queryByText("Claude Backup"));
-
-    expect(backupRow).not.toBeUndefined();
-    await user.click(backupRow!);
-    await user.click(within(dialog).getByRole("button", { name: "Activities" }));
-
-    await waitFor(() =>
-      expect(shell.getRequestLogs).toHaveBeenLastCalledWith(
-        "claude",
-        0,
-        20,
-        "claude-backup",
-      ),
-    );
+    expect(tablist).toBeDefined();
+    expect(
+      within(tablist!).queryByRole("button", { name: "Activities" }),
+    ).toBeNull();
   });
 
   it("sets the selected saved provider active from the header action", async () => {
@@ -925,7 +905,9 @@ describe("ProviderSidePanelHost", () => {
     await transport.setAutoFailoverEnabled?.("claude", true);
 
     type FailoverResponse = Awaited<
-      ReturnType<NonNullable<OpenWrtProviderTransport["getProviderFailoverState"]>>
+      ReturnType<
+        NonNullable<OpenWrtProviderTransport["getProviderFailoverState"]>
+      >
     >;
     const delayedFailover = createDeferred<FailoverResponse>();
     const failoverMock = transport.getProviderFailoverState as unknown as {
