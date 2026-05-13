@@ -53,6 +53,11 @@ export const PROVIDER_SIDE_PANEL_DETAIL_TABS = [
 export const DEFAULT_PROVIDER_SIDE_PANEL_DETAIL_TAB =
   PROVIDER_SIDE_PANEL_DETAIL_TABS[0];
 
+const VISIBLE_PROVIDER_SIDE_PANEL_DETAIL_TABS = [
+  "status",
+  "configure",
+] as const satisfies readonly ProviderSidePanelTab[];
+
 interface ProviderSidePanelProps {
   appId: SharedProviderAppId;
   open: boolean;
@@ -758,17 +763,19 @@ export function ProviderSidePanel({
                   </div>
 
                   <div className="owt-provider-panel__tabs" role="tablist">
-                    {PROVIDER_SIDE_PANEL_DETAIL_TABS.map((detailTab) => (
-                      <button
-                        key={detailTab}
-                        type="button"
-                        className="owt-provider-panel__tab"
-                        data-active={tab === detailTab}
-                        onClick={() => onTabChange(detailTab)}
-                      >
-                        {t(DETAIL_TAB_LABEL_KEYS[detailTab])}
-                      </button>
-                    ))}
+                    {VISIBLE_PROVIDER_SIDE_PANEL_DETAIL_TABS.map(
+                      (detailTab) => (
+                        <button
+                          key={detailTab}
+                          type="button"
+                          className="owt-provider-panel__tab"
+                          data-active={tab === detailTab}
+                          onClick={() => onTabChange(detailTab)}
+                        >
+                          {t(DETAIL_TAB_LABEL_KEYS[detailTab])}
+                        </button>
+                      ),
+                    )}
                     <button
                       type="button"
                       className="owt-provider-panel__tab"
