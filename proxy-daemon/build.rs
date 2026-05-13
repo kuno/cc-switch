@@ -90,7 +90,9 @@ fn git_describe(repo_dir: &Path) -> Option<String> {
     let output = Command::new("git")
         .arg("-C")
         .arg(repo_dir)
-        .args(["describe", "--tags", "--always", "--dirty"])
+        .args([
+            "describe", "--tags", "--match", "v[0-9]*", "--always", "--dirty",
+        ])
         .output()
         .ok()?;
 

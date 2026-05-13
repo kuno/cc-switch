@@ -41,9 +41,11 @@ Then build the IPKs:
 ```
 
 By default, the standalone builder derives the package version from
-`git describe --tags --always --dirty` so the generated `.ipk` filenames and
-embedded control metadata match the current branch state. Use `--version` only
-when you need to override that derived version explicitly.
+`git describe --tags --match 'v[0-9]*' --always --dirty` so the generated
+`.ipk` filenames and embedded control metadata match the current branch state
+relative to product tags. OpenWrt release tags such as `openwrt-v*` are ignored
+by version derivation. Use `--version` only when you need to override that
+derived version explicitly.
 
 This produces:
 
