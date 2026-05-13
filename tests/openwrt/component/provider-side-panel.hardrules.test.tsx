@@ -15,7 +15,9 @@ const FORBIDDEN_TEXT = [
   "sharedprovidermanager",
 ] as const;
 
-function renderTab(tab: "preset-picker" | "status" | "activities" | "configure") {
+function renderTab(
+  tab: "preset-picker" | "status" | "activities" | "configure",
+) {
   const appId = tab === "configure" ? "codex" : "claude";
   const selectedProvider = createProviderView(appId, {
     active: true,
@@ -81,13 +83,8 @@ describe("ProviderSidePanel hard rules", () => {
           .getAllByRole("button", { hidden: false })
           .map((button) => button.textContent?.trim());
 
-        expect(labels).toEqual([
-          "Status",
-          "Statistics",
-          "Configure",
-          "Activities",
-        ]);
-        expect(labels).toHaveLength(4);
+        expect(labels).toEqual(["Status", "Configure"]);
+        expect(labels).toHaveLength(2);
       }
     },
   );
