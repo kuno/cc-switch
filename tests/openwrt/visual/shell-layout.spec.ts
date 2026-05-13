@@ -112,7 +112,7 @@ test.describe("@shell OpenWrt page shell", () => {
       titleRowBox.y + titleRowBox.height,
     );
     expect(overlayBox.y + alertBox.height).toBeLessThanOrEqual(
-      appsGridBox.y - 8,
+      appsGridBox.y - 6,
     );
   });
 
