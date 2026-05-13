@@ -3,24 +3,96 @@ name: OpenWrt Release
 on:
   push:
     tags:
-      - 'openwrt-v*'
+      - "openwrt-v*"
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version override (e.g. 0.1.0)'
-        required: false
+        description: "OpenWrt release version, for example 3.14.1 or openwrt-v3.14.1"
+        required: true
+        type: string
+      package_release:
+        description: "OpenWrt package release number"
+        required: true
+        default: "1"
+        type: string
+      prerelease:
+        description: "Mark the GitHub release as a prerelease"
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: write
 
 concurrency:
-  group: openwrt-release-${{ github.ref_name }}
+  group: openwrt-release-${{ github.event_name }}-${{ github.ref_name }}-${{ inputs.version || '' }}
   cancel-in-progress: true
 
 jobs:
-  build:
-    name: Build ${{ matrix.target.name }}
+  prepare:
+    name: Prepare release metadata
     runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag_name: ${{ steps.meta.outputs.tag_name }}
+      package_release: ${{ steps.meta.outputs.package_release }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+    steps:
+      - name: Determine release metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            raw_version="${{ inputs.version }}"
+            package_release="${{ inputs.package_release }}"
+            prerelease="${{ inputs.prerelease }}"
+          else
+            raw_version="${GITHUB_REF_NAME}"
+            package_release="1"
+            prerelease="false"
+          fi
+
+          version="${raw_version#openwrt-v}"
+          version="${version#v}"
+          tag_name="openwrt-v${version}"
+
+          if [ -z "$version" ]; then
+            echo "OpenWrt release version cannot be empty." >&2
+            exit 1
+          fi
+
+          if [ "${{ github.event_name }}" != "workflow_dispatch" ] && [ "$version" = "$raw_version" ]; then
+            echo "Unable to determine OpenWrt release version from '$raw_version'." >&2
+            exit 1
+          fi
+
+          if [ -z "$package_release" ]; then
+            echo "package_release cannot be empty." >&2
+            exit 1
+          fi
+
+          {
+            echo "version=$version"
+            echo "tag_name=$tag_name"
+            echo "package_release=$package_release"
+            echo "prerelease=$prerelease"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## OpenWrt Release"
+            echo
+            echo "- Version: \`$version\`"
+            echo "- Tag: \`$tag_name\`"
+            echo "- Package release: \`$package_release\`"
+            echo "- Prerelease: \`$prerelease\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  daemon:
+    name: Build daemon (${{ matrix.target.name }})
+    runs-on: ubuntu-22.04
+    needs: prepare
     strategy:
       fail-fast: false
       matrix:
@@ -34,13 +106,19 @@ jobs:
           - name: arm_cortex-a7
             rust_target: armv7-unknown-linux-musleabihf
             opkg_arch: arm_cortex-a7_neon-vfpv4
-          - name: mipsel
-            rust_target: mipsel-unknown-linux-musl
-            opkg_arch: mipsel_24kc
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Fetch upstream tags
+        run: |
+          set -euo pipefail
+          git remote add upstream https://github.com/farion1231/cc-switch.git
+          git fetch upstream --tags
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -63,182 +141,163 @@ jobs:
 
       - name: Build cc-switch binary
         working-directory: proxy-daemon
-        run: |
-          cross build --release --target ${{ matrix.target.rust_target }}
+        run: cross build --release --target ${{ matrix.target.rust_target }}
 
-      - name: Strip and compress binary
-        run: |
-          BINARY="proxy-daemon/target/${{ matrix.target.rust_target }}/release/cc-switch"
-          ls -lh "$BINARY"
-
-          # Try to strip (may fail for cross-compiled targets without strip tool)
-          strip "$BINARY" 2>/dev/null || true
-
-          # UPX compress if available (significant size reduction for embedded)
-          if command -v upx &>/dev/null; then
-            upx --best "$BINARY" || true
-          fi
-
-          ls -lh "$BINARY"
-
-      - name: Determine version
-        id: version
-        run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-          else
-            # Extract from tag: openwrt-v0.1.0 -> 0.1.0
-            echo "version=${GITHUB_REF_NAME#openwrt-v}" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Build ipk package
+      - name: Build daemon IPK
         run: |
           set -euo pipefail
+          openwrt/build-ipk.sh \
+            --package daemon \
+            --version "${{ needs.prepare.outputs.version }}" \
+            --release "${{ needs.prepare.outputs.package_release }}" \
+            --rust-target "${{ matrix.target.rust_target }}" \
+            --opkg-arch "${{ matrix.target.opkg_arch }}" \
+            --binary "proxy-daemon/target/${{ matrix.target.rust_target }}/release/cc-switch"
 
-          VERSION="${{ steps.version.outputs.version }}"
-          PKG_RELEASE="1"
-          OPKG_ARCH="${{ matrix.target.opkg_arch }}"
-          BINARY="proxy-daemon/target/${{ matrix.target.rust_target }}/release/cc-switch"
-          LUCI_SRC="openwrt/luci-app-ccswitch"
-          PKG_NAME="luci-app-cc-switch"
-          WORK_DIR="$(mktemp -d)"
-          OUTPUT_DIR="dist"
-
-          mkdir -p "$OUTPUT_DIR"
-
-          # --- Build .ipk (gzipped tar with ustar format) ---
-
-          # Control
-          CONTROL="$WORK_DIR/control"
-          mkdir -p "$CONTROL"
-          cat > "$CONTROL/control" <<EOF
-          Package: ${PKG_NAME}
-          Version: ${VERSION}-${PKG_RELEASE}
-          Depends: libc, luci-base
-          Section: luci
-          Architecture: ${OPKG_ARCH}
-          Maintainer: kuno <noreply@github.com>
-          Description: CC Switch - AI API Proxy for OpenWrt
-           AI API proxy daemon with LuCI web interface. Provides provider routing,
-           failover, request optimization, and outbound proxy configuration.
-          EOF
-
-          cat > "$CONTROL/postinst" <<'SCRIPT'
-          #!/bin/sh
-          [ -n "${IPKG_INSTROOT}" ] || {
-              chmod +x /usr/bin/cc-switch 2>/dev/null
-              /etc/init.d/rpcd restart
-              /etc/init.d/uhttpd restart
-          }
-          exit 0
-          SCRIPT
-          chmod 755 "$CONTROL/postinst"
-
-          cat > "$CONTROL/prerm" <<'SCRIPT'
-          #!/bin/sh
-          [ -n "${IPKG_INSTROOT}" ] || {
-              /etc/init.d/ccswitch disable 2>/dev/null
-              /etc/init.d/ccswitch stop 2>/dev/null
-          }
-          exit 0
-          SCRIPT
-          chmod 755 "$CONTROL/prerm"
-
-          cat > "$CONTROL/conffiles" <<EOF
-          /etc/config/ccswitch
-          EOF
-
-          # Data
-          DATA="$WORK_DIR/data"
-          mkdir -p "$DATA/usr/bin"
-          mkdir -p "$DATA/etc/config"
-          mkdir -p "$DATA/etc/init.d"
-          mkdir -p "$DATA/usr/share/rpcd/acl.d"
-          mkdir -p "$DATA/usr/share/luci/menu.d"
-          mkdir -p "$DATA/www/luci-static/resources/view/ccswitch"
-
-          cp "$BINARY" "$DATA/usr/bin/cc-switch"
-          chmod 755 "$DATA/usr/bin/cc-switch"
-
-          cp "$LUCI_SRC/root/etc/config/ccswitch"                          "$DATA/etc/config/"
-          cp "$LUCI_SRC/root/etc/init.d/ccswitch"                          "$DATA/etc/init.d/"
-          chmod 755                                                         "$DATA/etc/init.d/ccswitch"
-          cp "$LUCI_SRC/root/usr/share/rpcd/acl.d/luci-app-ccswitch.json"  "$DATA/usr/share/rpcd/acl.d/"
-          cp "$LUCI_SRC/root/usr/share/luci/menu.d/luci-app-ccswitch.json" "$DATA/usr/share/luci/menu.d/"
-          cp "$LUCI_SRC/htdocs/luci-static/resources/view/ccswitch/settings.js" \
-              "$DATA/www/luci-static/resources/view/ccswitch/"
-
-          # Assemble .ipk
-          PKG_DIR="$WORK_DIR/ipk"
-          mkdir -p "$PKG_DIR"
-
-          echo "2.0" > "$PKG_DIR/debian-binary"
-          (cd "$CONTROL" && tar --format=gnu -czf "$PKG_DIR/control.tar.gz" ./)
-          (cd "$DATA" && tar --format=gnu -czf "$PKG_DIR/data.tar.gz" ./)
-          (cd "$PKG_DIR" && tar --format=gnu -czf \
-              "$GITHUB_WORKSPACE/$OUTPUT_DIR/${PKG_NAME}_${VERSION}-${PKG_RELEASE}_${OPKG_ARCH}.ipk" \
-              debian-binary control.tar.gz data.tar.gz)
-
-          ls -lh "$OUTPUT_DIR/"
-          rm -rf "$WORK_DIR"
-
-      - name: Upload ipk artifact
+      - name: Upload daemon IPK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ipk-${{ matrix.target.name }}
-          path: dist/*.ipk
+          name: daemon-${{ matrix.target.name }}
+          path: openwrt/dist/cc-switch_*_${{ matrix.target.opkg_arch }}.ipk
+          if-no-files-found: error
 
-  release:
-    name: Publish GitHub Release
+  luci:
+    name: Build LuCI app
     runs-on: ubuntu-22.04
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/')
-    permissions:
-      contents: write
+    needs: prepare
     steps:
-      - name: Download all ipk artifacts
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Fetch upstream tags
+        run: |
+          set -euo pipefail
+          git remote add upstream https://github.com/farion1231/cc-switch.git
+          git fetch upstream --tags
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build OpenWrt provider UI bundle
+        run: pnpm build:openwrt-provider-ui
+
+      - name: Install po2lmo
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/openwrt/luci.git /tmp/luci
+          cd /tmp/luci/modules/luci-base/src
+          make po2lmo
+          sudo cp po2lmo /usr/local/bin/
+
+      - name: Build LuCI IPK
+        run: |
+          set -euo pipefail
+          CCSWITCH_IPK_SKIP_UI_REBUILD=1 openwrt/build-ipk.sh \
+            --package luci \
+            --version "${{ needs.prepare.outputs.version }}" \
+            --release "${{ needs.prepare.outputs.package_release }}"
+
+      - name: Upload LuCI IPK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: luci
+          path: openwrt/dist/luci-app-cc-switch_*.ipk
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub release
+    runs-on: ubuntu-22.04
+    needs:
+      - prepare
+      - daemon
+      - luci
+    steps:
+      - name: Download IPK artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: ipk-*
+          pattern: "*"
           path: release-assets
           merge-multiple: true
 
-      - name: Generate checksums
+      - name: Generate checksums and summary
         working-directory: release-assets
         run: |
-          sha256sum *.ipk > SHA256SUMS.txt
+          set -euo pipefail
+
+          mapfile -d '' files < <(find . -maxdepth 1 -type f -name '*.ipk' -print0 | sort -z)
+
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No IPK files were downloaded." >&2
+            exit 1
+          fi
+
+          sha256sum -- *.ipk > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
-      - name: Create GitHub Release
+          {
+            echo "## OpenWrt Release Assets"
+            echo
+            echo "| File | SHA256 |"
+            echo "| --- | --- |"
+            while read -r sha file; do
+              echo "| \`$file\` | \`$sha\` |"
+            done < SHA256SUMS.txt
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload release asset bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-release-assets-${{ needs.prepare.outputs.tag_name }}
+          path: release-assets/*
+          if-no-files-found: error
+
+      - name: Create or update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: CC Switch ${{ github.ref_name }}
-          prerelease: false
+          tag_name: ${{ needs.prepare.outputs.tag_name }}
+          target_commitish: ${{ github.sha }}
+          name: CC Switch OpenWrt ${{ needs.prepare.outputs.tag_name }}
+          prerelease: ${{ needs.prepare.outputs.prerelease }}
           body: |
             ## CC Switch for OpenWrt
 
-            AI API proxy daemon with LuCI web interface.
+            Split OpenWrt packages for the CC Switch daemon and LuCI app.
 
             ### Install
 
+            Download one daemon package for your router architecture plus the LuCI package:
+
             ```bash
-            # Download the ipk for your architecture
-            scp luci-app-cc-switch_*_<arch>.ipk root@<router-ip>:/tmp/
+            scp cc-switch_*_<arch>.ipk luci-app-cc-switch_*_all.ipk root@<router-ip>:/tmp/
             ssh root@<router-ip>
-            opkg install /tmp/luci-app-cc-switch_*.ipk
+            opkg install /tmp/cc-switch_*_<arch>.ipk /tmp/luci-app-cc-switch_*_all.ipk
             ```
 
-            ### Architectures
+            ### Packages
 
             | Package | Target |
             |---|---|
-            | `*_aarch64_generic.ipk` | ARM64 (most modern routers) |
-            | `*_x86_64.ipk` | x86_64 (VM, soft router) |
-            | `*_arm_cortex-a7_neon-vfpv4.ipk` | ARM Cortex-A7 (MT7621 etc.) |
-            | `*_mipsel_24kc.ipk` | MIPS Little-Endian (older MediaTek/Ralink) |
+            | `cc-switch_*_aarch64_generic.ipk` | ARM64 routers |
+            | `cc-switch_*_x86_64.ipk` | x86_64 routers and VMs |
+            | `cc-switch_*_arm_cortex-a7_neon-vfpv4.ipk` | ARM Cortex-A7 routers |
+            | `luci-app-cc-switch_*_all.ipk` | LuCI web app |
 
-            After install, open LuCI at **Services > CC Switch**.
+            `SHA256SUMS.txt` contains checksums for all uploaded IPKs.
           files: |
             release-assets/*.ipk
             release-assets/SHA256SUMS.txt
