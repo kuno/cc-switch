@@ -70,6 +70,9 @@ dependencies remain predictable outside the OpenWrt SDK.
 Environment:
   CCSWITCH_IPK_SKIP_UI_REBUILD=1      Skip the automatic OpenWrt provider UI rebuild
   CCSWITCH_OPENWRT_PROVIDER_UI_BUNDLE Use an explicit prebuilt provider UI bundle
+  OPENWRT_LUCI_APP_VERSION            Override the version embedded in the LuCI footer
+  CCSWITCH_BUILD_VERSION              Override the version embedded in a locally built daemon
+  CCSWITCH_PRODUCT_VERSION            Override the product version embedded in a locally built daemon
 EOF
 }
 
@@ -102,14 +105,19 @@ git_describe_version() {
 }
 
 rebuild_openwrt_provider_ui_bundle() {
+	local luci_app_version
+
 	if ! command -v pnpm >/dev/null 2>&1; then
 		die "pnpm is required to rebuild the OpenWrt provider UI bundle. Run \`pnpm install --frozen-lockfile\` first, then rerun $0."
 	fi
 
+	luci_app_version="${OPENWRT_LUCI_APP_VERSION:-$VERSION-$PKG_RELEASE}"
+
 	echo "Rebuilding OpenWrt provider UI bundle"
+	echo "  LuCI footer version: $luci_app_version"
 	if ! (
 		cd "$PROJECT_DIR"
-		pnpm build:openwrt-provider-ui
+		OPENWRT_LUCI_APP_VERSION="$luci_app_version" pnpm build:openwrt-provider-ui
 	); then
 		die "failed to rebuild the OpenWrt provider UI bundle. Run \`pnpm install --frozen-lockfile\` first, then rerun $0."
 	fi
@@ -303,16 +311,24 @@ install_openwrt_provider_ui_icons() {
 }
 
 build_daemon_binary() {
+	local build_version product_version
+
 	if [ "$BINARY_EXPLICIT" -eq 1 ]; then
 		return
 	fi
 
 	require_command cargo
 
+	build_version="${CCSWITCH_BUILD_VERSION:-$VERSION-$PKG_RELEASE}"
+	product_version="${CCSWITCH_PRODUCT_VERSION:-$VERSION}"
+
 	echo "Building fresh cc-switch daemon binary for $RUST_TARGET"
+	echo "  Daemon build version: $build_version"
 	(
 		cd "$PROJECT_DIR/proxy-daemon"
-		cargo build --release --target "$RUST_TARGET"
+		CCSWITCH_BUILD_VERSION="$build_version" \
+			CCSWITCH_PRODUCT_VERSION="$product_version" \
+			cargo build --release --target "$RUST_TARGET"
 	)
 }
 
