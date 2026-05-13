@@ -36,7 +36,7 @@ function resolveOpenWrtLuciAppVersion(): string {
   }
 
   try {
-    return execSync("git describe --tags --always --long --dirty", {
+    return execSync("git describe --tags --match 'v[0-9]*' --always --long --dirty", {
       encoding: "utf8",
     }).trim();
   } catch {
