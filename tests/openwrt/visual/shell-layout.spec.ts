@@ -94,6 +94,26 @@ test.describe("@shell OpenWrt page shell", () => {
       "pointer-events",
       "auto",
     );
+
+    const overlayBox = await page.locator(".owt-alert-overlay").boundingBox();
+    const alertBox = await page.locator(".owt-alert-strip").boundingBox();
+    const titleRowBox = await page
+      .locator(".owt-page__title-row")
+      .boundingBox();
+    const appsGridBox = await page
+      .locator('[data-slot="apps-grid"]')
+      .boundingBox();
+
+    if (!overlayBox || !alertBox || !titleRowBox || !appsGridBox) {
+      throw new Error("Alert strip layout boxes are unavailable.");
+    }
+
+    expect(overlayBox.y).toBeGreaterThanOrEqual(
+      titleRowBox.y + titleRowBox.height,
+    );
+    expect(overlayBox.y + alertBox.height).toBeLessThanOrEqual(
+      appsGridBox.y - 8,
+    );
   });
 
   test("keeps shell content positions stable when the alert is visible", async ({
@@ -142,9 +162,7 @@ test.describe("@shell OpenWrt page shell", () => {
       await page.goto(`/?component=shell&state=stopped&theme=${theme}`);
       await expect(page.getByText("Daemon stopped.")).toBeVisible();
 
-      const overlay = await page
-        .locator(".owt-alert-overlay")
-        .boundingBox();
+      const overlay = await page.locator(".owt-alert-overlay").boundingBox();
       const main = await page.locator(".owt-main").boundingBox();
 
       if (!overlay || !main) {

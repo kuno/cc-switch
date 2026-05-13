@@ -216,7 +216,7 @@ body .ccswitch-openwrt-provider-ui-overlay button svg,
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  margin: 4px 4px 22px;
+  margin: 4px 4px 60px;
 }
 
 .owt-page__title {
@@ -3764,7 +3764,7 @@ select.owt-provider-panel__input {
 /* Alert strip — Task F */
 .owt-alert-overlay {
   position: absolute;
-  top: 8px;
+  top: 70px;
   left: 0;
   right: 0;
   z-index: 30;
@@ -3803,7 +3803,7 @@ select.owt-provider-panel__input {
 @keyframes owt-alert-strip-drop {
   from {
     opacity: 0;
-    transform: translateY(-100%);
+    transform: translateY(-8px);
   }
 
   to {
