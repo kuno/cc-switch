@@ -7,8 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "OpenWrt release version, for example 3.14.1 or openwrt-v3.14.1"
-        required: true
+        description: "OpenWrt package source version. Leave empty to derive from product tags with git describe."
+        required: false
+        default: ""
         type: string
       package_release:
         description: "OpenWrt package release number"
@@ -39,6 +40,18 @@ jobs:
       package_version: ${{ steps.meta.outputs.package_version }}
       prerelease: ${{ steps.meta.outputs.prerelease }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Fetch upstream tags
+        run: |
+          set -euo pipefail
+          git remote add upstream https://github.com/farion1231/cc-switch.git
+          git fetch upstream --tags
+
       - name: Determine release metadata
         id: meta
         shell: bash
@@ -55,13 +68,10 @@ jobs:
             prerelease="false"
           fi
 
-          version="${raw_version#openwrt-v}"
-          version="${version#v}"
-          tag_name="openwrt-v${version}"
-
-          if [ -z "$version" ]; then
-            echo "OpenWrt release version cannot be empty." >&2
-            exit 1
+          if [ -n "$raw_version" ]; then
+            version="${raw_version#openwrt-}"
+          else
+            version="$(git describe --tags --match 'v[0-9]*' --always --dirty)"
           fi
 
           if [ "${{ github.event_name }}" != "workflow_dispatch" ] && [ "$version" = "$raw_version" ]; then
@@ -69,10 +79,24 @@ jobs:
             exit 1
           fi
 
+          if [ -z "$version" ]; then
+            echo "OpenWrt release version cannot be empty." >&2
+            exit 1
+          fi
+
           if [ -z "$package_release" ]; then
             echo "package_release cannot be empty." >&2
             exit 1
           fi
+
+          case "$version" in
+            v*)
+              tag_name="openwrt-${version}"
+              ;;
+            *)
+              tag_name="openwrt-v${version}"
+              ;;
+          esac
 
           package_version="${version}-${package_release}"
 

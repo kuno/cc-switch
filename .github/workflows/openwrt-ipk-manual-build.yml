@@ -95,6 +95,30 @@ jobs:
           git remote add upstream https://github.com/farion1231/cc-switch.git
           git fetch upstream --tags
 
+      - name: Determine package version
+        id: meta
+        run: |
+          set -euo pipefail
+
+          version="$(git describe --tags --match 'v[0-9]*' --always --dirty)"
+          package_release="$(sed -n 's/^PKG_RELEASE:=//p' openwrt/proxy-daemon/Makefile | head -n 1)"
+
+          if [ -z "$version" ]; then
+            echo "Unable to determine package version." >&2
+            exit 1
+          fi
+
+          if [ -z "$package_release" ]; then
+            echo "Unable to determine package release." >&2
+            exit 1
+          fi
+
+          {
+            echo "version=$version"
+            echo "package_release=$package_release"
+            echo "package_version=$version-$package_release"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Setup Rust
         if: ${{ inputs.package != 'luci' }}
         uses: dtolnay/rust-toolchain@stable
@@ -137,11 +161,16 @@ jobs:
 
       - name: Build OpenWrt provider UI bundle
         if: ${{ inputs.package != 'daemon' }}
+        env:
+          OPENWRT_LUCI_APP_VERSION: ${{ steps.meta.outputs.package_version }}
         run: pnpm build:openwrt-provider-ui
 
       - name: Build cc-switch binary
         if: ${{ inputs.package != 'luci' }}
         working-directory: proxy-daemon
+        env:
+          CCSWITCH_BUILD_VERSION: ${{ steps.meta.outputs.package_version }}
+          CCSWITCH_PRODUCT_VERSION: ${{ steps.meta.outputs.version }}
         run: cross build --release --target ${{ matrix.target.rust_target }}
 
       - name: Install po2lmo
@@ -158,6 +187,10 @@ jobs:
           set -euo pipefail
 
           args=(--package "${{ inputs.package }}")
+          args+=(
+            --version "${{ steps.meta.outputs.version }}"
+            --release "${{ steps.meta.outputs.package_release }}"
+          )
 
           if [ "${{ inputs.package }}" != "luci" ]; then
             args+=(
