@@ -740,8 +740,10 @@ function normalizeCardFromStatus(
 }
 
 function SkeletonCard({
+  animated = false,
   kind = "configured",
 }: {
+  animated?: boolean;
   kind?: "configured" | "empty";
 }) {
   const isEmpty = kind === "empty";
@@ -753,6 +755,7 @@ function SkeletonCard({
       } owt-app-card--skeleton${
         isEmpty ? " owt-app-card--empty-skeleton" : ""
       }`}
+      data-animated={animated ? "true" : "false"}
       aria-hidden="true"
     >
       <div className="owt-app-card__head">
@@ -1460,9 +1463,11 @@ export function AppsGrid({
       {loadingCards.length > 0 && (
         <div className="owt-group-grid">
           {orderedLoadingCards.map((card) => (
-            <SkeletonCard key={`${card.appId}-loading`} />
+            <SkeletonCard key={`${card.appId}-loading`} animated />
           ))}
-          {loadingCards.length % 2 === 1 && <SkeletonCard key="loading-pad" />}
+          {loadingCards.length % 2 === 1 && (
+            <SkeletonCard key="loading-pad" animated />
+          )}
         </div>
       )}
 

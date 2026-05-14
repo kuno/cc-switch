@@ -229,6 +229,11 @@ describe("AppsGrid", () => {
       padToEven(APP_OPTIONS.length),
     );
     expect(
+      container.querySelectorAll(
+        '.owt-app-card--skeleton[data-animated="true"]',
+      ),
+    ).toHaveLength(padToEven(APP_OPTIONS.length));
+    expect(
       container.querySelectorAll(".owt-app-card__skeleton-active"),
     ).toHaveLength(padToEven(APP_OPTIONS.length));
     expect(screen.queryByText("Not configured")).toBeNull();
@@ -257,6 +262,11 @@ describe("AppsGrid", () => {
     expect(container.querySelectorAll(".owt-app-card--skeleton")).toHaveLength(
       1,
     );
+    expect(
+      container.querySelectorAll(
+        '.owt-app-card--skeleton[data-animated="true"]',
+      ),
+    ).toHaveLength(0);
   });
 
   it("keeps tab and shift-tab order aligned with the three card surfaces", async () => {

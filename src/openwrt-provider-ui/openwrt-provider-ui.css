@@ -4081,6 +4081,10 @@ select.owt-provider-panel__input {
   opacity: 0.92;
 }
 
+.owt-app-card--skeleton[data-animated="true"] {
+  animation: owt-skeleton-card-breathe 2.2s ease-in-out infinite;
+}
+
 .owt-app-card--skeleton:hover {
   transform: none;
   border-color: var(--line);
@@ -4104,12 +4108,14 @@ select.owt-provider-panel__input {
 .owt-app-card__skeleton-mini {
   background: var(--panel-softer);
   border-radius: 6px;
+  animation: none;
 }
 
 .owt-app-card__skeleton-line {
   display: block;
   border-radius: 999px;
   background: color-mix(in srgb, var(--panel-softer) 80%, var(--text) 6%);
+  animation: none;
 }
 
 .owt-app-card__skeleton-copy {
@@ -4134,6 +4140,55 @@ select.owt-provider-panel__input {
 .owt-app-card--empty-skeleton .owt-app-card__skeleton-chip {
   background: transparent;
   border: 1px dashed var(--line-strong);
+}
+
+.owt-app-card--skeleton[data-animated="true"] .owt-app-card__skeleton-icon,
+.owt-app-card--skeleton[data-animated="true"] .owt-app-card__skeleton-chip,
+.owt-app-card--skeleton[data-animated="true"] .owt-app-card__skeleton-mini {
+  background:
+    linear-gradient(
+      100deg,
+      transparent 0%,
+      color-mix(in srgb, var(--accent) 22%, white 16%) 42%,
+      transparent 72%
+    ),
+    var(--panel-softer);
+  background-size:
+    220% 100%,
+    auto;
+  animation: owt-skeleton-shimmer 1.15s ease-in-out infinite;
+}
+
+.owt-app-card--skeleton[data-animated="true"] .owt-app-card__skeleton-line {
+  background:
+    linear-gradient(
+      100deg,
+      transparent 0%,
+      color-mix(in srgb, var(--accent) 24%, white 18%) 42%,
+      transparent 72%
+    ),
+    color-mix(in srgb, var(--panel-softer) 80%, var(--text) 6%);
+  background-size:
+    220% 100%,
+    auto;
+  animation: owt-skeleton-shimmer 1.15s ease-in-out infinite;
+}
+
+.owt-app-card--empty-skeleton[data-animated="true"]
+  .owt-app-card__skeleton-icon,
+.owt-app-card--empty-skeleton[data-animated="true"]
+  .owt-app-card__skeleton-chip {
+  background:
+    linear-gradient(
+      100deg,
+      transparent 0%,
+      color-mix(in srgb, var(--accent) 18%, white 14%) 42%,
+      transparent 72%
+    ),
+    color-mix(in srgb, var(--panel-softer) 28%, transparent);
+  background-size:
+    220% 100%,
+    auto;
 }
 
 .owt-app-card__skeleton-chip {
@@ -4224,6 +4279,39 @@ select.owt-provider-panel__input {
 .owt-app-card__skeleton-usage-cell:first-child {
   padding-left: 0;
   border-left: 0;
+}
+
+@keyframes owt-skeleton-shimmer {
+  0% {
+    background-position:
+      120% 0,
+      0 0;
+  }
+  100% {
+    background-position:
+      -120% 0,
+      0 0;
+  }
+}
+
+@keyframes owt-skeleton-card-breathe {
+  0%,
+  100% {
+    opacity: 0.9;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .owt-app-card--skeleton,
+  .owt-app-card__skeleton-icon,
+  .owt-app-card__skeleton-chip,
+  .owt-app-card__skeleton-mini,
+  .owt-app-card__skeleton-line {
+    animation: none;
+  }
 }
 
 @media (max-width: 640px) {
