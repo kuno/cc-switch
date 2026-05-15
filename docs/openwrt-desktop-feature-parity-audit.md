@@ -38,9 +38,10 @@ As of 2026-05-15, five backend-only parity slices have completed in isolated
 Paseo worker worktrees. The outbound proxy test has been integrated into
 `openwrt-proxy`; endpoint latency/model discovery has also been integrated.
 Stream/model health checks are now integrated as backend OpenWrt admin APIs.
-Backup/restore and circuit/log diagnostics remain worker-ready but not yet
-integrated. This document tracks that progress separately from features already
-present on the main branch.
+Backup/export/restore is now integrated as backend OpenWrt admin APIs.
+Circuit/log diagnostics remain worker-ready but not yet integrated. This
+document tracks that progress separately from features already present on the
+main branch.
 
 The largest parity differences need backend design before implementation:
 OpenCode/OpenClaw/Hermes support, MCP/prompts/skills, managed OAuth/device flow,
@@ -87,7 +88,7 @@ Status legend:
 | --- | --- | --- |
 | Stream/model health checks | implemented | Integrated on `openwrt-proxy`: provider-scoped `GET/POST /stream-check` admin endpoints, rpcd `get_provider_stream_check` / `run_provider_stream_check`, conservative OpenWrt bounds, latest-result persistence/readback, error categorization, and tests. |
 | Endpoint latency and model discovery | implemented | Integrated on `openwrt-proxy`: provider-scoped `/latency` and `/models` admin endpoints, rpcd `test_provider_latency` / `fetch_provider_models`, redacted structured responses, and tests. |
-| Backup/export/restore | backend ready | Worker `5f8aee9` added backup list/create/import/download/delete/restore APIs for daemon DB/data under `/etc/cc-switch`, safety backup before restore, metadata/schema validation, rpcd bridge, and tests. |
+| Backup/export/restore | implemented | Integrated on `openwrt-proxy`: backup list/create/import/download/delete/restore APIs for daemon DB/data under `/etc/cc-switch`, safety backup before restore, metadata/schema validation, rpcd bridge, and tests. |
 | Circuit-breaker and log diagnostics | backend ready | Worker `2a45da7` added richer circuit-breaker diagnostics, request-log diagnostics, `failuresOnly`, bounded daemon log tail, rpcd bridge, and tests. |
 | Global outbound proxy test | implemented | Integrated on `openwrt-proxy`: `/openwrt/admin/outbound-proxy/test` plus rpcd `test_outbound_proxy`, redaction, bounded single-shot behavior, and tests. |
 | Provider duplicate/import helpers | needs UI | Worth doing, but the user wants designer mockups before visible LuCI changes. |
@@ -106,7 +107,7 @@ Status legend:
 | Auto failover queue, max retries, provider health, circuit breaker stats/reset (`src/components/proxy/FailoverQueueManager.tsx`, `src/components/proxy/CircuitBreakerConfigPanel.tsx`, `src-tauri/src/commands/failover.rs`) | OpenWrt exposes queue add/remove/reorder, auto failover, max retries, health, circuit breaker state/reset, and LuCI controls/cards (`proxy-daemon/src/openwrt_http.rs`, `proxy-daemon/src/openwrt_admin.rs`, `src/openwrt-provider-ui/components/AppCard.tsx`, `openwrt/luci-app-ccswitch/root/usr/share/rpcd/ucode/ccswitch`). Backend diagnostics enrichment is ready in worker `2a45da7`. | Mostly implemented; richer diagnostics pending integration/UI | Medium | Suitable; mostly LuCI surface over existing daemon state | P1 integrate backend, then UI |
 | Usage dashboard: summary, trends, provider stats, model stats, request logs/detail, pricing config, data sources (`src/components/usage/UsageDashboard.tsx`, `src/lib/api/usage.ts`, `src-tauri/src/commands/usage.rs`) | OpenWrt exposes app-scoped usage summary, provider stats, recent activity, request logs/detail, and quota/status; no trends, model stats, pricing editor, or data-source sync UI/API (`proxy-daemon/src/openwrt_http.rs`, `proxy-daemon/src/openwrt_admin.rs`, `src/openwrt-provider-ui/components/ActivitySidePanel.tsx`) | Partial parity | High | Suitable if aggregated and paginated to avoid router load | P1 |
 | Stream/model health checks and global/per-provider check config (`src/hooks/useStreamCheck.ts`, `src/components/usage/ModelTestConfigPanel.tsx`, `src-tauri/src/commands/stream_check.rs`, `src-tauri/src/services/stream_check.rs`) | Backend support is now implemented on `openwrt-proxy` with provider-scoped latest-result and run-check endpoints plus rpcd bridge methods. LuCI has no visual controls yet. | Backend implemented; UI pending design | High | Suitable with bounded retries and opt-in execution | P1 UI |
-| Import/export, local DB backups, restore, backup retention (`src/components/settings/ImportExportSection.tsx`, `src/components/settings/BackupListSection.tsx`, `src/lib/api/settings.ts`, `src-tauri/src/database/backup.rs`) | OpenWrt package preserves UCI config and `/etc/cc-switch`, but LuCI has no export/import/backup UI for router DB state in the audited baseline (`openwrt/README.md`, `openwrt/proxy-daemon/files/etc/init.d/ccswitch`). Backend-only daemon DB/data backup APIs are ready in worker `5f8aee9`. | Missing from main branch; backend ready for review | High for router maintenance and rollback | Suitable if restricted to `/etc/cc-switch` and authenticated LuCI users | P1 integrate backend, then UI |
+| Import/export, local DB backups, restore, backup retention (`src/components/settings/ImportExportSection.tsx`, `src/components/settings/BackupListSection.tsx`, `src/lib/api/settings.ts`, `src-tauri/src/database/backup.rs`) | Backend support is now implemented on `openwrt-proxy` with managed daemon DB backup list/create/import/download/delete/restore endpoints under `/etc/cc-switch/backups`. LuCI has no visual controls yet. | Backend implemented; UI pending design | High for router maintenance and rollback | Suitable if restricted to `/etc/cc-switch` and authenticated LuCI users | P1 UI |
 | WebDAV sync and auto-sync (`src/components/settings/WebdavSyncSection.tsx`, `src-tauri/src/commands/webdav_sync.rs`, `src-tauri/src/services/webdav_auto_sync.rs`) | Proxy daemon has a no-op WebDAV auto-sync stub because desktop uses Tauri AppHandle events (`proxy-daemon/src/services/webdav_auto_sync.rs`) | Missing by design | Medium | Needs credential, conflict, and recovery design before router use | P2 design |
 | Global outbound proxy entry, test, and local proxy scan (`src/components/settings/GlobalProxySettings.tsx`, `src/lib/api/settings.ts`, `src-tauri/src/lib.rs`) | OpenWrt UCI supports static `http_proxy`/`https_proxy` env passed to the daemon, and backend testing is now implemented via `/openwrt/admin/outbound-proxy/test` plus rpcd `test_outbound_proxy` (`openwrt/proxy-daemon/files/etc/config/ccswitch`, `openwrt/proxy-daemon/files/etc/init.d/ccswitch`, `proxy-daemon/src/openwrt_http.rs`, `openwrt/luci-app-ccswitch/root/usr/share/rpcd/ucode/ccswitch`). LuCI has no visual test control yet. | Partial parity; backend implemented, UI pending design | Medium | Static test is suitable; local scan is less useful on routers | P2 UI |
 | MCP unified manager (`src/components/mcp/UnifiedMcpPanel.tsx`, `src-tauri/src/commands/mcp.rs`, `src-tauri/src/app_config.rs`) | No OpenWrt admin route or LuCI UI for MCP; DB schema has MCP tables but OpenWrt contract does not expose them (`src-tauri/src/database/schema.rs`, `proxy-daemon/src/openwrt_http.rs`) | Missing | Unclear | Needs backend design because router may not own client-side MCP files | P2 design |
@@ -179,11 +180,12 @@ Desktop has config import/export and DB backup/restore surfaces
 `src/components/settings/BackupListSection.tsx`, `src/lib/api/settings.ts`).
 OpenWrt package lifecycle preserves `/etc/config/ccswitch` and `/etc/cc-switch`,
 but LuCI does not expose a backup workflow (`openwrt/README.md`,
-`openwrt/proxy-daemon/files/etc/init.d/ccswitch`). Add authenticated backup and
-restore of the daemon DB/config directory with safety backup on restore. This
-directly supports OpenWrt package maintenance and rollback workflows. A
-backend-only daemon DB/data backup API is ready in worker `5f8aee9`; UCI
-restore remains intentionally out of scope for that slice.
+`openwrt/proxy-daemon/files/etc/init.d/ccswitch`). OpenWrt now exposes
+authenticated backend APIs to list, create, import, download, delete, and
+restore managed daemon DB backups under `/etc/cc-switch/backups`. Restore first
+creates a safety backup, validates schema compatibility, and intentionally
+leaves `/etc/config/ccswitch` out of scope because UCI config is OpenWrt-owned.
+The LuCI UI can be added after design.
 
 ### Circuit-breaker and log diagnostics - mostly LuCI
 
