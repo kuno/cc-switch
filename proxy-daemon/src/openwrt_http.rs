@@ -9,9 +9,11 @@ use crate::proxy::providers::{
 use crate::proxy::server::ProxyState;
 use crate::services::usage_stats::LogFilters;
 use axum::{
+    body::Bytes,
     extract::{Path, Query, State},
     http::StatusCode,
-    routing::{get, post, put},
+    response::{IntoResponse, Response},
+    routing::{delete, get, post, put},
     Json, Router,
 };
 use serde::Deserialize;
@@ -24,6 +26,23 @@ pub(crate) fn mount_openwrt_admin_routes(router: Router<ProxyState>) -> Router<P
         .route(
             "/openwrt/admin/outbound-proxy/test",
             post(openwrt_test_outbound_proxy),
+        )
+        .route(
+            "/openwrt/admin/backups",
+            get(openwrt_list_backups).post(openwrt_create_backup),
+        )
+        .route("/openwrt/admin/backups/import", post(openwrt_import_backup))
+        .route(
+            "/openwrt/admin/backups/:filename/download",
+            get(openwrt_download_backup),
+        )
+        .route(
+            "/openwrt/admin/backups/:filename",
+            delete(openwrt_delete_backup),
+        )
+        .route(
+            "/openwrt/admin/backups/:filename/restore",
+            post(openwrt_restore_backup),
         )
         .route(
             "/openwrt/admin/apps/:app/runtime",
@@ -214,6 +233,79 @@ fn normalize_optional_query_filter(value: Option<String>) -> Option<String> {
 async fn openwrt_get_admin_meta() -> (StatusCode, Json<Value>) {
     match openwrt_admin::get_admin_meta() {
         Ok(meta) => openwrt_admin_ok(meta),
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+async fn openwrt_list_backups(State(state): State<ProxyState>) -> (StatusCode, Json<Value>) {
+    match openwrt_admin::list_backups(state.db.as_ref()) {
+        Ok(backups) => openwrt_admin_ok(backups),
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+async fn openwrt_create_backup(State(state): State<ProxyState>) -> (StatusCode, Json<Value>) {
+    match openwrt_admin::create_backup(state.db.as_ref()) {
+        Ok(backup) => openwrt_admin_ok(backup),
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+async fn openwrt_import_backup(
+    Json(payload): Json<openwrt_admin::OpenWrtBackupImportPayload>,
+) -> (StatusCode, Json<Value>) {
+    if payload.data_base64.len() > crate::database::Database::backup_import_limit_bytes() * 2 {
+        return openwrt_admin_error(anyhow::anyhow!(
+            "base64 backup payload exceeds import limit"
+        ));
+    }
+
+    match openwrt_admin::import_backup(payload) {
+        Ok(backup) => openwrt_admin_ok(backup),
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+async fn openwrt_download_backup(Path(filename): Path<String>) -> Response {
+    match openwrt_admin::read_backup_file(&filename) {
+        Ok((entry, bytes)) => (
+            StatusCode::OK,
+            [
+                ("content-type", "application/octet-stream".to_string()),
+                (
+                    "content-disposition",
+                    format!("attachment; filename=\"{}\"", entry.filename),
+                ),
+                ("content-length", bytes.len().to_string()),
+                (
+                    "x-cc-switch-schema-version",
+                    entry.schema_version.unwrap_or(0).to_string(),
+                ),
+                (
+                    "x-cc-switch-supported-schema-version",
+                    entry.supported_schema_version.to_string(),
+                ),
+            ],
+            Bytes::from(bytes),
+        )
+            .into_response(),
+        Err(error) => openwrt_admin_error(error).into_response(),
+    }
+}
+
+async fn openwrt_delete_backup(Path(filename): Path<String>) -> (StatusCode, Json<Value>) {
+    match openwrt_admin::delete_backup(&filename) {
+        Ok(deleted) => openwrt_admin_ok(deleted),
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+async fn openwrt_restore_backup(
+    Path(filename): Path<String>,
+    State(state): State<ProxyState>,
+) -> (StatusCode, Json<Value>) {
+    match openwrt_admin::restore_backup(state.db.as_ref(), &filename) {
+        Ok(restored) => openwrt_admin_ok(restored),
         Err(error) => openwrt_admin_error(error),
     }
 }
@@ -1005,6 +1097,18 @@ mod tests {
         assert_eq!(
             body["service"]["version"],
             Value::String(crate::version::build_version().to_string())
+        );
+        assert_eq!(
+            body["service"]["backupScope"],
+            Value::String("database".to_string())
+        );
+        assert_eq!(
+            body["service"]["databaseFile"],
+            Value::String("cc-switch.db".to_string())
+        );
+        assert_eq!(
+            body["service"]["supportedSchemaVersion"],
+            Value::from(crate::database::Database::supported_schema_version())
         );
 
         let apps = body["apps"].as_array().expect("apps array");

@@ -135,6 +135,28 @@ The init script uses procd and treats config reload as a full restart because
 the daemon consumes listen/proxy/log settings from process environment at
 startup.
 
+## Maintenance backups
+
+The OpenWrt admin API exposes backend-only maintenance endpoints for daemon
+state under the configured data directory (`/etc/cc-switch` from the packaged
+init script):
+
+- `GET /openwrt/admin/backups` lists managed database backups with size,
+  timestamp, schema metadata, daemon version, and scope.
+- `POST /openwrt/admin/backups` creates a new `cc-switch.db` snapshot under
+  `/etc/cc-switch/backups`.
+- `GET /openwrt/admin/backups/<filename>/download` downloads a managed backup.
+- `POST /openwrt/admin/backups/import` imports a base64-encoded SQLite backup
+  into the managed backup directory without accepting raw filesystem paths.
+- `POST /openwrt/admin/backups/<filename>/restore` restores a managed backup
+  after first creating a safety backup of the current database.
+- `DELETE /openwrt/admin/backups/<filename>` deletes a managed backup.
+
+These endpoints intentionally do not restore `/etc/config/ccswitch`. The UCI
+file is OpenWrt-owned configuration and remains separate from daemon runtime
+data; this maintenance slice backs up and restores the daemon database/data-dir
+state first.
+
 ## LuCI
 
 Open the LuCI page at:

@@ -1,5 +1,6 @@
 use crate::app_config::AppType;
 use crate::config::sanitize_provider_name;
+use crate::database::backup::BackupEntry;
 use crate::database::Database;
 use crate::error::AppError;
 use crate::provider::Provider;
@@ -27,6 +28,7 @@ use crate::services::usage_stats::{
 use crate::services::{model_fetch, speedtest::SpeedtestService};
 use crate::version;
 use anyhow::{anyhow, Context};
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -69,6 +71,8 @@ const DEFAULT_PROVIDER_ID: &str = CLAUDE_DEFAULT_PROVIDER_ID;
 const DEFAULT_TOKEN_FIELD: &str = CLAUDE_DEFAULT_TOKEN_FIELD;
 
 type ClaudeProviderPayload = OpenWrtProviderPayload;
+
+const OPENWRT_BACKUP_SCOPE: &str = "database";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -114,6 +118,14 @@ pub struct OpenWrtAppConfigPayload {
 pub struct OpenWrtOutboundProxyTestPayload {
     #[serde(default)]
     pub candidate_proxy_url: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtBackupImportPayload {
+    #[serde(default)]
+    pub filename: Option<String>,
+    pub data_base64: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -220,6 +232,49 @@ pub struct OpenWrtAdminServiceMetaView {
     pub config_file: &'static str,
     pub admin_base_path: &'static str,
     pub version: String,
+    pub data_dir: String,
+    pub backup_scope: &'static str,
+    pub database_file: &'static str,
+    pub backups_dir: &'static str,
+    pub supported_schema_version: i32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtBackupListView {
+    pub backups: Vec<BackupEntry>,
+    pub data_dir: String,
+    pub backup_scope: &'static str,
+    pub database_file: &'static str,
+    pub backups_dir: &'static str,
+    pub uci_config_file: &'static str,
+    pub uci_restore_supported: bool,
+    pub current_schema_version: i32,
+    pub supported_schema_version: i32,
+    pub daemon_version: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtBackupMutationView {
+    pub backup: BackupEntry,
+    pub backup_scope: &'static str,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtBackupDeleteView {
+    pub deleted_filename: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtBackupRestoreView {
+    pub restored_backup: BackupEntry,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub safety_backup: Option<BackupEntry>,
+    pub backup_scope: &'static str,
+    pub uci_restore_supported: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -967,8 +1022,98 @@ pub fn get_admin_meta() -> anyhow::Result<OpenWrtAdminMetaView> {
             config_file: "/etc/config/ccswitch",
             admin_base_path: "/openwrt/admin",
             version: version::build_version().to_string(),
+            data_dir: crate::config::get_app_config_dir().display().to_string(),
+            backup_scope: OPENWRT_BACKUP_SCOPE,
+            database_file: "cc-switch.db",
+            backups_dir: "backups",
+            supported_schema_version: Database::supported_schema_version(),
         },
         apps,
+    })
+}
+
+pub fn list_backups(db: &Database) -> anyhow::Result<OpenWrtBackupListView> {
+    Ok(OpenWrtBackupListView {
+        backups: Database::list_backups().map_err(|e| anyhow!("failed to list backups: {e}"))?,
+        data_dir: crate::config::get_app_config_dir().display().to_string(),
+        backup_scope: OPENWRT_BACKUP_SCOPE,
+        database_file: "cc-switch.db",
+        backups_dir: "backups",
+        uci_config_file: "/etc/config/ccswitch",
+        uci_restore_supported: false,
+        current_schema_version: db
+            .current_schema_version()
+            .map_err(|e| anyhow!("failed to read current schema version: {e}"))?,
+        supported_schema_version: Database::supported_schema_version(),
+        daemon_version: version::build_version().to_string(),
+    })
+}
+
+pub fn create_backup(db: &Database) -> anyhow::Result<OpenWrtBackupMutationView> {
+    let path = db
+        .backup_database_file()
+        .map_err(|e| anyhow!("failed to create backup: {e}"))?
+        .ok_or_else(|| anyhow!("database file not found, backup skipped"))?;
+    let filename = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| anyhow!("backup file has invalid filename"))?;
+    let backup = Database::get_backup_entry(filename)
+        .map_err(|e| anyhow!("failed to read created backup metadata: {e}"))?;
+
+    Ok(OpenWrtBackupMutationView {
+        backup,
+        backup_scope: OPENWRT_BACKUP_SCOPE,
+    })
+}
+
+pub fn import_backup(
+    payload: OpenWrtBackupImportPayload,
+) -> anyhow::Result<OpenWrtBackupMutationView> {
+    let data = BASE64_STANDARD
+        .decode(payload.data_base64.trim())
+        .map_err(|e| anyhow!("invalid base64 backup payload: {e}"))?;
+    let backup = Database::import_backup_file(payload.filename.as_deref(), &data)
+        .map_err(|e| anyhow!("failed to import backup: {e}"))?;
+
+    Ok(OpenWrtBackupMutationView {
+        backup,
+        backup_scope: OPENWRT_BACKUP_SCOPE,
+    })
+}
+
+pub fn read_backup_file(filename: &str) -> anyhow::Result<(BackupEntry, Vec<u8>)> {
+    Database::read_backup_file(filename).map_err(|e| anyhow!("failed to read backup: {e}"))
+}
+
+pub fn delete_backup(filename: &str) -> anyhow::Result<OpenWrtBackupDeleteView> {
+    Database::delete_backup(filename).map_err(|e| anyhow!("failed to delete backup: {e}"))?;
+    Ok(OpenWrtBackupDeleteView {
+        deleted_filename: filename.to_string(),
+    })
+}
+
+pub fn restore_backup(db: &Database, filename: &str) -> anyhow::Result<OpenWrtBackupRestoreView> {
+    let restored_backup = Database::get_backup_entry(filename)
+        .map_err(|e| anyhow!("failed to read restore backup metadata: {e}"))?;
+    let safety_id = db
+        .restore_from_backup(filename)
+        .map_err(|e| anyhow!("failed to restore backup: {e}"))?;
+    let safety_backup = if safety_id.is_empty() {
+        None
+    } else {
+        let safety_filename = format!("{safety_id}.db");
+        Some(
+            Database::get_backup_entry(&safety_filename)
+                .map_err(|e| anyhow!("failed to read safety backup metadata: {e}"))?,
+        )
+    };
+
+    Ok(OpenWrtBackupRestoreView {
+        restored_backup,
+        safety_backup,
+        backup_scope: OPENWRT_BACKUP_SCOPE,
+        uci_restore_supported: false,
     })
 }
 

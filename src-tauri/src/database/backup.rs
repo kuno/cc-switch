@@ -2,19 +2,31 @@
 //!
 //! 提供 SQL 导出/导入和二进制快照备份功能。
 
-use super::{lock_conn, Database};
+use super::{lock_conn, Database, SCHEMA_VERSION};
 use crate::config::get_app_config_dir;
 use crate::error::AppError;
 use chrono::{Local, Utc};
 use rusqlite::backup::{Backup, StepResult};
 use rusqlite::types::ValueRef;
-use rusqlite::Connection;
+use rusqlite::{Connection, OpenFlags};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 use tempfile::{Builder, NamedTempFile};
 
 const CC_SWITCH_SQL_EXPORT_HEADER: &str = "-- CC Switch SQLite 导出";
+const BACKUP_IMPORT_LIMIT_BYTES: usize = 128 * 1024 * 1024;
+const CC_SWITCH_BACKUP_SCHEMA_MARKERS: &[(&str, &[&str])] = &[
+    (
+        "providers",
+        &["id", "app_type", "name", "settings_config", "meta"],
+    ),
+    (
+        "mcp_servers",
+        &["id", "name", "server_config", "enabled_claude"],
+    ),
+    ("settings", &["key", "value"]),
+];
 
 /// Bound combined INSERT batches while still amortizing statement parsing.
 /// A row larger than this cap is emitted alone because it cannot be split.
@@ -105,12 +117,15 @@ const SYNC_PRESERVE_TABLES: &[&str] = &[
 ];
 
 /// A database backup entry for the UI
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BackupEntry {
     pub filename: String,
     pub size_bytes: u64,
     pub created_at: String, // ISO 8601
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schema_version: Option<i32>,
+    pub supported_schema_version: i32,
 }
 
 impl Database {
@@ -974,28 +989,90 @@ impl Database {
             .filter_map(|e| e.ok())
             .filter(|e| e.path().extension().map(|ext| ext == "db").unwrap_or(false))
             .filter_map(|e| {
-                let metadata = e.metadata().ok()?;
                 let filename = e.file_name().to_string_lossy().to_string();
-                let size_bytes = metadata.len();
-                let created_at = metadata
-                    .modified()
-                    .ok()
-                    .map(|t| {
-                        let dt: chrono::DateTime<Utc> = t.into();
-                        dt.to_rfc3339()
-                    })
-                    .unwrap_or_default();
-                Some(BackupEntry {
-                    filename,
-                    size_bytes,
-                    created_at,
-                })
+                Self::backup_entry_for_filename(&backup_dir, &filename).ok()
             })
             .collect();
 
         // Sort by created_at descending (newest first)
         entries.sort_by(|a, b| b.created_at.cmp(&a.created_at));
         Ok(entries)
+    }
+
+    pub fn supported_schema_version() -> i32 {
+        SCHEMA_VERSION
+    }
+
+    pub fn current_schema_version(&self) -> Result<i32, AppError> {
+        let conn = lock_conn!(self.conn);
+        Self::get_user_version(&conn)
+    }
+
+    pub fn backup_import_limit_bytes() -> usize {
+        BACKUP_IMPORT_LIMIT_BYTES
+    }
+
+    pub fn get_backup_entry(filename: &str) -> Result<BackupEntry, AppError> {
+        Self::validate_backup_filename(filename)?;
+        let backup_dir = get_app_config_dir().join("backups");
+        Self::backup_entry_for_filename(&backup_dir, filename)
+    }
+
+    pub fn read_backup_file(filename: &str) -> Result<(BackupEntry, Vec<u8>), AppError> {
+        Self::validate_backup_filename(filename)?;
+        let backup_dir = get_app_config_dir().join("backups");
+        let entry = Self::backup_entry_for_filename(&backup_dir, filename)?;
+        let backup_path = backup_dir.join(filename);
+        let bytes = fs::read(&backup_path).map_err(|e| AppError::io(&backup_path, e))?;
+        Ok((entry, bytes))
+    }
+
+    pub fn import_backup_file(
+        filename: Option<&str>,
+        bytes: &[u8],
+    ) -> Result<BackupEntry, AppError> {
+        if bytes.is_empty() {
+            return Err(AppError::InvalidInput(
+                "Backup payload cannot be empty".to_string(),
+            ));
+        }
+        if bytes.len() > BACKUP_IMPORT_LIMIT_BYTES {
+            return Err(AppError::InvalidInput(format!(
+                "Backup payload exceeds {} MiB limit",
+                BACKUP_IMPORT_LIMIT_BYTES / 1024 / 1024
+            )));
+        }
+
+        let backup_dir = get_app_config_dir().join("backups");
+        fs::create_dir_all(&backup_dir).map_err(|e| AppError::io(&backup_dir, e))?;
+
+        let filename = match filename {
+            Some(filename) => Self::normalize_import_backup_filename(filename)?,
+            None => Self::unique_backup_filename(&backup_dir, "imported_db_backup"),
+        };
+        Self::validate_backup_filename(&filename)?;
+
+        let target_path = backup_dir.join(&filename);
+        if target_path.exists() {
+            return Err(AppError::InvalidInput(format!(
+                "A backup named '{filename}' already exists"
+            )));
+        }
+
+        let temp = NamedTempFile::new_in(&backup_dir).map_err(|e| AppError::IoContext {
+            context: "创建临时备份文件失败".to_string(),
+            source: e,
+        })?;
+        fs::write(temp.path(), bytes).map_err(|e| AppError::io(temp.path(), e))?;
+        Self::validate_sqlite_backup_file(temp.path())?;
+
+        temp.persist(&target_path)
+            .map_err(|e| AppError::IoContext {
+                context: format!("保存导入备份失败: {}", target_path.display()),
+                source: e.error,
+            })?;
+
+        Self::backup_entry_for_filename(&backup_dir, &filename)
     }
 
     /// Restore database from a backup file. Returns the safety backup ID.
@@ -1011,16 +1088,7 @@ impl Database {
     where
         F: FnOnce(Option<&Path>) -> Result<(), AppError>,
     {
-        // Security: validate filename to prevent path traversal
-        if filename.contains("..")
-            || filename.contains('/')
-            || filename.contains('\\')
-            || !filename.ends_with(".db")
-        {
-            return Err(AppError::InvalidInput(
-                "Invalid backup filename".to_string(),
-            ));
-        }
+        Self::validate_backup_filename(filename)?;
 
         let backup_file_guard = lock_backup_file_operations()?;
         let backup_dir = get_app_config_dir().join("backups");
@@ -1031,6 +1099,7 @@ impl Database {
                 "Backup file not found: {filename}"
             )));
         }
+        Self::validate_sqlite_backup_file(&backup_path)?;
 
         // Open read-only before creating the safety backup. `Connection::open`
         // would recreate a source removed by retention cleanup as an empty DB.
@@ -1089,16 +1158,7 @@ impl Database {
 
     /// Rename a backup file. Returns the new filename.
     pub fn rename_backup(old_filename: &str, new_name: &str) -> Result<String, AppError> {
-        // Validate old filename (path traversal + .db suffix)
-        if old_filename.contains("..")
-            || old_filename.contains('/')
-            || old_filename.contains('\\')
-            || !old_filename.ends_with(".db")
-        {
-            return Err(AppError::InvalidInput(
-                "Invalid backup filename".to_string(),
-            ));
-        }
+        Self::validate_backup_filename(old_filename)?;
 
         // Clean new name
         let trimmed = new_name.trim();
@@ -1153,16 +1213,7 @@ impl Database {
 
     /// Delete a backup file permanently.
     pub fn delete_backup(filename: &str) -> Result<(), AppError> {
-        // Validate filename (path traversal + .db suffix)
-        if filename.contains("..")
-            || filename.contains('/')
-            || filename.contains('\\')
-            || !filename.ends_with(".db")
-        {
-            return Err(AppError::InvalidInput(
-                "Invalid backup filename".to_string(),
-            ));
-        }
+        Self::validate_backup_filename(filename)?;
 
         let _backup_file_guard = lock_backup_file_operations()?;
         let backup_path = get_app_config_dir().join("backups").join(filename);
@@ -1176,6 +1227,128 @@ impl Database {
         log::info!("Deleted backup: {filename}");
         Ok(())
     }
+
+    fn validate_backup_filename(filename: &str) -> Result<(), AppError> {
+        if filename.is_empty()
+            || filename.contains("..")
+            || filename.contains('/')
+            || filename.contains('\\')
+            || filename.contains('\0')
+            || !filename.ends_with(".db")
+            || Path::new(filename)
+                .file_name()
+                .and_then(|name| name.to_str())
+                != Some(filename)
+        {
+            return Err(AppError::InvalidInput(
+                "Invalid backup filename".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn normalize_import_backup_filename(filename: &str) -> Result<String, AppError> {
+        let trimmed = filename.trim();
+        if trimmed.is_empty() {
+            return Err(AppError::InvalidInput(
+                "Backup filename cannot be empty".to_string(),
+            ));
+        }
+
+        let filename = if trimmed.ends_with(".db") {
+            trimmed.to_string()
+        } else {
+            format!("{trimmed}.db")
+        };
+        Self::validate_backup_filename(&filename)?;
+        Ok(filename)
+    }
+
+    fn unique_backup_filename(backup_dir: &Path, prefix: &str) -> String {
+        let base = format!("{}_{}", prefix, Local::now().format("%Y%m%d_%H%M%S"));
+        let mut filename = format!("{base}.db");
+        let mut counter = 1;
+        while backup_dir.join(&filename).exists() {
+            filename = format!("{base}_{counter}.db");
+            counter += 1;
+        }
+        filename
+    }
+
+    fn backup_entry_for_filename(dir: &Path, filename: &str) -> Result<BackupEntry, AppError> {
+        Self::validate_backup_filename(filename)?;
+        let path = dir.join(filename);
+        let metadata = path.metadata().map_err(|e| AppError::io(&path, e))?;
+        let created_at = metadata
+            .modified()
+            .ok()
+            .map(|t| {
+                let dt: chrono::DateTime<Utc> = t.into();
+                dt.to_rfc3339()
+            })
+            .unwrap_or_default();
+
+        Ok(BackupEntry {
+            filename: filename.to_string(),
+            size_bytes: metadata.len(),
+            created_at,
+            schema_version: Self::read_backup_schema_version(&path).ok(),
+            supported_schema_version: SCHEMA_VERSION,
+        })
+    }
+
+    fn read_backup_schema_version(path: &Path) -> Result<i32, AppError> {
+        let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        Self::get_user_version(&conn)
+    }
+
+    fn validate_sqlite_backup_file(path: &Path) -> Result<(), AppError> {
+        let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|e| AppError::Database(format!("Invalid SQLite backup: {e}")))?;
+        let result: String = conn
+            .query_row("PRAGMA integrity_check;", [], |row| row.get(0))
+            .map_err(|e| AppError::Database(format!("Backup integrity check failed: {e}")))?;
+        if result != "ok" {
+            return Err(AppError::Database(format!(
+                "Backup integrity check failed: {result}"
+            )));
+        }
+        let version = Self::get_user_version(&conn)?;
+        if version <= 0 {
+            return Err(AppError::Database(
+                "Backup is not a CC Switch database: missing schema version".to_string(),
+            ));
+        }
+        if version > SCHEMA_VERSION {
+            return Err(AppError::Database(format!(
+                "Backup schema version {version} is newer than supported version {SCHEMA_VERSION}"
+            )));
+        }
+        Self::validate_cc_switch_backup_schema(&conn)?;
+        Ok(())
+    }
+
+    fn validate_cc_switch_backup_schema(conn: &Connection) -> Result<(), AppError> {
+        for (table, columns) in CC_SWITCH_BACKUP_SCHEMA_MARKERS {
+            if !Self::table_exists(conn, table)? {
+                return Err(AppError::Database(format!(
+                    "Backup is not a CC Switch database: missing table `{table}`"
+                )));
+            }
+
+            for column in *columns {
+                if !Self::has_column(conn, table, column)? {
+                    return Err(AppError::Database(format!(
+                        "Backup is not a CC Switch database: missing column `{table}.{column}`"
+                    )));
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -1185,6 +1358,154 @@ mod tests {
     use crate::settings::{get_settings, update_settings, AppSettings};
     use rusqlite::Connection;
     use serial_test::serial;
+    use std::path::PathBuf;
+
+    const LEGACY_SCHEMA_V1_SQL: &str = r#"
+        CREATE TABLE providers (
+            id TEXT NOT NULL,
+            app_type TEXT NOT NULL,
+            name TEXT NOT NULL,
+            settings_config TEXT NOT NULL,
+            website_url TEXT,
+            category TEXT,
+            created_at INTEGER,
+            sort_index INTEGER,
+            notes TEXT,
+            icon TEXT,
+            icon_color TEXT,
+            meta TEXT NOT NULL DEFAULT '{}',
+            is_current BOOLEAN NOT NULL DEFAULT 0,
+            PRIMARY KEY (id, app_type)
+        );
+        CREATE TABLE provider_endpoints (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            provider_id TEXT NOT NULL,
+            app_type TEXT NOT NULL,
+            url TEXT NOT NULL,
+            added_at INTEGER,
+            FOREIGN KEY (provider_id, app_type) REFERENCES providers(id, app_type) ON DELETE CASCADE
+        );
+        CREATE TABLE mcp_servers (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            server_config TEXT NOT NULL,
+            description TEXT,
+            homepage TEXT,
+            docs TEXT,
+            tags TEXT NOT NULL DEFAULT '[]',
+            enabled_claude BOOLEAN NOT NULL DEFAULT 0,
+            enabled_codex BOOLEAN NOT NULL DEFAULT 0,
+            enabled_gemini BOOLEAN NOT NULL DEFAULT 0
+        );
+        CREATE TABLE prompts (
+            id TEXT NOT NULL,
+            app_type TEXT NOT NULL,
+            name TEXT NOT NULL,
+            content TEXT NOT NULL,
+            description TEXT,
+            enabled BOOLEAN NOT NULL DEFAULT 1,
+            created_at INTEGER,
+            updated_at INTEGER,
+            PRIMARY KEY (id, app_type)
+        );
+        CREATE TABLE skills (
+            key TEXT PRIMARY KEY,
+            installed BOOLEAN NOT NULL DEFAULT 0,
+            installed_at INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE skill_repos (
+            owner TEXT NOT NULL,
+            name TEXT NOT NULL,
+            branch TEXT NOT NULL DEFAULT 'main',
+            enabled BOOLEAN NOT NULL DEFAULT 1,
+            PRIMARY KEY (owner, name)
+        );
+        CREATE TABLE settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        );
+    "#;
+
+    struct TestHomeGuard {
+        old_test_home: Option<std::ffi::OsString>,
+        path: PathBuf,
+    }
+
+    impl TestHomeGuard {
+        fn new(name: &str) -> Self {
+            let old_test_home = std::env::var_os("CC_SWITCH_TEST_HOME");
+            let path = std::env::temp_dir().join(name);
+            let _ = std::fs::remove_dir_all(&path);
+            std::fs::create_dir_all(&path).expect("create test home");
+            std::env::set_var("CC_SWITCH_TEST_HOME", &path);
+            Self {
+                old_test_home,
+                path,
+            }
+        }
+    }
+
+    impl Drop for TestHomeGuard {
+        fn drop(&mut self) {
+            match self.old_test_home.as_ref() {
+                Some(value) => std::env::set_var("CC_SWITCH_TEST_HOME", value),
+                None => std::env::remove_var("CC_SWITCH_TEST_HOME"),
+            }
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
+
+    struct SettingsGuard {
+        old_settings: AppSettings,
+    }
+
+    impl SettingsGuard {
+        fn update(mut update: impl FnMut(&mut AppSettings)) -> Self {
+            let old_settings = get_settings();
+            let mut settings = old_settings.clone();
+            update(&mut settings);
+            update_settings(settings).expect("update test settings");
+            Self { old_settings }
+        }
+    }
+
+    impl Drop for SettingsGuard {
+        fn drop(&mut self) {
+            update_settings(self.old_settings.clone()).expect("restore test settings");
+        }
+    }
+
+    fn legacy_v1_backup_bytes() -> Vec<u8> {
+        let file = tempfile::NamedTempFile::new().expect("legacy sqlite temp file");
+        let conn = Connection::open(file.path()).expect("open legacy sqlite");
+        conn.execute_batch(LEGACY_SCHEMA_V1_SQL)
+            .expect("seed legacy v1 schema");
+        Database::set_user_version(&conn, 1).expect("set legacy user_version");
+        conn.execute(
+            "INSERT INTO providers (
+                id, app_type, name, settings_config, website_url, category,
+                created_at, sort_index, notes, icon, icon_color, meta, is_current
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            rusqlite::params![
+                "legacy-provider",
+                "claude",
+                "Legacy Provider",
+                "{}",
+                Option::<String>::None,
+                Option::<String>::None,
+                Option::<i64>::None,
+                Option::<usize>::None,
+                Option::<String>::None,
+                Option::<String>::None,
+                Option::<String>::None,
+                "{}",
+                1,
+            ],
+        )
+        .expect("seed legacy provider");
+        drop(conn);
+        std::fs::read(file.path()).expect("read legacy sqlite")
+    }
 
     struct TestHomeGuard {
         previous_test_home: Option<std::ffi::OsString>,
@@ -3347,6 +3668,255 @@ mod tests {
             "phase execute_batch (in-memory, multi-row VALUES x{BATCH}): {:?}",
             t.elapsed()
         );
+
+        Ok(())
+    }
+
+    #[test]
+    #[serial]
+    fn managed_backup_lifecycle_includes_metadata_and_safety_restore() -> Result<(), AppError> {
+        let _home = TestHomeGuard::new("cc-switch-managed-backup-lifecycle-test");
+        let db = Database::init()?;
+
+        {
+            let conn = crate::database::lock_conn!(db.conn);
+            conn.execute(
+                "INSERT INTO providers (id, app_type, name, settings_config, meta)
+                 VALUES ('provider-before', 'claude', 'Before Restore', '{}', '{}')",
+                [],
+            )?;
+        }
+
+        let backup_path = db.backup_database_file()?.expect("backup path");
+        let backup_filename = backup_path
+            .file_name()
+            .expect("backup filename")
+            .to_string_lossy()
+            .to_string();
+
+        let listed = Database::list_backups()?;
+        let entry = listed
+            .iter()
+            .find(|entry| entry.filename == backup_filename)
+            .expect("created backup listed");
+        assert_eq!(
+            entry.schema_version,
+            Some(Database::supported_schema_version())
+        );
+        assert_eq!(
+            entry.supported_schema_version,
+            Database::supported_schema_version()
+        );
+        assert!(entry.size_bytes > 0);
+
+        let (_download_entry, bytes) = Database::read_backup_file(&backup_filename)?;
+        let imported = Database::import_backup_file(Some("imported-test.db"), &bytes)?;
+        assert_eq!(imported.filename, "imported-test.db");
+        assert_eq!(
+            imported.schema_version,
+            Some(Database::supported_schema_version())
+        );
+
+        Database::delete_backup("imported-test.db")?;
+        assert!(Database::get_backup_entry("imported-test.db").is_err());
+
+        {
+            let conn = crate::database::lock_conn!(db.conn);
+            conn.execute(
+                "UPDATE providers SET name = 'After Mutation' WHERE id = 'provider-before'",
+                [],
+            )?;
+        }
+
+        let safety_id = db.restore_from_backup(&backup_filename)?;
+        assert!(!safety_id.is_empty(), "restore should create safety backup");
+
+        let restored_name: String = {
+            let conn = crate::database::lock_conn!(db.conn);
+            conn.query_row(
+                "SELECT name FROM providers WHERE id = 'provider-before'",
+                [],
+                |row| row.get(0),
+            )?
+        };
+        assert_eq!(restored_name, "Before Restore");
+
+        let safety_filename = format!("{safety_id}.db");
+        assert!(
+            Database::get_backup_entry(&safety_filename).is_ok(),
+            "safety backup should be managed and listable"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    #[serial]
+    fn restore_preserves_selected_older_backup_when_retention_is_reached() -> Result<(), AppError> {
+        let _home = TestHomeGuard::new("cc-switch-restore-preserve-selected-backup-test");
+        let _settings = SettingsGuard::update(|settings| {
+            settings.backup_retain_count = Some(2);
+        });
+        let db = Database::init()?;
+
+        {
+            let conn = crate::database::lock_conn!(db.conn);
+            conn.execute(
+                "INSERT INTO providers (id, app_type, name, settings_config, meta)
+                 VALUES ('restore-retain-provider', 'claude', 'First Backup', '{}', '{}')",
+                [],
+            )?;
+        }
+        let selected_backup_path = db.backup_database_file()?.expect("selected backup");
+        let selected_filename = selected_backup_path
+            .file_name()
+            .expect("selected filename")
+            .to_string_lossy()
+            .to_string();
+
+        {
+            let conn = crate::database::lock_conn!(db.conn);
+            conn.execute(
+                "UPDATE providers SET name = 'Second Backup' WHERE id = 'restore-retain-provider'",
+                [],
+            )?;
+        }
+        db.backup_database_file()?.expect("second backup");
+        assert_eq!(Database::list_backups()?.len(), 2);
+
+        {
+            let conn = crate::database::lock_conn!(db.conn);
+            conn.execute(
+                "UPDATE providers SET name = 'Before Restore' WHERE id = 'restore-retain-provider'",
+                [],
+            )?;
+        }
+
+        let safety_id = db.restore_from_backup(&selected_filename)?;
+        assert!(!safety_id.is_empty(), "restore should create safety backup");
+        assert!(
+            Database::get_backup_entry(&selected_filename).is_ok(),
+            "retention cleanup must not delete the selected restore source"
+        );
+
+        let restored_name: String = {
+            let conn = crate::database::lock_conn!(db.conn);
+            conn.query_row(
+                "SELECT name FROM providers WHERE id = 'restore-retain-provider'",
+                [],
+                |row| row.get(0),
+            )?
+        };
+        assert_eq!(restored_name, "First Backup");
+
+        Ok(())
+    }
+
+    #[test]
+    #[serial]
+    fn managed_backup_import_and_restore_reject_non_cc_switch_sqlite_db() -> Result<(), AppError> {
+        let _home = TestHomeGuard::new("cc-switch-managed-backup-schema-validation-test");
+        let db = Database::init()?;
+        let backup_dir = crate::config::get_app_config_dir().join("backups");
+        std::fs::create_dir_all(&backup_dir).expect("create backup dir");
+
+        let empty_sqlite = tempfile::NamedTempFile::new().expect("temp sqlite");
+        let unrelated_conn = Connection::open(empty_sqlite.path()).expect("create empty sqlite db");
+        unrelated_conn
+            .execute("CREATE TABLE unrelated (id INTEGER PRIMARY KEY)", [])
+            .expect("write unrelated sqlite schema");
+        drop(unrelated_conn);
+        let bytes = std::fs::read(empty_sqlite.path()).expect("read empty sqlite db");
+
+        let import_error = Database::import_backup_file(Some("empty-sqlite.db"), &bytes)
+            .expect_err("empty sqlite should not import as backup");
+        assert!(
+            import_error
+                .to_string()
+                .contains("not a CC Switch database"),
+            "unexpected import error: {import_error}"
+        );
+
+        let invalid_restore_path = backup_dir.join("empty-restore.db");
+        std::fs::write(&invalid_restore_path, &bytes).expect("write invalid managed backup");
+        let restore_error = db
+            .restore_from_backup("empty-restore.db")
+            .expect_err("empty sqlite should not restore as backup");
+        assert!(
+            restore_error
+                .to_string()
+                .contains("not a CC Switch database"),
+            "unexpected restore error: {restore_error}"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    #[serial]
+    fn managed_backup_import_and_restore_accept_v3_8_schema_v1_cc_switch_db() -> Result<(), AppError>
+    {
+        let _home = TestHomeGuard::new("cc-switch-managed-backup-legacy-v1-validation-test");
+        let db = Database::init()?;
+        let bytes = legacy_v1_backup_bytes();
+
+        let legacy_file = tempfile::NamedTempFile::new().expect("legacy inspection file");
+        std::fs::write(legacy_file.path(), &bytes).expect("write legacy inspection db");
+        let legacy_conn = Connection::open(legacy_file.path()).expect("open legacy inspection db");
+        assert_eq!(Database::get_user_version(&legacy_conn)?, 1);
+        assert!(
+            !Database::table_exists(&legacy_conn, "proxy_config")?,
+            "v3.8/schema-v1 fixture intentionally lacks current proxy_config"
+        );
+        assert!(
+            !Database::has_column(&legacy_conn, "providers", "display_sort_index")?,
+            "v3.8/schema-v1 fixture intentionally lacks current provider display order column"
+        );
+        drop(legacy_conn);
+
+        let imported = Database::import_backup_file(Some("legacy-v1.db"), &bytes)?;
+        assert_eq!(imported.filename, "legacy-v1.db");
+        assert_eq!(imported.schema_version, Some(1));
+
+        db.restore_from_backup("legacy-v1.db")?;
+
+        assert_eq!(
+            db.current_schema_version()?,
+            Database::supported_schema_version()
+        );
+        {
+            let conn = crate::database::lock_conn!(db.conn);
+            assert!(Database::table_exists(&conn, "proxy_config")?);
+            assert!(Database::has_column(
+                &conn,
+                "providers",
+                "display_sort_index"
+            )?);
+        }
+
+        let provider_name: String = {
+            let conn = crate::database::lock_conn!(db.conn);
+            conn.query_row(
+                "SELECT name FROM providers WHERE id = 'legacy-provider' AND app_type = 'claude'",
+                [],
+                |row| row.get(0),
+            )?
+        };
+        assert_eq!(provider_name, "Legacy Provider");
+
+        Ok(())
+    }
+
+    #[test]
+    #[serial]
+    fn managed_backup_rejects_path_traversal_inputs() -> Result<(), AppError> {
+        let _home = TestHomeGuard::new("cc-switch-managed-backup-path-safety-test");
+        let _db = Database::init()?;
+
+        assert!(Database::read_backup_file("../escape.db").is_err());
+        assert!(Database::delete_backup("nested/escape.db").is_err());
+        assert!(Database::get_backup_entry("..\\escape.db").is_err());
+        assert!(Database::import_backup_file(Some("../escape.db"), b"not a sqlite db").is_err());
 
         Ok(())
     }
