@@ -104,6 +104,10 @@ pub(crate) fn mount_openwrt_admin_routes(router: Router<ProxyState>) -> Router<P
             post(openwrt_reset_circuit_breaker),
         )
         .route(
+            "/openwrt/admin/apps/:app/providers/:provider_id/stream-check",
+            get(openwrt_get_provider_stream_check).post(openwrt_run_provider_stream_check),
+        )
+        .route(
             "/openwrt/admin/apps/:app/failover/providers/available",
             get(openwrt_get_available_failover_providers),
         )
@@ -421,6 +425,37 @@ async fn openwrt_reset_circuit_breaker(
         Ok(app_type) => match openwrt_admin::reset_circuit_breaker(
             state.db.as_ref(),
             state.provider_router.as_ref(),
+            &app_type,
+            &provider_id,
+        )
+        .await
+        {
+            Ok(view) => openwrt_admin_ok(view),
+            Err(error) => openwrt_admin_error(error),
+        },
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+async fn openwrt_get_provider_stream_check(
+    Path((app, provider_id)): Path<(String, String)>,
+    State(state): State<ProxyState>,
+) -> (StatusCode, Json<Value>) {
+    match parse_openwrt_app(&app).and_then(|app_type| {
+        openwrt_admin::get_provider_stream_check(state.db.as_ref(), &app_type, &provider_id)
+    }) {
+        Ok(view) => openwrt_admin_ok(view),
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+async fn openwrt_run_provider_stream_check(
+    Path((app, provider_id)): Path<(String, String)>,
+    State(state): State<ProxyState>,
+) -> (StatusCode, Json<Value>) {
+    match parse_openwrt_app(&app) {
+        Ok(app_type) => match openwrt_admin::run_provider_stream_check(
+            state.db.as_ref(),
             &app_type,
             &provider_id,
         )
@@ -808,6 +843,7 @@ async fn openwrt_update_app_config(
 mod tests {
     use super::*;
     use crate::database::Database;
+    use crate::provider::Provider;
     use crate::proxy::{
         failover_switch::FailoverSwitchManager,
         provider_router::ProviderRouter,
@@ -816,6 +852,7 @@ mod tests {
         rate_limit::new_rate_limit_store,
         types::{ProxyConfig, ProxyStatus},
     };
+    use crate::services::stream_check::{HealthStatus, StreamCheckResult};
     use std::collections::HashMap;
     use std::sync::Arc;
     use tokio::sync::RwLock;
@@ -978,6 +1015,71 @@ mod tests {
         assert_eq!(apps[0]["supportsClaudeAuthUpload"], Value::Bool(true));
         assert_eq!(apps[1]["supportsCodexAuthUpload"], Value::Bool(true));
         assert_eq!(apps[0]["supportsCodexAuthUpload"], Value::Bool(false));
+    }
+
+    #[tokio::test]
+    async fn openwrt_get_provider_stream_check_returns_openwrt_error_envelope() {
+        let state = test_proxy_state();
+
+        let (status, body) = openwrt_get_provider_stream_check(
+            Path(("claude".to_string(), "missing-provider".to_string())),
+            State(state),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["ok"], Value::Bool(false));
+        assert!(body["error"]
+            .as_str()
+            .expect("error string")
+            .contains("missing-provider"));
+    }
+
+    #[tokio::test]
+    async fn openwrt_get_provider_stream_check_preserves_error_category() {
+        let state = test_proxy_state();
+        let provider = Provider::with_id(
+            "provider-a".to_string(),
+            "Provider A".to_string(),
+            json!({}),
+            None,
+        );
+        state
+            .db
+            .save_provider("claude", &provider)
+            .expect("save provider");
+        state
+            .db
+            .save_stream_check_log(
+                "provider-a",
+                "Provider A",
+                "claude",
+                &StreamCheckResult {
+                    status: HealthStatus::Failed,
+                    success: false,
+                    message: "model missing".to_string(),
+                    response_time_ms: Some(12),
+                    http_status: Some(404),
+                    model_used: "claude-test".to_string(),
+                    tested_at: 1234,
+                    retry_count: 0,
+                    error_category: Some("modelNotFound".to_string()),
+                },
+            )
+            .expect("save stream check");
+
+        let (status, body) = openwrt_get_provider_stream_check(
+            Path(("claude".to_string(), "provider-a".to_string())),
+            State(state),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["ok"], Value::Bool(true));
+        assert_eq!(
+            body["check"]["errorCategory"],
+            Value::String("modelNotFound".to_string())
+        );
     }
 
     #[tokio::test]
