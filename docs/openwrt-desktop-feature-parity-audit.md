@@ -86,11 +86,11 @@ Status legend:
 
 | Area | Current status | Tracking note |
 | --- | --- | --- |
-| Stream/model health checks | implemented | Integrated on `openwrt-proxy`: provider-scoped `GET/POST /stream-check` admin endpoints, rpcd `get_provider_stream_check` / `run_provider_stream_check`, conservative OpenWrt bounds, latest-result persistence/readback, error categorization, and tests. |
-| Endpoint latency and model discovery | implemented | Integrated on `openwrt-proxy`: provider-scoped `/latency` and `/models` admin endpoints, rpcd `test_provider_latency` / `fetch_provider_models`, redacted structured responses, and tests. |
-| Backup/export/restore | implemented | Integrated on `openwrt-proxy`: backup list/create/import/download/delete/restore APIs for daemon DB/data under `/etc/cc-switch`, safety backup before restore, metadata/schema validation, rpcd bridge, and tests. |
+| Stream/model health checks | implemented | Integrated on `openwrt-proxy` in `cd22c262`: provider-scoped `GET/POST /stream-check` admin endpoints, rpcd `get_provider_stream_check` / `run_provider_stream_check`, conservative OpenWrt bounds, latest-result persistence/readback, error categorization, and tests. |
+| Endpoint latency and model discovery | implemented | Integrated on `openwrt-proxy` in `77b4805c`: provider-scoped `/latency` and `/models` admin endpoints, rpcd `test_provider_latency` / `fetch_provider_models`, redacted structured responses, and tests. |
+| Backup/export/restore | implemented | Integrated on `openwrt-proxy` in `5d093a4e`: backup list/create/import/download/delete/restore APIs for daemon DB/data under `/etc/cc-switch`, safety backup before restore, metadata/schema validation, rpcd bridge, and tests. |
 | Circuit-breaker and log diagnostics | backend ready | Worker `2a45da7` added richer circuit-breaker diagnostics, request-log diagnostics, `failuresOnly`, bounded daemon log tail, rpcd bridge, and tests. |
-| Global outbound proxy test | implemented | Integrated on `openwrt-proxy`: `/openwrt/admin/outbound-proxy/test` plus rpcd `test_outbound_proxy`, redaction, bounded single-shot behavior, and tests. |
+| Global outbound proxy test | implemented | Integrated on `openwrt-proxy` in `fb4605a1`: `/openwrt/admin/outbound-proxy/test` plus rpcd `test_outbound_proxy`, redaction, bounded single-shot behavior, and tests. |
 | Provider duplicate/import helpers | needs UI | Worth doing, but the user wants designer mockups before visible LuCI changes. |
 | Usage trends/model stats/pricing visibility | needs UI | Backend and presentation scope should be split after mockup; existing OpenWrt usage summary/provider stats remain implemented. |
 | OpenCode/OpenClaw/Hermes, MCP, prompts, skills, OAuth, WebDAV, universal providers | needs design | Do not start LuCI work until router ownership, secrets, storage, and client-file behavior are specified. |
