@@ -6,6 +6,7 @@ import { cursor } from 'uci';
 const DATA_DIR = '/etc/cc-switch';
 const BINARY = '/usr/bin/cc-switch';
 const CURL = '/usr/bin/curl';
+const BASE64 = '/usr/bin/base64';
 const INIT_SCRIPT = '/etc/init.d/ccswitch';
 const DEFAULT_APP = 'claude';
 const DEFAULT_ADMIN_PORT = '15721';
@@ -227,6 +228,21 @@ function runDaemonGetJson(path) {
 function requireProviderId(providerId) {
 	if (!providerId)
 		return { ok: false, error: 'provider_id is required' };
+
+	return null;
+}
+
+function requireBackupFilename(filename) {
+	if (!filename)
+		return { ok: false, error: 'filename is required' };
+
+	filename = '' + filename;
+
+	if (index(filename, '..') >= 0 || index(filename, '/') >= 0 || index(filename, '\\') >= 0)
+		return { ok: false, error: 'invalid backup filename' };
+
+	if (substr(filename, length(filename) - 3) != '.db')
+		return { ok: false, error: 'invalid backup filename' };
 
 	return null;
 }
@@ -525,6 +541,85 @@ function adminProviderPath(app, providerId) {
 
 function adminFailoverProviderPath(app, providerId) {
 	return `${adminAppPath(app)}/failover/providers/${percentEncodePath(providerId)}`;
+}
+
+function adminBackupPath(filename) {
+	if (filename)
+		return `/openwrt/admin/backups/${percentEncodePath(filename)}`;
+
+	return '/openwrt/admin/backups';
+}
+
+function listBackups() {
+	return runAdminHttpJson('GET', adminBackupPath());
+}
+
+function createBackup() {
+	return runAdminHttpJson('POST', adminBackupPath());
+}
+
+function importBackup(filename, dataBase64) {
+	if (!dataBase64)
+		return { ok: false, error: 'data_base64 is required' };
+
+	if (filename) {
+		let invalid = requireBackupFilename(filename);
+		if (invalid)
+			return invalid;
+	}
+
+	return runAdminHttpJson(
+		'POST',
+		'/openwrt/admin/backups/import',
+		{
+			filename: filename ? '' + filename : null,
+			dataBase64: '' + dataBase64
+		}
+	);
+}
+
+function deleteBackup(filename) {
+	let invalid = requireBackupFilename(filename);
+	if (invalid)
+		return invalid;
+
+	return runAdminHttpJson('DELETE', adminBackupPath(filename));
+}
+
+function restoreBackup(filename) {
+	let invalid = requireBackupFilename(filename);
+	if (invalid)
+		return invalid;
+
+	return runAdminHttpJson('POST', `${adminBackupPath(filename)}/restore`);
+}
+
+function downloadBackup(filename) {
+	let invalid = requireBackupFilename(filename);
+	let url, command, result, data;
+	if (invalid)
+		return invalid;
+
+	url = buildAdminUrl(`${adminBackupPath(filename)}/download`);
+	command = `tmp="/tmp/ccswitch-backup-download.$$"; ` +
+		`${shellquote(CURL)} -fsS --max-time 30 ${shellquote(url)} -o "$tmp" && ` +
+		`${shellquote(BASE64)} "$tmp"; code=$?; rm -f "$tmp"; exit $code`;
+	result = runReadCommand(command);
+
+	if (!result.ok)
+		return { ok: false, error: result.error || 'backup download failed' };
+
+	data = replace(result.output || '', "\n", '');
+	data = replace(data, "\r", '');
+
+	if (!data)
+		return { ok: false, error: 'backup download returned empty payload' };
+
+	return {
+		ok: true,
+		filename: '' + filename,
+		dataBase64: data
+	};
 }
 
 function upsertProvider(app, providerId, provider) {
@@ -1019,6 +1114,39 @@ return {
 			}
 		},
 
+		list_backups: {
+			call: function() {
+				return listBackups();
+			}
+		},
+
+		download_backup: {
+			args: {
+				filename: 'backup.db'
+			},
+
+			call: function(request) {
+				return downloadBackup(request.args.filename);
+			}
+		},
+
+		create_backup: {
+			call: function() {
+				return createBackup();
+			}
+		},
+
+		import_backup: {
+			args: {
+				filename: 'backup.db',
+				data_base64: ''
+			},
+
+			call: function(request) {
+				return importBackup(request.args.filename, request.args.data_base64);
+			}
+		},
+
 			get_request_logs: {
 				args: {
 					app: 'claude',
@@ -1163,6 +1291,26 @@ return {
 
 			call: function(request) {
 				return removeClaudeAuth(request.args.app, request.args.provider_id);
+			}
+		},
+
+		delete_backup: {
+			args: {
+				filename: 'backup.db'
+			},
+
+			call: function(request) {
+				return deleteBackup(request.args.filename);
+			}
+		},
+
+		restore_backup: {
+			args: {
+				filename: 'backup.db'
+			},
+
+			call: function(request) {
+				return restoreBackup(request.args.filename);
 			}
 		},
 
