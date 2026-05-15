@@ -1,5 +1,7 @@
 use crate::app_config::AppType;
-use crate::openwrt_admin::{self, OpenWrtAppConfigPayload, OpenWrtProviderPayload};
+use crate::openwrt_admin::{
+    self, OpenWrtAppConfigPayload, OpenWrtOutboundProxyTestPayload, OpenWrtProviderPayload,
+};
 use crate::proxy::providers::{
     claude_oauth_store::claude_auth_upload_limit_bytes,
     codex_oauth_store::codex_auth_upload_limit_bytes,
@@ -19,6 +21,10 @@ pub(crate) fn mount_openwrt_admin_routes(router: Router<ProxyState>) -> Router<P
     router
         .route("/openwrt/admin/meta", get(openwrt_get_admin_meta))
         .route("/openwrt/admin/runtime", get(openwrt_get_runtime_status))
+        .route(
+            "/openwrt/admin/outbound-proxy/test",
+            post(openwrt_test_outbound_proxy),
+        )
         .route(
             "/openwrt/admin/apps/:app/runtime",
             get(openwrt_get_app_runtime_status),
@@ -203,6 +209,18 @@ async fn openwrt_get_admin_meta() -> (StatusCode, Json<Value>) {
 async fn openwrt_get_runtime_status(State(state): State<ProxyState>) -> (StatusCode, Json<Value>) {
     match openwrt_admin::get_runtime_status(state.db.as_ref()).await {
         Ok(status) => openwrt_admin_ok(status),
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+async fn openwrt_test_outbound_proxy(
+    State(state): State<ProxyState>,
+    payload: Option<Json<OpenWrtOutboundProxyTestPayload>>,
+) -> (StatusCode, Json<Value>) {
+    let payload = payload.map(|Json(payload)| payload).unwrap_or_default();
+
+    match openwrt_admin::test_outbound_proxy(state.db.as_ref(), payload).await {
+        Ok(result) => openwrt_admin_ok(result),
         Err(error) => openwrt_admin_error(error),
     }
 }
