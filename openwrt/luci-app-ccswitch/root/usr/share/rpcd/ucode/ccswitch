@@ -343,6 +343,36 @@ function getProviderFailover(app, providerId) {
 	return runAdminGetJson('/apps/' + percentEncodePath(normalizedApp) + '/providers/' + percentEncodePath(providerId) + '/failover');
 }
 
+function testProviderLatency(app, providerId) {
+	let normalizedApp = normalizeApp(app);
+	let missing = requireProviderId(providerId);
+	if (missing)
+		return missing;
+
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
+
+	return runAdminHttpJson(
+		'POST',
+		`${adminProviderPath(normalizedApp, providerId)}/latency`
+	);
+}
+
+function fetchProviderModels(app, providerId) {
+	let normalizedApp = normalizeApp(app);
+	let missing = requireProviderId(providerId);
+	if (missing)
+		return missing;
+
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
+
+	return runAdminHttpJson(
+		'POST',
+		`${adminProviderPath(normalizedApp, providerId)}/models`
+	);
+}
+
 function getCircuitBreakerStats(app, providerId) {
 	let normalizedApp = normalizeApp(app);
 	let missing = requireProviderId(providerId);
@@ -820,6 +850,28 @@ return {
 
 			call: function(request) {
 				return getProviderFailover(request.args.app, request.args.provider_id);
+			}
+		},
+
+		test_provider_latency: {
+			args: {
+				app: 'claude',
+				provider_id: 'provider-id'
+			},
+
+			call: function(request) {
+				return testProviderLatency(request.args.app, request.args.provider_id);
+			}
+		},
+
+		fetch_provider_models: {
+			args: {
+				app: 'claude',
+				provider_id: 'provider-id'
+			},
+
+			call: function(request) {
+				return fetchProviderModels(request.args.app, request.args.provider_id);
 			}
 		},
 

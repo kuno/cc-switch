@@ -36,10 +36,10 @@ storage limits.
 
 As of 2026-05-15, five backend-only parity slices have completed in isolated
 Paseo worker worktrees. The outbound proxy test has been integrated into
-`openwrt-proxy`; stream/model health checks, endpoint latency/model discovery,
-backup/restore, and circuit/log diagnostics remain worker-ready but not yet
-integrated. This document tracks that progress separately from features already
-present on the main branch.
+`openwrt-proxy`; endpoint latency/model discovery has also been integrated.
+Stream/model health checks, backup/restore, and circuit/log diagnostics remain
+worker-ready but not yet integrated. This document tracks that progress
+separately from features already present on the main branch.
 
 The largest parity differences need backend design before implementation:
 OpenCode/OpenClaw/Hermes support, MCP/prompts/skills, managed OAuth/device flow,
@@ -85,7 +85,7 @@ Status legend:
 | Area | Current status | Tracking note |
 | --- | --- | --- |
 | Stream/model health checks | backend ready | Worker `83c605d` added `GET/POST /openwrt/admin/apps/:app/providers/:provider_id/stream-check`, rpcd bridge methods, conservative bounds, latest-result readback, and focused tests. |
-| Endpoint latency and model discovery | backend ready | Worker `92e19f7` added provider-scoped `/latency` and `/models` admin endpoints, rpcd bridge methods, redacted structured responses, and tests. |
+| Endpoint latency and model discovery | implemented | Integrated on `openwrt-proxy`: provider-scoped `/latency` and `/models` admin endpoints, rpcd `test_provider_latency` / `fetch_provider_models`, redacted structured responses, and tests. |
 | Backup/export/restore | backend ready | Worker `5f8aee9` added backup list/create/import/download/delete/restore APIs for daemon DB/data under `/etc/cc-switch`, safety backup before restore, metadata/schema validation, rpcd bridge, and tests. |
 | Circuit-breaker and log diagnostics | backend ready | Worker `2a45da7` added richer circuit-breaker diagnostics, request-log diagnostics, `failuresOnly`, bounded daemon log tail, rpcd bridge, and tests. |
 | Global outbound proxy test | implemented | Integrated on `openwrt-proxy`: `/openwrt/admin/outbound-proxy/test` plus rpcd `test_outbound_proxy`, redaction, bounded single-shot behavior, and tests. |
@@ -100,7 +100,7 @@ Status legend:
 | Six desktop app IDs: Claude, Codex, Gemini, OpenCode, OpenClaw, Hermes (`src/App.tsx`, `src/lib/api/types.ts`, `src-tauri/src/app_config.rs`) | Real OpenWrt management is Claude/Codex/Gemini only; OpenCode/OpenClaw are inert home cards and Hermes is absent from the OpenWrt shell (`proxy-daemon/src/openwrt_admin.rs`, `src/openwrt-provider-ui/components/AppsGrid.tsx`, `src/openwrt-provider-ui/components/AppCard.tsx`) | OpenCode/OpenClaw/Hermes provider/runtime management missing | Medium, but only if router-side workflows are defined | Needs backend design because additive desktop apps manage local tool config files | P2 design |
 | Provider CRUD, switch, sort, search, duplicate, presets across all desktop apps (`src/components/providers/ProviderList.tsx`, `src/components/providers/ProviderActions.tsx`, `src/components/providers/forms/ProviderForm.tsx`) | CRUD, activate, reorder, search, and presets exist for Claude/Codex/Gemini; duplicate and several desktop metadata flows are absent (`proxy-daemon/src/openwrt_http.rs`, `src/platform/openwrt/providers/adapter.ts`, `src/openwrt-provider-ui/components/ProviderSidePanel.tsx`) | Partial parity | High for duplicate and metadata preservation | Suitable; mostly LuCI-only for duplicate, both daemon and LuCI for persisted metadata | P1 |
 | Rich provider form fields: raw settings JSON, app-specific config editors, common snippets, full URL, endpoint auto-select, custom endpoints, usage script, provider test config, pricing config (`src/components/providers/forms/ProviderForm.tsx`, `src/components/providers/forms/ProviderAdvancedConfig.tsx`) | OpenWrt provider payload is normalized to name, base URL, website, token field/token, model, notes, auth mode, and auth content (`proxy-daemon/src/openwrt_admin.rs`, `src/openwrt-provider-ui/components/ProviderSidePanelConfigureTab.tsx`) | Advanced provider metadata and scripts missing | Medium-high for test/pricing metadata; low for raw JSON editor | Suitable if constrained and validated; raw desktop JSON editing is risky in LuCI | P1/P2 |
-| Endpoint speed test and `/v1/models` model fetch (`src-tauri/src/commands/provider.rs`, `src-tauri/src/services/speedtest.rs`, `src-tauri/src/commands/model_fetch.rs`, `src-tauri/src/services/model_fetch.rs`) | Not implemented on `openwrt-proxy` in the audited baseline. Backend-only implementation is now ready in worker `92e19f7` with provider-scoped latency/model endpoints and rpcd bridge. | Missing from main branch; backend ready for review | High for provider setup on routers | Suitable with strict concurrency and timeout limits | P1 integrate backend, then UI |
+| Endpoint speed test and `/v1/models` model fetch (`src-tauri/src/commands/provider.rs`, `src-tauri/src/services/speedtest.rs`, `src-tauri/src/commands/model_fetch.rs`, `src-tauri/src/services/model_fetch.rs`) | Backend support is now implemented on `openwrt-proxy` with provider-scoped `/latency` and `/models` admin endpoints plus rpcd bridge methods (`proxy-daemon/src/openwrt_http.rs`, `proxy-daemon/src/openwrt_admin.rs`, `openwrt/luci-app-ccswitch/root/usr/share/rpcd/ucode/ccswitch`). LuCI has no visual controls yet. | Backend implemented; UI pending design | High for provider setup on routers | Suitable with strict concurrency and timeout limits | P1 UI |
 | Proxy service start/stop, app takeover, per-app proxy config (`src/components/settings/ProxyTabContent.tsx`, `src/components/proxy/ProxyPanel.tsx`, `src-tauri/src/lib.rs`) | OpenWrt uses procd/UCI service enablement, listen addr/port, outbound env proxy, per-app proxy enabled, and service restart (`openwrt/proxy-daemon/files/etc/init.d/ccswitch`, `openwrt/proxy-daemon/files/etc/config/ccswitch`, `proxy-daemon/src/openwrt_admin.rs`, `src/openwrt-provider-ui/components/DaemonCard.tsx`) | Desktop live-config takeover model is not present | Low to medium | Router service control is already more appropriate than desktop takeover | P0 maintain |
 | Auto failover queue, max retries, provider health, circuit breaker stats/reset (`src/components/proxy/FailoverQueueManager.tsx`, `src/components/proxy/CircuitBreakerConfigPanel.tsx`, `src-tauri/src/commands/failover.rs`) | OpenWrt exposes queue add/remove/reorder, auto failover, max retries, health, circuit breaker state/reset, and LuCI controls/cards (`proxy-daemon/src/openwrt_http.rs`, `proxy-daemon/src/openwrt_admin.rs`, `src/openwrt-provider-ui/components/AppCard.tsx`, `openwrt/luci-app-ccswitch/root/usr/share/rpcd/ucode/ccswitch`). Backend diagnostics enrichment is ready in worker `2a45da7`. | Mostly implemented; richer diagnostics pending integration/UI | Medium | Suitable; mostly LuCI surface over existing daemon state | P1 integrate backend, then UI |
 | Usage dashboard: summary, trends, provider stats, model stats, request logs/detail, pricing config, data sources (`src/components/usage/UsageDashboard.tsx`, `src/lib/api/usage.ts`, `src-tauri/src/commands/usage.rs`) | OpenWrt exposes app-scoped usage summary, provider stats, recent activity, request logs/detail, and quota/status; no trends, model stats, pricing editor, or data-source sync UI/API (`proxy-daemon/src/openwrt_http.rs`, `proxy-daemon/src/openwrt_admin.rs`, `src/openwrt-provider-ui/components/ActivitySidePanel.tsx`) | Partial parity | High | Suitable if aggregated and paginated to avoid router load | P1 |
@@ -169,7 +169,7 @@ model IDs (`src-tauri/src/services/speedtest.rs`,
 valuable on routers because bad endpoints are hard to debug remotely. Implement
 only bounded GET-based checks with small concurrency, short timeouts, and no
 background polling. Backend-only provider latency/model discovery endpoints are
-ready in worker `92e19f7`, pending integration.
+now implemented on `openwrt-proxy`.
 
 ### Backup, restore, import, export - both daemon and LuCI
 
@@ -347,15 +347,15 @@ deploys as required by the OpenWrt deploy guardrails.
 ### Phase 1 - operational parity for existing OpenWrt apps
 
 Add provider duplicate in LuCI, usage trends/model stats read APIs, stream
-check endpoints/config, endpoint latency/model fetch, and circuit-breaker/log
+check endpoints/config and circuit-breaker/log
 diagnostics. These map directly onto existing desktop value while staying
 within Claude/Codex/Gemini and the current daemon/LuCI split
 (`src-tauri/src/services/stream_check.rs`,
 `src-tauri/src/services/speedtest.rs`, `src-tauri/src/services/model_fetch.rs`,
-`proxy-daemon/src/openwrt_http.rs`). Backend-only worker implementations now
-exist for stream checks, endpoint/model checks, and diagnostics; the next step
-is manual integration and review because they touch overlapping daemon/rpcd
-files.
+`proxy-daemon/src/openwrt_http.rs`). Endpoint/model checks are implemented;
+backend-only worker implementations still exist for stream checks and
+diagnostics, with manual integration still required because they touch
+overlapping daemon/rpcd files.
 
 ### Phase 2 - router maintenance and recovery
 

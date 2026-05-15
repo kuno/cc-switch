@@ -20,6 +20,7 @@ use crate::proxy::{CircuitBreakerStats, CircuitState};
 use crate::services::usage_stats::{
     LogFilters, PaginatedLogs, ProviderStats, RequestLogDetail, UsageSummary,
 };
+use crate::services::{model_fetch, speedtest::SpeedtestService};
 use crate::version;
 use anyhow::{anyhow, Context};
 use serde::{Deserialize, Serialize};
@@ -236,6 +237,8 @@ pub struct OpenWrtAppMetaView {
     pub supports_recent_activity: bool,
     pub supports_circuit_breaker_stats: bool,
     pub supports_circuit_breaker_reset: bool,
+    pub supports_endpoint_latency_check: bool,
+    pub supports_model_discovery: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -348,6 +351,34 @@ pub struct OpenWrtOutboundProxyTestView {
     pub error: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtProviderLatencyView {
+    pub app: String,
+    pub provider_id: String,
+    pub provider_name: String,
+    pub endpoint: String,
+    pub success: bool,
+    pub latency_ms: Option<u128>,
+    pub status: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtProviderModelsView {
+    pub app: String,
+    pub provider_id: String,
+    pub provider_name: String,
+    pub endpoint: String,
+    pub success: bool,
+    pub model_ids: Vec<String>,
+    pub models: Vec<model_fetch::FetchedModel>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 #[derive(Clone, Copy)]
 struct OpenWrtAppProfile {
     app_id: &'static str,
@@ -359,6 +390,13 @@ struct OpenWrtAppProfile {
     default_model: Option<&'static str>,
     icon: &'static str,
     icon_color: &'static str,
+}
+
+struct OpenWrtProviderEndpointTarget {
+    profile: OpenWrtAppProfile,
+    provider: Provider,
+    base_url: String,
+    api_key: String,
 }
 
 pub fn parse_supported_app(value: &str) -> anyhow::Result<AppType> {
@@ -658,6 +696,96 @@ pub async fn reset_circuit_breaker(
     })
 }
 
+pub async fn test_provider_latency(
+    db: &Database,
+    app_type: &AppType,
+    provider_id: &str,
+) -> anyhow::Result<OpenWrtProviderLatencyView> {
+    let target = load_provider_endpoint_target(db, app_type, provider_id)?;
+    let endpoint = redact_endpoint(&target.base_url);
+    let result = SpeedtestService::test_endpoints(vec![target.base_url.clone()], Some(2))
+        .await
+        .map_err(|e| {
+            anyhow!(
+                "failed to test {} provider endpoint: {e}",
+                target.profile.app_id
+            )
+        })?
+        .into_iter()
+        .next()
+        .ok_or_else(|| anyhow!("endpoint latency test returned no result"))?;
+
+    Ok(OpenWrtProviderLatencyView {
+        app: target.profile.app_id.to_string(),
+        provider_id: target.provider.id,
+        provider_name: target.provider.name,
+        endpoint,
+        success: result.error.is_none(),
+        latency_ms: result.latency,
+        status: result.status,
+        error: result
+            .error
+            .map(|error| sanitize_failure_message(&error, None)),
+    })
+}
+
+pub async fn fetch_provider_models(
+    db: &Database,
+    app_type: &AppType,
+    provider_id: &str,
+) -> anyhow::Result<OpenWrtProviderModelsView> {
+    let target = load_provider_endpoint_target(db, app_type, provider_id)?;
+    let models_endpoint = model_fetch::models_endpoint_url(&target.base_url, false)
+        .map_err(|error| anyhow!("failed to build models endpoint: {error}"))?;
+    let endpoint = redact_endpoint(&models_endpoint);
+
+    if target.api_key.trim().is_empty() {
+        return Ok(OpenWrtProviderModelsView {
+            app: target.profile.app_id.to_string(),
+            provider_id: target.provider.id,
+            provider_name: target.provider.name,
+            endpoint,
+            success: false,
+            model_ids: Vec::new(),
+            models: Vec::new(),
+            error: Some("provider API key is not configured".to_string()),
+        });
+    }
+
+    match model_fetch::fetch_models_with_timeout(
+        &target.base_url,
+        &target.api_key,
+        false,
+        Duration::from_secs(5),
+    )
+    .await
+    {
+        Ok(models) => {
+            let model_ids = models.iter().map(|model| model.id.clone()).collect();
+            Ok(OpenWrtProviderModelsView {
+                app: target.profile.app_id.to_string(),
+                provider_id: target.provider.id,
+                provider_name: target.provider.name,
+                endpoint,
+                success: true,
+                model_ids,
+                models,
+                error: None,
+            })
+        }
+        Err(error) => Ok(OpenWrtProviderModelsView {
+            app: target.profile.app_id.to_string(),
+            provider_id: target.provider.id,
+            provider_name: target.provider.name,
+            endpoint,
+            success: false,
+            model_ids: Vec::new(),
+            models: Vec::new(),
+            error: Some(sanitize_failure_message(&error, Some(&target.api_key))),
+        }),
+    }
+}
+
 pub fn get_active_provider(
     db: &Database,
     app_type: &AppType,
@@ -697,6 +825,8 @@ pub fn get_admin_meta() -> anyhow::Result<OpenWrtAdminMetaView> {
                 supports_recent_activity: true,
                 supports_circuit_breaker_stats: true,
                 supports_circuit_breaker_reset: true,
+                supports_endpoint_latency_check: true,
+                supports_model_discovery: true,
             })
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
@@ -1529,6 +1659,34 @@ fn load_provider(
             )
         })?
         .ok_or_else(|| anyhow!("{} provider {provider_id} does not exist", profile.app_id))
+}
+
+fn load_provider_endpoint_target(
+    db: &Database,
+    app_type: &AppType,
+    provider_id: &str,
+) -> anyhow::Result<OpenWrtProviderEndpointTarget> {
+    let profile = openwrt_app_profile(app_type)?;
+    let provider = load_provider(db, profile, provider_id)?;
+    let base_url = extract_base_url(profile, &provider)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            anyhow!(
+                "{} provider {} has no endpoint configured",
+                profile.app_id,
+                provider.id
+            )
+        })?;
+    let api_key = extract_token(profile, &provider)
+        .map(|(_, value)| value.to_string())
+        .unwrap_or_default();
+
+    Ok(OpenWrtProviderEndpointTarget {
+        profile,
+        provider,
+        base_url,
+        api_key,
+    })
 }
 
 async fn build_app_runtime_status(
@@ -2985,6 +3143,73 @@ fn mask_secret(secret: &str) -> String {
     format!("********{suffix}")
 }
 
+fn redact_endpoint(endpoint: &str) -> String {
+    let Ok(mut url) = url::Url::parse(endpoint) else {
+        return sanitize_failure_message(endpoint, None);
+    };
+
+    if url.password().is_some() {
+        let _ = url.set_password(Some("redacted"));
+    }
+
+    if url.query().is_some() {
+        let pairs = url
+            .query_pairs()
+            .map(|(key, value)| {
+                let key_string = key.into_owned();
+                let lower = key_string.to_ascii_lowercase();
+                let value_string = if lower.contains("key")
+                    || lower.contains("token")
+                    || lower.contains("secret")
+                    || lower.contains("auth")
+                {
+                    "redacted".to_string()
+                } else {
+                    value.into_owned()
+                };
+                (key_string, value_string)
+            })
+            .collect::<Vec<_>>();
+        url.set_query(None);
+        {
+            let mut query = url.query_pairs_mut();
+            for (key, value) in pairs {
+                query.append_pair(&key, &value);
+            }
+        }
+    }
+
+    url.set_fragment(None);
+    url.to_string()
+}
+
+fn sanitize_failure_message(message: &str, secret: Option<&str>) -> String {
+    let mut sanitized = message.to_string();
+
+    if let Some(secret) = secret.map(str::trim).filter(|secret| !secret.is_empty()) {
+        sanitized = sanitized.replace(secret, "[redacted]");
+    }
+
+    for marker in ["Authorization: Bearer ", "Bearer "] {
+        if let Some(index) = sanitized.find(marker) {
+            let start = index + marker.len();
+            let end = sanitized[start..]
+                .find(|ch: char| ch.is_whitespace() || ch == '"' || ch == '\'')
+                .map(|offset| start + offset)
+                .unwrap_or(sanitized.len());
+            sanitized.replace_range(start..end, "[redacted]");
+        }
+    }
+
+    const MAX_ERROR_CHARS: usize = 500;
+    if sanitized.chars().count() > MAX_ERROR_CHARS {
+        sanitized = sanitized.chars().take(MAX_ERROR_CHARS).collect::<String>();
+        sanitized.push_str("...");
+    }
+
+    sanitized
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3142,6 +3367,134 @@ mod tests {
             .join("data")
             .join("claude_auth")
             .join(format!("{provider_id}.json"))
+    }
+
+    async fn spawn_test_server(router: Router) -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind test server");
+        let addr = listener.local_addr().expect("test server addr");
+        tokio::spawn(async move {
+            axum::serve(listener, router)
+                .await
+                .expect("serve test server");
+        });
+
+        format!("http://{addr}")
+    }
+
+    fn save_codex_provider(db: &Database, provider_id: &str, base_url: &str, api_key: &str) {
+        let provider = Provider::with_id(
+            provider_id.to_string(),
+            "Codex Provider".to_string(),
+            json!({
+                "base_url": base_url,
+                "auth": {
+                    CODEX_TOKEN_FIELD: api_key,
+                },
+                "model": "gpt-5.4",
+            }),
+            None,
+        );
+        db.save_provider(CODEX_APP_ID, &provider)
+            .expect("save codex provider");
+    }
+
+    #[tokio::test]
+    async fn provider_latency_check_returns_success_status_and_latency() {
+        let db = Database::memory().expect("db");
+        let base_url =
+            spawn_test_server(Router::new().route("/health", get(|| async { "ok" }))).await;
+        let endpoint = format!("{base_url}/health");
+        save_codex_provider(&db, "provider-a", &endpoint, "sk-latency-secret");
+
+        let view = test_provider_latency(&db, &AppType::Codex, "provider-a")
+            .await
+            .expect("latency view");
+
+        assert_eq!(view.app, CODEX_APP_ID);
+        assert_eq!(view.provider_id, "provider-a");
+        assert_eq!(view.endpoint, endpoint);
+        assert!(view.success);
+        assert_eq!(view.status, Some(200));
+        assert!(view.latency_ms.is_some());
+        assert!(view.error.is_none());
+    }
+
+    #[tokio::test]
+    async fn provider_models_returns_sorted_ids_without_secret() {
+        let db = Database::memory().expect("db");
+        let base_url = spawn_test_server(Router::new().route(
+            "/v1/models",
+            get(|| async {
+                Json(json!({
+                    "object": "list",
+                    "data": [
+                        { "id": "z-model", "owned_by": "vendor" },
+                        { "id": "a-model", "owned_by": "vendor" }
+                    ]
+                }))
+            }),
+        ))
+        .await;
+        save_codex_provider(&db, "provider-a", &base_url, "sk-model-secret");
+
+        let view = fetch_provider_models(&db, &AppType::Codex, "provider-a")
+            .await
+            .expect("models view");
+
+        assert_eq!(view.app, CODEX_APP_ID);
+        assert_eq!(view.provider_id, "provider-a");
+        assert_eq!(view.endpoint, format!("{base_url}/v1/models"));
+        assert!(view.success);
+        assert_eq!(view.model_ids, vec!["a-model", "z-model"]);
+        assert_eq!(view.models.len(), 2);
+        assert!(!serde_json::to_string(&view)
+            .expect("serialize view")
+            .contains("sk-model-secret"));
+    }
+
+    #[tokio::test]
+    async fn provider_models_redacts_failure_body() {
+        let db = Database::memory().expect("db");
+        let base_url = spawn_test_server(Router::new().route(
+            "/v1/models",
+            get(|| async {
+                (
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    "upstream rejected sk-redacted-secret",
+                )
+            }),
+        ))
+        .await;
+        save_codex_provider(&db, "provider-a", &base_url, "sk-redacted-secret");
+
+        let view = fetch_provider_models(&db, &AppType::Codex, "provider-a")
+            .await
+            .expect("models failure view");
+
+        assert!(!view.success);
+        assert!(view.model_ids.is_empty());
+        let error = view.error.expect("redacted error");
+        assert!(!error.contains("sk-redacted-secret"));
+        assert!(error.contains("[redacted]"));
+    }
+
+    #[tokio::test]
+    async fn provider_endpoint_actions_reject_unsupported_app_and_missing_provider() {
+        let db = Database::memory().expect("db");
+
+        let unsupported = fetch_provider_models(&db, &AppType::Hermes, "provider-a")
+            .await
+            .expect_err("Hermes should be unsupported");
+        assert!(unsupported.to_string().contains("Hermes is not supported"));
+
+        let missing = test_provider_latency(&db, &AppType::Codex, "missing-provider")
+            .await
+            .expect_err("missing provider should fail");
+        assert!(missing
+            .to_string()
+            .contains("codex provider missing-provider does not exist"));
     }
 
     fn sample_claude_auth_json() -> Vec<u8> {

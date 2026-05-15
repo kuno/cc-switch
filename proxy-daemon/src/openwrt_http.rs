@@ -76,6 +76,14 @@ pub(crate) fn mount_openwrt_admin_routes(router: Router<ProxyState>) -> Router<P
             post(openwrt_activate_provider),
         )
         .route(
+            "/openwrt/admin/apps/:app/providers/:provider_id/latency",
+            post(openwrt_test_provider_latency),
+        )
+        .route(
+            "/openwrt/admin/apps/:app/providers/:provider_id/models",
+            post(openwrt_fetch_provider_models),
+        )
+        .route(
             "/openwrt/admin/apps/:app/providers/:provider_id/codex-auth",
             post(openwrt_upload_codex_auth).delete(openwrt_remove_codex_auth),
         )
@@ -542,6 +550,40 @@ async fn openwrt_activate_provider(
         openwrt_admin::activate_provider(state.db.as_ref(), &app_type, &provider_id)
     }) {
         Ok(view) => openwrt_admin_ok(view),
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+async fn openwrt_test_provider_latency(
+    Path((app, provider_id)): Path<(String, String)>,
+    State(state): State<ProxyState>,
+) -> (StatusCode, Json<Value>) {
+    match parse_openwrt_app(&app) {
+        Ok(app_type) => {
+            match openwrt_admin::test_provider_latency(state.db.as_ref(), &app_type, &provider_id)
+                .await
+            {
+                Ok(view) => openwrt_admin_ok(view),
+                Err(error) => openwrt_admin_error(error),
+            }
+        }
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+async fn openwrt_fetch_provider_models(
+    Path((app, provider_id)): Path<(String, String)>,
+    State(state): State<ProxyState>,
+) -> (StatusCode, Json<Value>) {
+    match parse_openwrt_app(&app) {
+        Ok(app_type) => {
+            match openwrt_admin::fetch_provider_models(state.db.as_ref(), &app_type, &provider_id)
+                .await
+            {
+                Ok(view) => openwrt_admin_ok(view),
+                Err(error) => openwrt_admin_error(error),
+            }
+        }
         Err(error) => openwrt_admin_error(error),
     }
 }
