@@ -368,6 +368,20 @@ function getRuntimeStatus() {
 	return runAdminGetJson('/runtime');
 }
 
+function testOutboundProxy(candidateProxyUrl) {
+	let body = {};
+	let candidate = candidateProxyUrl == null ? '' : trim('' + candidateProxyUrl);
+
+	if (candidate)
+		body.candidateProxyUrl = candidate;
+
+	return runAdminHttpJson(
+		'POST',
+		'/openwrt/admin/outbound-proxy/test',
+		body
+	);
+}
+
 function getAppRuntimeStatus(app) {
 	let normalizedApp = normalizeApp(app);
 
@@ -844,6 +858,16 @@ return {
 		get_runtime_status: {
 			call: function() {
 				return getRuntimeStatus();
+			}
+		},
+
+		test_outbound_proxy: {
+			args: {
+				candidate_proxy_url: ''
+			},
+
+			call: function(request) {
+				return testOutboundProxy(request.args.candidate_proxy_url);
 			}
 		},
 

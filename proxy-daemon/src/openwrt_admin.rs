@@ -27,7 +27,7 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io::Read;
 use std::str::FromStr;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 const CLAUDE_APP_ID: &str = "claude";
@@ -45,6 +45,9 @@ const GEMINI_PROVIDER_ID_PREFIX: &str = "openwrt-gemini-";
 const GEMINI_TOKEN_FIELD: &str = "GEMINI_API_KEY";
 pub const OPENWRT_REQUEST_LOGS_DEFAULT_PAGE_SIZE: u32 = 20;
 pub const OPENWRT_REQUEST_LOGS_MAX_PAGE_SIZE: u32 = 100;
+const DEFAULT_OUTBOUND_PROXY_TEST_URL: &str = "https://www.gstatic.com/generate_204";
+const OUTBOUND_PROXY_TEST_TIMEOUT: Duration = Duration::from_secs(3);
+const OUTBOUND_PROXY_TEST_CONNECT_TIMEOUT: Duration = Duration::from_millis(1500);
 const CLAUDE_MODEL_KEYS_TO_CLEAR: [&str; 6] = [
     "ANTHROPIC_MODEL",
     "ANTHROPIC_REASONING_MODEL",
@@ -97,6 +100,13 @@ pub struct OpenWrtAppConfigPayload {
     pub circuit_timeout_seconds: u32,
     pub circuit_error_rate_threshold: f64,
     pub circuit_min_requests: u32,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtOutboundProxyTestPayload {
+    #[serde(default)]
+    pub candidate_proxy_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -320,6 +330,22 @@ pub struct OpenWrtCircuitBreakerResetView {
     pub provider_id: String,
     pub provider_health: OpenWrtProviderHealthView,
     pub circuit_breaker: OpenWrtCircuitBreakerStateView,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtOutboundProxyTestView {
+    pub configured: bool,
+    pub http_proxy_configured: bool,
+    pub https_proxy_configured: bool,
+    pub source: String,
+    pub proxy_url: Option<String>,
+    pub test_url: String,
+    pub tested: bool,
+    pub success: bool,
+    pub status: Option<u16>,
+    pub latency_ms: Option<u64>,
+    pub error: Option<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -890,6 +916,84 @@ pub async fn get_runtime_status(db: &Database) -> anyhow::Result<OpenWrtRuntimeS
         runtime,
         apps,
     })
+}
+
+pub async fn test_outbound_proxy(
+    db: &Database,
+    payload: OpenWrtOutboundProxyTestPayload,
+) -> anyhow::Result<OpenWrtOutboundProxyTestView> {
+    let db_proxy_url = db
+        .get_global_proxy_url()
+        .map_err(|e| anyhow!("failed to read runtime global proxy URL: {e}"))?;
+    let env_proxy_url = crate::proxy::http_client::get_host_proxy_url_from_env();
+    let configured_proxy_url = env_proxy_url.or(db_proxy_url);
+    let configured = configured_proxy_url.is_some();
+    let http_proxy_configured = host_proxy_env_present(&["http_proxy", "HTTP_PROXY"]);
+    let https_proxy_configured = host_proxy_env_present(&["https_proxy", "HTTPS_PROXY"]);
+    let candidate_proxy_url = normalize_optional_proxy_url(payload.candidate_proxy_url.as_deref());
+    let (source, proxy_url) = match payload.candidate_proxy_url {
+        Some(_) => ("candidate", candidate_proxy_url),
+        None => ("configured", configured_proxy_url),
+    };
+
+    let Some(proxy_url) = proxy_url else {
+        return Ok(OpenWrtOutboundProxyTestView {
+            configured,
+            http_proxy_configured,
+            https_proxy_configured,
+            source: source.to_string(),
+            proxy_url: None,
+            test_url: DEFAULT_OUTBOUND_PROXY_TEST_URL.to_string(),
+            tested: false,
+            success: false,
+            status: None,
+            latency_ms: None,
+            error: Some("no outbound proxy configured".to_string()),
+        });
+    };
+
+    let masked_proxy_url = mask_outbound_proxy_url(&proxy_url);
+    let mut view = OpenWrtOutboundProxyTestView {
+        configured,
+        http_proxy_configured,
+        https_proxy_configured,
+        source: source.to_string(),
+        proxy_url: Some(masked_proxy_url.clone()),
+        test_url: DEFAULT_OUTBOUND_PROXY_TEST_URL.to_string(),
+        tested: true,
+        success: false,
+        status: None,
+        latency_ms: None,
+        error: None,
+    };
+
+    match build_outbound_proxy_test_client(&proxy_url) {
+        Ok(client) => {
+            let start = Instant::now();
+            match client.get(DEFAULT_OUTBOUND_PROXY_TEST_URL).send().await {
+                Ok(response) => {
+                    view.latency_ms = Some(start.elapsed().as_millis() as u64);
+                    view.status = Some(response.status().as_u16());
+                    view.success = response.status().is_success();
+                    if !view.success {
+                        view.error = Some(format!(
+                            "test URL returned HTTP status {}",
+                            response.status().as_u16()
+                        ));
+                    }
+                }
+                Err(error) => {
+                    view.latency_ms = Some(start.elapsed().as_millis() as u64);
+                    view.error = Some(redact_proxy_error(&error.to_string(), Some(&proxy_url)));
+                }
+            }
+        }
+        Err(error) => {
+            view.error = Some(redact_proxy_error(&error, Some(&proxy_url)));
+        }
+    }
+
+    Ok(view)
 }
 
 pub async fn get_app_runtime_status(
@@ -1750,6 +1854,136 @@ fn build_current_targets_map(
             })
         })
         .collect()
+}
+
+fn host_proxy_env_present(keys: &[&str]) -> bool {
+    keys.iter()
+        .filter_map(|key| std::env::var(key).ok())
+        .map(|value| value.trim().to_string())
+        .any(|value| !value.is_empty())
+}
+
+fn normalize_optional_proxy_url(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn build_outbound_proxy_test_client(proxy_url: &str) -> Result<reqwest::Client, String> {
+    let parsed = url::Url::parse(proxy_url).map_err(|error| {
+        format!(
+            "invalid proxy URL '{}': {}",
+            mask_outbound_proxy_url(proxy_url),
+            error
+        )
+    })?;
+    let scheme = parsed.scheme();
+
+    if !["http", "https", "socks5", "socks5h"].contains(&scheme) {
+        return Err(format!(
+            "invalid proxy scheme '{}' in URL '{}'. Supported: http, https, socks5, socks5h",
+            scheme,
+            mask_outbound_proxy_url(proxy_url)
+        ));
+    }
+
+    let proxy = reqwest::Proxy::all(proxy_url).map_err(|error| {
+        format!(
+            "invalid proxy URL '{}': {}",
+            mask_outbound_proxy_url(proxy_url),
+            error
+        )
+    })?;
+
+    reqwest::Client::builder()
+        .proxy(proxy)
+        .timeout(OUTBOUND_PROXY_TEST_TIMEOUT)
+        .connect_timeout(OUTBOUND_PROXY_TEST_CONNECT_TIMEOUT)
+        .build()
+        .map_err(|error| format!("failed to build proxy test client: {error}"))
+}
+
+fn redact_proxy_error(error: &str, proxy_url: Option<&str>) -> String {
+    let mut redacted = error.to_string();
+
+    if let Some(proxy_url) = proxy_url {
+        redacted = redacted.replace(proxy_url, &mask_outbound_proxy_url(proxy_url));
+    }
+
+    redacted
+        .split_whitespace()
+        .map(redact_error_token)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn redact_error_token(token: &str) -> String {
+    let leading_len = token
+        .chars()
+        .take_while(|ch| ch.is_ascii_punctuation() && *ch != '/' && *ch != ':')
+        .map(char::len_utf8)
+        .sum::<usize>();
+    let trailing_len = token
+        .chars()
+        .rev()
+        .take_while(|ch| ch.is_ascii_punctuation() && *ch != '/' && *ch != ':')
+        .map(char::len_utf8)
+        .sum::<usize>();
+    let core_end = token.len().saturating_sub(trailing_len);
+
+    if leading_len >= core_end {
+        return token.to_string();
+    }
+
+    let leading = &token[..leading_len];
+    let core = &token[leading_len..core_end];
+    let trailing = &token[core_end..];
+
+    if let Ok(parsed) = url::Url::parse(core) {
+        if !parsed.username().is_empty() || parsed.password().is_some() {
+            return format!("{}{}{}", leading, mask_outbound_proxy_url(core), trailing);
+        }
+    }
+
+    token.to_string()
+}
+
+fn mask_outbound_proxy_url(proxy_url: &str) -> String {
+    if url::Url::parse(proxy_url).is_ok() {
+        return crate::proxy::http_client::mask_url(proxy_url);
+    }
+
+    if let Some(scheme_end) = proxy_url.find("://") {
+        let after_scheme_start = scheme_end + 3;
+        if let Some(at_offset) = proxy_url[after_scheme_start..].find('@') {
+            let host_start = after_scheme_start + at_offset + 1;
+            let host_end = proxy_url[host_start..]
+                .find(|ch: char| ch == '/' || ch == '?' || ch == '#' || ch.is_whitespace())
+                .map(|offset| host_start + offset)
+                .unwrap_or(proxy_url.len());
+
+            if host_start < host_end {
+                return format!(
+                    "{}://{}",
+                    &proxy_url[..scheme_end],
+                    &proxy_url[host_start..host_end]
+                );
+            }
+
+            return "<redacted proxy URL>".to_string();
+        }
+    }
+
+    if proxy_url.contains('@') {
+        return "<redacted proxy URL>".to_string();
+    }
+
+    if proxy_url.len() > 64 {
+        format!("{}...", &proxy_url[..64])
+    } else {
+        proxy_url.to_string()
+    }
 }
 
 async fn fetch_live_proxy_status(
@@ -2832,6 +3066,38 @@ mod tests {
         }
     }
 
+    struct ProxyEnvGuard {
+        original: Vec<(&'static str, Option<String>)>,
+    }
+
+    impl ProxyEnvGuard {
+        fn clear() -> Self {
+            let keys = ["http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY"];
+            let original = keys
+                .into_iter()
+                .map(|key| {
+                    let value = std::env::var(key).ok();
+                    std::env::remove_var(key);
+                    (key, value)
+                })
+                .collect();
+
+            Self { original }
+        }
+    }
+
+    impl Drop for ProxyEnvGuard {
+        fn drop(&mut self) {
+            for (key, value) in &self.original {
+                if let Some(value) = value {
+                    std::env::set_var(key, value);
+                } else {
+                    std::env::remove_var(key);
+                }
+            }
+        }
+    }
+
     fn sample_payload(name: &str, token: &str) -> ClaudeProviderPayload {
         ClaudeProviderPayload {
             provider_id: None,
@@ -2972,6 +3238,101 @@ mod tests {
         });
 
         (port, handle)
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn outbound_proxy_test_reports_no_proxy_without_network_request() {
+        let _env = TestEnv::new();
+        let _proxy_env = ProxyEnvGuard::clear();
+        let db = Database::memory().expect("db");
+
+        let result = test_outbound_proxy(&db, OpenWrtOutboundProxyTestPayload::default())
+            .await
+            .expect("proxy test");
+
+        assert!(!result.configured);
+        assert!(!result.http_proxy_configured);
+        assert!(!result.https_proxy_configured);
+        assert_eq!(result.source, "configured");
+        assert_eq!(result.proxy_url, None);
+        assert_eq!(result.test_url, DEFAULT_OUTBOUND_PROXY_TEST_URL);
+        assert!(!result.tested);
+        assert!(!result.success);
+        assert_eq!(result.status, None);
+        assert_eq!(result.latency_ms, None);
+        assert_eq!(
+            result.error.as_deref(),
+            Some("no outbound proxy configured")
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn outbound_proxy_test_rejects_invalid_configured_proxy_without_leaking_credentials() {
+        let _env = TestEnv::new();
+        let _proxy_env = ProxyEnvGuard::clear();
+        let db = Database::memory().expect("db");
+        db.set_global_proxy_url(Some("ftp://alice:super-secret@proxy.example:21"))
+            .expect("set configured proxy");
+
+        let result = test_outbound_proxy(&db, OpenWrtOutboundProxyTestPayload::default())
+            .await
+            .expect("proxy test");
+
+        assert!(result.configured);
+        assert_eq!(result.source, "configured");
+        assert_eq!(result.proxy_url.as_deref(), Some("ftp://proxy.example"));
+        assert!(result.tested);
+        assert!(!result.success);
+
+        let error = result.error.as_deref().expect("error");
+        assert!(error.contains("invalid proxy scheme"));
+        assert!(!error.contains("super-secret"));
+        assert!(!error.contains("alice:"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn outbound_proxy_test_rejects_invalid_candidate_without_leaking_credentials() {
+        let _env = TestEnv::new();
+        let _proxy_env = ProxyEnvGuard::clear();
+        let db = Database::memory().expect("db");
+
+        let result = test_outbound_proxy(
+            &db,
+            OpenWrtOutboundProxyTestPayload {
+                candidate_proxy_url: Some("ftp://alice:super-secret@proxy.example:21".to_string()),
+            },
+        )
+        .await
+        .expect("proxy test");
+
+        assert!(!result.configured);
+        assert_eq!(result.source, "candidate");
+        assert_eq!(result.proxy_url.as_deref(), Some("ftp://proxy.example"));
+        assert!(result.tested);
+        assert!(!result.success);
+
+        let error = result.error.as_deref().expect("error");
+        assert!(error.contains("invalid proxy scheme"));
+        assert!(!error.contains("super-secret"));
+        assert!(!error.contains("alice:"));
+    }
+
+    #[test]
+    fn outbound_proxy_error_redaction_masks_embedded_proxy_credentials() {
+        let redacted = redact_proxy_error(
+            "connect failed for http://alice:super-secret@proxy.example:8080 via socks5://admin:s3cr3t@proxy2.example:1080",
+            Some("http://alice:super-secret@proxy.example:8080"),
+        );
+
+        assert!(redacted.contains("http://proxy.example:8080"));
+        assert!(redacted.contains("socks5://proxy2.example:1080"));
+        assert!(!redacted.contains("super-secret"));
+        assert!(!redacted.contains("s3cr3t"));
+        assert!(!redacted.contains("alice:"));
+        assert!(!redacted.contains("admin:"));
     }
 
     #[test]
@@ -3311,7 +3672,7 @@ mod tests {
                 provider_id: None,
                 name: "Claude Official".to_string(),
                 base_url: "https://api.anthropic.com".to_string(),
-            website_url: None,
+                website_url: None,
                 token_field: DEFAULT_TOKEN_FIELD.to_string(),
                 token: String::new(),
                 model: String::new(),
@@ -3382,7 +3743,7 @@ mod tests {
                 provider_id: None,
                 name: "Claude Official".to_string(),
                 base_url: "https://api.anthropic.com".to_string(),
-            website_url: None,
+                website_url: None,
                 token_field: DEFAULT_TOKEN_FIELD.to_string(),
                 token: String::new(),
                 model: String::new(),
@@ -4050,7 +4411,10 @@ mod tests {
         assert_eq!(created.provider_id.as_deref(), Some("codex-a"));
         assert_eq!(created.token_field, CODEX_TOKEN_FIELD);
         assert_eq!(created.base_url, "https://codex.example/v1");
-        assert_eq!(created.website_url.as_deref(), Some("https://codex.example"));
+        assert_eq!(
+            created.website_url.as_deref(),
+            Some("https://codex.example")
+        );
         assert_eq!(created.model, "gpt-5.4");
         assert_eq!(created.token_masked, "********cret");
 
@@ -4073,10 +4437,7 @@ mod tests {
                 .and_then(Value::as_str),
             Some("https://codex.example/v1")
         );
-        assert_eq!(
-            stored.website_url.as_deref(),
-            Some("https://codex.example")
-        );
+        assert_eq!(stored.website_url.as_deref(), Some("https://codex.example"));
         assert!(stored
             .settings_config
             .get("config")
