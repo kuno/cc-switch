@@ -249,7 +249,8 @@ impl Database {
             id INTEGER PRIMARY KEY AUTOINCREMENT, provider_id TEXT NOT NULL, provider_name TEXT NOT NULL,
             app_type TEXT NOT NULL, status TEXT NOT NULL, success INTEGER NOT NULL, message TEXT NOT NULL,
             response_time_ms INTEGER, http_status INTEGER, model_used TEXT,
-            retry_count INTEGER DEFAULT 0, tested_at INTEGER NOT NULL
+            retry_count INTEGER DEFAULT 0, tested_at INTEGER NOT NULL,
+            error_category TEXT
         )", []).map_err(|e| AppError::Database(e.to_string()))?;
 
         conn.execute(
@@ -568,6 +569,11 @@ impl Database {
                         log::info!("迁移数据库从 v18 到 v19（分离供应商展示排序与故障转移排序）");
                         Self::migrate_v18_to_v19(conn)?;
                         Self::set_user_version(conn, 19)?;
+                    }
+                    19 => {
+                        log::info!("迁移数据库从 v19 到 v20（流式检查错误分类持久化）");
+                        Self::migrate_v19_to_v20(conn)?;
+                        Self::set_user_version(conn, 20)?;
                     }
                     _ => {
                         return Err(AppError::Database(format!(
@@ -1643,6 +1649,16 @@ impl Database {
         }
 
         log::info!("v18 -> v19 迁移完成：已分离供应商展示排序");
+        Ok(())
+    }
+
+    /// v19 -> v20: persist stream-check error categories.
+    fn migrate_v19_to_v20(conn: &Connection) -> Result<(), AppError> {
+        if Self::table_exists(conn, "stream_check_logs")? {
+            Self::add_column_if_missing(conn, "stream_check_logs", "error_category", "TEXT")?;
+        }
+
+        log::info!("v19 -> v20 迁移完成：已添加流式检查错误分类字段");
         Ok(())
     }
 
