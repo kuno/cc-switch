@@ -26,6 +26,8 @@
 					"get_request_detail",
 					"get_quota",
 					"get_status",
+					"list_backups",
+					"download_backup",
 					"get_available_failover_providers"
 				]
 			}
@@ -52,7 +54,11 @@
 					"upload_codex_auth",
 					"upload_claude_auth",
 					"remove_codex_auth",
-					"remove_claude_auth"
+					"remove_claude_auth",
+					"create_backup",
+					"import_backup",
+					"delete_backup",
+					"restore_backup"
 				]
 			}
 		}
