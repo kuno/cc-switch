@@ -35,10 +35,11 @@ small daemon admin endpoints plus LuCI surfaces, with conservative timeouts and
 storage limits.
 
 As of 2026-05-15, five backend-only parity slices have completed in isolated
-Paseo worker worktrees but have not yet been integrated into `openwrt-proxy`:
-stream/model health checks, endpoint latency/model discovery, backup/restore,
-circuit/log diagnostics, and outbound proxy testing. This document tracks that
-progress separately from features already present on the main branch.
+Paseo worker worktrees. The outbound proxy test has been integrated into
+`openwrt-proxy`; stream/model health checks, endpoint latency/model discovery,
+backup/restore, and circuit/log diagnostics remain worker-ready but not yet
+integrated. This document tracks that progress separately from features already
+present on the main branch.
 
 The largest parity differences need backend design before implementation:
 OpenCode/OpenClaw/Hermes support, MCP/prompts/skills, managed OAuth/device flow,
@@ -87,7 +88,7 @@ Status legend:
 | Endpoint latency and model discovery | backend ready | Worker `92e19f7` added provider-scoped `/latency` and `/models` admin endpoints, rpcd bridge methods, redacted structured responses, and tests. |
 | Backup/export/restore | backend ready | Worker `5f8aee9` added backup list/create/import/download/delete/restore APIs for daemon DB/data under `/etc/cc-switch`, safety backup before restore, metadata/schema validation, rpcd bridge, and tests. |
 | Circuit-breaker and log diagnostics | backend ready | Worker `2a45da7` added richer circuit-breaker diagnostics, request-log diagnostics, `failuresOnly`, bounded daemon log tail, rpcd bridge, and tests. |
-| Global outbound proxy test | backend ready | Worker `cb60fb8` added `/openwrt/admin/outbound-proxy/test`, rpcd bridge, redaction, bounded single-shot behavior, and tests. |
+| Global outbound proxy test | implemented | Integrated on `openwrt-proxy`: `/openwrt/admin/outbound-proxy/test` plus rpcd `test_outbound_proxy`, redaction, bounded single-shot behavior, and tests. |
 | Provider duplicate/import helpers | needs UI | Worth doing, but the user wants designer mockups before visible LuCI changes. |
 | Usage trends/model stats/pricing visibility | needs UI | Backend and presentation scope should be split after mockup; existing OpenWrt usage summary/provider stats remain implemented. |
 | OpenCode/OpenClaw/Hermes, MCP, prompts, skills, OAuth, WebDAV, universal providers | needs design | Do not start LuCI work until router ownership, secrets, storage, and client-file behavior are specified. |
@@ -106,7 +107,7 @@ Status legend:
 | Stream/model health checks and global/per-provider check config (`src/hooks/useStreamCheck.ts`, `src/components/usage/ModelTestConfigPanel.tsx`, `src-tauri/src/commands/stream_check.rs`, `src-tauri/src/services/stream_check.rs`) | Shared stream-check service is compiled into proxy-daemon, but no OpenWrt admin route or LuCI UI exposes it in the audited baseline (`proxy-daemon/src/services/mod.rs`, `proxy-daemon/src/openwrt_http.rs`). Backend-only provider stream-check endpoints are ready in worker `83c605d`. | Missing from main branch; backend ready for review | High | Suitable with bounded retries and opt-in execution | P1 integrate backend, then UI |
 | Import/export, local DB backups, restore, backup retention (`src/components/settings/ImportExportSection.tsx`, `src/components/settings/BackupListSection.tsx`, `src/lib/api/settings.ts`, `src-tauri/src/database/backup.rs`) | OpenWrt package preserves UCI config and `/etc/cc-switch`, but LuCI has no export/import/backup UI for router DB state in the audited baseline (`openwrt/README.md`, `openwrt/proxy-daemon/files/etc/init.d/ccswitch`). Backend-only daemon DB/data backup APIs are ready in worker `5f8aee9`. | Missing from main branch; backend ready for review | High for router maintenance and rollback | Suitable if restricted to `/etc/cc-switch` and authenticated LuCI users | P1 integrate backend, then UI |
 | WebDAV sync and auto-sync (`src/components/settings/WebdavSyncSection.tsx`, `src-tauri/src/commands/webdav_sync.rs`, `src-tauri/src/services/webdav_auto_sync.rs`) | Proxy daemon has a no-op WebDAV auto-sync stub because desktop uses Tauri AppHandle events (`proxy-daemon/src/services/webdav_auto_sync.rs`) | Missing by design | Medium | Needs credential, conflict, and recovery design before router use | P2 design |
-| Global outbound proxy entry, test, and local proxy scan (`src/components/settings/GlobalProxySettings.tsx`, `src/lib/api/settings.ts`, `src-tauri/src/lib.rs`) | OpenWrt UCI supports static `http_proxy`/`https_proxy` env passed to the daemon, but no scan/test UI is exposed (`openwrt/proxy-daemon/files/etc/config/ccswitch`, `openwrt/proxy-daemon/files/etc/init.d/ccswitch`, `src/openwrt-provider-ui/OpenWrtPageShell.tsx`). Backend-only outbound proxy test is ready in worker `cb60fb8`. | Partial parity; backend test ready for review | Medium | Static test is suitable; local scan is less useful on routers | P2 integrate backend, then UI |
+| Global outbound proxy entry, test, and local proxy scan (`src/components/settings/GlobalProxySettings.tsx`, `src/lib/api/settings.ts`, `src-tauri/src/lib.rs`) | OpenWrt UCI supports static `http_proxy`/`https_proxy` env passed to the daemon, and backend testing is now implemented via `/openwrt/admin/outbound-proxy/test` plus rpcd `test_outbound_proxy` (`openwrt/proxy-daemon/files/etc/config/ccswitch`, `openwrt/proxy-daemon/files/etc/init.d/ccswitch`, `proxy-daemon/src/openwrt_http.rs`, `openwrt/luci-app-ccswitch/root/usr/share/rpcd/ucode/ccswitch`). LuCI has no visual test control yet. | Partial parity; backend implemented, UI pending design | Medium | Static test is suitable; local scan is less useful on routers | P2 UI |
 | MCP unified manager (`src/components/mcp/UnifiedMcpPanel.tsx`, `src-tauri/src/commands/mcp.rs`, `src-tauri/src/app_config.rs`) | No OpenWrt admin route or LuCI UI for MCP; DB schema has MCP tables but OpenWrt contract does not expose them (`src-tauri/src/database/schema.rs`, `proxy-daemon/src/openwrt_http.rs`) | Missing | Unclear | Needs backend design because router may not own client-side MCP files | P2 design |
 | Prompt manager (`src/components/prompts/PromptPanel.tsx`, `src-tauri/src/commands/prompt.rs`) | No OpenWrt prompt UI/API, despite shared prompt DB schema (`src-tauri/src/database/schema.rs`, `proxy-daemon/src/openwrt_http.rs`) | Missing | Unclear | Needs design: client prompt files vs proxy-time prompt injection are different products | P2 design |
 | Skills manager, repos, zip install, backup/restore, update checks (`src/components/skills/UnifiedSkillsPanel.tsx`, `src-tauri/src/services/skill.rs`, `src-tauri/src/app_config.rs`) | No OpenWrt skills UI/API; schema exists but router workflow is undefined (`src-tauri/src/database/schema.rs`, `proxy-daemon/src/openwrt_http.rs`) | Missing | Low to unclear | Needs design; installing workstation skills on a router likely will not affect LAN clients | P3 design |
@@ -205,7 +206,7 @@ Desktop has global outbound proxy save/test/scan controls
 `openwrt/proxy-daemon/files/etc/init.d/ccswitch`). A simple "test this proxy"
 endpoint is worth adding. Desktop-style local proxy scanning is lower value on
 a router and should not be a priority. A backend-only single-shot outbound
-proxy test endpoint is ready in worker `cb60fb8`, pending integration.
+proxy test endpoint is now implemented on `openwrt-proxy`.
 
 ## Missing features not worth implementing
 
@@ -363,9 +364,9 @@ with safety backups before restore and clear compatibility metadata. Then add a
 bounded global outbound proxy test. This phase improves OpenWrt package
 maintenance without pulling in desktop UI assumptions (`openwrt/README.md`,
 `openwrt/proxy-daemon/files/etc/init.d/ccswitch`,
-`src/components/settings/BackupListSection.tsx`). Backend-only worker
-implementations now exist for daemon DB/data backup and outbound proxy testing;
-visible LuCI affordances should wait for design.
+`src/components/settings/BackupListSection.tsx`). The outbound proxy backend
+test is implemented; the daemon DB/data backup worker implementation remains
+ready for later integration. Visible LuCI affordances should wait for design.
 
 ### Phase 3 - design-gated expansion
 
