@@ -64,6 +64,38 @@ pub async fn fetch_models(
     api_format: Option<&str>,
     request_headers: Option<&BTreeMap<String, String>>,
 ) -> Result<Vec<FetchedModel>, String> {
+    fetch_models_with_options(
+        base_url,
+        api_key,
+        is_full_url,
+        models_url_override,
+        user_agent,
+        api_format,
+        request_headers,
+        Duration::from_secs(FETCH_TIMEOUT_SECS),
+    )
+    .await
+}
+
+pub async fn fetch_models_with_timeout(
+    base_url: &str,
+    api_key: &str,
+    is_full_url: bool,
+    timeout: Duration,
+) -> Result<Vec<FetchedModel>, String> {
+    fetch_models_with_options(base_url, api_key, is_full_url, None, None, None, None, timeout).await
+}
+
+async fn fetch_models_with_options(
+    base_url: &str,
+    api_key: &str,
+    is_full_url: bool,
+    models_url_override: Option<&str>,
+    user_agent: Option<HeaderValue>,
+    api_format: Option<&str>,
+    request_headers: Option<&BTreeMap<String, String>>,
+    timeout: Duration,
+) -> Result<Vec<FetchedModel>, String> {
     let candidates = build_models_url_candidates(base_url, is_full_url, models_url_override)?;
     let headers =
         build_model_fetch_headers(api_key, api_format, user_agent.as_ref(), request_headers)?;
@@ -82,7 +114,7 @@ pub async fn fetch_models(
         let request = client
             .get(url)
             .headers(headers.clone())
-            .timeout(Duration::from_secs(FETCH_TIMEOUT_SECS));
+            .timeout(timeout);
         let response = match request.send().await {
             Ok(r) => r,
             Err(e) => {
@@ -222,6 +254,18 @@ pub fn build_models_url_candidates(
         }
     }
 
+    models_endpoint_candidates(base_url, is_full_url)
+}
+
+/// 构造 /v1/models 的主 URL。
+pub fn models_endpoint_url(base_url: &str, is_full_url: bool) -> Result<String, String> {
+    models_endpoint_candidates(base_url, is_full_url)?
+        .into_iter()
+        .next()
+        .ok_or_else(|| "Cannot derive models endpoint".to_string())
+}
+
+fn models_endpoint_candidates(base_url: &str, is_full_url: bool) -> Result<Vec<String>, String> {
     let trimmed = base_url.trim().trim_end_matches('/');
     if trimmed.is_empty() {
         return Err("Base URL is empty".to_string());
@@ -586,6 +630,23 @@ mod tests {
         // 虚构 case：baseURL 就是 "scheme://host"，剥不出子路径，应只有一个候选。
         let c = build_models_url_candidates("https://host.example.com", false, None).unwrap();
         assert_eq!(c.len(), 1);
+    }
+
+    #[test]
+    fn test_models_endpoint_url_returns_primary_candidate() {
+        assert_eq!(
+            models_endpoint_url("https://api.siliconflow.cn", false).unwrap(),
+            "https://api.siliconflow.cn/v1/models"
+        );
+        assert_eq!(
+            models_endpoint_url("https://api.example.com/v1", false).unwrap(),
+            "https://api.example.com/v1/models"
+        );
+        assert_eq!(
+            models_endpoint_url("https://proxy.example.com/v1/chat/completions", true).unwrap(),
+            "https://proxy.example.com/v1/models"
+        );
+        assert!(models_endpoint_url("", false).is_err());
     }
 
     #[test]

@@ -9,6 +9,8 @@
 					"list_providers",
 					"get_provider",
 					"get_provider_failover",
+					"test_provider_latency",
+					"fetch_provider_models",
 					"get_circuit_breaker_stats",
 					"get_circuit_breaker_state",
 					"get_active_provider",
