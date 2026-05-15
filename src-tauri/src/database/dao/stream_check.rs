@@ -2,7 +2,15 @@
 
 use crate::database::{lock_conn, Database};
 use crate::error::AppError;
-use crate::services::stream_check::{StreamCheckConfig, StreamCheckResult};
+use crate::services::stream_check::{HealthStatus, StreamCheckConfig, StreamCheckResult};
+
+#[derive(Debug, Clone)]
+pub struct StreamCheckLogEntry {
+    pub provider_id: String,
+    pub provider_name: String,
+    pub app_type: String,
+    pub result: StreamCheckResult,
+}
 
 impl Database {
     /// 保存流式检查日志
@@ -18,8 +26,8 @@ impl Database {
         conn.execute(
             "INSERT INTO stream_check_logs 
              (provider_id, provider_name, app_type, status, success, message, 
-              response_time_ms, http_status, model_used, retry_count, tested_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+              response_time_ms, http_status, model_used, retry_count, tested_at, error_category)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             rusqlite::params![
                 provider_id,
                 provider_name,
@@ -32,6 +40,7 @@ impl Database {
                 result.model_used,
                 result.retry_count as i64,
                 result.tested_at,
+                result.error_category.as_deref(),
             ],
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
@@ -45,6 +54,62 @@ impl Database {
             Some(json) => serde_json::from_str(&json)
                 .map_err(|e| AppError::Message(format!("解析配置失败: {e}"))),
             None => Ok(StreamCheckConfig::default()),
+        }
+    }
+
+    /// 获取供应商最近一次流式检查结果
+    pub fn get_latest_stream_check_log(
+        &self,
+        app_type: &str,
+        provider_id: &str,
+    ) -> Result<Option<StreamCheckLogEntry>, AppError> {
+        let conn = lock_conn!(self.conn);
+        let mut stmt = conn
+            .prepare(
+                "SELECT provider_id, provider_name, app_type, status, success, message,
+                    response_time_ms, http_status, model_used, retry_count, tested_at,
+                    error_category
+                 FROM stream_check_logs
+                 WHERE app_type = ?1 AND provider_id = ?2
+                 ORDER BY tested_at DESC, id DESC
+                 LIMIT 1",
+            )
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        match stmt.query_row([app_type, provider_id], |row| {
+            let status: String = row.get(3)?;
+            let status = match status.as_str() {
+                "operational" => HealthStatus::Operational,
+                "degraded" => HealthStatus::Degraded,
+                _ => HealthStatus::Failed,
+            };
+
+            let response_time_ms: Option<i64> = row.get(6)?;
+            let http_status: Option<i64> = row.get(7)?;
+            let model_used: Option<String> = row.get(8)?;
+            let retry_count: i64 = row.get(9)?;
+            let error_category: Option<String> = row.get(11)?;
+
+            Ok(StreamCheckLogEntry {
+                provider_id: row.get(0)?,
+                provider_name: row.get(1)?,
+                app_type: row.get(2)?,
+                result: StreamCheckResult {
+                    status,
+                    success: row.get::<_, bool>(4)?,
+                    message: row.get(5)?,
+                    response_time_ms: response_time_ms.map(|value| value as u64),
+                    http_status: http_status.map(|value| value as u16),
+                    model_used: model_used.unwrap_or_default(),
+                    retry_count: retry_count as u32,
+                    tested_at: row.get(10)?,
+                    error_category,
+                },
+            })
+        }) {
+            Ok(entry) => Ok(Some(entry)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(error) => Err(AppError::Database(error.to_string())),
         }
     }
 

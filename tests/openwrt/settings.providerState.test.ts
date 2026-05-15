@@ -640,6 +640,7 @@ describe("OpenWrt settings shared-provider shell", () => {
     ) as {
       "luci-app-ccswitch"?: {
         read?: { ubus?: { ccswitch?: string[] } };
+        write?: { ubus?: { ccswitch?: string[] } };
       };
     };
 
@@ -657,6 +658,12 @@ describe("OpenWrt settings shared-provider shell", () => {
     );
     expect(acl["luci-app-ccswitch"]?.read?.ubus?.ccswitch ?? []).toContain(
       "get_request_detail",
+    );
+    expect(acl["luci-app-ccswitch"]?.read?.ubus?.ccswitch ?? []).toContain(
+      "get_provider_stream_check",
+    );
+    expect(acl["luci-app-ccswitch"]?.write?.ubus?.ccswitch ?? []).toContain(
+      "run_provider_stream_check",
     );
   });
 
@@ -1157,6 +1164,34 @@ describe("OpenWrt settings shared-provider shell", () => {
       "'http://127.0.0.1:15721/openwrt/admin/apps/codex/failover/providers/primary%20route%2Fblue'",
     );
     expect(commands[0]).not.toContain("primary route/blue'");
+  });
+
+  it("bridges provider stream-check read and run calls to daemon admin endpoints", () => {
+    const { api, commands } = loadOpenWrtRpcHandler();
+
+    const read = api.ccswitch.get_provider_stream_check.call({
+      args: {
+        app: "codex",
+        provider_id: "primary route/blue",
+      },
+    });
+    const run = api.ccswitch.run_provider_stream_check.call({
+      args: {
+        app: "codex",
+        provider_id: "primary route/blue",
+      },
+    });
+
+    expect(read).toMatchObject({ ok: true });
+    expect(run).toMatchObject({ ok: true });
+    expect(commands).toHaveLength(2);
+    expect(commands[0]).toContain(
+      "'http://127.0.0.1:15721/openwrt/admin/apps/codex/providers/primary%20route%2Fblue/stream-check'",
+    );
+    expect(commands[1]).toContain("-X 'POST'");
+    expect(commands[1]).toContain(
+      "'http://127.0.0.1:15721/openwrt/admin/apps/codex/providers/primary%20route%2Fblue/stream-check'",
+    );
   });
 
   it("parses inlined active-provider objects in the LuCI host bridge", () => {

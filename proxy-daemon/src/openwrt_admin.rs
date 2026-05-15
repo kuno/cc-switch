@@ -1,6 +1,7 @@
 use crate::app_config::AppType;
 use crate::config::sanitize_provider_name;
 use crate::database::Database;
+use crate::error::AppError;
 use crate::provider::Provider;
 use crate::proxy::providers::{
     claude_oauth_store::{
@@ -17,12 +18,17 @@ use crate::proxy::server::populate_status_active_targets;
 use crate::proxy::types::{AppProxyConfig, GlobalProxyConfig, ProviderHealth, ProxyStatus};
 use crate::proxy::ProviderRouter;
 use crate::proxy::{CircuitBreakerStats, CircuitState};
+use crate::services::stream_check::{
+    HealthStatus, StreamCheckBounds, StreamCheckResult, StreamCheckService,
+};
 use crate::services::usage_stats::{
     LogFilters, PaginatedLogs, ProviderStats, RequestLogDetail, UsageSummary,
 };
 use crate::services::{model_fetch, speedtest::SpeedtestService};
 use crate::version;
 use anyhow::{anyhow, Context};
+use once_cell::sync::Lazy;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -377,6 +383,42 @@ pub struct OpenWrtProviderModelsView {
     pub models: Vec<model_fetch::FetchedModel>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtStreamCheckResultView {
+    pub app: String,
+    pub provider_id: String,
+    pub provider_name: String,
+    pub success: bool,
+    pub status: HealthStatus,
+    pub message: String,
+    pub response_time_ms: Option<u64>,
+    pub http_status: Option<u16>,
+    pub model_used: String,
+    pub tested_at: i64,
+    pub retry_count: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_category: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtStreamCheckReadView {
+    pub app: String,
+    pub provider_id: String,
+    pub provider_name: String,
+    pub check: Option<OpenWrtStreamCheckResultView>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtStreamCheckRunView {
+    pub app: String,
+    pub provider_id: String,
+    pub provider_name: String,
+    pub check: OpenWrtStreamCheckResultView,
 }
 
 #[derive(Clone, Copy)]
@@ -784,6 +826,90 @@ pub async fn fetch_provider_models(
             error: Some(sanitize_failure_message(&error, Some(&target.api_key))),
         }),
     }
+}
+
+pub fn get_provider_stream_check(
+    db: &Database,
+    app_type: &AppType,
+    provider_id: &str,
+) -> anyhow::Result<OpenWrtStreamCheckReadView> {
+    let profile = openwrt_app_profile(app_type)?;
+    let normalized_provider_id = normalize_provider_id(provider_id)?;
+    let provider = load_provider(db, profile, &normalized_provider_id)?;
+    let check = db
+        .get_latest_stream_check_log(profile.app_id, &normalized_provider_id)
+        .map_err(|e| {
+            anyhow!(
+                "failed to read {} provider {normalized_provider_id} stream check: {e}",
+                profile.app_id
+            )
+        })?
+        .map(stream_check_log_to_view);
+
+    Ok(OpenWrtStreamCheckReadView {
+        app: profile.app_id.to_string(),
+        provider_id: normalized_provider_id,
+        provider_name: provider.name,
+        check,
+    })
+}
+
+pub async fn run_provider_stream_check(
+    db: &Database,
+    app_type: &AppType,
+    provider_id: &str,
+) -> anyhow::Result<OpenWrtStreamCheckRunView> {
+    let profile = openwrt_app_profile(app_type)?;
+    let normalized_provider_id = normalize_provider_id(provider_id)?;
+    let provider = load_provider(db, profile, &normalized_provider_id)?;
+    let config = db.get_stream_check_config().map_err(|e| {
+        anyhow!(
+            "failed to read {} provider {normalized_provider_id} stream check config: {e}",
+            profile.app_id
+        )
+    })?;
+
+    let result = match StreamCheckService::check_with_retry_bounded(
+        app_type,
+        &provider,
+        &config,
+        None,
+        None,
+        None,
+        StreamCheckBounds::openwrt_conservative(),
+    )
+    .await
+    {
+        Ok(result) => sanitize_stream_check_result(result),
+        Err(error) => stream_check_error_result(error),
+    };
+
+    db.save_stream_check_log(
+        &normalized_provider_id,
+        &provider.name,
+        profile.app_id,
+        &result,
+    )
+    .map_err(|e| {
+        anyhow!(
+            "failed to save {} provider {normalized_provider_id} stream check: {e}",
+            profile.app_id
+        )
+    })?;
+
+    let check = stream_check_result_to_view(
+        profile.app_id,
+        &normalized_provider_id,
+        &provider.name,
+        result,
+    );
+
+    Ok(OpenWrtStreamCheckRunView {
+        app: profile.app_id.to_string(),
+        provider_id: normalized_provider_id,
+        provider_name: provider.name,
+        check,
+    })
 }
 
 pub fn get_active_provider(
@@ -1916,6 +2042,91 @@ fn build_provider_health_view(
             updated_at: None,
         },
     }
+}
+
+fn stream_check_log_to_view(
+    entry: crate::database::StreamCheckLogEntry,
+) -> OpenWrtStreamCheckResultView {
+    stream_check_result_to_view(
+        &entry.app_type,
+        &entry.provider_id,
+        &entry.provider_name,
+        sanitize_stream_check_result(entry.result),
+    )
+}
+
+fn stream_check_result_to_view(
+    app: &str,
+    provider_id: &str,
+    provider_name: &str,
+    result: StreamCheckResult,
+) -> OpenWrtStreamCheckResultView {
+    OpenWrtStreamCheckResultView {
+        app: app.to_string(),
+        provider_id: provider_id.to_string(),
+        provider_name: provider_name.to_string(),
+        success: result.success,
+        status: result.status,
+        message: redact_stream_check_message(&result.message),
+        response_time_ms: result.response_time_ms,
+        http_status: result.http_status,
+        model_used: result.model_used,
+        tested_at: result.tested_at,
+        retry_count: result.retry_count,
+        error_category: result.error_category,
+    }
+}
+
+fn sanitize_stream_check_result(mut result: StreamCheckResult) -> StreamCheckResult {
+    result.message = redact_stream_check_message(&result.message);
+    result
+}
+
+fn stream_check_error_result(error: AppError) -> StreamCheckResult {
+    let (http_status, message) = match error {
+        AppError::HttpStatus { status, body } => (Some(status), body),
+        other => (None, other.to_string()),
+    };
+
+    StreamCheckResult {
+        status: HealthStatus::Failed,
+        success: false,
+        message: redact_stream_check_message(&message),
+        response_time_ms: None,
+        http_status,
+        model_used: String::new(),
+        tested_at: chrono::Utc::now().timestamp(),
+        retry_count: 0,
+        error_category: None,
+    }
+}
+
+static STREAM_CHECK_SECRET_PATTERNS: Lazy<Vec<(Regex, &'static str)>> = Lazy::new(|| {
+    vec![
+        (
+            Regex::new(r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s,;]+")
+                .expect("auth regex"),
+            "${1}[REDACTED]",
+        ),
+        (
+            Regex::new(r#"(?i)((?:api[_-]?key|token|access[_-]?token|refresh[_-]?token)\s*["']?\s*[:=]\s*["']?)[^"',\s&}]+"#)
+                .expect("token regex"),
+            "${1}[REDACTED]",
+        ),
+        (
+            Regex::new(r"sk-[A-Za-z0-9_-]{8,}").expect("sk regex"),
+            "[REDACTED]",
+        ),
+    ]
+});
+
+fn redact_stream_check_message(message: &str) -> String {
+    let mut redacted = message.to_string();
+    for (pattern, replacement) in STREAM_CHECK_SECRET_PATTERNS.iter() {
+        redacted = pattern.replace_all(&redacted, *replacement).into_owned();
+    }
+
+    redacted
 }
 
 async fn load_provider_health_view(
@@ -3686,6 +3897,73 @@ mod tests {
         assert!(!redacted.contains("s3cr3t"));
         assert!(!redacted.contains("alice:"));
         assert!(!redacted.contains("admin:"));
+    }
+
+    #[test]
+    fn get_provider_stream_check_returns_latest_redacted_result() {
+        let db = Database::memory().expect("db");
+        let provider = Provider::with_id(
+            "provider-a".to_string(),
+            "Provider A".to_string(),
+            json!({}),
+            None,
+        );
+        db.save_provider(CLAUDE_APP_TYPE, &provider)
+            .expect("save provider");
+
+        let result = StreamCheckResult {
+            status: HealthStatus::Failed,
+            success: false,
+            message: "Authorization: Bearer sk-secret-token and api_key: visible-secret"
+                .to_string(),
+            response_time_ms: Some(42),
+            http_status: Some(401),
+            model_used: "claude-test".to_string(),
+            tested_at: 1234,
+            retry_count: 1,
+            error_category: Some("auth".to_string()),
+        };
+        db.save_stream_check_log("provider-a", "Provider A", CLAUDE_APP_TYPE, &result)
+            .expect("save stream check");
+
+        let view = get_provider_stream_check(&db, &AppType::Claude, "provider-a")
+            .expect("stream check view");
+        let check = view.check.expect("latest check");
+
+        assert_eq!(check.app, CLAUDE_APP_TYPE);
+        assert_eq!(check.provider_id, "provider-a");
+        assert_eq!(check.response_time_ms, Some(42));
+        assert_eq!(check.error_category.as_deref(), Some("auth"));
+        assert!(!check.message.contains("sk-secret-token"));
+        assert!(!check.message.contains("visible-secret"));
+        assert!(check.message.contains("[REDACTED]"));
+    }
+
+    #[tokio::test]
+    async fn run_provider_stream_check_returns_structured_failure_and_persists_it() {
+        let db = Database::memory().expect("db");
+        let provider = Provider::with_id(
+            "provider-a".to_string(),
+            "Provider A".to_string(),
+            json!({}),
+            None,
+        );
+        db.save_provider(CLAUDE_APP_TYPE, &provider)
+            .expect("save provider");
+
+        let view = run_provider_stream_check(&db, &AppType::Claude, "provider-a")
+            .await
+            .expect("run stream check");
+
+        assert_eq!(view.app, CLAUDE_APP_TYPE);
+        assert_eq!(view.provider_id, "provider-a");
+        assert!(!view.check.success);
+        assert_eq!(view.check.status, HealthStatus::Failed);
+        assert!(view.check.tested_at > 0);
+
+        let latest = get_provider_stream_check(&db, &AppType::Claude, "provider-a")
+            .expect("latest stream check");
+        assert!(latest.check.is_some());
     }
 
     #[test]
