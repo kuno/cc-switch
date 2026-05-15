@@ -36,17 +36,32 @@ pub async fn fetch_models(
     api_key: &str,
     is_full_url: bool,
 ) -> Result<Vec<FetchedModel>, String> {
+    fetch_models_with_timeout(
+        base_url,
+        api_key,
+        is_full_url,
+        Duration::from_secs(FETCH_TIMEOUT_SECS),
+    )
+    .await
+}
+
+pub async fn fetch_models_with_timeout(
+    base_url: &str,
+    api_key: &str,
+    is_full_url: bool,
+    timeout: Duration,
+) -> Result<Vec<FetchedModel>, String> {
     if api_key.is_empty() {
         return Err("API Key is required to fetch models".to_string());
     }
 
-    let models_url = build_models_url(base_url, is_full_url)?;
+    let models_url = models_endpoint_url(base_url, is_full_url)?;
     let client = crate::proxy::http_client::get();
 
     let response = client
         .get(&models_url)
         .header("Authorization", format!("Bearer {api_key}"))
-        .timeout(Duration::from_secs(FETCH_TIMEOUT_SECS))
+        .timeout(timeout)
         .send()
         .await
         .map_err(|e| format!("Request failed: {e}"))?;
@@ -77,7 +92,7 @@ pub async fn fetch_models(
 }
 
 /// 构造 /v1/models 的完整 URL
-fn build_models_url(base_url: &str, is_full_url: bool) -> Result<String, String> {
+pub fn models_endpoint_url(base_url: &str, is_full_url: bool) -> Result<String, String> {
     let trimmed = base_url.trim().trim_end_matches('/');
 
     if trimmed.is_empty() {
@@ -116,7 +131,7 @@ mod tests {
     #[test]
     fn test_build_models_url_basic() {
         assert_eq!(
-            build_models_url("https://api.siliconflow.cn", false).unwrap(),
+            models_endpoint_url("https://api.siliconflow.cn", false).unwrap(),
             "https://api.siliconflow.cn/v1/models"
         );
     }
@@ -124,7 +139,7 @@ mod tests {
     #[test]
     fn test_build_models_url_trailing_slash() {
         assert_eq!(
-            build_models_url("https://api.example.com/", false).unwrap(),
+            models_endpoint_url("https://api.example.com/", false).unwrap(),
             "https://api.example.com/v1/models"
         );
     }
@@ -132,7 +147,7 @@ mod tests {
     #[test]
     fn test_build_models_url_with_v1() {
         assert_eq!(
-            build_models_url("https://api.example.com/v1", false).unwrap(),
+            models_endpoint_url("https://api.example.com/v1", false).unwrap(),
             "https://api.example.com/v1/models"
         );
     }
@@ -140,14 +155,14 @@ mod tests {
     #[test]
     fn test_build_models_url_full_url() {
         assert_eq!(
-            build_models_url("https://proxy.example.com/v1/chat/completions", true).unwrap(),
+            models_endpoint_url("https://proxy.example.com/v1/chat/completions", true).unwrap(),
             "https://proxy.example.com/v1/models"
         );
     }
 
     #[test]
     fn test_build_models_url_empty() {
-        assert!(build_models_url("", false).is_err());
+        assert!(models_endpoint_url("", false).is_err());
     }
 
     #[test]

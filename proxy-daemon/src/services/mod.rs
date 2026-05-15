@@ -4,6 +4,9 @@
 #[path = "../../../src-tauri/src/services/omo.rs"]
 pub mod omo;
 
+#[path = "../../../src-tauri/src/services/model_fetch.rs"]
+pub mod model_fetch;
+
 #[path = "../../../src-tauri/src/services/oauth_refresh/mod.rs"]
 pub mod oauth_refresh;
 
@@ -14,6 +17,9 @@ pub mod provider;
 pub mod proxy;
 
 pub mod skill;
+
+#[path = "../../../src-tauri/src/services/speedtest.rs"]
+pub mod speedtest;
 
 #[path = "../../../src-tauri/src/services/stream_check.rs"]
 pub mod stream_check;
