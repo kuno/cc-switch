@@ -16,5 +16,6 @@ pub mod universal_providers;
 pub mod usage_rollup;
 
 // 所有 DAO 方法都通过 Database impl 提供，无需单独导出
-// 导出 FailoverQueueItem 供外部使用
+// 导出共享视图类型供外部使用
 pub use failover::FailoverQueueItem;
+pub use stream_check::StreamCheckLogEntry;
