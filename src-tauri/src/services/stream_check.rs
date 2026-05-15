@@ -49,6 +49,44 @@ pub struct StreamCheckConfig {
     pub test_prompt: String,
 }
 
+/// Bounds applied by constrained runtimes before issuing a health check.
+#[derive(Debug, Clone, Copy)]
+pub struct StreamCheckBounds {
+    pub timeout_secs_max: u64,
+    pub max_retries_max: u32,
+    pub degraded_threshold_ms_max: u64,
+    pub test_prompt_chars_max: usize,
+}
+
+impl StreamCheckBounds {
+    pub fn openwrt_conservative() -> Self {
+        Self {
+            timeout_secs_max: 10,
+            max_retries_max: 1,
+            degraded_threshold_ms_max: 5_000,
+            test_prompt_chars_max: 256,
+        }
+    }
+
+    fn apply(self, mut config: StreamCheckConfig) -> StreamCheckConfig {
+        config.timeout_secs = config.timeout_secs.clamp(1, self.timeout_secs_max);
+        config.max_retries = config.max_retries.min(self.max_retries_max);
+        config.degraded_threshold_ms = config
+            .degraded_threshold_ms
+            .clamp(1, self.degraded_threshold_ms_max);
+
+        if config.test_prompt.chars().count() > self.test_prompt_chars_max {
+            config.test_prompt = config
+                .test_prompt
+                .chars()
+                .take(self.test_prompt_chars_max)
+                .collect();
+        }
+
+        config
+    }
+}
+
 fn default_test_prompt() -> String {
     "Who are you?".to_string()
 }
@@ -118,8 +156,54 @@ impl StreamCheckService {
         base_url_override: Option<String>,
         claude_api_format_override: Option<String>,
     ) -> Result<StreamCheckResult, AppError> {
+        Self::check_with_retry_inner(
+            app_type,
+            provider,
+            config,
+            auth_override,
+            base_url_override,
+            claude_api_format_override,
+            None,
+        )
+        .await
+    }
+
+    /// Execute a stream check with explicit runtime bounds applied after provider overrides.
+    pub async fn check_with_retry_bounded(
+        app_type: &AppType,
+        provider: &Provider,
+        config: &StreamCheckConfig,
+        auth_override: Option<AuthInfo>,
+        base_url_override: Option<String>,
+        claude_api_format_override: Option<String>,
+        bounds: StreamCheckBounds,
+    ) -> Result<StreamCheckResult, AppError> {
+        Self::check_with_retry_inner(
+            app_type,
+            provider,
+            config,
+            auth_override,
+            base_url_override,
+            claude_api_format_override,
+            Some(bounds),
+        )
+        .await
+    }
+
+    async fn check_with_retry_inner(
+        app_type: &AppType,
+        provider: &Provider,
+        config: &StreamCheckConfig,
+        auth_override: Option<AuthInfo>,
+        base_url_override: Option<String>,
+        claude_api_format_override: Option<String>,
+        bounds: Option<StreamCheckBounds>,
+    ) -> Result<StreamCheckResult, AppError> {
         // 合并供应商单独配置和全局配置
-        let effective_config = Self::merge_provider_config(provider, config);
+        let mut effective_config = Self::merge_provider_config(provider, config);
+        if let Some(bounds) = bounds {
+            effective_config = bounds.apply(effective_config);
+        }
         let mut last_result = None;
 
         for attempt in 0..=effective_config.max_retries {

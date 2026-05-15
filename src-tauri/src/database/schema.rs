@@ -233,7 +233,8 @@ impl Database {
             id INTEGER PRIMARY KEY AUTOINCREMENT, provider_id TEXT NOT NULL, provider_name TEXT NOT NULL,
             app_type TEXT NOT NULL, status TEXT NOT NULL, success INTEGER NOT NULL, message TEXT NOT NULL,
             response_time_ms INTEGER, http_status INTEGER, model_used TEXT,
-            retry_count INTEGER DEFAULT 0, tested_at INTEGER NOT NULL
+            retry_count INTEGER DEFAULT 0, tested_at INTEGER NOT NULL,
+            error_category TEXT
         )", []).map_err(|e| AppError::Database(e.to_string()))?;
 
         conn.execute(
@@ -449,6 +450,11 @@ impl Database {
                         log::info!("迁移数据库从 v10 到 v11（分离供应商展示排序与故障转移排序）");
                         Self::migrate_v10_to_v11(conn)?;
                         Self::set_user_version(conn, 11)?;
+                    }
+                    11 => {
+                        log::info!("迁移数据库从 v11 到 v12（流式检查错误分类持久化）");
+                        Self::migrate_v11_to_v12(conn)?;
+                        Self::set_user_version(conn, 12)?;
                     }
                     _ => {
                         return Err(AppError::Database(format!(
@@ -1243,6 +1249,16 @@ impl Database {
         }
 
         log::info!("v10 -> v11 迁移完成：已分离供应商展示排序");
+        Ok(())
+    }
+
+    /// v11 -> v12 迁移：持久化流式检查错误分类
+    fn migrate_v11_to_v12(conn: &Connection) -> Result<(), AppError> {
+        if Self::table_exists(conn, "stream_check_logs")? {
+            Self::add_column_if_missing(conn, "stream_check_logs", "error_category", "TEXT")?;
+        }
+
+        log::info!("v11 -> v12 迁移完成：已添加流式检查错误分类字段");
         Ok(())
     }
 

@@ -226,6 +226,43 @@ fn schema_migration_adds_missing_columns_for_providers() {
 }
 
 #[test]
+fn schema_migration_v12_adds_stream_check_error_category() {
+    let conn = Connection::open_in_memory().expect("open memory db");
+    conn.execute_batch(
+        "
+        CREATE TABLE stream_check_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            provider_id TEXT NOT NULL,
+            provider_name TEXT NOT NULL,
+            app_type TEXT NOT NULL,
+            status TEXT NOT NULL,
+            success INTEGER NOT NULL,
+            message TEXT NOT NULL,
+            response_time_ms INTEGER,
+            http_status INTEGER,
+            model_used TEXT,
+            retry_count INTEGER DEFAULT 0,
+            tested_at INTEGER NOT NULL
+        );
+        ",
+    )
+    .expect("seed v11 stream_check_logs table");
+    Database::set_user_version(&conn, 11).expect("set v11");
+
+    Database::apply_schema_migrations_on_conn(&conn).expect("apply migrations");
+
+    assert!(
+        Database::has_column(&conn, "stream_check_logs", "error_category")
+            .expect("check error_category column"),
+        "stream_check_logs.error_category should exist after migration"
+    );
+    assert_eq!(
+        Database::get_user_version(&conn).expect("version after migration"),
+        SCHEMA_VERSION
+    );
+}
+
+#[test]
 fn schema_migration_aligns_column_defaults_and_types() {
     let conn = Connection::open_in_memory().expect("open memory db");
     conn.execute_batch(LEGACY_SCHEMA_SQL)

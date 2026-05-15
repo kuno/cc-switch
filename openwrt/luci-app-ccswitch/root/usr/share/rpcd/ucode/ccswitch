@@ -385,6 +385,18 @@ function getCircuitBreakerStats(app, providerId) {
 	return runAdminGetJson('/apps/' + percentEncodePath(normalizedApp) + '/providers/' + percentEncodePath(providerId) + '/circuit-breaker');
 }
 
+function getProviderStreamCheck(app, providerId) {
+	let normalizedApp = normalizeApp(app);
+	let missing = requireProviderId(providerId);
+	if (missing)
+		return missing;
+
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
+
+	return runAdminGetJson('/apps/' + percentEncodePath(normalizedApp) + '/providers/' + percentEncodePath(providerId) + '/stream-check');
+}
+
 function getActiveProvider(app) {
 	let normalizedApp = normalizeApp(app);
 
@@ -596,6 +608,21 @@ function resetCircuitBreaker(app, providerId) {
 	return runAdminHttpJson(
 		'POST',
 		`${adminProviderPath(normalizedApp, providerId)}/circuit-breaker/reset`
+	);
+}
+
+function runProviderStreamCheck(app, providerId) {
+	let normalizedApp = normalizeApp(app);
+	let missing = requireProviderId(providerId);
+	if (missing)
+		return missing;
+
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
+
+	return runAdminHttpJson(
+		'POST',
+		`${adminProviderPath(normalizedApp, providerId)}/stream-check`
 	);
 }
 
@@ -897,6 +924,17 @@ return {
 			}
 		},
 
+		get_provider_stream_check: {
+			args: {
+				app: 'claude',
+				provider_id: 'provider-id'
+			},
+
+			call: function(request) {
+				return getProviderStreamCheck(request.args.app, request.args.provider_id);
+			}
+		},
+
 		get_active_provider: {
 			args: {
 				app: 'claude'
@@ -1068,6 +1106,17 @@ return {
 
 			call: function(request) {
 				return resetCircuitBreaker(request.args.app, request.args.provider_id);
+			}
+		},
+
+		run_provider_stream_check: {
+			args: {
+				app: 'claude',
+				provider_id: 'provider-id'
+			},
+
+			call: function(request) {
+				return runProviderStreamCheck(request.args.app, request.args.provider_id);
 			}
 		},
 
