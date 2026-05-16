@@ -3565,28 +3565,16 @@ select.owt-provider-panel__input {
 
 [class~="owt-daemon-status"] {
   display: flex;
-  align-items: baseline;
-  gap: 10px;
+  align-items: center;
+  gap: 14px;
   color: var(--text);
   font-size: 28px;
   font-weight: 720;
   letter-spacing: -0.025em;
 }
 
-[class~="owt-daemon-status__dot"] {
-  width: 10px;
-  height: 10px;
-  flex: 0 0 auto;
-  border-radius: 999px;
-  background: var(--success);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--success) 18%, transparent);
-  transform: translateY(-3px);
-}
-
-[class~="owt-daemon-status"][data-running="false"]
-  [class~="owt-daemon-status__dot"] {
-  background: var(--owt-fail);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--owt-fail) 18%, transparent);
+.owt-daemon-status__label {
+  min-width: 0;
 }
 
 .owt-daemon-divider {
@@ -3595,14 +3583,22 @@ select.owt-provider-panel__input {
 }
 
 .owt-daemon-row {
-  display: grid;
-  grid-template-columns: auto auto 1fr auto auto;
-  gap: 12px;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  gap: 12px;
 }
 
 .owt-daemon-row__spacer {
-  display: block;
+  flex: 1 1 0;
+  min-width: 4px;
+}
+
+.owt-daemon-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 12px;
 }
 
 .owt-daemon-cell-label {
@@ -3712,10 +3708,25 @@ select.owt-provider-panel__input {
 
 @media (max-width: 960px) {
   .owt-daemon-row {
-    grid-template-columns: 1fr auto;
-    grid-auto-flow: row;
+    gap: 10px;
   }
 
+  .owt-daemon-row__spacer {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .owt-daemon-summary {
+    grid-template-columns: minmax(0, 1fr);
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+
+  .owt-daemon-summary__segment:first-child {
+    width: 100%;
+    max-width: none;
+  }
 }
 
 @media (max-width: 560px) {
@@ -4720,41 +4731,71 @@ select.owt-provider-panel__input {
  * ===================================================================== */
 .owt-daemon-summary {
   position: relative;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 10px;
-  margin-top: 12px;
+  display: grid;
+  grid-template-columns: max-content minmax(12rem, 1fr);
+  flex: 1 1 42rem;
+  align-items: start;
+  column-gap: 18px;
+  row-gap: 4px;
+  margin-left: 8px;
+  min-width: 0;
+  max-width: min(64rem, 100%);
   color: var(--muted);
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 600;
+  line-height: 1.5;
 }
 
 .owt-daemon-summary__segment {
-  display: inline-flex;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
   min-width: 0;
-  align-items: center;
-  gap: 7px;
+  align-items: flex-start;
+  gap: 1px;
 }
 
-.owt-daemon-summary__segment > svg {
-  flex: 0 0 auto;
+.owt-daemon-summary__segment:first-child {
+  width: max-content;
+  max-width: 16rem;
+}
+
+.owt-daemon-summary__segment:last-child {
+  min-width: 0;
+}
+
+.owt-daemon-summary__segment:last-child .owt-inline-token {
+  width: 100%;
+}
+
+.owt-daemon-summary__head {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding-left: 8px;
   color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.owt-daemon-summary__head > svg {
+  flex: 0 0 auto;
+  color: var(--soft-text);
 }
 
 .owt-daemon-summary__label {
   color: var(--muted);
+  font-weight: 700;
   white-space: nowrap;
-}
-
-.owt-daemon-summary__sep {
-  color: var(--soft-text);
 }
 
 .owt-inline-token {
   display: inline-flex;
   min-width: 0;
-  max-width: min(32rem, 64vw);
+  max-width: min(32rem, 100%);
   height: 26px;
   align-items: center;
   gap: 6px;
