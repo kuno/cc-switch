@@ -28,6 +28,10 @@ pub(crate) fn mount_openwrt_admin_routes(router: Router<ProxyState>) -> Router<P
             post(openwrt_test_outbound_proxy),
         )
         .route(
+            "/openwrt/admin/diagnostics/daemon-log-tail",
+            get(openwrt_get_daemon_log_tail),
+        )
+        .route(
             "/openwrt/admin/backups",
             get(openwrt_list_backups).post(openwrt_create_backup),
         )
@@ -67,6 +71,10 @@ pub(crate) fn mount_openwrt_admin_routes(router: Router<ProxyState>) -> Router<P
         .route(
             "/openwrt/admin/apps/:app/request-logs",
             get(openwrt_get_request_logs),
+        )
+        .route(
+            "/openwrt/admin/apps/:app/request-logs/diagnostics",
+            get(openwrt_get_request_log_diagnostics),
         )
         .route(
             "/openwrt/admin/apps/:app/request-logs/:request_id",
@@ -187,8 +195,23 @@ struct OpenWrtRequestLogsQuery {
     provider_name: Option<String>,
     model: Option<String>,
     status_code: Option<u16>,
+    failures_only: Option<bool>,
     start_date: Option<i64>,
     end_date: Option<i64>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OpenWrtRequestLogDiagnosticsQuery {
+    provider_id: Option<String>,
+    limit: Option<u32>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OpenWrtDaemonLogTailQuery {
+    lines: Option<u32>,
+    max_bytes: Option<u32>,
 }
 
 fn openwrt_admin_ok<T: serde::Serialize>(value: T) -> (StatusCode, Json<Value>) {
@@ -329,6 +352,15 @@ async fn openwrt_test_outbound_proxy(
     }
 }
 
+async fn openwrt_get_daemon_log_tail(
+    Query(query): Query<OpenWrtDaemonLogTailQuery>,
+) -> (StatusCode, Json<Value>) {
+    match openwrt_admin::get_daemon_log_tail(query.lines, query.max_bytes) {
+        Ok(tail) => openwrt_admin_ok(tail),
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
 async fn openwrt_get_app_runtime_status(
     Path(app): Path<String>,
     State(state): State<ProxyState>,
@@ -405,6 +437,7 @@ async fn openwrt_get_request_logs(
         provider_name: normalize_optional_query_filter(query.provider_name),
         model: normalize_optional_query_filter(query.model),
         status_code: query.status_code,
+        failures_only: query.failures_only.unwrap_or(false),
         start_date: query.start_date,
         end_date: query.end_date,
         ..Default::default()
@@ -420,6 +453,25 @@ async fn openwrt_get_request_logs(
         )
     }) {
         Ok(logs) => openwrt_admin_ok(logs),
+        Err(error) => openwrt_admin_error(error),
+    }
+}
+
+async fn openwrt_get_request_log_diagnostics(
+    Path(app): Path<String>,
+    Query(query): Query<OpenWrtRequestLogDiagnosticsQuery>,
+    State(state): State<ProxyState>,
+) -> (StatusCode, Json<Value>) {
+    let provider_id = normalize_optional_query_filter(query.provider_id);
+    match parse_openwrt_app(&app).and_then(|app_type| {
+        openwrt_admin::get_request_log_diagnostics(
+            state.db.as_ref(),
+            &app_type,
+            provider_id.as_deref(),
+            query.limit,
+        )
+    }) {
+        Ok(diagnostics) => openwrt_admin_ok(diagnostics),
         Err(error) => openwrt_admin_error(error),
     }
 }
@@ -949,6 +1001,9 @@ mod tests {
     use std::sync::Arc;
     use tokio::sync::RwLock;
 
+    const SECRET_PROVIDER_ERROR: &str =
+        "upstream timeout Authorization: Bearer sk-ant-secret-token access_token=secret-token";
+
     fn test_proxy_state() -> ProxyState {
         let db = Arc::new(Database::memory().expect("db"));
         let current_providers = Arc::new(RwLock::new(HashMap::new()));
@@ -1005,6 +1060,49 @@ mod tests {
         .expect("insert request log");
     }
 
+    fn assert_secret_redacted(value: &Value) {
+        let message = value.as_str().expect("diagnostic error string");
+        assert!(message.contains("[REDACTED]"));
+        assert!(!message.contains("sk-ant-secret-token"));
+        assert!(!message.contains("secret-token"));
+    }
+
+    async fn seed_unhealthy_provider_with_secret_error(
+        state: &ProxyState,
+        app_type: &str,
+        provider_id: &str,
+    ) {
+        let provider = crate::provider::Provider::with_id(
+            provider_id.to_string(),
+            "Health Provider".to_string(),
+            json!({}),
+            None,
+        );
+        state
+            .db
+            .save_provider(app_type, &provider)
+            .expect("save provider");
+        state
+            .db
+            .set_current_provider(app_type, provider_id)
+            .expect("set current provider");
+        state
+            .db
+            .add_to_failover_queue(app_type, provider_id)
+            .expect("add provider to failover queue");
+        state
+            .db
+            .update_provider_health_with_threshold(
+                provider_id,
+                app_type,
+                false,
+                Some(SECRET_PROVIDER_ERROR.to_string()),
+                1,
+            )
+            .await
+            .expect("mark provider unhealthy");
+    }
+
     async fn seed_open_circuit_provider(state: &ProxyState, app_type: &str, provider_id: &str) {
         let provider = crate::provider::Provider::with_id(
             provider_id.to_string(),
@@ -1036,7 +1134,7 @@ mod tests {
                 app_type,
                 false,
                 false,
-                Some("upstream timeout".to_string()),
+                Some(SECRET_PROVIDER_ERROR.to_string()),
             )
             .await
             .expect("record failed provider result");
@@ -1303,9 +1401,49 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn openwrt_get_provider_failover_redacts_provider_health_last_error() {
+        let state = test_proxy_state();
+        seed_unhealthy_provider_with_secret_error(&state, "claude", "provider-a").await;
+
+        let (status, body) = openwrt_get_provider_failover(
+            Path(("claude".to_string(), "provider-a".to_string())),
+            State(state),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["ok"], Value::Bool(true));
+        assert_secret_redacted(&body["providerHealth"]["lastError"]);
+        assert_secret_redacted(&body["failoverQueue"][0]["health"]["lastError"]);
+    }
+
+    #[tokio::test]
+    async fn openwrt_get_app_runtime_status_redacts_provider_health_last_error() {
+        let state = test_proxy_state();
+        seed_unhealthy_provider_with_secret_error(&state, "claude", "provider-a").await;
+
+        let (status, body) =
+            openwrt_get_app_runtime_status(Path("claude".to_string()), State(state)).await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["ok"], Value::Bool(true));
+        assert_secret_redacted(&body["activeProviderHealth"]["lastError"]);
+        assert_secret_redacted(&body["failoverQueue"][0]["health"]["lastError"]);
+    }
+
+    #[tokio::test]
     async fn openwrt_get_circuit_breaker_state_returns_live_stats_and_health() {
         let state = test_proxy_state();
         seed_open_circuit_provider(&state, "claude", "provider-a").await;
+        insert_request_log(
+            state.db.as_ref(),
+            "req-failed",
+            "provider-a",
+            "claude",
+            "claude-sonnet",
+            502,
+            300,
+        );
 
         let (status, body) = openwrt_get_circuit_breaker_state(
             Path(("claude".to_string(), "provider-a".to_string())),
@@ -1320,18 +1458,51 @@ mod tests {
         assert_eq!(body["liveRuntimeReachable"], Value::Bool(true));
         assert_eq!(body["source"], Value::String("runtime-router".to_string()));
         assert_eq!(body["state"], Value::String("open".to_string()));
+        assert_eq!(
+            body["stateReason"],
+            Value::String("failure_threshold".to_string())
+        );
+        let last_failure = body["lastFailure"]["message"]
+            .as_str()
+            .expect("top-level last failure message");
+        assert!(last_failure.contains("[REDACTED]"));
+        assert!(!last_failure.contains("sk-ant-secret-token"));
+        assert!(!last_failure.contains("secret-token"));
         assert_eq!(body["stats"]["state"], Value::String("open".to_string()));
         assert_eq!(body["stats"]["failedRequests"], Value::from(1));
+        assert_eq!(
+            body["stats"]["stateReason"],
+            Value::String("failure_threshold".to_string())
+        );
+        let stats_last_failure = body["stats"]["lastFailure"]["message"]
+            .as_str()
+            .expect("stats last failure message");
+        assert!(stats_last_failure.contains("[REDACTED]"));
+        assert!(!stats_last_failure.contains("sk-ant-secret-token"));
+        assert!(!stats_last_failure.contains("secret-token"));
+        let stats_recent_failure = body["stats"]["recentFailures"][0]["message"]
+            .as_str()
+            .expect("stats recent failure message");
+        assert!(stats_recent_failure.contains("[REDACTED]"));
+        assert!(!stats_recent_failure.contains("sk-ant-secret-token"));
+        assert!(!stats_recent_failure.contains("secret-token"));
+        assert_eq!(
+            body["recentFailures"][0]["requestId"],
+            Value::String("req-failed".to_string())
+        );
+        assert_eq!(body["recentFailures"][0]["statusCode"], Value::from(502));
         assert_eq!(body["providerHealth"]["observed"], Value::Bool(true));
         assert_eq!(body["providerHealth"]["healthy"], Value::Bool(false));
         assert_eq!(
             body["providerHealth"]["consecutiveFailures"],
             Value::from(1)
         );
-        assert_eq!(
-            body["providerHealth"]["lastError"],
-            Value::String("upstream timeout".to_string())
-        );
+        let provider_last_error = body["providerHealth"]["lastError"]
+            .as_str()
+            .expect("provider health last error");
+        assert!(provider_last_error.contains("[REDACTED]"));
+        assert!(!provider_last_error.contains("sk-ant-secret-token"));
+        assert!(!provider_last_error.contains("secret-token"));
     }
 
     #[tokio::test]
@@ -1356,6 +1527,15 @@ mod tests {
         );
         assert_eq!(body["providerHealth"]["lastError"], Value::Null);
         assert_eq!(
+            body["resetResult"]["previousState"],
+            Value::String("open".to_string())
+        );
+        assert_eq!(
+            body["resetResult"]["currentState"],
+            Value::String("closed".to_string())
+        );
+        assert_eq!(body["resetResult"]["healthReset"], Value::Bool(true));
+        assert_eq!(
             body["circuitBreaker"]["state"],
             Value::String("closed".to_string())
         );
@@ -1367,6 +1547,12 @@ mod tests {
             body["circuitBreaker"]["stats"]["failedRequests"],
             Value::from(0)
         );
+        let reset_stats_last_failure = body["circuitBreaker"]["stats"]["lastFailure"]["message"]
+            .as_str()
+            .expect("reset stats last failure message");
+        assert!(reset_stats_last_failure.contains("[REDACTED]"));
+        assert!(!reset_stats_last_failure.contains("sk-ant-secret-token"));
+        assert!(!reset_stats_last_failure.contains("secret-token"));
 
         let persisted_health = state
             .db

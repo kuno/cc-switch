@@ -34,8 +34,11 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::io::Read;
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
+use std::path::Path;
 use std::str::FromStr;
+use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 
@@ -57,6 +60,30 @@ pub const OPENWRT_REQUEST_LOGS_MAX_PAGE_SIZE: u32 = 100;
 const DEFAULT_OUTBOUND_PROXY_TEST_URL: &str = "https://www.gstatic.com/generate_204";
 const OUTBOUND_PROXY_TEST_TIMEOUT: Duration = Duration::from_secs(3);
 const OUTBOUND_PROXY_TEST_CONNECT_TIMEOUT: Duration = Duration::from_millis(1500);
+pub const OPENWRT_DAEMON_LOG_PATH: &str = "/var/log/cc-switch/cc-switch.log";
+pub const OPENWRT_DAEMON_LOG_DEFAULT_LINES: u32 = 80;
+pub const OPENWRT_DAEMON_LOG_MAX_LINES: u32 = 200;
+pub const OPENWRT_DAEMON_LOG_DEFAULT_BYTES: u32 = 64 * 1024;
+pub const OPENWRT_DAEMON_LOG_MAX_BYTES: u32 = 256 * 1024;
+const OPENWRT_FAILURE_SAMPLE_DEFAULT_LIMIT: u32 = 5;
+const OPENWRT_FAILURE_SAMPLE_MAX_LIMIT: u32 = 20;
+static BEARER_TOKEN_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+").expect("bearer regex"));
+static JSON_SECRET_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r#"(?i)("(?:api[_-]?key|access[_-]?token|refresh[_-]?token|auth[_-]?token|password|secret)"\s*:\s*")[^"]+""#,
+    )
+    .expect("json secret regex")
+});
+static KV_SECRET_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r#"(?i)\b((?:api[_-]?key|access[_-]?token|refresh[_-]?token|auth[_-]?token|password|secret)\s*[:=]\s*)[^\s,"'}]+"#,
+    )
+    .expect("kv secret regex")
+});
+static API_KEY_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\b(?:sk|sk-ant|sk-proj)-[A-Za-z0-9_-]{8,}\b").expect("api key regex")
+});
 const CLAUDE_MODEL_KEYS_TO_CLEAR: [&str; 6] = [
     "ANTHROPIC_MODEL",
     "ANTHROPIC_REASONING_MODEL",
@@ -349,6 +376,59 @@ pub struct OpenWrtProviderHealthView {
     pub updated_at: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtRequestFailureSample {
+    pub request_id: String,
+    pub provider_id: String,
+    pub provider_name: Option<String>,
+    pub model: String,
+    pub status_code: u16,
+    pub error_message: Option<String>,
+    pub latency_ms: u64,
+    pub created_at: i64,
+    pub data_source: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtRequestLogDiagnosticsView {
+    pub app: String,
+    pub provider_id: Option<String>,
+    pub sample_limit: u32,
+    pub total_failures: u32,
+    pub recent_failures: Vec<OpenWrtRequestFailureSample>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtCircuitFailureInfo {
+    pub observed_at: Option<String>,
+    pub message: Option<String>,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtCircuitStatsFailureInfo {
+    pub observed_at: String,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtCircuitBreakerStatsView {
+    pub state: CircuitState,
+    pub consecutive_failures: u32,
+    pub consecutive_successes: u32,
+    pub total_requests: u32,
+    pub failed_requests: u32,
+    pub state_reason: Option<String>,
+    pub last_failure: Option<OpenWrtCircuitStatsFailureInfo>,
+    #[serde(default)]
+    pub recent_failures: Vec<OpenWrtCircuitStatsFailureInfo>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenWrtFailoverQueueStatusView {
@@ -383,8 +463,26 @@ pub struct OpenWrtCircuitBreakerStateView {
     pub live_runtime_reachable: bool,
     pub source: String,
     pub state: Option<CircuitState>,
-    pub stats: Option<CircuitBreakerStats>,
+    pub state_reason: Option<String>,
+    pub last_failure: Option<OpenWrtCircuitFailureInfo>,
+    #[serde(default)]
+    pub recent_failures: Vec<OpenWrtRequestFailureSample>,
+    pub stats: Option<OpenWrtCircuitBreakerStatsView>,
     pub provider_health: OpenWrtProviderHealthView,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtCircuitBreakerResetResult {
+    pub health_reset: bool,
+    pub breaker_observed_before_reset: bool,
+    pub previous_state: Option<CircuitState>,
+    pub current_state: Option<CircuitState>,
+    pub previous_provider_healthy: bool,
+    pub current_provider_healthy: bool,
+    pub previous_consecutive_failures: u32,
+    pub current_consecutive_failures: u32,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -393,6 +491,7 @@ pub struct OpenWrtCircuitBreakerResetView {
     pub app: String,
     pub provider_id: String,
     pub provider_health: OpenWrtProviderHealthView,
+    pub reset_result: Option<OpenWrtCircuitBreakerResetResult>,
     pub circuit_breaker: OpenWrtCircuitBreakerStateView,
 }
 
@@ -474,6 +573,20 @@ pub struct OpenWrtStreamCheckRunView {
     pub provider_id: String,
     pub provider_name: String,
     pub check: OpenWrtStreamCheckResultView,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWrtDaemonLogTailView {
+    pub source: String,
+    pub path: String,
+    pub lines_requested: u32,
+    pub bytes_requested: u32,
+    pub lines_returned: u32,
+    pub bytes_read: u64,
+    pub file_size: u64,
+    pub truncated: bool,
+    pub entries: Vec<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -762,6 +875,11 @@ pub async fn reset_circuit_breaker(
     let normalized_provider_id = normalize_provider_id(provider_id)?;
     load_provider(db, profile, &normalized_provider_id)?;
 
+    let before_stats = provider_router
+        .get_circuit_breaker_stats(&normalized_provider_id, profile.app_id)
+        .await;
+    let before_health = load_provider_health_view(db, profile, &normalized_provider_id).await?;
+
     db.update_provider_health(&normalized_provider_id, profile.app_id, true, None)
         .await
         .map_err(|e| {
@@ -785,10 +903,27 @@ pub async fn reset_circuit_breaker(
     )
     .await?;
 
+    let reset_result = OpenWrtCircuitBreakerResetResult {
+        health_reset: true,
+        breaker_observed_before_reset: before_stats.is_some(),
+        previous_state: before_stats.as_ref().map(|stats| stats.state),
+        current_state: circuit_breaker.state,
+        previous_provider_healthy: before_health.healthy,
+        current_provider_healthy: circuit_breaker.provider_health.healthy,
+        previous_consecutive_failures: before_health.consecutive_failures,
+        current_consecutive_failures: circuit_breaker.provider_health.consecutive_failures,
+        message: if before_stats.is_some() {
+            "provider health and live circuit breaker reset".to_string()
+        } else {
+            "provider health reset; no live circuit breaker was observed before reset".to_string()
+        },
+    };
+
     Ok(OpenWrtCircuitBreakerResetView {
         app: profile.app_id.to_string(),
         provider_id: normalized_provider_id,
         provider_health: circuit_breaker.provider_health.clone(),
+        reset_result: Some(reset_result),
         circuit_breaker,
     })
 }
@@ -1471,6 +1606,35 @@ pub fn normalize_request_logs_pagination(page: Option<u32>, page_size: Option<u3
     (page, page_size)
 }
 
+pub fn normalize_failure_sample_limit(limit: Option<u32>) -> u32 {
+    limit
+        .unwrap_or(OPENWRT_FAILURE_SAMPLE_DEFAULT_LIMIT)
+        .clamp(1, OPENWRT_FAILURE_SAMPLE_MAX_LIMIT)
+}
+
+fn request_log_to_failure_sample(log: RequestLogDetail) -> OpenWrtRequestFailureSample {
+    OpenWrtRequestFailureSample {
+        request_id: log.request_id,
+        provider_id: log.provider_id,
+        provider_name: log.provider_name,
+        model: log.model,
+        status_code: log.status_code,
+        error_message: log
+            .error_message
+            .map(|message| redact_diagnostic_text(&message)),
+        latency_ms: log.latency_ms,
+        created_at: log.created_at,
+        data_source: log.data_source,
+    }
+}
+
+fn redact_diagnostic_text(value: &str) -> String {
+    let value = BEARER_TOKEN_RE.replace_all(value, "${1}[REDACTED]");
+    let value = JSON_SECRET_RE.replace_all(&value, "${1}[REDACTED]\"");
+    let value = KV_SECRET_RE.replace_all(&value, "${1}[REDACTED]");
+    API_KEY_RE.replace_all(&value, "[REDACTED]").to_string()
+}
+
 pub fn get_request_logs(
     db: &Database,
     app_type: &AppType,
@@ -1484,6 +1648,51 @@ pub fn get_request_logs(
 
     db.get_request_logs(&filters, page, page_size)
         .map_err(|e| anyhow!("failed to read {} request logs: {e}", profile.app_id))
+}
+
+pub fn get_request_log_diagnostics(
+    db: &Database,
+    app_type: &AppType,
+    provider_id: Option<&str>,
+    limit: Option<u32>,
+) -> anyhow::Result<OpenWrtRequestLogDiagnosticsView> {
+    let profile = openwrt_app_profile(app_type)?;
+    let normalized_provider_id = provider_id.map(normalize_provider_id).transpose()?;
+
+    if let Some(provider_id) = normalized_provider_id.as_deref() {
+        load_provider(db, profile, provider_id)?;
+    }
+
+    let sample_limit = normalize_failure_sample_limit(limit);
+    let failures = db
+        .get_request_logs(
+            &LogFilters {
+                app_type: Some(profile.app_id.to_string()),
+                provider_id: normalized_provider_id.clone(),
+                failures_only: true,
+                ..Default::default()
+            },
+            0,
+            sample_limit,
+        )
+        .map_err(|e| {
+            anyhow!(
+                "failed to read {} request log diagnostics: {e}",
+                profile.app_id
+            )
+        })?;
+
+    Ok(OpenWrtRequestLogDiagnosticsView {
+        app: profile.app_id.to_string(),
+        provider_id: normalized_provider_id,
+        sample_limit,
+        total_failures: failures.total,
+        recent_failures: failures
+            .data
+            .into_iter()
+            .map(request_log_to_failure_sample)
+            .collect(),
+    })
 }
 
 pub fn get_request_detail(
@@ -1510,6 +1719,79 @@ pub fn get_request_detail(
     }
 
     Ok(detail)
+}
+
+pub fn get_daemon_log_tail(
+    lines: Option<u32>,
+    max_bytes: Option<u32>,
+) -> anyhow::Result<OpenWrtDaemonLogTailView> {
+    read_bounded_daemon_log_tail_from_path(Path::new(OPENWRT_DAEMON_LOG_PATH), lines, max_bytes)
+}
+
+fn normalize_daemon_log_tail_limits(lines: Option<u32>, max_bytes: Option<u32>) -> (u32, u32) {
+    let lines = lines
+        .unwrap_or(OPENWRT_DAEMON_LOG_DEFAULT_LINES)
+        .clamp(1, OPENWRT_DAEMON_LOG_MAX_LINES);
+    let max_bytes = max_bytes
+        .unwrap_or(OPENWRT_DAEMON_LOG_DEFAULT_BYTES)
+        .clamp(1024, OPENWRT_DAEMON_LOG_MAX_BYTES);
+
+    (lines, max_bytes)
+}
+
+fn read_bounded_daemon_log_tail_from_path(
+    path: &Path,
+    lines: Option<u32>,
+    max_bytes: Option<u32>,
+) -> anyhow::Result<OpenWrtDaemonLogTailView> {
+    let (lines, max_bytes) = normalize_daemon_log_tail_limits(lines, max_bytes);
+    let mut file = File::open(path).map_err(|e| {
+        anyhow!(
+            "failed to open daemon log tail source {}: {e}",
+            OPENWRT_DAEMON_LOG_PATH
+        )
+    })?;
+    let file_size = file
+        .metadata()
+        .map_err(|e| anyhow!("failed to stat daemon log tail source: {e}"))?
+        .len();
+    let bytes_to_read = file_size.min(max_bytes as u64);
+    let start = file_size.saturating_sub(bytes_to_read);
+    file.seek(SeekFrom::Start(start))
+        .map_err(|e| anyhow!("failed to seek daemon log tail source: {e}"))?;
+
+    let mut buffer = Vec::with_capacity(bytes_to_read as usize);
+    file.take(bytes_to_read)
+        .read_to_end(&mut buffer)
+        .map_err(|e| anyhow!("failed to read daemon log tail source: {e}"))?;
+
+    let mut text = String::from_utf8_lossy(&buffer).to_string();
+    if start > 0 {
+        if let Some(index) = text.find('\n') {
+            text = text[(index + 1)..].to_string();
+        }
+    }
+
+    let all_lines: Vec<&str> = text.lines().collect();
+    let skip_count = all_lines.len().saturating_sub(lines as usize);
+    let entries: Vec<String> = all_lines
+        .iter()
+        .skip(skip_count)
+        .map(|line| redact_diagnostic_text(line))
+        .collect();
+    let truncated = start > 0 || skip_count > 0;
+
+    Ok(OpenWrtDaemonLogTailView {
+        source: "openwrt-daemon-log".to_string(),
+        path: OPENWRT_DAEMON_LOG_PATH.to_string(),
+        lines_requested: lines,
+        bytes_requested: max_bytes,
+        lines_returned: entries.len() as u32,
+        bytes_read: buffer.len() as u64,
+        file_size,
+        truncated,
+        entries,
+    })
 }
 
 pub async fn get_app_proxy_config(
@@ -2173,7 +2455,10 @@ fn build_provider_health_view(
             consecutive_failures: health.consecutive_failures,
             last_success_at: health.last_success_at.clone(),
             last_failure_at: health.last_failure_at.clone(),
-            last_error: health.last_error.clone(),
+            last_error: health
+                .last_error
+                .as_ref()
+                .map(|message| redact_diagnostic_text(message)),
             updated_at: Some(health.updated_at.clone()),
         },
         None => OpenWrtProviderHealthView {
@@ -2274,6 +2559,76 @@ fn redact_stream_check_message(message: &str) -> String {
     redacted
 }
 
+fn infer_circuit_state_reason(
+    state: Option<CircuitState>,
+    health: &OpenWrtProviderHealthView,
+) -> Option<String> {
+    match state {
+        Some(CircuitState::Open) if health.last_error.is_some() => {
+            Some("provider_failure_recorded".to_string())
+        }
+        Some(CircuitState::Open) => Some("circuit_open".to_string()),
+        Some(CircuitState::HalfOpen) => Some("open_timeout_elapsed".to_string()),
+        Some(CircuitState::Closed) if !health.healthy => Some("provider_unhealthy".to_string()),
+        Some(CircuitState::Closed) => Some("closed".to_string()),
+        None if !health.healthy => Some("provider_unhealthy_without_live_breaker".to_string()),
+        None => None,
+    }
+}
+
+fn provider_health_to_last_failure(
+    health: &OpenWrtProviderHealthView,
+) -> Option<OpenWrtCircuitFailureInfo> {
+    health
+        .last_error
+        .as_ref()
+        .map(|message| OpenWrtCircuitFailureInfo {
+            observed_at: health.last_failure_at.clone(),
+            message: Some(redact_diagnostic_text(message)),
+            source: "provider-health".to_string(),
+        })
+}
+
+fn redact_provider_health_view(mut health: OpenWrtProviderHealthView) -> OpenWrtProviderHealthView {
+    health.last_error = health
+        .last_error
+        .as_ref()
+        .map(|message| redact_diagnostic_text(message));
+    health
+}
+
+fn redact_circuit_breaker_stats(stats: &CircuitBreakerStats) -> OpenWrtCircuitBreakerStatsView {
+    OpenWrtCircuitBreakerStatsView {
+        state: stats.state,
+        consecutive_failures: stats.consecutive_failures,
+        consecutive_successes: stats.consecutive_successes,
+        total_requests: stats.total_requests,
+        failed_requests: stats.failed_requests,
+        state_reason: stats.state_reason.clone(),
+        last_failure: stats
+            .last_failure
+            .as_ref()
+            .map(|failure| OpenWrtCircuitStatsFailureInfo {
+                observed_at: failure.observed_at.clone(),
+                message: failure
+                    .message
+                    .as_ref()
+                    .map(|message| redact_diagnostic_text(message)),
+            }),
+        recent_failures: stats
+            .recent_failures
+            .iter()
+            .map(|failure| OpenWrtCircuitStatsFailureInfo {
+                observed_at: failure.observed_at.clone(),
+                message: failure
+                    .message
+                    .as_ref()
+                    .map(|message| redact_diagnostic_text(message)),
+            })
+            .collect(),
+    }
+}
+
 async fn load_provider_health_view(
     db: &Database,
     profile: OpenWrtAppProfile,
@@ -2308,6 +2663,31 @@ async fn build_circuit_breaker_state_view(
         .await;
     let state = stats.as_ref().map(|stats| stats.state);
     let provider_health = load_provider_health_view(db, profile, provider_id).await?;
+    let sanitized_stats = stats.as_ref().map(redact_circuit_breaker_stats);
+    let state_reason = stats
+        .as_ref()
+        .and_then(|stats| stats.state_reason.clone())
+        .or_else(|| infer_circuit_state_reason(state, &provider_health));
+    let last_failure = stats
+        .as_ref()
+        .and_then(|stats| stats.last_failure.as_ref())
+        .map(|failure| OpenWrtCircuitFailureInfo {
+            observed_at: Some(failure.observed_at.clone()),
+            message: failure
+                .message
+                .as_ref()
+                .map(|message| redact_diagnostic_text(message)),
+            source: "runtime-router".to_string(),
+        })
+        .or_else(|| provider_health_to_last_failure(&provider_health));
+    let recent_failures = get_request_log_diagnostics(
+        db,
+        &AppType::from_str(profile.app_id)
+            .map_err(|e| anyhow!("failed to resolve app profile {}: {e}", profile.app_id))?,
+        Some(provider_id),
+        Some(OPENWRT_FAILURE_SAMPLE_DEFAULT_LIMIT),
+    )?
+    .recent_failures;
 
     Ok(OpenWrtCircuitBreakerStateView {
         app: profile.app_id.to_string(),
@@ -2315,8 +2695,11 @@ async fn build_circuit_breaker_state_view(
         live_runtime_reachable,
         source: source.to_string(),
         state,
-        stats,
-        provider_health,
+        state_reason,
+        last_failure,
+        recent_failures,
+        stats: sanitized_stats,
+        provider_health: redact_provider_health_view(provider_health),
     })
 }
 
@@ -4286,6 +4669,49 @@ mod tests {
 
     #[test]
     #[serial]
+    fn get_request_log_diagnostics_returns_recent_failures_only() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+
+        upsert_claude_provider_with_payload(
+            &db,
+            Some("provider-a"),
+            sample_payload("A", "secret-a"),
+        )
+        .expect("create provider a");
+        insert_request_log(
+            &db,
+            "req-ok",
+            "provider-a",
+            "claude",
+            "claude-sonnet",
+            200,
+            100,
+        );
+        insert_request_log(
+            &db,
+            "req-failed",
+            "provider-a",
+            "claude",
+            "claude-sonnet",
+            502,
+            200,
+        );
+
+        let diagnostics =
+            get_request_log_diagnostics(&db, &AppType::Claude, Some("provider-a"), Some(5))
+                .expect("request log diagnostics");
+
+        assert_eq!(diagnostics.app, "claude");
+        assert_eq!(diagnostics.provider_id.as_deref(), Some("provider-a"));
+        assert_eq!(diagnostics.total_failures, 1);
+        assert_eq!(diagnostics.recent_failures.len(), 1);
+        assert_eq!(diagnostics.recent_failures[0].request_id, "req-failed");
+        assert_eq!(diagnostics.recent_failures[0].status_code, 502);
+    }
+
+    #[test]
+    #[serial]
     fn get_request_detail_rejects_cross_app_lookup() {
         let _env = TestEnv::new();
         let db = Database::memory().expect("db");
@@ -4302,6 +4728,34 @@ mod tests {
         assert!(error
             .to_string()
             .contains("request log `req-codex` not found for claude"));
+    }
+
+    #[test]
+    #[serial]
+    fn daemon_log_tail_is_bounded_and_redacted() {
+        let env = TestEnv::new();
+        let log_path = env.tmp.path().join("cc-switch.log");
+        std::fs::write(
+            &log_path,
+            [
+                "first line",
+                "Authorization: Bearer sk-ant-secret-token",
+                r#"{"access_token":"secret-token","message":"kept"}"#,
+                "api_key=sk-proj-secret-key",
+            ]
+            .join("\n"),
+        )
+        .expect("write log");
+
+        let tail = read_bounded_daemon_log_tail_from_path(&log_path, Some(2), Some(1024))
+            .expect("read log tail");
+
+        assert_eq!(tail.path, OPENWRT_DAEMON_LOG_PATH);
+        assert_eq!(tail.lines_requested, 2);
+        assert_eq!(tail.lines_returned, 2);
+        assert!(tail.truncated);
+        assert!(tail.entries.iter().all(|line| !line.contains("secret")));
+        assert!(tail.entries.iter().any(|line| line.contains("[REDACTED]")));
     }
 
     #[test]
