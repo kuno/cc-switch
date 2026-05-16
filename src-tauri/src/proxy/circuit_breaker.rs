@@ -4,11 +4,15 @@
 
 use super::log_codes::cb as log_cb;
 use super::types::AppProxyConfig;
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::RwLock;
+
+const RECENT_FAILURE_LIMIT: usize = 5;
 
 /// 熔断器状态
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -90,6 +94,10 @@ pub struct CircuitBreaker {
     config: Arc<RwLock<CircuitBreakerConfig>>,
     /// 半开状态已放行的请求数（用于限流）
     half_open_requests: Arc<AtomicU32>,
+    /// 当前状态原因，用于诊断 OpenWrt 后台状态
+    state_reason: Arc<RwLock<Option<String>>>,
+    /// 最近失败样本，用于诊断熔断原因
+    recent_failures: Arc<RwLock<VecDeque<CircuitBreakerFailureInfo>>>,
 }
 
 /// 熔断器放行结果
@@ -114,6 +122,8 @@ impl CircuitBreaker {
             last_opened_at: Arc::new(RwLock::new(None)),
             config: Arc::new(RwLock::new(config)),
             half_open_requests: Arc::new(AtomicU32::new(0)),
+            state_reason: Arc::new(RwLock::new(Some("initialized_closed".to_string()))),
+            recent_failures: Arc::new(RwLock::new(VecDeque::with_capacity(RECENT_FAILURE_LIMIT))),
         }
     }
 
@@ -228,6 +238,16 @@ impl CircuitBreaker {
 
     /// 记录失败
     pub async fn record_failure(&self, used_half_open_permit: bool) {
+        self.record_failure_with_error(used_half_open_permit, None)
+            .await;
+    }
+
+    /// 记录失败并保存诊断信息
+    pub async fn record_failure_with_error(
+        &self,
+        used_half_open_permit: bool,
+        error_message: Option<String>,
+    ) {
         let state = *self.state.read().await;
         let config = self.config.read().await;
 
@@ -242,6 +262,7 @@ impl CircuitBreaker {
 
         // 重置成功计数
         self.consecutive_successes.store(0, Ordering::SeqCst);
+        self.push_failure_sample(error_message).await;
 
         // 检查是否应该打开熔断器
         match state {
@@ -252,7 +273,7 @@ impl CircuitBreaker {
                     log_cb::HALF_OPEN_PROBE_FAILED
                 );
                 drop(config);
-                self.transition_to_open().await;
+                self.transition_to_open("half_open_probe_failed").await;
             }
             CircuitState::Closed => {
                 // 检查连续失败次数
@@ -262,7 +283,7 @@ impl CircuitBreaker {
                         log_cb::TRIGGERED_FAILURES
                     );
                     drop(config); // 释放读锁再转换状态
-                    self.transition_to_open().await;
+                    self.transition_to_open("failure_threshold").await;
                 } else {
                     // 检查错误率
                     let total = self.total_requests.load(Ordering::SeqCst);
@@ -278,7 +299,7 @@ impl CircuitBreaker {
                                 error_rate * 100.0
                             );
                             drop(config); // 释放读锁再转换状态
-                            self.transition_to_open().await;
+                            self.transition_to_open("error_rate_threshold").await;
                         }
                     }
                 }
@@ -302,6 +323,16 @@ impl CircuitBreaker {
             consecutive_successes: self.consecutive_successes.load(Ordering::SeqCst),
             total_requests: self.total_requests.load(Ordering::SeqCst),
             failed_requests: self.failed_requests.load(Ordering::SeqCst),
+            state_reason: self.state_reason.read().await.clone(),
+            last_failure: self.recent_failures.read().await.back().cloned(),
+            recent_failures: self
+                .recent_failures
+                .read()
+                .await
+                .iter()
+                .rev()
+                .cloned()
+                .collect(),
         }
     }
 
@@ -356,9 +387,22 @@ impl CircuitBreaker {
     }
 
     /// 转换到打开状态
-    async fn transition_to_open(&self) {
+    async fn push_failure_sample(&self, error_message: Option<String>) {
+        let mut recent_failures = self.recent_failures.write().await;
+        if recent_failures.len() >= RECENT_FAILURE_LIMIT {
+            recent_failures.pop_front();
+        }
+        recent_failures.push_back(CircuitBreakerFailureInfo {
+            observed_at: Utc::now().to_rfc3339(),
+            message: error_message,
+        });
+    }
+
+    /// 转换到打开状态
+    async fn transition_to_open(&self, reason: &str) {
         *self.state.write().await = CircuitState::Open;
         *self.last_opened_at.write().await = Some(Instant::now());
+        *self.state_reason.write().await = Some(reason.to_string());
         self.consecutive_failures.store(0, Ordering::SeqCst);
         self.consecutive_successes.store(0, Ordering::SeqCst);
     }
@@ -371,6 +415,7 @@ impl CircuitBreaker {
         }
 
         *state = CircuitState::HalfOpen;
+        *self.state_reason.write().await = Some("open_timeout_elapsed".to_string());
         self.consecutive_successes.store(0, Ordering::SeqCst);
         // 重置半开状态的请求限流计数
         self.half_open_requests.store(0, Ordering::SeqCst);
@@ -379,12 +424,21 @@ impl CircuitBreaker {
     /// 转换到关闭状态
     async fn transition_to_closed(&self) {
         *self.state.write().await = CircuitState::Closed;
+        *self.state_reason.write().await = Some("closed_reset_or_recovered".to_string());
         self.consecutive_failures.store(0, Ordering::SeqCst);
         self.consecutive_successes.store(0, Ordering::SeqCst);
         // 重置计数器
         self.total_requests.store(0, Ordering::SeqCst);
         self.failed_requests.store(0, Ordering::SeqCst);
     }
+}
+
+/// 熔断器最近失败信息
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CircuitBreakerFailureInfo {
+    pub observed_at: String,
+    pub message: Option<String>,
 }
 
 /// 熔断器统计信息
@@ -396,6 +450,10 @@ pub struct CircuitBreakerStats {
     pub consecutive_successes: u32,
     pub total_requests: u32,
     pub failed_requests: u32,
+    pub state_reason: Option<String>,
+    pub last_failure: Option<CircuitBreakerFailureInfo>,
+    #[serde(default)]
+    pub recent_failures: Vec<CircuitBreakerFailureInfo>,
 }
 
 #[cfg(test)]
@@ -459,7 +517,7 @@ mod tests {
         let breaker = CircuitBreaker::new(config);
 
         // 进入 Open，然后由于 timeout_seconds=0，allow_request 会立即切换到 HalfOpen 并占用探测名额
-        breaker.transition_to_open().await;
+        breaker.transition_to_open("test_open").await;
         let first = breaker.allow_request().await;
         assert!(first.allowed);
         assert!(first.used_half_open_permit);

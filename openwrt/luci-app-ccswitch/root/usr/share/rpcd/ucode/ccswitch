@@ -440,6 +440,21 @@ function testOutboundProxy(candidateProxyUrl) {
 	);
 }
 
+function getDaemonLogTail(lines, maxBytes) {
+	let path = '/diagnostics/daemon-log-tail';
+	let sep = '?';
+
+	if (lines != null && lines !== '') {
+		path += sep + 'lines=' + lines;
+		sep = '&';
+	}
+
+	if (maxBytes != null && maxBytes !== '')
+		path += sep + 'maxBytes=' + maxBytes;
+
+	return runAdminGetJson(path);
+}
+
 function getAppRuntimeStatus(app) {
 	let normalizedApp = normalizeApp(app);
 
@@ -506,6 +521,27 @@ function getRequestLogs(app, page, pageSize, providerId) {
 
 	if (providerId != null && providerId !== '')
 		path += sep + 'providerId=' + percentEncodePath(providerId);
+
+	return runAdminGetJson(path);
+}
+
+function getRequestLogDiagnostics(app, providerId, limit) {
+	let normalizedApp = normalizeApp(app);
+	let path, sep;
+
+	if (!normalizedApp)
+		return { ok: false, error: 'unsupported app' };
+
+	path = '/apps/' + percentEncodePath(normalizedApp) + '/request-logs/diagnostics';
+	sep = '?';
+
+	if (providerId != null && providerId !== '') {
+		path += sep + 'providerId=' + percentEncodePath(providerId);
+		sep = '&';
+	}
+
+	if (limit != null && limit !== '')
+		path += sep + 'limit=' + limit;
 
 	return runAdminGetJson(path);
 }
@@ -1056,6 +1092,17 @@ return {
 			}
 		},
 
+		get_daemon_log_tail: {
+			args: {
+				lines: 80,
+				max_bytes: 65536
+			},
+
+			call: function(request) {
+				return getDaemonLogTail(request.args.lines, request.args.max_bytes);
+			}
+		},
+
 		get_host_config: {
 			call: function() {
 				return getHostConfig();
@@ -1159,6 +1206,18 @@ return {
 					return getRequestLogs(request.args.app, request.args.page, request.args.page_size, request.args.provider_id);
 				}
 			},
+
+		get_request_log_diagnostics: {
+			args: {
+				app: 'claude',
+				provider_id: 'provider-id',
+				limit: 5
+			},
+
+			call: function(request) {
+				return getRequestLogDiagnostics(request.args.app, request.args.provider_id, request.args.limit);
+			}
+		},
 
 		get_request_detail: {
 			args: {
