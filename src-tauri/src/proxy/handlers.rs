@@ -587,19 +587,28 @@ async fn build_app_status(
         })
         .collect();
 
-    let usage = build_usage(
-        state
-            .db
-            .get_usage_summary(None, None, Some(&app_key))
-            .map_err(|e| ProxyError::DatabaseError(e.to_string()))?,
-    );
-    let provider_stats: HashMap<String, ProviderStats> = state
-        .db
-        .get_provider_stats(None, None, Some(&app_key))
-        .map_err(|e| ProxyError::DatabaseError(e.to_string()))?
-        .into_iter()
-        .map(|stats| (stats.provider_id.clone(), stats))
-        .collect();
+    let usage = match state.db.get_usage_summary(None, None, Some(&app_key)) {
+        Ok(summary) => build_usage(summary),
+        Err(error) => {
+            log::warn!(
+                "[Status] usage summary unavailable for {app_key}; returning app config without usage totals: {error}"
+            );
+            empty_api_status_usage()
+        }
+    };
+    let provider_stats: HashMap<String, ProviderStats> =
+        match state.db.get_provider_stats(None, None, Some(&app_key)) {
+            Ok(stats) => stats
+                .into_iter()
+                .map(|stats| (stats.provider_id.clone(), stats))
+                .collect(),
+            Err(error) => {
+                log::warn!(
+                    "[Status] provider stats unavailable for {app_key}; returning providers without stats: {error}"
+                );
+                HashMap::new()
+            }
+        };
 
     let mut circuit_stats = HashMap::new();
     for provider_id in providers.keys() {
@@ -689,6 +698,23 @@ fn build_usage(summary: UsageSummary) -> ApiStatusUsage {
         total_cache_creation_tokens: summary.total_cache_creation_tokens,
         total_cache_read_tokens: summary.total_cache_read_tokens,
         success_rate: summary.success_rate,
+    }
+}
+
+fn empty_api_status_usage() -> ApiStatusUsage {
+    ApiStatusUsage {
+        window: ApiStatusUsageWindow {
+            preset: "all_time".to_string(),
+            start: None,
+            end: None,
+        },
+        total_requests: 0,
+        total_cost: "0.000000".to_string(),
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        total_cache_creation_tokens: 0,
+        total_cache_read_tokens: 0,
+        success_rate: 0.0,
     }
 }
 
@@ -2635,6 +2661,7 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
     }
 
     #[tokio::test]
+    #[serial]
     async fn api_status_refreshes_live_quota_snapshots_before_rendering() {
         reset_live_quota_refresh_call_count();
         let db = Arc::new(Database::memory().expect("db"));
@@ -2795,6 +2822,35 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
             .expect("configured provider");
 
         assert_eq!(provider.name, "No Stats");
+        assert!(provider.configured);
+        assert_eq!(provider.stats, None);
+    }
+
+    #[tokio::test]
+    async fn api_status_keeps_configured_apps_when_request_log_store_is_unavailable() {
+        let db = Arc::new(Database::memory().expect("db"));
+        db.save_provider("claude", &test_provider("configured", "Configured Provider"))
+            .expect("save provider");
+        db.set_current_provider("claude", "configured")
+            .expect("set current provider");
+        {
+            let conn = db.conn.lock().expect("db lock");
+            conn.execute("DROP TABLE proxy_request_logs", [])
+                .expect("drop request logs");
+        }
+
+        let state = test_proxy_state(db);
+        let response = status_response(&state).await;
+        let app = &response.apps["claude"];
+        let provider = app.providers.get("configured").expect("provider");
+
+        assert_eq!(
+            app.active_provider.as_ref().map(|provider| provider.provider_id.as_str()),
+            Some("configured")
+        );
+        assert_eq!(app.usage.total_requests, 0);
+        assert_eq!(app.usage.total_cost, "0.000000");
+        assert_eq!(provider.name, "Configured Provider");
         assert!(provider.configured);
         assert_eq!(provider.stats, None);
     }
