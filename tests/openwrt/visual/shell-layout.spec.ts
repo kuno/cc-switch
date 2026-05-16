@@ -76,27 +76,29 @@ test.describe("@shell OpenWrt page shell", () => {
     });
   });
 
-  test("renders the stopped-shell alert strip", async ({ page }, testInfo) => {
+  test("renders stopped-shell notification without reserving layout space", async ({
+    page,
+  }, testInfo) => {
     const theme = getTheme(testInfo.project.name);
 
     await page.goto(`/?component=shell&state=stopped&theme=${theme}`);
 
     await expect(page.getByText("Daemon stopped.")).toBeVisible();
-    await expect(page.locator(".owt-alert-overlay")).toHaveCSS(
+    await expect(page.locator(".owt-alert-overlay")).toHaveCount(0);
+    await expect(page.locator(".owt-alert-strip")).toHaveCount(0);
+    await expect(page.locator(".owt-notification-stack")).toHaveCSS(
       "position",
-      "absolute",
+      "fixed",
     );
-    await expect(page.locator(".owt-alert-overlay")).toHaveCSS(
+    await expect(page.locator(".owt-notification-stack")).toHaveCSS(
       "pointer-events",
       "none",
     );
-    await expect(page.locator(".owt-alert-strip")).toHaveCSS(
+    await expect(page.locator(".owt-notification-popup")).toHaveCSS(
       "pointer-events",
       "auto",
     );
 
-    const overlayBox = await page.locator(".owt-alert-overlay").boundingBox();
-    const alertBox = await page.locator(".owt-alert-strip").boundingBox();
     const titleRowBox = await page
       .locator(".owt-page__title-row")
       .boundingBox();
@@ -104,16 +106,11 @@ test.describe("@shell OpenWrt page shell", () => {
       .locator('[data-slot="apps-grid"]')
       .boundingBox();
 
-    if (!overlayBox || !alertBox || !titleRowBox || !appsGridBox) {
-      throw new Error("Alert strip layout boxes are unavailable.");
+    if (!titleRowBox || !appsGridBox) {
+      throw new Error("Shell layout boxes are unavailable.");
     }
 
-    expect(overlayBox.y).toBeGreaterThanOrEqual(
-      titleRowBox.y + titleRowBox.height,
-    );
-    expect(overlayBox.y + alertBox.height).toBeLessThanOrEqual(
-      appsGridBox.y - 6,
-    );
+    expect(appsGridBox.y).toBeLessThan(titleRowBox.y + titleRowBox.height + 40);
   });
 
   test("keeps shell content positions stable when the alert is visible", async ({
@@ -150,7 +147,7 @@ test.describe("@shell OpenWrt page shell", () => {
     { label: "desktop", width: 1280, height: 900 },
     { label: "narrow", width: 720, height: 900 },
   ] as const) {
-    test(`aligns the alert overlay horizontally with .owt-main at ${viewport.label} width`, async ({
+    test(`keeps notification inside viewport at ${viewport.label} width`, async ({
       page,
     }, testInfo) => {
       const theme = getTheme(testInfo.project.name);
@@ -162,21 +159,18 @@ test.describe("@shell OpenWrt page shell", () => {
       await page.goto(`/?component=shell&state=stopped&theme=${theme}`);
       await expect(page.getByText("Daemon stopped.")).toBeVisible();
 
-      const overlay = await page.locator(".owt-alert-overlay").boundingBox();
-      const main = await page.locator(".owt-main").boundingBox();
+      const notification = await page
+        .locator(".owt-notification-popup")
+        .boundingBox();
 
-      if (!overlay || !main) {
-        throw new Error("Alert overlay or main bounding box unavailable.");
+      if (!notification) {
+        throw new Error("Notification bounding box unavailable.");
       }
 
-      const overlayCenter = overlay.x + overlay.width / 2;
-      const mainCenter = main.x + main.width / 2;
-
-      expect(overlayCenter).toBeCloseTo(mainCenter, 0);
-      expect(overlay.x).toBeCloseTo(main.x, 0);
-      expect(overlay.x + overlay.width).toBeCloseTo(main.x + main.width, 0);
-      expect(overlay.x).toBeGreaterThanOrEqual(0);
-      expect(overlay.x + overlay.width).toBeLessThanOrEqual(viewport.width);
+      expect(notification.x).toBeGreaterThanOrEqual(0);
+      expect(notification.x + notification.width).toBeLessThanOrEqual(
+        viewport.width,
+      );
     });
   }
 

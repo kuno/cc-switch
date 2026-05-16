@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { RefreshCcw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { SharedProviderAppId } from "@/shared/providers/domain";
 import {
   ActivityDrawerHost,
   type ActivityDrawerHostHandle,
 } from "./components/ActivityDrawerHost";
-import { AlertStrip } from "./components/AlertStrip";
+import {
+  AppNotificationStack,
+  type AppNotification,
+} from "./components/AppNotificationStack";
 import { AppsGrid } from "./components/AppsGrid";
 import { DaemonCard } from "./components/DaemonCard";
 import {
@@ -42,8 +46,7 @@ function createHostDraft(host: OpenWrtHostState): HostDraft {
   return {
     listenAddr: host.listenAddr,
     listenPort: host.listenPort,
-    httpProxy: host.httpProxy,
-    httpsProxy: host.httpsProxy,
+    upstreamProxy: host.upstreamProxy || host.httpsProxy || host.httpProxy,
     logLevel: host.logLevel,
   };
 }
@@ -52,8 +55,7 @@ function isHostDraftEqual(left: HostDraft, right: HostDraft): boolean {
   return (
     left.listenAddr === right.listenAddr &&
     left.listenPort === right.listenPort &&
-    left.httpProxy === right.httpProxy &&
-    left.httpsProxy === right.httpsProxy &&
+    left.upstreamProxy === right.upstreamProxy &&
     left.logLevel === right.logLevel
   );
 }
@@ -116,6 +118,99 @@ function formatVersion(
   const trimmed = (raw ?? "").trim();
   if (!trimmed) return fallback;
   return trimmed.startsWith("v") ? trimmed : `v${trimmed}`;
+}
+
+function getListenEndpoint(host: OpenWrtHostState): string {
+  const address = host.listenAddr.trim() || "0.0.0.0";
+  const port = host.listenPort.trim() || "15721";
+
+  return `${address}:${port}`;
+}
+
+function getRestartFailureDetail(
+  message: OpenWrtPageMessage | null,
+  fallback: string,
+): string {
+  const text = message?.text?.trim();
+
+  if (!text || /^failed to restart service\.?$/i.test(text)) {
+    return fallback;
+  }
+
+  return text.replace(/^restart failed:\s*/i, "");
+}
+
+function getDaemonStatusNotification(
+  snapshot: ShellSnapshot,
+  restartFailureDetail: string | null,
+  t: ReturnType<typeof useTranslation>["t"],
+  onRestart: () => void,
+): AppNotification | null {
+  const endpoint = getListenEndpoint(snapshot.host);
+  const proxy =
+    (snapshot.host.upstreamProxy ?? "").trim() ||
+    snapshot.host.httpsProxy.trim() ||
+    snapshot.host.httpProxy.trim();
+
+  if (snapshot.restartInFlight) {
+    return {
+      id: `daemon:restarting:${endpoint}`,
+      kind: "warning",
+      title: t("openwrt.alertStrip.restartingTitle"),
+      detail: t("openwrt.alertStrip.restartingDetail", { endpoint }),
+      busy: true,
+    };
+  }
+
+  if (restartFailureDetail) {
+    return {
+      id: `daemon:restart-failed:${restartFailureDetail}`,
+      kind: "error",
+      title: t("openwrt.alertStrip.restartFailedTitle"),
+      detail: restartFailureDetail,
+      action: {
+        label: t("openwrt.alertStrip.retryRestart"),
+        onClick: onRestart,
+      },
+    };
+  }
+
+  if (!snapshot.isRunning || snapshot.host.status !== "running") {
+    return {
+      id: "daemon:stopped",
+      kind: "error",
+      title: t("openwrt.alertStrip.daemonStoppedTitle"),
+      detail: t("openwrt.alertStrip.daemonStoppedDetail"),
+      action: {
+        label: t("openwrt.alertStrip.restartNow"),
+        onClick: onRestart,
+      },
+    };
+  }
+
+  if (snapshot.host.health === "degraded") {
+    return {
+      id: `daemon:unreachable:${endpoint}:${proxy}`,
+      kind: "error",
+      title: t("openwrt.alertStrip.daemonNotReachableTitle"),
+      detail: proxy
+        ? t("openwrt.alertStrip.daemonNotReachableWithProxy", {
+            endpoint,
+            proxy,
+          })
+        : t("openwrt.alertStrip.daemonNotReachableNoProxy", { endpoint }),
+      action: {
+        label: t("openwrt.alertStrip.restartNow"),
+        onClick: onRestart,
+      },
+    };
+  }
+
+  return null;
+}
+
+function isRestartFailureMessage(message: OpenWrtPageMessage | null): boolean {
+  return message?.kind === "error" && /restart/i.test(message.text);
 }
 
 /** Icon-based theme toggle — matches revised/index.html .theme-toggle. */
@@ -234,12 +329,28 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
   );
   const [theme, setTheme] = useState<OpenWrtPageTheme>(() => getInitialTheme());
   const [saveInFlight, setSaveInFlight] = useState(false);
+  const [manualRefreshInFlight, setManualRefreshInFlight] = useState(false);
+  const [manualRefreshVersion, setManualRefreshVersion] = useState(0);
   const [providerMutationVersion, setProviderMutationVersion] = useState(0);
   const previousHostDraftRef = useRef(createHostDraft(shell.getHostState()));
   const activityHostRef = useRef<ActivityDrawerHostHandle | null>(null);
   const providerPanelRef = useRef<ProviderSidePanelHandle | null>(null);
+  const previousRestartInFlightRef = useRef(snapshot.restartInFlight);
   const [activityDrawerOpen, setActivityDrawerOpen] = useState(false);
   const [providerPanelOpen, setProviderPanelOpen] = useState(false);
+  const [dismissedNotifications, setDismissedNotifications] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
+  const [restartFailureDetail, setRestartFailureDetail] = useState<
+    string | null
+  >(() =>
+    isRestartFailureMessage(snapshot.message)
+      ? getRestartFailureDetail(
+          snapshot.message,
+          t("openwrt.alertStrip.restartFailureDetail"),
+        )
+      : null,
+  );
 
   useEffect(() => {
     applyTheme(options.target, theme);
@@ -277,6 +388,37 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
     [hostDraft, snapshot.host],
   );
 
+  useEffect(() => {
+    if (snapshot.restartInFlight) {
+      setRestartFailureDetail(null);
+      previousRestartInFlightRef.current = true;
+      return;
+    }
+
+    if (
+      previousRestartInFlightRef.current &&
+      snapshot.message?.kind === "error"
+    ) {
+      setRestartFailureDetail(
+        getRestartFailureDetail(
+          snapshot.message,
+          t("openwrt.alertStrip.restartFailureDetail"),
+        ),
+      );
+    } else if (isRestartFailureMessage(snapshot.message)) {
+      setRestartFailureDetail(
+        getRestartFailureDetail(
+          snapshot.message,
+          t("openwrt.alertStrip.restartFailureDetail"),
+        ),
+      );
+    } else if (snapshot.message?.kind !== "error") {
+      setRestartFailureDetail(null);
+    }
+
+    previousRestartInFlightRef.current = false;
+  }, [snapshot.message, snapshot.restartInFlight, t]);
+
   async function handleSave() {
     setSaveInFlight(true);
     try {
@@ -291,6 +433,23 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
 
   async function handleRestart() {
     await shell.restartService();
+  }
+
+  async function handleManualRefresh() {
+    if (manualRefreshInFlight) {
+      return;
+    }
+
+    setManualRefreshInFlight(true);
+    try {
+      await Promise.allSettled([
+        shell.refreshHostState(),
+        shell.refreshServiceStatus(),
+      ]);
+      setSnapshot(getHostSnapshot(options));
+    } finally {
+      setManualRefreshVersion((current) => current + 1);
+    }
   }
 
   function handleOpenActivity(appId: SharedProviderAppId) {
@@ -321,6 +480,9 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
   const handleProviderMutation = useCallback(() => {
     setProviderMutationVersion((current) => current + 1);
   }, []);
+  const handleManualRefreshComplete = useCallback(() => {
+    setManualRefreshInFlight(false);
+  }, []);
 
   const daemonVersion = formatVersion(
     snapshot.host.version,
@@ -329,6 +491,14 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
   const luciAppVersion = formatVersion(
     __OPENWRT_LUCI_APP_VERSION__,
     t("openwrt.daemon.unknownVersion"),
+  );
+  const notifications = [
+    getDaemonStatusNotification(snapshot, restartFailureDetail, t, () => {
+      void handleRestart();
+    }),
+  ].filter(
+    (notification): notification is AppNotification =>
+      notification !== null && !dismissedNotifications.has(notification.id),
   );
 
   return (
@@ -339,27 +509,30 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
           : "ccswitch-openwrt-provider-ui-shell ccswitch-openwrt-page-shell"
       }
     >
-      <div className="owt-alert-overlay" data-slot="alert-strip">
-        <AlertStrip
-          host={snapshot.host}
-          isRunning={snapshot.isRunning}
-          restartInFlight={snapshot.restartInFlight}
-          message={snapshot.message}
-          onRestart={() => {
-            void handleRestart();
-          }}
-        />
-      </div>
-
       <main className="owt-main">
         <div className="owt-page__title-row">
           <h1 className="owt-page__title">{t("app.title")}</h1>
-          <ThemeToggle
-            theme={theme}
-            onToggle={() =>
-              setTheme((current) => (current === "dark" ? "light" : "dark"))
-            }
-          />
+          <div className="owt-page__title-actions">
+            <button
+              type="button"
+              className="owt-title-icon-button"
+              data-spinning={manualRefreshInFlight ? "true" : "false"}
+              onClick={() => {
+                void handleManualRefresh();
+              }}
+              disabled={manualRefreshInFlight}
+              aria-label={t("openwrt.pageShell.refreshUiState")}
+              title={t("openwrt.pageShell.refreshUiState")}
+            >
+              <RefreshCcw className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <ThemeToggle
+              theme={theme}
+              onToggle={() =>
+                setTheme((current) => (current === "dark" ? "light" : "dark"))
+              }
+            />
+          </div>
         </div>
 
         <h2 id="owt-apps-heading" className="owt-visually-hidden">
@@ -371,7 +544,9 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
             options={options}
             onOpenActivity={handleOpenActivity}
             onOpenProviderPanel={handleOpenProviderPanel}
+            onManualRefreshComplete={handleManualRefreshComplete}
             providerMutationVersion={providerMutationVersion}
+            refreshVersion={manualRefreshVersion}
           />
         </section>
 
@@ -397,6 +572,8 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
               onRestart={() => {
                 void handleRestart();
               }}
+              onTestUpstreamProxy={shell.testUpstreamProxy?.bind(shell)}
+              onLoadDaemonLogTail={shell.getDaemonLogTail?.bind(shell)}
             />
           </div>
         </section>
@@ -414,6 +591,13 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
         tabIndex={activityDrawerOpen || providerPanelOpen ? 0 : -1}
         aria-label={t("openwrt.pageShell.closeOpenDrawer")}
         onClick={handleCloseOverlay}
+      />
+
+      <AppNotificationStack
+        notifications={notifications}
+        onDismiss={(id) =>
+          setDismissedNotifications((current) => new Set(current).add(id))
+        }
       />
 
       <ActivityDrawerHost
