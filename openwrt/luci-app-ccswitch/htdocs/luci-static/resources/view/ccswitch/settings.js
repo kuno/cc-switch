@@ -379,6 +379,20 @@ var callGetHostConfig = rpc.declare({
 	expect: { '': {} }
 });
 
+var callTestOutboundProxy = rpc.declare({
+	object: 'ccswitch',
+	method: 'test_outbound_proxy',
+	params: ['candidate_proxy_url'],
+	expect: { '': {} }
+});
+
+var callGetDaemonLogTail = rpc.declare({
+	object: 'ccswitch',
+	method: 'get_daemon_log_tail',
+	params: ['lines', 'max_bytes'],
+	expect: { '': {} }
+});
+
 var callGetUsageSummary = rpc.declare({
 	object: 'ccswitch',
 	method: 'get_usage_summary',
@@ -607,6 +621,33 @@ function callOpenWrtRuntimeStatus() {
 		return callDaemonAdminJson('/runtime');
 	}, function () {
 		return L.resolveDefault(callGetRuntimeStatus(), { ok: false });
+	});
+}
+
+function callOpenWrtOutboundProxyTest(candidateProxyUrl) {
+	return daemonAdminOrFallback(function () {
+		var body = {};
+
+		if (candidateProxyUrl != null && String(candidateProxyUrl).trim() !== '')
+			body.candidateProxyUrl = String(candidateProxyUrl);
+
+		return callDaemonAdminJson('/outbound-proxy/test', {
+			method: 'POST',
+			body: body
+		});
+	}, function () {
+		return L.resolveDefault(callTestOutboundProxy(candidateProxyUrl || ''), { ok: false });
+	});
+}
+
+function callOpenWrtDaemonLogTail(lines, maxBytes) {
+	var normalizedLines = normalizeOptionalNonNegativeInteger(lines, 80);
+	var normalizedMaxBytes = normalizeOptionalNonNegativeInteger(maxBytes, 32768);
+
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/diagnostics/daemon-log-tail?lines=' + encodeURIComponent(String(normalizedLines)) + '&maxBytes=' + encodeURIComponent(String(normalizedMaxBytes)));
+	}, function () {
+		return L.resolveDefault(callGetDaemonLogTail(normalizedLines, normalizedMaxBytes), { ok: false });
 	});
 }
 
@@ -1109,6 +1150,7 @@ return view.extend({
 			enabled: false,
 			listenAddr: '',
 			listenPort: '',
+			upstreamProxy: '',
 			httpProxy: '',
 			httpsProxy: '',
 			logLevel: 'info'
@@ -1130,6 +1172,7 @@ return view.extend({
 			enabled: enabled === true,
 			listenAddr: payload.listenAddr != null ? String(payload.listenAddr) : fallback.listenAddr,
 			listenPort: payload.listenPort != null ? String(payload.listenPort) : fallback.listenPort,
+			upstreamProxy: payload.upstreamProxy != null ? String(payload.upstreamProxy) : (payload.httpsProxy != null ? String(payload.httpsProxy) : (payload.httpProxy != null ? String(payload.httpProxy) : fallback.upstreamProxy)),
 			httpProxy: payload.httpProxy != null ? String(payload.httpProxy) : fallback.httpProxy,
 			httpsProxy: payload.httpsProxy != null ? String(payload.httpsProxy) : fallback.httpsProxy,
 			logLevel: payload.logLevel != null ? String(payload.logLevel) : fallback.logLevel
@@ -1276,8 +1319,7 @@ return view.extend({
 		return {
 			listenAddr: listenAddr,
 			listenPort: listenPort,
-			httpProxy: payload && payload.httpProxy != null ? String(payload.httpProxy) : snapshot.httpProxy || '',
-			httpsProxy: payload && payload.httpsProxy != null ? String(payload.httpsProxy) : snapshot.httpsProxy || '',
+			upstreamProxy: payload && payload.upstreamProxy != null ? String(payload.upstreamProxy) : snapshot.upstreamProxy || snapshot.httpsProxy || snapshot.httpProxy || '',
 			logLevel: logLevel
 		};
 	},
@@ -1288,8 +1330,7 @@ return view.extend({
 
 		return String(before.listenAddr || '') !== String(after.listenAddr || '') ||
 			String(before.listenPort || '') !== String(after.listenPort || '') ||
-			String(before.httpProxy || '') !== String(after.httpProxy || '') ||
-			String(before.httpsProxy || '') !== String(after.httpsProxy || '') ||
+			String(before.upstreamProxy || before.httpsProxy || before.httpProxy || '') !== String(after.upstreamProxy || '') ||
 			String(before.logLevel || 'info') !== String(after.logLevel || 'info');
 	},
 
@@ -1301,8 +1342,8 @@ return view.extend({
 				enabled: current.enabled,
 				listenAddr: next.listenAddr,
 				listenPort: next.listenPort,
-				httpProxy: next.httpProxy,
-				httpsProxy: next.httpsProxy,
+				httpProxy: '',
+				httpsProxy: next.upstreamProxy,
 				logLevel: next.logLevel
 			};
 
@@ -1382,6 +1423,7 @@ return view.extend({
 			listenPort: hostConfig.listenPort || runtime.listenPort || '15721',
 			version: runtime.version || '',
 			serviceLabel: _('Router daemon'),
+			upstreamProxy: hostConfig.httpsProxy || hostConfig.httpProxy || '',
 			httpProxy: hostConfig.httpProxy || '',
 			httpsProxy: hostConfig.httpsProxy || '',
 			proxyEnabled: proxyEnabled ? '1' : '0',
@@ -1400,6 +1442,7 @@ return view.extend({
 			listenPort: payload.listenPort != null ? String(payload.listenPort) : '',
 			version: payload.version != null ? String(payload.version) : '',
 			serviceLabel: payload.serviceLabel != null ? String(payload.serviceLabel) : _('Router daemon'),
+			upstreamProxy: payload.upstreamProxy != null ? String(payload.upstreamProxy) : (payload.httpsProxy != null ? String(payload.httpsProxy) : (payload.httpProxy != null ? String(payload.httpProxy) : '')),
 			httpProxy: payload.httpProxy != null ? String(payload.httpProxy) : '',
 			httpsProxy: payload.httpsProxy != null ? String(payload.httpsProxy) : '',
 			proxyEnabled: payload.proxyEnabled === true || payload.proxyEnabled === '1',
@@ -1526,6 +1569,59 @@ return view.extend({
 		});
 
 		return logs.data.length ? logs.data[0] : null;
+	},
+
+	normalizeDaemonLogTail: function (response) {
+		var payload = response && typeof response === 'object' ? response : {};
+		var entries = Array.isArray(payload.entries) ? payload.entries : [];
+
+		return {
+			source: payload.source != null ? String(payload.source) : '',
+			path: payload.path != null ? String(payload.path) : '',
+			linesRequested: typeof payload.linesRequested === 'number' && isFinite(payload.linesRequested) ? payload.linesRequested : entries.length,
+			bytesRequested: typeof payload.bytesRequested === 'number' && isFinite(payload.bytesRequested) ? payload.bytesRequested : 0,
+			linesReturned: typeof payload.linesReturned === 'number' && isFinite(payload.linesReturned) ? payload.linesReturned : entries.length,
+			bytesRead: typeof payload.bytesRead === 'number' && isFinite(payload.bytesRead) ? payload.bytesRead : 0,
+			fileSize: typeof payload.fileSize === 'number' && isFinite(payload.fileSize) ? payload.fileSize : 0,
+			truncated: payload.truncated === true,
+			entries: entries.map(function (line) { return line == null ? '' : String(line); })
+		};
+	},
+
+	normalizeOutboundProxyTest: function (response) {
+		var payload = response && typeof response === 'object' ? response : {};
+
+		return {
+			configured: payload.configured === true,
+			httpProxyConfigured: payload.httpProxyConfigured === true,
+			httpsProxyConfigured: payload.httpsProxyConfigured === true,
+			source: payload.source != null ? String(payload.source) : '',
+			proxyUrl: payload.proxyUrl != null ? String(payload.proxyUrl) : null,
+			testUrl: payload.testUrl != null ? String(payload.testUrl) : '',
+			tested: payload.tested === true,
+			success: payload.success === true,
+			status: typeof payload.status === 'number' && isFinite(payload.status) ? payload.status : null,
+			latencyMs: typeof payload.latencyMs === 'number' && isFinite(payload.latencyMs) ? payload.latencyMs : null,
+			error: payload.error != null ? String(payload.error) : null
+		};
+	},
+
+	loadNativeDaemonLogTail: function (lines, maxBytes) {
+		return L.resolveDefault(callOpenWrtDaemonLogTail(lines, maxBytes), { ok: false }).then(L.bind(function (response) {
+			if (!this.isRpcSuccess(response))
+				throw new Error(this.rpcFailureMessage(response) || _('Failed to load daemon logs.'));
+
+			return this.normalizeDaemonLogTail(response);
+		}, this));
+	},
+
+	testNativeUpstreamProxy: function (proxyUrl) {
+		return L.resolveDefault(callOpenWrtOutboundProxyTest(proxyUrl), { ok: false }).then(L.bind(function (response) {
+			if (!this.isRpcSuccess(response))
+				throw new Error(this.rpcFailureMessage(response) || _('Failed to test upstream proxy.'));
+
+			return this.normalizeOutboundProxyTest(response);
+		}, this));
 	},
 
 	loadNativeUsageSummary: function (appId) {
@@ -1676,6 +1772,7 @@ return view.extend({
 		append('listen_addr', bindings.listenAddr || '');
 		append('listen_port', bindings.listenPort || '');
 		append('service_label', bindings.serviceLabel || '');
+		append('upstream_proxy', bindings.upstreamProxy || bindings.httpsProxy || bindings.httpProxy || '');
 		append('http_proxy', bindings.httpProxy || '');
 		append('https_proxy', bindings.httpsProxy || '');
 		append('proxy_enabled', bindings.proxyEnabled || '0');
@@ -2902,11 +2999,17 @@ return view.extend({
 					return status;
 				});
 			},
-				getRequestLogs: async function (appId, page, pageSize, providerId) {
-					return self.loadNativeRequestLogs(appId || uiState.selectedApp, page, pageSize, providerId);
-				},
+			getRequestLogs: async function (appId, page, pageSize, providerId) {
+				return self.loadNativeRequestLogs(appId || uiState.selectedApp, page, pageSize, providerId);
+			},
 			getRequestDetail: async function (appId, requestId) {
 				return self.loadNativeRequestDetail(appId || uiState.selectedApp, requestId);
+			},
+			getDaemonLogTail: async function (lines, maxBytes) {
+				return self.loadNativeDaemonLogTail(lines, maxBytes);
+			},
+			testUpstreamProxy: async function (proxyUrl) {
+				return self.testNativeUpstreamProxy(proxyUrl);
 			},
 			saveHostConfig: async function (payload) {
 				return self.saveNativeHostConfig(uiState, payload);
