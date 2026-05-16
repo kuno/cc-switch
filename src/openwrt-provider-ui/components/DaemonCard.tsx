@@ -362,111 +362,113 @@ export function DaemonCard({
           className="owt-daemon-status"
           data-running={isRunning ? "true" : "false"}
         >
-          <span className="owt-daemon-status__dot" aria-hidden="true" />
-          {statusLabel}
+          <span
+            className="owt-daemon-health owt-status-pill"
+            data-tone={healthTone}
+          >
+            <span className="owt-status-pill__dot" aria-hidden="true" />
+            {healthLabel}
+          </span>
+          <span className="owt-daemon-status__label">{statusLabel}</span>
         </div>
 
-        <span
-          className="owt-daemon-health owt-status-pill"
-          data-tone={healthTone}
-        >
-          <span className="owt-status-pill__dot" aria-hidden="true" />
-          {healthLabel}
-        </span>
+        <div className="owt-daemon-summary">
+          <span className="owt-daemon-summary__segment">
+            <span className="owt-daemon-summary__head">
+              <Globe2 className="h-3 w-3" aria-hidden="true" />
+              <span className="owt-daemon-summary__label">
+                {t("openwrt.daemon.listeningOn")}
+              </span>
+            </span>
+            <button
+              type="button"
+              className="owt-inline-token"
+              onClick={() =>
+                setEditTarget(editTarget === "endpoint" ? null : "endpoint")
+              }
+              aria-haspopup="dialog"
+            >
+              <span>{endpointLabel}</span>
+              <Pencil className="h-3 w-3" aria-hidden="true" />
+            </button>
+          </span>
+
+          <span className="owt-daemon-summary__segment">
+            <span className="owt-daemon-summary__head">
+              <PlugZap className="h-3 w-3" aria-hidden="true" />
+              <span className="owt-daemon-summary__label">
+                {t("openwrt.daemon.upstreamProxy")}
+              </span>
+            </span>
+            <button
+              type="button"
+              className={`owt-inline-token${
+                proxyStatus === "fail" ? " owt-inline-token--fail" : ""
+              }${
+                proxyStatus === "checking" ? " owt-inline-token--checking" : ""
+              }`}
+              onClick={() =>
+                setEditTarget(editTarget === "proxy" ? null : "proxy")
+              }
+              aria-haspopup="dialog"
+              title={proxyTooltip}
+            >
+              <span>{upstreamProxyLabel}</span>
+              {proxyStatus === "checking" ? (
+                <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+              ) : (
+                <Pencil className="h-3 w-3" aria-hidden="true" />
+              )}
+            </button>
+          </span>
+        </div>
 
         <span className="owt-daemon-row__spacer" aria-hidden="true" />
 
-        <button
-          type="button"
-          className="owt-pill owt-pill--primary"
-          onClick={onRestart}
-          disabled={restartInFlight}
-        >
-          {restartInFlight ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <RefreshCcw className="h-4 w-4" />
-          )}
-          {restartInFlight
-            ? t("openwrt.daemon.restarting")
-            : t("openwrt.daemon.restart")}
-        </button>
-
-        <button
-          type="button"
-          className={
-            showSaveFlash
-              ? "owt-pill owt-pill--saved-flash"
-              : isDirty
-                ? "owt-pill owt-pill--primary"
-                : "owt-pill owt-pill--idle"
-          }
-          onClick={onSave}
-          disabled={!isDirty || saveInFlight || showSaveFlash}
-          title={t("openwrt.daemon.persistConfig")}
-        >
-          {saveInFlight ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : showSaveFlash ? (
-            <CheckCircle2 className="h-4 w-4" />
-          ) : (
-            <Save className="h-4 w-4" />
-          )}
-          {saveInFlight
-            ? t("openwrt.daemon.saving")
-            : showSaveFlash
-              ? t("openwrt.daemon.saved")
-              : t("common.save")}
-        </button>
-      </div>
-
-      <div className="owt-daemon-summary">
-        <span className="owt-daemon-summary__segment">
-          <Globe2 className="h-4 w-4" aria-hidden="true" />
-          <span className="owt-daemon-summary__label">
-            {t("openwrt.daemon.listeningOn")}
-          </span>
+        <div className="owt-daemon-actions">
           <button
             type="button"
-            className="owt-inline-token"
-            onClick={() =>
-              setEditTarget(editTarget === "endpoint" ? null : "endpoint")
-            }
-            aria-haspopup="dialog"
+            className="owt-pill owt-pill--primary"
+            onClick={onRestart}
+            disabled={restartInFlight}
           >
-            <span>{endpointLabel}</span>
-            <Pencil className="h-3 w-3" aria-hidden="true" />
-          </button>
-        </span>
-
-        <span className="owt-daemon-summary__sep" aria-hidden="true">
-          ·
-        </span>
-
-        <span className="owt-daemon-summary__segment">
-          <PlugZap className="h-4 w-4" aria-hidden="true" />
-          <span className="owt-daemon-summary__label">
-            {t("openwrt.daemon.upstreamProxy")}
-          </span>
-          <button
-            type="button"
-            className={`owt-inline-token${
-              proxyStatus === "fail" ? " owt-inline-token--fail" : ""
-            }${
-              proxyStatus === "checking" ? " owt-inline-token--checking" : ""
-            }`}
-            onClick={() => setEditTarget(editTarget === "proxy" ? null : "proxy")}
-            aria-haspopup="dialog"
-            title={proxyTooltip}
-          >
-            <span>{upstreamProxyLabel}</span>
-            {proxyStatus === "checking" ? (
-              <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+            {restartInFlight ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
-              <Pencil className="h-3 w-3" aria-hidden="true" />
+              <RefreshCcw className="h-4 w-4" />
             )}
+            {restartInFlight
+              ? t("openwrt.daemon.restarting")
+              : t("openwrt.daemon.restart")}
           </button>
-        </span>
+
+          <button
+            type="button"
+            className={
+              showSaveFlash
+                ? "owt-pill owt-pill--saved-flash"
+                : isDirty
+                  ? "owt-pill owt-pill--primary"
+                  : "owt-pill owt-pill--idle"
+            }
+            onClick={onSave}
+            disabled={!isDirty || saveInFlight || showSaveFlash}
+            title={t("openwrt.daemon.persistConfig")}
+          >
+            {saveInFlight ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : showSaveFlash ? (
+              <CheckCircle2 className="h-4 w-4" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
+            {saveInFlight
+              ? t("openwrt.daemon.saving")
+              : showSaveFlash
+                ? t("openwrt.daemon.saved")
+                : t("common.save")}
+          </button>
+        </div>
       </div>
 
       {editTarget ? (

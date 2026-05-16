@@ -283,6 +283,8 @@ describe("DaemonCard", () => {
       expect(statusChip).toHaveTextContent(expected.status);
       expect(statusChip).toHaveAttribute("data-running", expected.dataRunning);
       expect(healthChip).toHaveTextContent(expected.health);
+      expect(statusChip?.querySelector(".owt-daemon-health")).toBe(healthChip);
+      expect(card.querySelector(".owt-daemon-status__dot")).toBeNull();
       expect(
         card.querySelector(".ccswitch-openwrt-page-note"),
       ).toBeNull();
