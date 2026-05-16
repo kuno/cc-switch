@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -202,6 +203,8 @@ export function DaemonCard({
   const [logLoading, setLogLoading] = useState(false);
   const [logError, setLogError] = useState<string | null>(null);
   const [logCheckedAt, setLogCheckedAt] = useState<number | null>(null);
+  const [logDrawerOpen, setLogDrawerOpen] = useState(false);
+  const logRefreshInFlightRef = useRef(false);
   const [, forceFreshnessTick] = useState(0);
   const statusLabel = getStatusLabel(t);
   const healthLabel = restartInFlight
@@ -308,12 +311,17 @@ export function DaemonCard({
     }
   }
 
-  async function refreshLogs() {
+  const refreshLogs = useCallback(async () => {
+    if (logRefreshInFlightRef.current) {
+      return;
+    }
+
     if (typeof onLoadDaemonLogTail !== "function") {
       setLogError(t("openwrt.daemon.logs.unavailable"));
       return;
     }
 
+    logRefreshInFlightRef.current = true;
     setLogLoading(true);
     setLogError(null);
     try {
@@ -326,9 +334,23 @@ export function DaemonCard({
     } catch (error) {
       setLogError(error instanceof Error ? error.message : String(error));
     } finally {
+      logRefreshInFlightRef.current = false;
       setLogLoading(false);
     }
-  }
+  }, [onLoadDaemonLogTail, t]);
+
+  useEffect(() => {
+    if (!logDrawerOpen) {
+      return;
+    }
+
+    void refreshLogs();
+    const timer = window.setInterval(() => {
+      void refreshLogs();
+    }, 3000);
+
+    return () => window.clearInterval(timer);
+  }, [logDrawerOpen, refreshLogs]);
 
   return (
     <div
@@ -576,7 +598,10 @@ export function DaemonCard({
 
       <div className="owt-daemon-divider" />
 
-      <details className="owt-log-drawer">
+      <details
+        className="owt-log-drawer"
+        onToggle={(event) => setLogDrawerOpen(event.currentTarget.open)}
+      >
         <summary className="owt-log-drawer__summary">
           <ChevronRight className="owt-log-drawer__chevron h-4 w-4" />
           <span className="owt-log-drawer__title">
