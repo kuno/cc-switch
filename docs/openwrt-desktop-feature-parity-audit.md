@@ -89,7 +89,7 @@ Status legend:
 | Stream/model health checks | implemented | Integrated on `openwrt-proxy` in `cd22c262`: provider-scoped `GET/POST /stream-check` admin endpoints, rpcd `get_provider_stream_check` / `run_provider_stream_check`, conservative OpenWrt bounds, latest-result persistence/readback, error categorization, and tests. |
 | Endpoint latency and model discovery | implemented | Integrated on `openwrt-proxy` in `77b4805c`: provider-scoped `/latency` and `/models` admin endpoints, rpcd `test_provider_latency` / `fetch_provider_models`, redacted structured responses, and tests. |
 | Backup/export/restore | implemented | Integrated on `openwrt-proxy` in `5d093a4e`: backup list/create/import/download/delete/restore APIs for daemon DB/data under `/etc/cc-switch`, safety backup before restore, metadata/schema validation, rpcd bridge, and tests. |
-| Circuit-breaker and log diagnostics | backend ready | Worker `2a45da7` added richer circuit-breaker diagnostics, request-log diagnostics, `failuresOnly`, bounded daemon log tail, rpcd bridge, and tests. |
+| Circuit-breaker and log diagnostics | implemented | Integrated on `openwrt-proxy` in `d40c180e`: richer circuit-breaker diagnostics, request-log diagnostics, `failuresOnly`, bounded daemon log tail, rpcd bridge, and tests. |
 | Global outbound proxy test | implemented | Integrated on `openwrt-proxy` in `fb4605a1`: `/openwrt/admin/outbound-proxy/test` plus rpcd `test_outbound_proxy`, redaction, bounded single-shot behavior, and tests. |
 | Provider duplicate/import helpers | needs UI | Worth doing, but the user wants designer mockups before visible LuCI changes. |
 | Usage trends/model stats/pricing visibility | needs UI | Backend and presentation scope should be split after mockup; existing OpenWrt usage summary/provider stats remain implemented. |
@@ -194,11 +194,10 @@ daemon routes and rpcd methods (`proxy-daemon/src/openwrt_http.rs`,
 `proxy-daemon/src/openwrt_admin.rs`,
 `openwrt/luci-app-ccswitch/root/usr/share/rpcd/ucode/ccswitch`). The LuCI UI
 should surface the reason, last failure, failure counts, and reset affordance
-near each provider. If additional log tailing is added, keep it bounded because
-the init script writes `/var/log/cc-switch/cc-switch.log` and rotates at 1 MiB
-(`openwrt/proxy-daemon/files/etc/init.d/ccswitch`). Backend-only diagnostic
-fields, request-log diagnostics, and bounded log tail are ready in worker
-`2a45da7`, pending integration.
+near each provider. Backend support now enriches circuit-breaker state/reset,
+request-log diagnostics, `failuresOnly` filtering, and bounded daemon log tail
+from `/var/log/cc-switch/cc-switch.log` with redaction. Visible LuCI controls
+should wait for design and should not poll log tail aggressively.
 
 ### Global outbound proxy test - both daemon and LuCI
 

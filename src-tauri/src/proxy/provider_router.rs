@@ -144,7 +144,9 @@ impl ProviderRouter {
         if success {
             breaker.record_success(used_half_open_permit).await;
         } else {
-            breaker.record_failure(used_half_open_permit).await;
+            breaker
+                .record_failure_with_error(used_half_open_permit, error_msg.clone())
+                .await;
         }
 
         // 3. 更新数据库健康状态（使用配置的阈值）

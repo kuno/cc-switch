@@ -105,6 +105,7 @@ pub struct LogFilters {
     pub provider_name: Option<String>,
     pub model: Option<String>,
     pub status_code: Option<u16>,
+    pub failures_only: bool,
     pub start_date: Option<i64>,
     pub end_date: Option<i64>,
 }
@@ -1255,6 +1256,9 @@ impl Database {
         if let Some(status) = filters.status_code {
             conditions.push("l.status_code = ?".to_string());
             params.push(Box::new(status as i64));
+        }
+        if filters.failures_only {
+            conditions.push("(l.status_code < 200 OR l.status_code >= 300)");
         }
         if let Some(start) = filters.start_date {
             conditions.push("l.created_at >= ?".to_string());
