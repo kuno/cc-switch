@@ -1,7 +1,14 @@
 import { useState } from "react";
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DaemonCard,
   type DaemonCardProps,
@@ -15,6 +22,10 @@ import {
   createBridgeFixture,
   type BridgeFixtureOptions,
 } from "./fixtures/bridge";
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 function createDraft(host: OpenWrtHostState): OpenWrtHostConfigPayload {
   return {
@@ -494,7 +505,7 @@ describe("DaemonCard", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("loads the daemon log tail only when diagnostics refresh is clicked", async () => {
+  it("still supports manual daemon log refresh from the diagnostics summary", async () => {
     const user = userEvent.setup();
     const onLoadDaemonLogTail = vi.fn(async () => ({
       source: "daemon",
@@ -524,5 +535,65 @@ describe("DaemonCard", () => {
     );
     expect(card).toHaveTextContent("daemon started");
     expect(card).toHaveTextContent("upstream proxy slow");
+  });
+
+  it("polls the daemon log tail every 3 seconds only while diagnostics is open", async () => {
+    vi.useFakeTimers();
+    const onLoadDaemonLogTail = vi.fn(async () => ({
+      source: "daemon",
+      path: "/var/log/ccswitch.log",
+      linesRequested: 80,
+      bytesRequested: 32768,
+      linesReturned: 1,
+      bytesRead: 64,
+      fileSize: 64,
+      entries: ["2026-05-16T10:00:00Z INFO daemon started"],
+      truncated: false,
+    }));
+    const { card, unmount } = renderDaemonCard({}, { onLoadDaemonLogTail });
+    const drawer = card.querySelector<HTMLDetailsElement>(".owt-log-drawer");
+
+    if (!drawer) {
+      throw new Error("Expected diagnostics drawer to render");
+    }
+
+    expect(onLoadDaemonLogTail).not.toHaveBeenCalled();
+
+    await act(async () => {
+      drawer.open = true;
+      fireEvent(
+        drawer,
+        new Event("toggle", {
+          bubbles: true,
+        }),
+      );
+      await Promise.resolve();
+    });
+
+    expect(onLoadDaemonLogTail).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    expect(onLoadDaemonLogTail).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      drawer.open = false;
+      fireEvent(
+        drawer,
+        new Event("toggle", {
+          bubbles: true,
+        }),
+      );
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(9000);
+    });
+    expect(onLoadDaemonLogTail).toHaveBeenCalledTimes(2);
+
+    unmount();
+    vi.useRealTimers();
   });
 });
