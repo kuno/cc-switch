@@ -5,29 +5,30 @@ function getTheme(projectName: string): "light" | "dark" {
 }
 
 function getHarnessUrl(state: string, theme: "light" | "dark"): string {
-  return `/?component=AlertStrip&state=${state}&theme=${theme}`;
+  return `/?component=AppNotification&state=${state}&theme=${theme}`;
 }
 
-test("@smoke @alert-strip renders the stopped state", async ({
+test("@smoke @app-notification renders the stopped state", async ({
   page,
 }, testInfo) => {
   const theme = getTheme(testInfo.project.name);
 
   await page.goto(getHarnessUrl("stopped", theme));
 
-  const alertStrip = page.getByTestId("component-canvas");
+  const notification = page.getByTestId("component-canvas");
 
   await expect(page.getByText("Daemon stopped.")).toBeVisible();
-  await expect(alertStrip).toHaveScreenshot("alert-strip-stopped.png");
+  await expect(notification).toHaveScreenshot("app-notification-stopped.png");
 });
 
-test("@alert-strip stays hidden when the daemon is healthy", async ({
+test("@app-notification stays hidden when there are no notifications", async ({
   page,
 }, testInfo) => {
   const theme = getTheme(testInfo.project.name);
 
   await page.goto(getHarnessUrl("healthy", theme));
 
+  await expect(page.locator(".owt-notification-popup")).toHaveCount(0);
   await expect(page.locator(".owt-alert-strip")).toHaveCount(0);
 });
 
@@ -35,36 +36,36 @@ for (const scenario of [
   {
     state: "unreachable",
     title: "Daemon not reachable.",
-    screenshot: "alert-strip-unreachable.png",
+    screenshot: "app-notification-unreachable.png",
   },
   {
     state: "restarting",
     title: "Restarting daemon…",
-    screenshot: "alert-strip-restarting.png",
+    screenshot: "app-notification-restarting.png",
   },
   {
     state: "restart-failed",
     title: "Restart failed:",
-    screenshot: "alert-strip-restart-failed.png",
+    screenshot: "app-notification-restart-failed.png",
   },
 ]) {
-  test(`@alert-strip renders the ${scenario.state} state`, async ({
+  test(`@app-notification renders the ${scenario.state} state`, async ({
     page,
   }, testInfo) => {
     const theme = getTheme(testInfo.project.name);
 
     await page.goto(getHarnessUrl(scenario.state, theme));
 
-    const alertStrip = page.locator(".owt-alert-strip");
+    const notification = page.locator(".owt-notification-popup");
 
-    await expect(alertStrip).toContainText(scenario.title);
+    await expect(notification).toContainText(scenario.title);
     await expect(page.getByTestId("component-canvas")).toHaveScreenshot(
       scenario.screenshot,
     );
   });
 }
 
-test("@alert-strip wraps long failure messages without horizontal overflow", async ({
+test("@app-notification wraps long messages without horizontal overflow", async ({
   page,
 }, testInfo) => {
   const theme = getTheme(testInfo.project.name);
@@ -72,22 +73,22 @@ test("@alert-strip wraps long failure messages without horizontal overflow", asy
   await page.goto(getHarnessUrl("restart-failed-long", theme));
 
   const canvas = page.getByTestId("component-canvas");
-  const alertStrip = page.locator(".owt-alert-strip");
+  const notification = page.locator(".owt-notification-popup");
   const canvasOverflow = await canvas.evaluate((node) => ({
     clientWidth: node.clientWidth,
     scrollWidth: node.scrollWidth,
   }));
-  const alertOverflow = await alertStrip.evaluate((node) => ({
+  const notificationOverflow = await notification.evaluate((node) => ({
     clientWidth: node.clientWidth,
     scrollWidth: node.scrollWidth,
   }));
 
-  await expect(alertStrip).toContainText("Restart failed:");
+  await expect(notification).toContainText("Restart failed:");
   expect(canvasOverflow.scrollWidth).toBeLessThanOrEqual(
     canvasOverflow.clientWidth,
   );
-  expect(alertOverflow.scrollWidth).toBeLessThanOrEqual(
-    alertOverflow.clientWidth,
+  expect(notificationOverflow.scrollWidth).toBeLessThanOrEqual(
+    notificationOverflow.clientWidth,
   );
-  await expect(canvas).toHaveScreenshot("alert-strip-restart-failed-long.png");
+  await expect(canvas).toHaveScreenshot("app-notification-restart-failed-long.png");
 });
