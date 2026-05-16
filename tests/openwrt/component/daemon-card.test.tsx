@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { act, render, screen, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -20,6 +20,7 @@ function createDraft(host: OpenWrtHostState): OpenWrtHostConfigPayload {
   return {
     listenAddr: host.listenAddr,
     listenPort: host.listenPort,
+    upstreamProxy: host.upstreamProxy ?? host.httpsProxy ?? host.httpProxy,
     httpProxy: host.httpProxy,
     httpsProxy: host.httpsProxy,
     logLevel: host.logLevel,
@@ -389,5 +390,139 @@ describe("DaemonCard", () => {
 
     expect(card.querySelector(".ccswitch-openwrt-page-note")).toBeNull();
     expect(restartButton).toBeEnabled();
+  });
+
+  it("shows a single upstream proxy token instead of separate HTTP and HTTPS fields", () => {
+    const { card } = renderDaemonCard({
+      host: {
+        httpProxy: "http://legacy-proxy.local:8080",
+        httpsProxy: "socks5://router-proxy.local:1080",
+      },
+    });
+
+    expect(card).toHaveTextContent("Upstream proxy");
+    expect(card).toHaveTextContent("socks5://router-proxy.local:1080");
+    expect(
+      within(card).queryByLabelText("HTTP proxy"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(card).queryByLabelText("HTTPS proxy"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("opens the proxy popover and saves the edited proxy through upstreamProxy", async () => {
+    const user = userEvent.setup();
+    const onDraftChange = vi.fn();
+    const { card } = renderDaemonCard(
+      {
+        host: {
+          upstreamProxy: "http://old-proxy.local:8080",
+          httpProxy: "",
+          httpsProxy: "http://old-proxy.local:8080",
+        },
+      },
+      { onDraftChange },
+    );
+
+    await user.click(
+      within(card).getByRole("button", {
+        name: /http:\/\/old-proxy\.local:8080/i,
+      }),
+    );
+    const dialog = within(card).getByRole("dialog", {
+      name: "Upstream proxy",
+    });
+    const dialogQueries = within(dialog);
+    const input = dialogQueries.getByLabelText("URL");
+    await user.clear(input);
+    await user.type(input, "socks5://router-proxy.local:1080");
+    await user.click(dialogQueries.getByRole("button", { name: "Save" }));
+
+    expect(onDraftChange).toHaveBeenCalledWith(
+      "upstreamProxy",
+      "socks5://router-proxy.local:1080",
+    );
+  });
+
+  it("uses the proxy token state for reachability errors without rendering a duplicate status icon", async () => {
+    const user = userEvent.setup();
+    const onTestUpstreamProxy = vi.fn(async () => ({
+      configured: true,
+      httpProxyConfigured: false,
+      httpsProxyConfigured: true,
+      source: "daemon",
+      proxyUrl: "http://bad-proxy.local:8080",
+      testUrl: "https://api.anthropic.com/v1/models",
+      tested: true,
+      success: false,
+      status: null,
+      latencyMs: null,
+      error: "connect ECONNREFUSED",
+    }));
+    const { card } = renderDaemonCard(
+      {
+        host: {
+          upstreamProxy: "http://bad-proxy.local:8080",
+          httpProxy: "",
+          httpsProxy: "http://bad-proxy.local:8080",
+        },
+      },
+      { onTestUpstreamProxy },
+    );
+
+    const proxyToken = within(card).getByRole("button", {
+      name: /http:\/\/bad-proxy\.local:8080/i,
+    });
+    await user.click(proxyToken);
+    await user.click(
+      within(card).getByRole("button", {
+        name: "Re-check reachability",
+      }),
+    );
+
+    await waitFor(() =>
+      expect(onTestUpstreamProxy).toHaveBeenCalledWith(
+        "http://bad-proxy.local:8080",
+      ),
+    );
+    await waitFor(() =>
+      expect(proxyToken).toHaveClass("owt-inline-token--fail"),
+    );
+    expect(card).toHaveTextContent("connect ECONNREFUSED");
+    expect(
+      card.querySelector(".owt-inline-token__status"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("loads the daemon log tail only when diagnostics refresh is clicked", async () => {
+    const user = userEvent.setup();
+    const onLoadDaemonLogTail = vi.fn(async () => ({
+      source: "daemon",
+      path: "/var/log/ccswitch.log",
+      linesRequested: 80,
+      bytesRequested: 32768,
+      linesReturned: 2,
+      bytesRead: 128,
+      fileSize: 128,
+      entries: [
+        "2026-05-16T10:00:00Z INFO daemon started",
+        "2026-05-16T10:00:01Z WARN upstream proxy slow",
+      ],
+      truncated: false,
+    }));
+    const { card } = renderDaemonCard({}, { onLoadDaemonLogTail });
+
+    expect(onLoadDaemonLogTail).not.toHaveBeenCalled();
+    await user.click(
+      within(card).getByRole("button", {
+        name: "Refresh",
+      }),
+    );
+
+    await waitFor(() =>
+      expect(onLoadDaemonLogTail).toHaveBeenCalledWith(80, 32768),
+    );
+    expect(card).toHaveTextContent("daemon started");
+    expect(card).toHaveTextContent("upstream proxy slow");
   });
 });

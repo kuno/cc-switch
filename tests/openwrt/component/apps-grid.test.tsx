@@ -30,7 +30,9 @@ type RenderAppsGridOptions = {
     appId: SharedProviderAppId,
     providerId?: string,
   ) => void;
+  onManualRefreshComplete?: () => void;
   providerMutationVersion?: number;
+  refreshVersion?: number;
   transport?: OpenWrtProviderTransport;
 };
 
@@ -41,6 +43,7 @@ function renderAppsGrid(options: RenderAppsGridOptions = {}) {
   const onOpenActivity = options.onOpenActivity ?? bridge.setSelectedApp;
   const onOpenProviderPanel =
     options.onOpenProviderPanel ?? bridge.setSelectedApp;
+  const onManualRefreshComplete = options.onManualRefreshComplete ?? vi.fn();
   const user = userEvent.setup();
   const props = {
     options: {
@@ -53,21 +56,29 @@ function renderAppsGrid(options: RenderAppsGridOptions = {}) {
   } as const;
 
   const renderResult = render(
-    <AppsGrid {...props} providerMutationVersion={providerMutationVersion} />,
+    <AppsGrid
+      {...props}
+      onManualRefreshComplete={onManualRefreshComplete}
+      providerMutationVersion={providerMutationVersion}
+      refreshVersion={options.refreshVersion ?? 0}
+    />,
   );
 
   return {
     bridge,
-    rerenderAppsGrid(nextProviderMutationVersion: number) {
+    rerenderAppsGrid(nextProviderMutationVersion: number, refreshVersion = 0) {
       renderResult.rerender(
         <AppsGrid
           {...props}
+          onManualRefreshComplete={onManualRefreshComplete}
           providerMutationVersion={nextProviderMutationVersion}
+          refreshVersion={refreshVersion}
         />,
       );
     },
     transport,
     user,
+    onManualRefreshComplete,
     ...renderResult,
   };
 }
@@ -280,16 +291,19 @@ describe("AppsGrid", () => {
     expect(mainButtons[0]).toHaveFocus();
 
     await user.tab();
-    expect(openButtons[0]).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Reorder Claude" })).toHaveFocus();
 
     await user.tab();
-    expect(mainButtons[1]).toHaveFocus();
+    expect(screen.getByRole("switch", { name: "Proxy enabled for Claude" })).toHaveFocus();
 
-    await user.tab({ shift: true });
+    await user.tab();
     expect(openButtons[0]).toHaveFocus();
 
     await user.tab({ shift: true });
-    expect(mainButtons[0]).toHaveFocus();
+    expect(screen.getByRole("switch", { name: "Proxy enabled for Claude" })).toHaveFocus();
+
+    await user.tab({ shift: true });
+    expect(screen.getByRole("button", { name: "Reorder Claude" })).toHaveFocus();
   });
 
   it("routes card clicks through the provider-panel callback with the matching app id", async () => {
@@ -430,7 +444,7 @@ describe("AppsGrid", () => {
 
     expect(activeRows).toHaveLength(1);
     expect(activeRows[0]).toHaveTextContent("Kimi For Coding");
-    expect(activeRows[0]).toHaveTextContent("openwrt.appCard.queue.active");
+    expect(activeRows[0]).toHaveTextContent("Active");
     expect(within(claudeCard).getByText("Claude Official")).toBeInTheDocument();
   });
 
@@ -512,7 +526,7 @@ describe("AppsGrid", () => {
     expect(onOpenProviderPanel).not.toHaveBeenCalled();
   });
 
-  it("polls the aggregate status snapshot every 60 seconds", async () => {
+  it("polls the aggregate status snapshot every 10 seconds", async () => {
     vi.useFakeTimers();
     const bridge = createBridgeFixture();
     renderAppsGrid({ bridge });
@@ -526,7 +540,7 @@ describe("AppsGrid", () => {
     getStatus.mockClear();
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(60_000);
+      await vi.advanceTimersByTimeAsync(10_000);
     });
     await flushMicrotasks();
 
@@ -569,7 +583,7 @@ describe("AppsGrid", () => {
     getStatus.mockClear();
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(60_000);
+      await vi.advanceTimersByTimeAsync(10_000);
     });
     await flushMicrotasks();
 
@@ -619,7 +633,7 @@ describe("AppsGrid", () => {
       .mockRejectedValueOnce(new Error("Transient status failure"));
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(60_000);
+      await vi.advanceTimersByTimeAsync(10_000);
     });
     await flushMicrotasks();
 
@@ -634,7 +648,7 @@ describe("AppsGrid", () => {
     ).toBeInTheDocument();
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(60_000);
+      await vi.advanceTimersByTimeAsync(10_000);
     });
     await flushMicrotasks();
 
@@ -695,7 +709,7 @@ describe("AppsGrid", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("keeps the same app-card node when status changes an app from unconfigured to configured", async () => {
+  it("moves an app from the unconfigured group to the configured group after status changes", async () => {
     const bridge = createBridgeFixture({
       status: createStatusResponse({
         configuredApps: {
@@ -714,7 +728,6 @@ describe("AppsGrid", () => {
       name: "Add a Claude provider",
     });
 
-    const initialClaudeCard = getAppCard(container, "claude");
     const getStatus = bridge.getStatus as unknown as Mock;
     getStatus.mockResolvedValueOnce(
       createStatusResponse({
@@ -734,7 +747,11 @@ describe("AppsGrid", () => {
       ).toBeInTheDocument();
     });
 
-    expect(getAppCard(container, "claude")).toBe(initialClaudeCard);
+    const refreshedGrids = getGroupGrids(container);
+    expect(refreshedGrids[0]).toContainElement(getAppCard(container, "claude"));
+    expect(refreshedGrids[1]).not.toContainElement(
+      getAppCard(container, "claude"),
+    );
   });
 
   it("preserves the previous summary during a provider-mutation refresh when the status request fails", async () => {
@@ -813,6 +830,64 @@ describe("AppsGrid", () => {
         screen.getByRole("button", { name: "Open Claude providers" }),
       ).toBeInTheDocument();
     });
+  });
+
+  it("overlays existing cards with shimmer during a manual status refresh", async () => {
+    const bridge = createBridgeFixture({
+      status: createStatusResponse({
+        configuredApps: {
+          codex: false,
+        },
+      }),
+    });
+    const { container, onManualRefreshComplete, rerenderAppsGrid } =
+      renderAppsGrid({
+        bridge,
+        providerMutationVersion: 0,
+        refreshVersion: 0,
+      });
+
+    await screen.findByRole("button", {
+      name: "Open Claude providers",
+    });
+
+    const pendingStatusRefresh = createDeferred<OpenWrtStatusResponse>();
+    const getStatus = bridge.getStatus as unknown as Mock;
+    getStatus.mockReturnValueOnce(pendingStatusRefresh.promise);
+
+    rerenderAppsGrid(0, 1);
+    await flushMicrotasks();
+
+    expect(getAppCard(container, "claude")).toHaveAttribute(
+      "data-loading",
+      "true",
+    );
+    expect(
+      getAppCard(container, "claude").querySelector(".card-shimmer"),
+    ).not.toBeNull();
+    expect(getAppCard(container, "codex")).toHaveAttribute(
+      "data-loading",
+      "true",
+    );
+    expect(
+      getAppCard(container, "codex").querySelector(".card-shimmer"),
+    ).not.toBeNull();
+
+    pendingStatusRefresh.resolve(
+      createStatusResponse({
+        configuredApps: {
+          codex: false,
+        },
+      }),
+    );
+
+    await waitFor(() => {
+      expect(getAppCard(container, "claude")).toHaveAttribute(
+        "data-loading",
+        "false",
+      );
+    });
+    expect(onManualRefreshComplete).toHaveBeenCalledTimes(1);
   });
 
   it("does not use stale per-app polling methods", async () => {

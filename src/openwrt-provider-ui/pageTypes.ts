@@ -35,6 +35,7 @@ export interface OpenWrtHostState {
   listenPort: string;
   version: string;
   serviceLabel: string;
+  upstreamProxy?: string;
   httpProxy: string;
   httpsProxy: string;
   proxyEnabled: boolean;
@@ -44,8 +45,9 @@ export interface OpenWrtHostState {
 export interface OpenWrtHostConfigPayload {
   listenAddr: string;
   listenPort: string;
-  httpProxy: string;
-  httpsProxy: string;
+  upstreamProxy?: string;
+  httpProxy?: string;
+  httpsProxy?: string;
   logLevel: string;
 }
 
@@ -257,6 +259,32 @@ export interface OpenWrtPaginatedRequestLogs {
   pageSize: number;
 }
 
+export interface OpenWrtDaemonLogTail {
+  source: string;
+  path: string;
+  linesRequested: number;
+  bytesRequested: number;
+  linesReturned: number;
+  bytesRead: number;
+  fileSize: number;
+  truncated: boolean;
+  entries: string[];
+}
+
+export interface OpenWrtOutboundProxyTestResult {
+  configured: boolean;
+  httpProxyConfigured: boolean;
+  httpsProxyConfigured: boolean;
+  source: string;
+  proxyUrl: string | null;
+  testUrl: string;
+  tested: boolean;
+  success: boolean;
+  status: number | null;
+  latencyMs: number | null;
+  error: string | null;
+}
+
 export interface OpenWrtSharedPageShellApi
   extends OpenWrtSharedProviderShellApi {
   getHostState(): OpenWrtHostState;
@@ -274,6 +302,13 @@ export interface OpenWrtSharedPageShellApi
     pageSize?: number,
     providerId?: string,
   ): Promise<OpenWrtPaginatedRequestLogs>;
+  getDaemonLogTail?(
+    lines?: number,
+    maxBytes?: number,
+  ): Promise<OpenWrtDaemonLogTail>;
+  testUpstreamProxy?(
+    proxyUrl: string,
+  ): Promise<OpenWrtOutboundProxyTestResult>;
   getRecentActivity(
     appId: SharedProviderAppId,
   ): Promise<OpenWrtRecentActivityItem[]>;
