@@ -4716,7 +4716,7 @@ select.owt-provider-panel__input {
  * Ported from the Claude Design handoff for this session:
  * - OpenWrt now mirrors desktop's single upstream proxy concept in the UI.
  * - The proxy token itself carries reachability state; no duplicate status pip.
- * - Daemon logs are exposed as a manual-refresh diagnostics drawer. No polling.
+ * - Daemon logs are exposed in diagnostics with manual refresh plus 3s polling while open.
  * ===================================================================== */
 .owt-daemon-summary {
   position: relative;
