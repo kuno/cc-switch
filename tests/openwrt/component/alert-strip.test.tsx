@@ -1,223 +1,96 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
-import { AlertStrip, type AlertStripProps } from "@/openwrt-provider-ui/components/AlertStrip";
-import type { OpenWrtPageMessage } from "@/openwrt-provider-ui/pageTypes";
+import { describe, expect, it, vi } from "vitest";
 import {
-  createBridgeFixture,
-  type BridgeFixtureOptions,
-} from "./fixtures/bridge";
+  AppNotificationStack,
+  type AppNotification,
+} from "@/openwrt-provider-ui/components/AppNotificationStack";
 
-const RESTART_FAILED_MESSAGE: OpenWrtPageMessage = {
+const ERROR_NOTIFICATION: AppNotification = {
+  id: "daemon:restart-failed:test",
   kind: "error",
-  text: "Restart failed: The daemon timed out while reconnecting.",
+  title: "Restart failed:",
+  detail: "The daemon timed out while reconnecting.",
+  action: {
+    label: "Retry restart",
+    onClick: vi.fn(),
+  },
 };
 
-function buildAlertStripProps(
-  options: BridgeFixtureOptions = {},
-  onRestart?: AlertStripProps["onRestart"],
-): {
-  bridge: ReturnType<typeof createBridgeFixture>;
-  props: AlertStripProps;
-} {
-  const bridge = createBridgeFixture(options);
-
-  return {
-    bridge,
-    props: {
-      host: bridge.getHostState(),
-      isRunning: bridge.getServiceStatus().isRunning,
-      restartInFlight: bridge.getRestartState?.().inFlight ?? false,
-      message: bridge.getMessage(),
-      onRestart: onRestart ?? bridge.restartService,
-    },
-  };
-}
-
-function renderAlertStrip(
-  options: BridgeFixtureOptions = {},
-  onRestart?: AlertStripProps["onRestart"],
-) {
-  const setup = buildAlertStripProps(options, onRestart);
-
-  return {
-    ...setup,
-    ...render(<AlertStrip {...setup.props} />),
-  };
-}
-
-describe("AlertStrip", () => {
-  it("renders nothing when the daemon is healthy", () => {
-    const { container } = renderAlertStrip({
-      host: {
-        app: "claude",
-        status: "running",
-        health: "healthy",
-      },
-      serviceStatus: {
-        isRunning: true,
-      },
-    });
+describe("AppNotificationStack", () => {
+  it("renders nothing without notifications", () => {
+    const { container } = render(
+      <AppNotificationStack notifications={[]} onDismiss={() => {}} />,
+    );
 
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("renders the stopped state with a restart control", () => {
-    renderAlertStrip({
-      host: {
-        status: "stopped",
-        health: "stopped",
-      },
-      serviceStatus: {
-        isRunning: false,
-      },
-    });
-
-    const strip = screen.getByRole("status");
-
-    expect(strip).toHaveAttribute("aria-live", "polite");
-    expect(strip).toHaveAttribute("aria-busy", "false");
-    expect(strip).toHaveTextContent("Daemon stopped.");
-    expect(strip).toHaveTextContent(
-      "All app routing is offline until the CC Switch service is restarted.",
-    );
-    expect(
-      screen.getByRole("button", { name: "Restart now" }),
-    ).toBeEnabled();
-  });
-
-  it("renders the unreachable state with endpoint and proxy details", () => {
-    renderAlertStrip({
-      host: {
-        health: "degraded",
-        httpProxy: "http://router.internal:15721",
-      },
-      serviceStatus: {
-        isRunning: true,
-      },
-    });
-
-    const strip = screen.getByRole("status");
-
-    expect(strip).toHaveTextContent("Daemon not reachable.");
-    expect(strip).toHaveTextContent("127.0.0.1:15721");
-    expect(strip).toHaveTextContent("http://router.internal:15721");
-    expect(
-      screen.getByRole("button", { name: "Restart now" }),
-    ).toBeEnabled();
-  });
-
-  it("fires the restart handler exactly once when clicked", async () => {
+  it("renders top-level errors as dismissible notification popups", async () => {
     const user = userEvent.setup();
-    const { bridge } = renderAlertStrip({
-      host: {
-        status: "stopped",
-        health: "stopped",
-      },
-      serviceStatus: {
-        isRunning: false,
-      },
-    });
-
-    await user.click(screen.getByRole("button", { name: "Restart now" }));
-
-    expect(bridge.restartService).toHaveBeenCalledTimes(1);
-  });
-
-  it("communicates the restarting state with busy semantics and no action button", () => {
-    const { container } = renderAlertStrip({
-      restartState: {
-        pending: false,
-        inFlight: true,
-      },
-    });
-
-    const strip = screen.getByRole("status");
-
-    expect(strip).toHaveAttribute("aria-live", "polite");
-    expect(strip).toHaveAttribute("aria-busy", "true");
-    expect(strip).toHaveTextContent("Restarting daemon…");
-    expect(strip).toHaveTextContent(
-      "Waiting for OpenWrt to confirm the service at 127.0.0.1:15721.",
-    );
-    expect(screen.queryByRole("button")).not.toBeInTheDocument();
-    expect(container.querySelector(".animate-spin")).not.toBeNull();
-  });
-
-  it("renders restart failures as an alert with a retry control", () => {
-    renderAlertStrip({
-      message: RESTART_FAILED_MESSAGE,
-    });
-
-    const strip = screen.getByRole("alert");
-
-    expect(strip).toHaveAttribute("aria-live", "assertive");
-    expect(strip).toHaveAttribute("aria-busy", "false");
-    expect(strip).toHaveTextContent("Restart failed:");
-    expect(strip).toHaveTextContent(
-      "The daemon timed out while reconnecting.",
-    );
-    expect(
-      screen.getByRole("button", { name: "Retry restart" }),
-    ).toBeEnabled();
-  });
-
-  it("surfaces restart failures after a pending restart settles with an error", () => {
-    const initial = buildAlertStripProps({
-      restartState: {
-        pending: false,
-        inFlight: true,
-      },
-    });
-    const view = render(<AlertStrip {...initial.props} />);
-    const failed = buildAlertStripProps(
-      {
-        message: RESTART_FAILED_MESSAGE,
-      },
-      initial.props.onRestart,
+    const onDismiss = vi.fn();
+    render(
+      <AppNotificationStack
+        notifications={[ERROR_NOTIFICATION]}
+        onDismiss={onDismiss}
+      />,
     );
 
-    view.rerender(<AlertStrip {...failed.props} />);
+    const popup = screen.getByRole("alert");
 
-    expect(screen.getByRole("alert")).toHaveTextContent("Restart failed:");
-    expect(
-      screen.getByRole("button", { name: "Retry restart" }),
-    ).toBeEnabled();
+    expect(popup).toHaveAttribute("aria-live", "assertive");
+    expect(popup).toHaveAttribute("aria-busy", "false");
+    expect(popup).toHaveTextContent("Restart failed:");
+    expect(popup).toHaveTextContent("The daemon timed out while reconnecting.");
+
+    await user.click(screen.getByRole("button", { name: "Close" }));
+
+    expect(onDismiss).toHaveBeenCalledWith("daemon:restart-failed:test");
   });
 
-  for (const scenario of [
-    {
-      name: "Restart now",
-      options: {
-        host: {
-          status: "stopped" as const,
-          health: "stopped" as const,
-        },
-        serviceStatus: {
-          isRunning: false,
-        },
-      },
-    },
-    {
-      name: "Retry restart",
-      options: {
-        message: RESTART_FAILED_MESSAGE,
-      },
-    },
-  ]) {
-    for (const key of ["{Enter}", "[Space]"] as const) {
-      it(`activates "${scenario.name}" with ${key}`, async () => {
-        const user = userEvent.setup();
-        const { bridge } = renderAlertStrip(scenario.options);
-        const button = screen.getByRole("button", { name: scenario.name });
+  it("runs notification actions from the same popup surface", async () => {
+    const user = userEvent.setup();
+    const onAction = vi.fn();
+    render(
+      <AppNotificationStack
+        notifications={[
+          {
+            ...ERROR_NOTIFICATION,
+            action: {
+              label: "Retry restart",
+              onClick: onAction,
+            },
+          },
+        ]}
+        onDismiss={() => {}}
+      />,
+    );
 
-        button.focus();
-        expect(button).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: "Retry restart" }));
 
-        await user.keyboard(key);
+    expect(onAction).toHaveBeenCalledTimes(1);
+  });
 
-        expect(bridge.restartService).toHaveBeenCalledTimes(1);
-      });
-    }
-  }
+  it("marks busy notifications as polite status updates", () => {
+    render(
+      <AppNotificationStack
+        notifications={[
+          {
+            id: "daemon:restarting:test",
+            kind: "warning",
+            title: "Restarting daemon…",
+            detail: "Waiting for OpenWrt to confirm the service.",
+            busy: true,
+          },
+        ]}
+        onDismiss={() => {}}
+      />,
+    );
+
+    const popup = screen.getByRole("status");
+
+    expect(popup).toHaveAttribute("aria-live", "polite");
+    expect(popup).toHaveAttribute("aria-busy", "true");
+    expect(popup.querySelector(".animate-spin")).not.toBeNull();
+  });
 });

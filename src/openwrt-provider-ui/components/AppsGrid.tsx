@@ -887,7 +887,9 @@ export interface AppsGridProps {
     appId: SharedProviderAppId,
     providerId?: string,
   ) => void;
+  onManualRefreshComplete?: () => void;
   providerMutationVersion?: number;
+  refreshVersion?: number;
 }
 
 type StatusGridLoadResult = {
@@ -1013,7 +1015,9 @@ export function AppsGrid({
   options,
   onOpenActivity,
   onOpenProviderPanel,
+  onManualRefreshComplete,
   providerMutationVersion = 0,
+  refreshVersion = 0,
 }: AppsGridProps) {
   const { t } = useTranslation();
   const [cards, setCards] = useState<AppGridData[]>(() =>
@@ -1198,6 +1202,39 @@ export function AppsGrid({
   }, [options, providerMutationVersion]);
 
   useEffect(() => {
+    if (refreshVersion <= 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    setCards((current) =>
+      current.map((card) => ({ ...card, loading: true })),
+    );
+
+    void loadStatusGridData(options, t)
+      .then((nextStatus) => {
+        if (cancelled) return;
+        initialLoadCompleteRef.current = true;
+        setCards((currentCards) =>
+          mergeStatusCards(currentCards, nextStatus.cards),
+        );
+        if (nextStatus.quotaOk) {
+          setQuotaByProviderId(nextStatus.quotaByProviderId);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          onManualRefreshComplete?.();
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [options, onManualRefreshComplete, refreshVersion, t]);
+
+  useEffect(() => {
     let cancelled = false;
     let intervalId: number | null = null;
     const doc = typeof document === "undefined" ? null : document;
@@ -1268,12 +1305,13 @@ export function AppsGrid({
 
   const hostState = options.shell.getHostState();
   const serviceRunning = options.shell.getServiceStatus().isRunning;
-  const loadingCards = cards.filter(
-    (card) => card.loading && !card.providerState,
-  );
-  const settledCards = cards.filter(
-    (card) => !card.loading || card.providerState,
-  );
+  const initialLoadPending = !initialLoadCompleteRef.current;
+  const loadingCards = initialLoadPending
+    ? cards.filter((card) => card.loading && !card.providerState)
+    : [];
+  const settledCards = initialLoadPending
+    ? cards.filter((card) => !card.loading || card.providerState)
+    : cards;
   const orderedLoadingCards = sortCardsByOrder(loadingCards, appOrder);
   const orderedSettledCards = sortCardsByOrder(settledCards, appOrder);
   const configured = orderedSettledCards.filter(isConfigured);

@@ -108,7 +108,16 @@ function formatAdaptive(n: number): string {
 function formatCostValue(value: string | null | undefined): string {
   const numeric = Number(value ?? 0);
   if (!Number.isFinite(numeric) || numeric === 0) return "0";
-  return formatAdaptive(numeric);
+  return numeric.toLocaleString(undefined, {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: Number.isInteger(numeric) ? 0 : 2,
+  });
+}
+
+function formatRequestCount(value: number | null | undefined): string {
+  const numeric = Number(value ?? 0);
+  if (!Number.isFinite(numeric)) return "0";
+  return Math.round(numeric).toLocaleString();
 }
 
 function sumTokenCounts(summary: OpenWrtUsageSummary | null): number {
@@ -816,6 +825,7 @@ export function AppCard({
             </span>
           )}
         </div>
+        {loading ? <div className="card-shimmer" aria-hidden="true" /> : null}
       </div>
     );
   }
@@ -835,7 +845,7 @@ export function AppCard({
   });
 
   const tokensValue = formatAdaptive(sumTokenCounts(summary));
-  const requestsValue = formatAdaptive(summary?.totalRequests ?? 0);
+  const requestsValue = formatRequestCount(summary?.totalRequests);
   const costValue = formatCostValue(summary?.totalCost);
   const handleRunModeClick: MouseEventHandler<HTMLButtonElement> = (event) => {
     event.stopPropagation();
@@ -1129,6 +1139,7 @@ export function AppCard({
       </div>
 
       {error ? <p className="owt-app-card__telemetry-note">{error}</p> : null}
+      {loading ? <div className="card-shimmer" aria-hidden="true" /> : null}
     </div>
   );
 }

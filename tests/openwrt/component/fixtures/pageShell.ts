@@ -4,6 +4,8 @@ import type {
 } from "@/platform/openwrt/providers";
 import type {
   OpenWrtHostState,
+  OpenWrtDaemonLogTail,
+  OpenWrtOutboundProxyTestResult,
   OpenWrtPageMessage,
   OpenWrtPaginatedRequestLogs,
   OpenWrtProviderStat,
@@ -60,6 +62,7 @@ type PageShellBridgeData = {
     isRunning: boolean;
   };
   usageSummary: Record<SharedProviderAppId, OpenWrtUsageSummary>;
+  status: OpenWrtStatusResponse;
 };
 
 function createProviderState(
@@ -559,6 +562,7 @@ export const REALISTIC_BRIDGE_DATA: PageShellBridgeData = {
   serviceStatus: {
     isRunning: true,
   },
+  status: createStatusResponse(REALISTIC_USAGE_SUMMARIES, REALISTIC_PROVIDER_STATS),
   usageSummary: REALISTIC_USAGE_SUMMARIES,
 };
 
@@ -739,6 +743,49 @@ export function createPlainPageShellBridge(
   const requestDetails =
     data.requestDetails ?? REALISTIC_BRIDGE_DATA.requestDetails;
   const requestLogs = data.requestLogs ?? REALISTIC_BRIDGE_DATA.requestLogs;
+  const status = data.status ?? REALISTIC_BRIDGE_DATA.status;
+
+  function createDaemonLogTail(
+    lines = 80,
+    maxBytes = 32768,
+  ): OpenWrtDaemonLogTail {
+    const entries = [
+      "2026-04-19T12:00:01Z INFO ccswitch daemon started listen=0.0.0.0:15721",
+      "2026-04-19T12:00:03Z INFO provider route loaded app=claude provider=MiniMax en",
+      "2026-04-19T12:00:04Z WARN upstream proxy check failed proxy=http://127.0.0.1:7890 status=502",
+      "2026-04-19T12:00:06Z INFO request completed app=codex provider=OpenAI Official latency_ms=438",
+    ].slice(-Math.max(1, lines));
+
+    return {
+      source: "fixture",
+      path: "/var/log/ccswitch.log",
+      linesRequested: lines,
+      bytesRequested: maxBytes,
+      linesReturned: entries.length,
+      bytesRead: entries.join("\n").length,
+      fileSize: entries.join("\n").length,
+      truncated: false,
+      entries,
+    };
+  }
+
+  function createProxyTestResult(proxyUrl: string): OpenWrtOutboundProxyTestResult {
+    return {
+      configured: Boolean(proxyUrl.trim()),
+      httpProxyConfigured: Boolean(proxyUrl.trim()),
+      httpsProxyConfigured: Boolean(proxyUrl.trim()),
+      source: "fixture",
+      proxyUrl: proxyUrl.trim() || null,
+      testUrl: "https://www.google.com/generate_204",
+      tested: Boolean(proxyUrl.trim()),
+      success: !proxyUrl.includes("127.0.0.1:7890"),
+      status: proxyUrl.includes("127.0.0.1:7890") ? 502 : 204,
+      latencyMs: proxyUrl.includes("127.0.0.1:7890") ? 1840 : 72,
+      error: proxyUrl.includes("127.0.0.1:7890")
+        ? "Proxy returned HTTP 502 during the connectivity check."
+        : null,
+    };
+  }
 
   return {
     getSelectedApp() {
@@ -801,7 +848,7 @@ export function createPlainPageShellBridge(
       };
     },
     async getStatus() {
-      return createStatusResponse(usageSummary, providerStats);
+      return status;
     },
     async getRequestDetail(appId, requestId) {
       return requestDetails[appId]?.[requestId] ?? null;
@@ -821,6 +868,12 @@ export function createPlainPageShellBridge(
     },
     async getUsageSummary(appId) {
       return usageSummary[appId];
+    },
+    async getDaemonLogTail(lines = 80, maxBytes = 32768) {
+      return createDaemonLogTail(lines, maxBytes);
+    },
+    async testUpstreamProxy(proxyUrl) {
+      return createProxyTestResult(proxyUrl);
     },
     async refreshHostState() {
       return host;

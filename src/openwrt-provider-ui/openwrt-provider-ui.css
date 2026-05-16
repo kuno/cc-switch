@@ -195,8 +195,8 @@ body .ccswitch-openwrt-provider-ui-overlay button svg,
 .owt-main {
   display: grid;
   gap: 24px;
-  padding-top: 8px;
-  padding-bottom: 28px;
+  padding-top: 28px;
+  padding-bottom: 60px;
 }
 
 .owt-visually-hidden {
@@ -216,15 +216,21 @@ body .ccswitch-openwrt-provider-ui-overlay button svg,
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  margin: 4px 4px 52px;
+  margin: 4px 4px 0;
+}
+
+.owt-page__title-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .owt-page__title {
   margin: 0;
-  font-size: 34px;
-  line-height: 1.1;
-  letter-spacing: -0.025em;
-  font-weight: 700;
+  font-size: 52px;
+  line-height: 0.95;
+  letter-spacing: -0.04em;
+  font-weight: 760;
   color: var(--text);
 }
 
@@ -370,11 +376,6 @@ body .ccswitch-openwrt-provider-ui-overlay button svg,
     padding-right: 20px;
   }
 
-  .owt-alert-overlay {
-    padding-left: 20px;
-    padding-right: 20px;
-  }
-
   .owt-header {
     flex-direction: column;
     align-items: stretch;
@@ -409,6 +410,8 @@ body .ccswitch-openwrt-provider-ui-overlay button svg,
   display: flex;
   min-width: 0;
   flex-direction: column;
+  position: relative;
+  overflow: hidden;
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
   background: var(--panel-strong);
@@ -417,6 +420,55 @@ body .ccswitch-openwrt-provider-ui-overlay button svg,
     border-color 180ms ease-out,
     background-color 180ms ease-out,
     transform 180ms ease-out;
+}
+
+.owt-app-card[data-loading="true"] > :not(.card-shimmer) {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.card-shimmer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  border-radius: inherit;
+  background: var(--panel);
+  pointer-events: none;
+}
+
+.card-shimmer::before {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background:
+    linear-gradient(
+      90deg,
+      transparent 0%,
+      color-mix(in srgb, var(--soft-text) 18%, transparent) 50%,
+      transparent 100%
+    ),
+    var(--panel-softer);
+  background-size:
+    220% 100%,
+    100% 100%;
+  background-repeat: no-repeat;
+  animation: card-shimmer-sweep 1100ms ease-in-out infinite;
+  opacity: 0.85;
+}
+
+@keyframes card-shimmer-sweep {
+  from {
+    background-position:
+      -120% 0,
+      0 0;
+  }
+
+  to {
+    background-position:
+      120% 0,
+      0 0;
+  }
 }
 
 /* =====================================================================
@@ -3544,25 +3596,13 @@ select.owt-provider-panel__input {
 
 .owt-daemon-row {
   display: grid;
-  grid-template-columns: auto auto auto 1fr auto auto;
+  grid-template-columns: auto auto 1fr auto auto;
   gap: 12px;
   align-items: center;
 }
 
 .owt-daemon-row__spacer {
   display: block;
-}
-
-.owt-daemon-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 18px 24px;
-}
-
-.owt-daemon-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
 }
 
 .owt-daemon-cell-label {
@@ -3598,62 +3638,6 @@ select.owt-provider-panel__input {
 .owt-field-input--mono {
   font-family: var(--owt-mono);
   font-size: 13.5px;
-}
-
-.owt-daemon-actions {
-  display: flex;
-  align-items: end;
-  justify-content: flex-end;
-}
-
-.owt-daemon-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  min-height: 46px;
-  padding: 0 18px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  background: color-mix(in srgb, var(--panel-strong) 82%, transparent);
-  color: var(--text);
-  font: inherit;
-  font-size: 14px;
-  font-weight: 700;
-  transition:
-    border-color 180ms ease-out,
-    background-color 180ms ease-out,
-    color 180ms ease-out,
-    transform 180ms ease-out;
-}
-
-.owt-daemon-button:hover:not(:disabled) {
-  border-color: var(--line-strong);
-  background: var(--panel-strong);
-  transform: translateY(-1px);
-}
-
-.owt-daemon-button:disabled {
-  cursor: default;
-  opacity: 0.64;
-}
-
-.owt-daemon-button--primary {
-  min-width: 122px;
-  border-color: color-mix(in srgb, var(--accent) 72%, transparent);
-  background: var(--accent);
-  color: #fff;
-}
-
-.owt-daemon-button--primary:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--accent) 85%, black 15%);
-  background: color-mix(in srgb, var(--accent) 88%, black 12%);
-}
-
-.owt-daemon-button--primary:disabled {
-  border-color: var(--line);
-  background: color-mix(in srgb, var(--accent-soft) 60%, var(--panel-strong));
-  color: var(--accent-text);
 }
 
 .owt-page-foot {
@@ -3720,27 +3704,9 @@ select.owt-provider-panel__input {
   border-bottom-style: solid;
 }
 
-@media (max-width: 1180px) {
-  .owt-daemon-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .owt-daemon-actions {
-    grid-column: 1 / -1;
-  }
-}
-
 @media (max-width: 860px) {
   [data-slot="daemon-card"] {
     padding: 22px;
-  }
-
-  .owt-daemon-card__top {
-    flex-direction: column;
-  }
-
-  .owt-daemon-button {
-    width: 100%;
   }
 }
 
@@ -3750,9 +3716,6 @@ select.owt-provider-panel__input {
     grid-auto-flow: row;
   }
 
-  .owt-daemon-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 @media (max-width: 560px) {
@@ -3761,202 +3724,219 @@ select.owt-provider-panel__input {
   }
 }
 
-/* Alert strip — Task F */
-.owt-alert-overlay {
-  position: absolute;
-  top: 70px;
-  left: 0;
-  right: 0;
-  z-index: 30;
-  max-width: 1600px;
-  margin: 0 auto;
-  padding: 0 28px;
+/* Top-level app notifications replace the old in-flow alert strip. */
+.owt-notification-stack {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 9999;
+  display: flex;
+  width: min(380px, calc(100vw - 36px));
+  max-width: 100%;
+  flex-direction: column;
+  gap: 10px;
   pointer-events: none;
 }
 
-.owt-alert-overlay > .owt-alert-strip {
+.owt-notification-popup {
+  --owt-notice-accent: var(--accent);
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto auto;
+  align-items: start;
+  gap: 10px 12px;
+  padding: 12px 14px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 12px 28px -8px rgba(15, 28, 48, 0.18),
+    0 4px 10px -2px rgba(15, 28, 48, 0.06);
+  color: var(--text);
+  font-size: 13.5px;
+  line-height: 1.45;
   pointer-events: auto;
+  transform: translateX(12px);
+  opacity: 0;
+  animation: owt-notification-enter 220ms cubic-bezier(0.2, 0.7, 0.2, 1)
+    forwards;
 }
 
-.owt-alert-strip {
-  --owt-alert-bg: var(--fail-soft, var(--owt-fail-soft));
-  --owt-alert-border: var(--fail-line, var(--owt-fail-line));
-  --owt-alert-text: color-mix(
-    in srgb,
-    var(--fail, var(--owt-fail)) 72%,
-    var(--text) 28%
-  );
-  --owt-alert-strong: var(--fail, var(--owt-fail));
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+.owt-notification-popup::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  background: var(--owt-notice-accent);
+  content: "";
+}
+
+.owt-notification-popup--error {
+  --owt-notice-accent: var(--fail, var(--owt-fail));
+}
+
+.owt-notification-popup--warning {
+  --owt-notice-accent: var(--warn, #a16207);
+}
+
+.owt-notification-popup--success {
+  --owt-notice-accent: var(--success);
+}
+
+.owt-notification-popup--info {
+  --owt-notice-accent: var(--accent);
+}
+
+.owt-notification-popup__icon {
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 14px;
-  border: 1px solid var(--owt-alert-border);
-  border-radius: var(--radius-control);
-  background: var(--owt-alert-bg);
-  box-shadow: 0 20px 48px -40px rgba(23, 33, 51, 0.26);
-  pointer-events: auto;
-  animation: owt-alert-strip-drop 220ms ease-out both;
-}
-
-@keyframes owt-alert-strip-drop {
-  from {
-    opacity: 0;
-    transform: translateY(-8px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .owt-alert-strip {
-    animation-duration: 0ms;
-  }
-}
-
-.owt-alert-strip--unreachable,
-.owt-alert-strip--restarting {
-  --owt-alert-bg: color-mix(
-    in srgb,
-    var(--fail-soft, var(--owt-fail-soft)) 92%,
-    var(--panel-strong) 8%
-  );
-  --owt-alert-border: color-mix(
-    in srgb,
-    var(--fail-line, var(--owt-fail-line)) 88%,
-    var(--line-strong) 12%
-  );
-  --owt-alert-text: color-mix(
-    in srgb,
-    var(--fail, var(--owt-fail)) 74%,
-    var(--text) 26%
-  );
-}
-
-.owt-alert-strip--restart-failed {
-  --owt-alert-bg: color-mix(
-    in srgb,
-    var(--fail-soft, var(--owt-fail-soft)) 84%,
-    var(--panel-strong) 16%
-  );
-  --owt-alert-border: color-mix(
-    in srgb,
-    var(--fail-line, var(--owt-fail-line)) 92%,
-    var(--line-strong) 8%
-  );
-  --owt-alert-text: color-mix(
-    in srgb,
-    var(--fail, var(--owt-fail)) 80%,
-    var(--text) 20%
-  );
-}
-
-.owt-alert-strip__icon {
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  color: var(--owt-alert-strong);
-}
-
-.owt-alert-strip__dot {
-  width: 10px;
-  height: 10px;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
   border-radius: 999px;
-  background: var(--fail, var(--owt-fail));
-  box-shadow: 0 0 0 4px
-    color-mix(in srgb, var(--fail, var(--owt-fail)) 20%, transparent);
-  animation: pulse 2s ease-in-out infinite;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  flex: 0 0 auto;
 }
 
-.owt-alert-strip__copy {
-  display: flex;
+.owt-notification-popup--success .owt-notification-popup__icon {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.owt-notification-popup--warning .owt-notification-popup__icon {
+  background: var(
+    --warn-soft,
+    color-mix(in srgb, var(--warn, #a16207) 12%, transparent)
+  );
+  color: var(--warn, #a16207);
+}
+
+.owt-notification-popup--error .owt-notification-popup__icon {
+  background: var(--fail-soft, var(--owt-fail-soft));
+  color: var(--fail, var(--owt-fail));
+}
+
+.owt-notification-popup__icon svg {
+  width: 13px;
+  height: 13px;
+}
+
+.owt-notification-popup__copy {
+  display: grid;
   min-width: 0;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.2rem 0.45rem;
-  color: var(--owt-alert-text);
+  gap: 2px;
   font-size: 13px;
   line-height: 1.35;
 }
 
-.owt-alert-strip__copy strong {
-  color: var(--owt-alert-strong);
-  font-size: 13px;
-  font-weight: 750;
-}
-
-.owt-alert-strip__copy span {
-  min-width: 0;
-}
-
-.owt-alert-strip__action {
-  min-height: 30px;
-  padding: 0 12px;
-  border: 1px solid transparent;
-  border-radius: calc(var(--radius-control) - 4px);
-  background: var(--fail, var(--owt-fail));
-  color: #fff;
-  font: inherit;
-  font-size: 12px;
+.owt-notification-popup__copy strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13.5px;
   font-weight: 700;
+  letter-spacing: -0.005em;
+  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.owt-notification-popup__copy span {
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+  word-wrap: break-word;
+}
+
+.owt-notification-popup__action,
+.owt-notification-popup__close {
+  border: 1px solid transparent;
+  font: inherit;
   transition:
     transform 180ms ease-out,
-    border-color 180ms ease-out,
-    background-color 180ms ease-out;
+    background-color 180ms ease-out,
+    border-color 180ms ease-out;
 }
 
-.owt-alert-strip__action:hover:not(:disabled) {
-  border-color: transparent;
-  background: color-mix(in srgb, var(--fail, var(--owt-fail)) 88%, #000 12%);
+.owt-notification-popup__action {
+  min-height: 26px;
+  padding: 0 10px;
+  border-color: var(--line-strong);
+  border-radius: 8px;
+  background: var(--panel-strong);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 720;
+  white-space: nowrap;
+}
+
+.owt-notification-popup__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin: -2px -4px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--soft-text);
+}
+
+.owt-notification-popup__action:hover:not(:disabled),
+.owt-notification-popup__close:hover {
   transform: translateY(-1px);
 }
 
-.owt-alert-strip__action:disabled {
+.owt-notification-popup__close:hover {
+  background: var(--panel-softer);
+  color: var(--text);
+}
+
+.owt-notification-popup__close svg {
+  width: 12px;
+  height: 12px;
+}
+
+.owt-notification-popup__action:disabled {
   opacity: 0.6;
   cursor: wait;
   transform: none;
 }
 
-.owt-alert-strip__action:focus-visible {
-  outline: 2px solid
-    color-mix(in srgb, var(--fail, var(--owt-fail)) 58%, transparent);
-  outline-offset: 2px;
-}
-
-@keyframes pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 4px
-      color-mix(in srgb, var(--fail, var(--owt-fail)) 20%, transparent);
-  }
-
-  50% {
-    box-shadow: 0 0 0 8px
-      color-mix(in srgb, var(--fail, var(--owt-fail)) 10%, transparent);
+@keyframes owt-notification-enter {
+  to {
+    opacity: 1;
+    transform: translateX(0);
   }
 }
 
-@media (min-width: 720px) {
-  .owt-alert-strip {
-    grid-template-columns: auto minmax(0, 1fr) auto;
+@media (prefers-reduced-motion: reduce) {
+  .owt-notification-popup {
+    animation-duration: 0ms;
   }
 }
 
 @media (max-width: 719px) {
-  .owt-alert-strip {
-    gap: 10px;
-    padding: 10px 14px;
+  .owt-notification-stack {
+    top: 12px;
+    right: 12px;
+    left: 12px;
+    width: auto;
   }
 
-  .owt-alert-strip__action {
-    grid-column: 1 / -1;
-    justify-self: flex-start;
+  .owt-notification-popup {
+    grid-template-columns: 22px minmax(0, 1fr) auto;
+  }
+
+  .owt-notification-popup__action {
+    grid-column: 2 / -1;
+    justify-self: start;
+    max-width: 100%;
   }
 }
 
@@ -3969,7 +3949,7 @@ select.owt-provider-panel__input {
  *   - <AppsGrid> grouping      (owt-group-grid, owt-group-head/label)
  *   - <AppsGrid> skeletons     (owt-app-card--skeleton)
  *   - <DaemonCard> top row     (owt-daemon-row + owt-chip + owt-chip-select + owt-pill)
- *   - <DaemonCard> field grid  (owt-daemon-grid, owt-daemon-field, owt-field-input)
+ *   - <DaemonCard> edit inputs  (owt-daemon-cell-label, owt-field-input)
  *   - <ThemeToggle>            (owt-theme-toggle + sun/moon swap)
  *
  * Existing rules in openwrt-provider-ui.css (e.g. .owt-app-card) are NOT touched
@@ -4072,23 +4052,19 @@ select.owt-provider-panel__input {
 /* Skeleton cards — mirrors the revised prototype's configured and empty variants. */
 .owt-app-card--skeleton {
   cursor: default;
+  border-style: dashed;
   border-color: var(--line);
-  background: var(--panel);
+  background: transparent;
   box-shadow: none;
   min-height: 248px;
   pointer-events: none;
   animation: none;
-  opacity: 0.92;
-}
-
-.owt-app-card--skeleton[data-animated="true"] {
-  animation: owt-skeleton-card-breathe 2.2s ease-in-out infinite;
 }
 
 .owt-app-card--skeleton:hover {
   transform: none;
   border-color: var(--line);
-  background: var(--panel);
+  background: transparent;
 }
 
 .owt-app-card--empty-skeleton {
@@ -4145,50 +4121,22 @@ select.owt-provider-panel__input {
 .owt-app-card--skeleton[data-animated="true"] .owt-app-card__skeleton-icon,
 .owt-app-card--skeleton[data-animated="true"] .owt-app-card__skeleton-chip,
 .owt-app-card--skeleton[data-animated="true"] .owt-app-card__skeleton-mini {
-  background:
-    linear-gradient(
-      100deg,
-      transparent 0%,
-      color-mix(in srgb, var(--accent) 22%, white 16%) 42%,
-      transparent 72%
-    ),
-    var(--panel-softer);
-  background-size:
-    220% 100%,
-    auto;
-  animation: owt-skeleton-shimmer 1.15s ease-in-out infinite;
+  animation: owt-skeleton-pulse 2.4s ease-in-out infinite;
 }
 
 .owt-app-card--skeleton[data-animated="true"] .owt-app-card__skeleton-line {
-  background:
-    linear-gradient(
-      100deg,
-      transparent 0%,
-      color-mix(in srgb, var(--accent) 24%, white 18%) 42%,
-      transparent 72%
-    ),
-    color-mix(in srgb, var(--panel-softer) 80%, var(--text) 6%);
-  background-size:
-    220% 100%,
-    auto;
-  animation: owt-skeleton-shimmer 1.15s ease-in-out infinite;
+  animation: owt-skeleton-pulse 2.4s ease-in-out infinite;
+}
+
+.owt-app-card--skeleton[data-animated="true"] .owt-app-card__skeleton-active {
+  animation: owt-skeleton-pulse 2.4s ease-in-out infinite;
 }
 
 .owt-app-card--empty-skeleton[data-animated="true"]
   .owt-app-card__skeleton-icon,
 .owt-app-card--empty-skeleton[data-animated="true"]
   .owt-app-card__skeleton-chip {
-  background:
-    linear-gradient(
-      100deg,
-      transparent 0%,
-      color-mix(in srgb, var(--accent) 18%, white 14%) 42%,
-      transparent 72%
-    ),
-    color-mix(in srgb, var(--panel-softer) 28%, transparent);
-  background-size:
-    220% 100%,
-    auto;
+  animation: owt-skeleton-pulse 2.4s ease-in-out infinite;
 }
 
 .owt-app-card__skeleton-chip {
@@ -4227,9 +4175,9 @@ select.owt-provider-panel__input {
   gap: 12px;
   padding: 12px 14px;
   border-radius: var(--radius-control);
-  background: var(--panel-soft);
+  background: var(--panel-softer);
   border: 1px solid var(--line);
-  margin: 16px 0 14px;
+  margin: 18px 0;
 }
 
 .owt-app-card__skeleton-active-body {
@@ -4281,23 +4229,10 @@ select.owt-provider-panel__input {
   border-left: 0;
 }
 
-@keyframes owt-skeleton-shimmer {
-  0% {
-    background-position:
-      120% 0,
-      0 0;
-  }
-  100% {
-    background-position:
-      -120% 0,
-      0 0;
-  }
-}
-
-@keyframes owt-skeleton-card-breathe {
+@keyframes owt-skeleton-pulse {
   0%,
   100% {
-    opacity: 0.9;
+    opacity: 0.6;
   }
   50% {
     opacity: 1;
@@ -4309,7 +4244,9 @@ select.owt-provider-panel__input {
   .owt-app-card__skeleton-icon,
   .owt-app-card__skeleton-chip,
   .owt-app-card__skeleton-mini,
-  .owt-app-card__skeleton-line {
+  .owt-app-card__skeleton-line,
+  .owt-app-card__skeleton-active,
+  .card-shimmer::before {
     animation: none;
   }
 }
@@ -4465,7 +4402,8 @@ select.owt-provider-panel__input {
 /* =====================================================================
  * THEME TOGGLE — icon-based, sits in the page title row
  * ===================================================================== */
-.owt-theme-toggle {
+.owt-theme-toggle,
+.owt-title-icon-button {
   width: 36px;
   height: 36px;
   box-sizing: border-box;
@@ -4486,19 +4424,38 @@ select.owt-provider-panel__input {
     border-color 160ms,
     background 160ms;
 }
-.owt-theme-toggle:hover {
+
+.owt-theme-toggle:hover,
+.owt-title-icon-button:hover:not(:disabled) {
   border-color: var(--line-strong);
   background-color: var(--panel-strong);
 }
-.owt-theme-toggle:focus-visible {
+
+.owt-theme-toggle:focus-visible,
+.owt-title-icon-button:focus-visible {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
 }
-.owt-theme-toggle svg {
+
+.owt-theme-toggle svg,
+.owt-title-icon-button svg {
   width: 18px;
   height: 18px;
   display: block;
+}
+
+.owt-title-icon-button:disabled {
+  cursor: wait;
+  opacity: 0.75;
+}
+
+.owt-title-icon-button svg {
+  transition: transform 600ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.owt-title-icon-button[data-spinning="true"] svg {
+  transform: rotate(360deg);
 }
 .owt-theme-toggle .owt-theme-toggle__moon {
   display: none;
@@ -4740,7 +4697,6 @@ select.owt-provider-panel__input {
   height: 22px;
   padding: 0 8px;
   font-size: 10px;
-  text-transform: uppercase;
 }
 .owt-app-card__failover-foot {
   display: flex;
@@ -4752,6 +4708,385 @@ select.owt-provider-panel__input {
   color: var(--muted);
   font-size: 11px;
   font-weight: 650;
+}
+
+/* =====================================================================
+ * DAEMON SUMMARY + DIAGNOSTICS
+ *
+ * Ported from the Claude Design handoff for this session:
+ * - OpenWrt now mirrors desktop's single upstream proxy concept in the UI.
+ * - The proxy token itself carries reachability state; no duplicate status pip.
+ * - Daemon logs are exposed as a manual-refresh diagnostics drawer. No polling.
+ * ===================================================================== */
+.owt-daemon-summary {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.owt-daemon-summary__segment {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.owt-daemon-summary__segment > svg {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.owt-daemon-summary__label {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.owt-daemon-summary__sep {
+  color: var(--soft-text);
+}
+
+.owt-inline-token {
+  display: inline-flex;
+  min-width: 0;
+  max-width: min(32rem, 64vw);
+  height: 26px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 7px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  text-align: left;
+}
+
+.owt-inline-token span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.owt-inline-token svg {
+  flex: 0 0 auto;
+  opacity: 0.58;
+}
+
+.owt-inline-token:hover,
+.owt-inline-token:focus-visible {
+  border-color: var(--line);
+  background: var(--panel-softer, var(--panel-soft));
+  color: var(--accent-text);
+}
+
+.owt-inline-token--fail {
+  color: var(--fail);
+}
+
+.owt-inline-token--fail:hover,
+.owt-inline-token--fail:focus-visible {
+  border-color: var(--fail-line);
+  background: var(--fail-soft);
+  color: var(--fail);
+}
+
+.owt-inline-token--checking {
+  color: var(--accent-text);
+}
+
+.owt-edit-popover {
+  position: relative;
+  z-index: 2;
+  width: min(31rem, 100%);
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--panel-strong);
+  box-shadow: var(--shadow-soft);
+}
+
+.owt-edit-popover__title {
+  margin-bottom: 10px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 780;
+}
+
+.owt-edit-popover__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(5.5rem, 7rem);
+  gap: 10px;
+}
+
+.owt-edit-popover__field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.owt-edit-popover__help {
+  margin: 9px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.owt-edit-popover__help--fail {
+  padding: 8px 10px;
+  border: 1px solid var(--fail-line);
+  border-radius: 10px;
+  background: var(--fail-soft);
+  color: var(--fail);
+}
+
+.owt-edit-popover__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.owt-field-control {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+
+.owt-field-control .owt-field-input {
+  padding-right: 40px;
+}
+
+.owt-field-check {
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.owt-field-check:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.owt-field-check:disabled {
+  cursor: default;
+  opacity: 0.58;
+}
+
+.owt-log-drawer {
+  margin-top: 18px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--panel-soft);
+}
+
+.owt-log-drawer__summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  color: var(--text);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.owt-log-drawer__summary::-webkit-details-marker {
+  display: none;
+}
+
+.owt-log-drawer__summary:hover {
+  background: var(--panel-softer, var(--panel-soft));
+}
+
+.owt-log-drawer__chevron {
+  display: inline-flex;
+  color: var(--muted);
+  transition: transform 180ms cubic-bezier(0.3, 0.7, 0.3, 1);
+}
+
+.owt-log-drawer__chevron svg {
+  width: 12px;
+  height: 12px;
+}
+
+.owt-log-drawer[open] .owt-log-drawer__chevron {
+  transform: rotate(90deg);
+}
+
+.owt-log-drawer__title {
+  font-size: 13px;
+  font-weight: 720;
+  letter-spacing: -0.005em;
+  color: var(--text);
+}
+
+.owt-log-drawer__loglevel {
+  margin-left: 0;
+  cursor: pointer;
+}
+
+.owt-log-drawer__loglevel.owt-chip-select {
+  gap: 4px;
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.owt-log-drawer__loglevel.owt-chip-select select {
+  padding: 0 20px 0 8px;
+  font-weight: 700;
+  background-position: right 4px center;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path fill='none' stroke='%232752c9' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' d='M3 5l3 3 3-3'/></svg>");
+}
+
+:host([data-ccswitch-theme="dark"])
+  .owt-log-drawer__loglevel.owt-chip-select
+  select,
+.ccswitch-openwrt-provider-ui-host[data-ccswitch-theme="dark"]
+  .owt-log-drawer__loglevel.owt-chip-select
+  select {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path fill='none' stroke='%23dfe5ff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' d='M3 5l3 3 3-3'/></svg>");
+}
+
+.owt-log-drawer__spacer {
+  flex: 1 1 auto;
+}
+
+.owt-log-drawer__freshness {
+  color: var(--soft-text);
+  font-size: 11px;
+  font-style: italic;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.owt-log-drawer__refresh {
+  height: 28px;
+  padding: 0 10px 0 8px;
+  gap: 6px;
+  background: transparent;
+  color: var(--text);
+  border-color: var(--line);
+  font-size: 12px;
+}
+
+.owt-log-drawer__refresh:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  background: var(--button);
+}
+
+.owt-log-viewer {
+  max-height: 280px;
+  overflow: auto;
+  border-top: 1px solid var(--line);
+  background: #0f172a;
+  color: #c7d2e5;
+  padding: 10px 0;
+}
+
+.owt-log-viewer:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.owt-log-viewer__pre {
+  margin: 0;
+  padding: 0 14px;
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre;
+  tab-size: 2;
+}
+
+.owt-log-viewer__line {
+  display: block;
+  padding: 0 4px;
+  border-radius: 3px;
+}
+
+.owt-log-viewer__line[data-tone="warn"] {
+  background: rgba(230, 162, 86, 0.07);
+}
+
+.owt-log-viewer__line[data-tone="error"] {
+  background: rgba(255, 118, 118, 0.1);
+}
+
+.owt-log-viewer__timestamp {
+  color: #6e7d96;
+}
+
+.owt-log-viewer__level {
+  font-weight: 700;
+}
+
+.owt-log-viewer__level[data-level="info"] {
+  color: #74a9ff;
+}
+
+.owt-log-viewer__level[data-level="debug"],
+.owt-log-viewer__level[data-level="trace"] {
+  color: #6e7d96;
+}
+
+.owt-log-viewer__level[data-level="warn"] {
+  color: #e6a256;
+}
+
+.owt-log-viewer__level[data-level="error"] {
+  color: #ff7676;
+}
+
+.owt-log-viewer__message {
+  color: #c7d2e5;
+}
+
+.owt-log-viewer__empty {
+  padding: 14px;
+  color: #9fb0ca;
+  font-size: 12px;
+}
+
+.owt-log-viewer__empty[data-tone="fail"] {
+  color: #fca5a5;
+}
+
+@media (max-width: 719px) {
+  .owt-edit-popover__row {
+    grid-template-columns: 1fr;
+  }
+
+  .owt-log-drawer__summary {
+    flex-wrap: wrap;
+  }
+
+  .owt-log-drawer__spacer {
+    display: none;
+  }
 }
 
 /* =====================================================================

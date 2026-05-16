@@ -89,7 +89,7 @@
         "standby": "备用",
         "standbyRetriesUsed": "备用 · 已使用 {{count}} 次重试"
       },
-      "queueHead": "队首：{{head}}",
+      "queueHead": "队列：{{head}}",
       "queueOrderUpdating": "队列顺序正在更新",
       "quota": "配额",
       "reorderApp": "重新排序 {{app}}",
@@ -155,14 +155,37 @@
         "healthy": "正常",
         "stopped": "已停止"
       },
+      "editEndpoint": "监听端点",
+      "editProxy": "上游代理",
+      "endpointHelp": "配置守护进程接受客户端请求的绑定地址和 TCP 端口。使用 0.0.0.0 可监听所有接口。",
       "httpProxy": "HTTP 代理",
       "httpsProxy": "HTTPS 代理",
       "listenAddress": "监听地址",
+      "listeningOn": "监听于",
       "listenPort": "监听端口",
       "logLevel": "日志级别",
+      "logs": {
+        "checkedJustNow": "刚刚检查",
+        "checkedMinutesAgo": "{{count}} 分钟前检查",
+        "checkedSecondsAgo": "{{count}} 秒前检查",
+        "empty": "展开诊断并刷新以加载最新守护进程日志尾部。",
+        "notLoaded": "未加载",
+        "refresh": "刷新",
+        "title": "诊断",
+        "unavailable": "当前构建不支持守护进程日志尾部。",
+        "viewerAria": "守护进程日志尾部"
+      },
       "luciAppLabel": "luci-app-ccswitch",
       "luciAppVersion": "luci-app-ccswitch 版本",
       "persistConfig": "持久化当前守护进程配置",
+      "proxyChecking": "正在检查可达性…",
+      "proxyHelp": "可选。出站服务商流量将通过这一个上游代理转发。支持 HTTP、HTTPS、SOCKS5 和 SOCKS5H。",
+      "proxyNotChecked": "尚未检查代理可达性。",
+      "proxyReachable": "可达。出站服务商流量将通过该代理转发。",
+      "proxyUnavailable": "未配置上游代理。",
+      "proxyUnreachable": "不可达。请确认代理正在运行且路由器可以访问。",
+      "proxyUrl": "URL",
+      "recheckProxy": "重新检查可达性",
       "restart": "重启",
       "restarting": "重启中…",
       "saved": "已保存",
@@ -171,6 +194,8 @@
         "running": "运行中",
         "stopped": "已停止"
       },
+      "upstreamProxy": "上游代理",
+      "upstreamProxyDirect": "直连",
       "unknownVersion": "未知"
     },
     "pageShell": {
@@ -178,6 +203,7 @@
       "closeOpenDrawer": "关闭已打开的抽屉",
       "daemonHeading": "守护进程",
       "footerCreditPrefix": "感谢上游桌面项目及其作者和贡献者 —",
+      "refreshUiState": "刷新界面状态",
       "switchToDarkTheme": "切换到暗色主题",
       "switchToLightTheme": "切换到亮色主题",
       "versionsAria": "版本"
@@ -312,6 +338,7 @@
     "edit": "编辑",
     "save": "保存",
     "cancel": "取消",
+    "close": "关闭",
     "error": "错误",
     "unknown": "未知",
     "all": "全部"
