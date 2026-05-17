@@ -4732,7 +4732,7 @@ select.owt-provider-panel__input {
 .owt-daemon-summary {
   position: relative;
   display: grid;
-  grid-template-columns: max-content minmax(12rem, 1fr);
+  grid-template-columns: max-content minmax(0, auto);
   flex: 1 1 42rem;
   align-items: start;
   column-gap: 18px;
@@ -4762,10 +4762,6 @@ select.owt-provider-panel__input {
 
 .owt-daemon-summary__segment:last-child {
   min-width: 0;
-}
-
-.owt-daemon-summary__segment:last-child .owt-inline-token {
-  width: 100%;
 }
 
 .owt-daemon-summary__head {
