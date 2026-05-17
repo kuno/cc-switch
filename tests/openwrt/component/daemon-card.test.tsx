@@ -513,7 +513,7 @@ describe("DaemonCard", () => {
       source: "daemon",
       path: "/var/log/ccswitch.log",
       linesRequested: 80,
-      bytesRequested: 32768,
+      bytesRequested: 262144,
       linesReturned: 2,
       bytesRead: 128,
       fileSize: 128,
@@ -533,7 +533,7 @@ describe("DaemonCard", () => {
     );
 
     await waitFor(() =>
-      expect(onLoadDaemonLogTail).toHaveBeenCalledWith(80, 32768),
+      expect(onLoadDaemonLogTail).toHaveBeenCalledWith(80, 262144),
     );
     expect(card).toHaveTextContent("daemon started");
     expect(card).toHaveTextContent("upstream proxy slow");
@@ -545,7 +545,7 @@ describe("DaemonCard", () => {
       source: "daemon",
       path: "/var/log/ccswitch.log",
       linesRequested: 80,
-      bytesRequested: 32768,
+      bytesRequested: 262144,
       linesReturned: 1,
       bytesRead: 64,
       fileSize: 64,
@@ -594,6 +594,81 @@ describe("DaemonCard", () => {
       await vi.advanceTimersByTimeAsync(9000);
     });
     expect(onLoadDaemonLogTail).toHaveBeenCalledTimes(2);
+
+    unmount();
+    vi.useRealTimers();
+  });
+
+  it("auto-scrolls diagnostics logs to the latest entry after polling appends lines", async () => {
+    vi.useFakeTimers();
+    let scrollHeight = 240;
+    const onLoadDaemonLogTail = vi
+      .fn()
+      .mockResolvedValueOnce({
+        source: "daemon",
+        path: "/var/log/ccswitch.log",
+        linesRequested: 80,
+        bytesRequested: 262144,
+        linesReturned: 1,
+        bytesRead: 64,
+        fileSize: 64,
+        entries: ["2026-05-16T10:00:00Z INFO daemon started"],
+        truncated: false,
+      })
+      .mockResolvedValueOnce({
+        source: "daemon",
+        path: "/var/log/ccswitch.log",
+        linesRequested: 80,
+        bytesRequested: 262144,
+        linesReturned: 2,
+        bytesRead: 128,
+        fileSize: 128,
+        entries: [
+          "2026-05-16T10:00:00Z INFO daemon started",
+          "2026-05-16T10:00:03Z INFO accepted request",
+        ],
+        truncated: false,
+      });
+    const { card, unmount } = renderDaemonCard({}, { onLoadDaemonLogTail });
+    const drawer = card.querySelector<HTMLDetailsElement>(".owt-log-drawer");
+    const viewer = card.querySelector<HTMLDivElement>(".owt-log-viewer");
+
+    if (!drawer || !viewer) {
+      throw new Error("Expected diagnostics drawer and log viewer to render");
+    }
+
+    Object.defineProperty(viewer, "scrollHeight", {
+      configurable: true,
+      get: () => scrollHeight,
+    });
+
+    await act(async () => {
+      drawer.open = true;
+      fireEvent(
+        drawer,
+        new Event("toggle", {
+          bubbles: true,
+        }),
+      );
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(viewer.scrollTop).toBe(240);
+    viewer.scrollTop = 0;
+    scrollHeight = 480;
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(card).toHaveTextContent("accepted request");
+    expect(viewer.scrollTop).toBe(480);
 
     unmount();
     vi.useRealTimers();
