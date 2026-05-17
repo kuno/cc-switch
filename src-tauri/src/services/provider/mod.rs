@@ -1511,10 +1511,9 @@ impl ProviderService {
 
     /// 删除 Provider 时同步清理其速率限制快照（内存 + 持久化）
     ///
-    /// `/api/quota` reads the in-memory `rate_limits` map directly; leaving a
-    /// snapshot behind after deletion surfaces as a ghost entry until the
-    /// read-time refresh catches it. This keeps both caches in sync with the
-    /// provider list.
+    /// `/api/status` renders provider quota from the in-memory `rate_limits`
+    /// map; leaving a snapshot behind after deletion surfaces as a ghost entry.
+    /// This keeps both caches in sync with the provider list.
     fn evict_rate_limit_snapshot(state: &AppState, provider_id: &str) {
         futures::executor::block_on(state.proxy_service.evict_rate_limit_snapshot(provider_id));
     }
