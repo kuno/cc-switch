@@ -548,16 +548,11 @@ impl ProxyServer {
 mod tests {
     use super::*;
     use crate::database::Database;
-    use crate::provider::Provider;
-    use crate::proxy::rate_limit::RateLimitSnapshot;
     use axum::{
         body::Body,
-        extract::State,
         http::{Request, StatusCode},
     };
     use http_body_util::BodyExt;
-    use serde_json::json;
-    use serial_test::serial;
     use tower::Service;
 
     #[tokio::test]
@@ -683,8 +678,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
-    async fn get_quota_removes_stale_codex_subscription_snapshots_without_live_refresh_sources() {
+    async fn api_quota_route_returns_deprecation_error() {
         let db = Arc::new(Database::memory().expect("init db"));
         let server = ProxyServer::new(
             ProxyConfig::default(),
@@ -694,236 +688,34 @@ mod tests {
             #[cfg(feature = "tauri-desktop")]
             None,
         );
-        let provider = Provider::with_id(
-            "quota-stale-provider".to_string(),
-            "Codex OAuth".to_string(),
-            json!({ "auth_mode": "codex_oauth" }),
-            None,
-        );
-        server
-            .state
-            .db
-            .save_provider("codex", &provider)
-            .expect("save codex provider");
-        // Seed a live Claude provider for the `claude-1` control snapshot so the
-        // new Claude stale-snapshot refresh (which runs in the same `get_quota`
-        // call) does not touch it — preserving this test's original intent.
-        let claude_control = Provider::with_id(
-            "claude-1".to_string(),
-            "Claude Provider".to_string(),
-            json!({}),
-            None,
-        );
-        server
-            .state
-            .db
-            .save_provider("claude", &claude_control)
-            .expect("save claude control provider");
 
-        {
-            let mut store = server.state.rate_limits.write().await;
-            store.insert(
-                provider.id.clone(),
-                RateLimitSnapshot {
-                    app_type: "codex".to_string(),
-                    provider_id: provider.id.clone(),
-                    provider_name: provider.name.clone(),
-                    source: Some("subscription_quota".to_string()),
-                    status: None,
-                    windows: Vec::new(),
-                    representative_claim: None,
-                    overage_status: None,
-                    fallback_percentage: None,
-                    requests_limit: None,
-                    requests_remaining: None,
-                    tokens_limit: None,
-                    tokens_remaining: None,
-                    balances: None,
-                    captured_at: 1,
-                },
-            );
-            store.insert(
-                "claude-1".to_string(),
-                RateLimitSnapshot {
-                    app_type: "claude".to_string(),
-                    provider_id: "claude-1".to_string(),
-                    provider_name: "Claude Provider".to_string(),
-                    source: Some("response_headers".to_string()),
-                    status: None,
-                    windows: Vec::new(),
-                    representative_claim: None,
-                    overage_status: None,
-                    fallback_percentage: None,
-                    requests_limit: None,
-                    requests_remaining: None,
-                    tokens_limit: None,
-                    tokens_remaining: None,
-                    balances: None,
-                    captured_at: 2,
-                },
-            );
-        }
+        let mut app = server.build_router();
+        let response = app
+            .call(
+                Request::builder()
+                    .uri("/api/quota")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("route response");
 
-        let (status, body) = crate::proxy::handlers::get_quota(State(server.state.clone())).await;
+        assert_eq!(response.status(), StatusCode::GONE);
+        let bytes = response
+            .into_body()
+            .collect()
+            .await
+            .expect("body")
+            .to_bytes();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).expect("json body");
 
-        assert_eq!(status, StatusCode::OK);
-        assert!(
-            body["providers"]
-                .as_array()
-                .expect("providers array")
-                .iter()
-                .all(|snapshot| snapshot["provider_id"] != provider.id),
-            "stale codex subscription quota snapshot should be absent from the quota response"
-        );
-        assert!(
-            body["providers"]
-                .as_array()
-                .expect("providers array")
-                .iter()
-                .any(|snapshot| snapshot["provider_id"] == "claude-1"),
-            "live non-codex snapshots should remain present in the quota response"
-        );
-
-        let store = server.state.rate_limits.read().await;
-        assert!(
-            !store.contains_key(&provider.id),
-            "stale codex subscription quota snapshot should be removed when no live refresh source exists"
-        );
-        assert!(
-            store.contains_key("claude-1"),
-            "live non-codex snapshots should not be touched by codex quota cleanup"
-        );
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn get_quota_removes_stale_claude_snapshots_for_providers_missing_from_db() {
-        let db = Arc::new(Database::memory().expect("init db"));
-        let server = ProxyServer::new(
-            ProxyConfig::default(),
-            db,
-            None,
-            None,
-            #[cfg(feature = "tauri-desktop")]
-            None,
-        );
-        let live = Provider::with_id(
-            "claude-live".to_string(),
-            "Claude Live".to_string(),
-            json!({}),
-            None,
-        );
-        server
-            .state
-            .db
-            .save_provider("claude", &live)
-            .expect("save live claude provider");
-
-        {
-            let mut store = server.state.rate_limits.write().await;
-            // Stale Claude snapshot: provider no longer in DB. Uses
-            // `response_headers` source because Claude rate-limit snapshots
-            // are captured from upstream response headers, not from a quota
-            // polling source — the refresh must not filter on `source`.
-            store.insert(
-                "claude-ghost".to_string(),
-                RateLimitSnapshot {
-                    app_type: "claude".to_string(),
-                    provider_id: "claude-ghost".to_string(),
-                    provider_name: "Claude Ghost".to_string(),
-                    source: Some("response_headers".to_string()),
-                    status: None,
-                    windows: Vec::new(),
-                    representative_claim: None,
-                    overage_status: None,
-                    fallback_percentage: None,
-                    requests_limit: None,
-                    requests_remaining: None,
-                    tokens_limit: None,
-                    tokens_remaining: None,
-                    balances: None,
-                    captured_at: 1,
-                },
-            );
-            // Live Claude snapshot — must survive.
-            store.insert(
-                live.id.clone(),
-                RateLimitSnapshot {
-                    app_type: "claude".to_string(),
-                    provider_id: live.id.clone(),
-                    provider_name: live.name.clone(),
-                    source: Some("response_headers".to_string()),
-                    status: None,
-                    windows: Vec::new(),
-                    representative_claim: None,
-                    overage_status: None,
-                    fallback_percentage: None,
-                    requests_limit: None,
-                    requests_remaining: None,
-                    tokens_limit: None,
-                    tokens_remaining: None,
-                    balances: None,
-                    captured_at: 2,
-                },
-            );
-            // Non-Claude snapshot — must not be affected by the Claude refresh.
-            store.insert(
-                "codex-passthrough".to_string(),
-                RateLimitSnapshot {
-                    app_type: "codex".to_string(),
-                    provider_id: "codex-passthrough".to_string(),
-                    provider_name: "Codex Passthrough".to_string(),
-                    source: Some("response_headers".to_string()),
-                    status: None,
-                    windows: Vec::new(),
-                    representative_claim: None,
-                    overage_status: None,
-                    fallback_percentage: None,
-                    requests_limit: None,
-                    requests_remaining: None,
-                    tokens_limit: None,
-                    tokens_remaining: None,
-                    balances: None,
-                    captured_at: 3,
-                },
-            );
-        }
-
-        let (status, body) = crate::proxy::handlers::get_quota(State(server.state.clone())).await;
-        assert_eq!(status, StatusCode::OK);
-
-        let providers = body["providers"].as_array().expect("providers array");
-        assert!(
-            providers
-                .iter()
-                .all(|snapshot| snapshot["provider_id"] != "claude-ghost"),
-            "stale Claude snapshot for missing provider should be absent from the quota response"
-        );
-        assert!(
-            providers
-                .iter()
-                .any(|snapshot| snapshot["provider_id"] == live.id),
-            "live Claude provider snapshot should be preserved"
-        );
-        assert!(
-            providers
-                .iter()
-                .any(|snapshot| snapshot["provider_id"] == "codex-passthrough"),
-            "non-Claude snapshots should not be touched by Claude cleanup"
-        );
-
-        let store = server.state.rate_limits.read().await;
-        assert!(
-            !store.contains_key("claude-ghost"),
-            "ghost Claude snapshot should be evicted from the in-memory store"
-        );
-        assert!(
-            store.contains_key(&live.id),
-            "live Claude snapshot should remain in the in-memory store"
-        );
-        assert!(
-            store.contains_key("codex-passthrough"),
-            "codex snapshot should remain in the in-memory store"
-        );
+        assert_eq!(body["ok"], false);
+        assert_eq!(body["deprecated"], true);
+        assert_eq!(body["code"], "endpoint_deprecated");
+        assert_eq!(body["replacement"], "/api/status");
+        assert!(body["error"]
+            .as_str()
+            .expect("error")
+            .contains("/api/status"));
     }
 }

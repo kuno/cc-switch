@@ -3310,11 +3310,10 @@ impl ProxyService {
 
     /// 删除指定 Provider 的速率限制快照（内存 + 持久化）
     ///
-    /// Why: `/api/quota` dumps `rate_limits` directly; a snapshot for a
-    /// deleted provider would surface as a ghost entry until the next
-    /// read-time refresh kicks in. Calling this on provider deletion keeps
-    /// both the in-memory store and the DB persistence consistent with the
-    /// provider list.
+    /// Why: `/api/status` renders provider quota from `rate_limits`; a snapshot
+    /// for a deleted provider would surface as a ghost entry. Calling this on
+    /// provider deletion keeps both the in-memory store and the DB persistence
+    /// consistent with the provider list.
     pub async fn evict_rate_limit_snapshot(&self, provider_id: &str) {
         if let Some(server) = self.server.read().await.as_ref() {
             server.evict_rate_limit_snapshot(provider_id).await;

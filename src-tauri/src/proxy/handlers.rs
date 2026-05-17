@@ -341,7 +341,7 @@ async fn refresh_codex_quota_snapshots(state: &ProxyState) {
     .await;
 }
 
-/// Reconcile stored Claude rate-limit snapshots before serving `/api/quota`.
+/// Reconcile stored Claude rate-limit snapshots before rendering `/api/status`.
 ///
 /// Retain rules:
 /// - keep non-Claude snapshots untouched;
@@ -461,15 +461,15 @@ async fn refresh_live_quota_snapshots(state: &ProxyState) {
     super::third_party_quota::refresh_third_party_balance_snapshots(&state).await;
 }
 
-pub async fn get_quota(State(state): State<ProxyState>) -> (StatusCode, Json<Value>) {
-    refresh_live_quota_snapshots(&state).await;
-    let store = state.rate_limits.read().await;
-    let providers: Vec<_> = store.values().cloned().collect();
+pub async fn get_quota(State(_state): State<ProxyState>) -> (StatusCode, Json<Value>) {
     (
-        StatusCode::OK,
+        StatusCode::GONE,
         Json(json!({
-            "providers": providers,
-            "timestamp": chrono::Utc::now().to_rfc3339(),
+            "ok": false,
+            "deprecated": true,
+            "code": "endpoint_deprecated",
+            "replacement": "/api/status",
+            "error": "/api/quota is deprecated. Use /api/status for detailed per-app and per-provider quota data.",
         })),
     )
 }
@@ -5180,7 +5180,7 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
         assert_eq!(
             live_quota_refresh_call_count(),
             4,
-            "/api/status should run the same cached quota refresh pass as /api/quota"
+            "/api/status should run the cached quota refresh pass before rendering quota data"
         );
     }
 
