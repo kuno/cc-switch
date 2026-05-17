@@ -27,7 +27,7 @@ import type {
 
 const DEFAULT_LOG_LEVELS = ["error", "warn", "info", "debug", "trace"];
 const LOG_TAIL_LINES = 80;
-const LOG_TAIL_MAX_BYTES = 32768;
+const LOG_TAIL_MAX_BYTES = 256 * 1024;
 
 type EditTarget = "endpoint" | "proxy" | null;
 type ProxyStatus = "idle" | "ok" | "fail" | "checking";
@@ -204,6 +204,7 @@ export function DaemonCard({
   const [logError, setLogError] = useState<string | null>(null);
   const [logCheckedAt, setLogCheckedAt] = useState<number | null>(null);
   const [logDrawerOpen, setLogDrawerOpen] = useState(false);
+  const logViewerRef = useRef<HTMLDivElement | null>(null);
   const logRefreshInFlightRef = useRef(false);
   const [, forceFreshnessTick] = useState(0);
   const statusLabel = getStatusLabel(t);
@@ -351,6 +352,19 @@ export function DaemonCard({
 
     return () => window.clearInterval(timer);
   }, [logDrawerOpen, refreshLogs]);
+
+  useEffect(() => {
+    if (!logDrawerOpen || !logTail?.entries.length || logError) {
+      return;
+    }
+
+    const viewer = logViewerRef.current;
+    if (!viewer) {
+      return;
+    }
+
+    viewer.scrollTop = viewer.scrollHeight;
+  }, [logDrawerOpen, logError, logTail]);
 
   return (
     <div
@@ -650,6 +664,7 @@ export function DaemonCard({
         </summary>
 
         <div
+          ref={logViewerRef}
           className="owt-log-viewer"
           tabIndex={0}
           aria-label={t("openwrt.daemon.logs.viewerAria")}
