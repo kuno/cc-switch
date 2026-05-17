@@ -423,6 +423,23 @@ describe("DaemonCard", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("lets the upstream proxy token shrink to its content", () => {
+    const { card } = renderDaemonCard({
+      host: {
+        upstreamProxy: "",
+        httpProxy: "",
+        httpsProxy: "",
+      },
+    });
+    const proxySegment = [...card.querySelectorAll(".owt-daemon-summary__segment")]
+      .find((segment) => segment.textContent?.includes("Upstream proxy"));
+    const proxyToken = within(proxySegment as HTMLElement).getByRole("button", {
+      name: "Direct",
+    });
+
+    expect(proxyToken).not.toHaveStyle({ width: "100%" });
+  });
+
   it("opens the proxy popover and saves the edited proxy through upstreamProxy", async () => {
     const user = userEvent.setup();
     const onDraftChange = vi.fn();
