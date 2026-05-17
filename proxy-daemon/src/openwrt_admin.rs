@@ -65,6 +65,10 @@ pub const OPENWRT_DAEMON_LOG_DEFAULT_LINES: u32 = 80;
 pub const OPENWRT_DAEMON_LOG_MAX_LINES: u32 = 200;
 pub const OPENWRT_DAEMON_LOG_DEFAULT_BYTES: u32 = 64 * 1024;
 pub const OPENWRT_DAEMON_LOG_MAX_BYTES: u32 = 256 * 1024;
+const OPENWRT_DAEMON_LOG_MAX_LINE_BYTES: usize = 4 * 1024;
+const OPENWRT_DAEMON_LOG_SCAN_CHUNK_BYTES: u64 = 8 * 1024;
+const OPENWRT_DAEMON_LOG_SCAN_EXTRA_BYTES: u64 = 256 * 1024;
+const OPENWRT_DAEMON_LOG_SCAN_MAX_BYTES: u64 = 1024 * 1024;
 const OPENWRT_FAILURE_SAMPLE_DEFAULT_LIMIT: u32 = 5;
 const OPENWRT_FAILURE_SAMPLE_MAX_LIMIT: u32 = 20;
 static BEARER_TOKEN_RE: LazyLock<Regex> =
@@ -1739,6 +1743,38 @@ fn normalize_daemon_log_tail_limits(lines: Option<u32>, max_bytes: Option<u32>) 
     (lines, max_bytes)
 }
 
+fn daemon_log_tail_scan_limit(file_size: u64, lines: u32, max_bytes: u32) -> u64 {
+    let line_budget = (lines as u64).saturating_mul(OPENWRT_DAEMON_LOG_MAX_LINE_BYTES as u64);
+    let scan_limit = (max_bytes as u64)
+        .saturating_add(OPENWRT_DAEMON_LOG_SCAN_EXTRA_BYTES)
+        .saturating_add(line_budget)
+        .min(OPENWRT_DAEMON_LOG_SCAN_MAX_BYTES);
+
+    file_size.min(scan_limit)
+}
+
+fn push_daemon_log_tail_entry(
+    entries: &mut Vec<String>,
+    line_bytes_reversed: &mut Vec<u8>,
+    line_truncated: &mut bool,
+) -> bool {
+    line_bytes_reversed.reverse();
+    let line = String::from_utf8_lossy(line_bytes_reversed).to_string();
+    let redacted = redact_diagnostic_text(&line);
+    let entry = if *line_truncated {
+        format!("[truncated] {redacted}")
+    } else {
+        redacted
+    };
+
+    entries.push(entry);
+    let was_truncated = *line_truncated;
+    line_bytes_reversed.clear();
+    *line_truncated = false;
+
+    was_truncated
+}
+
 fn read_bounded_daemon_log_tail_from_path(
     path: &Path,
     lines: Option<u32>,
@@ -1755,31 +1791,81 @@ fn read_bounded_daemon_log_tail_from_path(
         .metadata()
         .map_err(|e| anyhow!("failed to stat daemon log tail source: {e}"))?
         .len();
-    let bytes_to_read = file_size.min(max_bytes as u64);
-    let start = file_size.saturating_sub(bytes_to_read);
-    file.seek(SeekFrom::Start(start))
-        .map_err(|e| anyhow!("failed to seek daemon log tail source: {e}"))?;
 
-    let mut buffer = Vec::with_capacity(bytes_to_read as usize);
-    file.take(bytes_to_read)
-        .read_to_end(&mut buffer)
-        .map_err(|e| anyhow!("failed to read daemon log tail source: {e}"))?;
+    let scan_limit = daemon_log_tail_scan_limit(file_size, lines, max_bytes);
+    let mut position = file_size;
+    let mut bytes_read = 0_u64;
+    let mut entries_reversed = Vec::with_capacity(lines as usize);
+    let mut line_bytes_reversed = Vec::with_capacity(OPENWRT_DAEMON_LOG_MAX_LINE_BYTES);
+    let mut line_truncated = false;
+    let mut saw_line_byte = false;
+    let mut truncated = false;
 
-    let mut text = String::from_utf8_lossy(&buffer).to_string();
-    if start > 0 {
-        if let Some(index) = text.find('\n') {
-            text = text[(index + 1)..].to_string();
+    while position > 0 && bytes_read < scan_limit && entries_reversed.len() < lines as usize {
+        let read_len = OPENWRT_DAEMON_LOG_SCAN_CHUNK_BYTES
+            .min(position)
+            .min(scan_limit - bytes_read);
+        position -= read_len;
+        file.seek(SeekFrom::Start(position))
+            .map_err(|e| anyhow!("failed to seek daemon log tail source: {e}"))?;
+
+        let mut chunk = vec![0; read_len as usize];
+        file.read_exact(&mut chunk)
+            .map_err(|e| anyhow!("failed to read daemon log tail source: {e}"))?;
+        bytes_read += read_len;
+
+        for (reverse_index, byte) in chunk.iter().rev().enumerate() {
+            if *byte == b'\n' {
+                if saw_line_byte {
+                    truncated |= push_daemon_log_tail_entry(
+                        &mut entries_reversed,
+                        &mut line_bytes_reversed,
+                        &mut line_truncated,
+                    );
+                    saw_line_byte = false;
+
+                    if entries_reversed.len() >= lines as usize {
+                        let bytes_before_current_in_chunk =
+                            chunk.len().saturating_sub(reverse_index + 1);
+                        if position > 0
+                            || chunk[..bytes_before_current_in_chunk]
+                                .iter()
+                                .any(|byte| *byte != b'\n')
+                        {
+                            truncated = true;
+                        }
+                        break;
+                    }
+                }
+                continue;
+            }
+
+            saw_line_byte = true;
+            if line_bytes_reversed.len() < OPENWRT_DAEMON_LOG_MAX_LINE_BYTES {
+                line_bytes_reversed.push(*byte);
+            } else {
+                line_truncated = true;
+            }
         }
     }
 
-    let all_lines: Vec<&str> = text.lines().collect();
-    let skip_count = all_lines.len().saturating_sub(lines as usize);
-    let entries: Vec<String> = all_lines
-        .iter()
-        .skip(skip_count)
-        .map(|line| redact_diagnostic_text(line))
-        .collect();
-    let truncated = start > 0 || skip_count > 0;
+    if entries_reversed.len() < lines as usize && saw_line_byte {
+        if bytes_read < file_size && bytes_read >= scan_limit {
+            line_truncated = true;
+        }
+        truncated |= push_daemon_log_tail_entry(
+            &mut entries_reversed,
+            &mut line_bytes_reversed,
+            &mut line_truncated,
+        );
+    }
+
+    if bytes_read < file_size {
+        truncated = true;
+    }
+
+    entries_reversed.reverse();
+    let entries = entries_reversed;
 
     Ok(OpenWrtDaemonLogTailView {
         source: "openwrt-daemon-log".to_string(),
@@ -1787,7 +1873,7 @@ fn read_bounded_daemon_log_tail_from_path(
         lines_requested: lines,
         bytes_requested: max_bytes,
         lines_returned: entries.len() as u32,
-        bytes_read: buffer.len() as u64,
+        bytes_read,
         file_size,
         truncated,
         entries,
@@ -4756,6 +4842,35 @@ mod tests {
         assert!(tail.truncated);
         assert!(tail.entries.iter().all(|line| !line.contains("secret")));
         assert!(tail.entries.iter().any(|line| line.contains("[REDACTED]")));
+    }
+
+    #[test]
+    #[serial]
+    fn daemon_log_tail_preserves_lines_around_oversized_entries() {
+        let env = TestEnv::new();
+        let log_path = env.tmp.path().join("cc-switch.log");
+        let huge_line = format!(
+            "{} Authorization: Bearer sk-ant-secret-token",
+            "x".repeat(100_000)
+        );
+        std::fs::write(
+            &log_path,
+            ["old line", huge_line.as_str(), "new line"].join("\n"),
+        )
+        .expect("write oversized log");
+
+        let tail = read_bounded_daemon_log_tail_from_path(&log_path, Some(3), Some(1024))
+            .expect("read oversized log tail");
+
+        assert_eq!(tail.lines_requested, 3);
+        assert_eq!(tail.lines_returned, 3);
+        assert_eq!(tail.entries[0], "old line");
+        assert!(tail.entries[1].starts_with("[truncated] "));
+        assert!(tail.entries[1].len() <= OPENWRT_DAEMON_LOG_MAX_LINE_BYTES + 64);
+        assert!(tail.entries[1].contains("[REDACTED]"));
+        assert!(!tail.entries[1].contains("secret"));
+        assert_eq!(tail.entries[2], "new line");
+        assert!(tail.truncated);
     }
 
     #[test]
