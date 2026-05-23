@@ -51,7 +51,20 @@ impl ModelMapping {
                 .and_then(|e| e.get("ANTHROPIC_MODEL"))
                 .and_then(|v| v.as_str())
                 .filter(|s| !s.is_empty())
-                .map(String::from),
+                .map(String::from)
+                .or_else(|| {
+                    // Codex/OpenAI providers store the target model at the top
+                    // level of settings_config rather than under env.ANTHROPIC_*.
+                    // Without this fallback the client's request `model` (e.g.
+                    // codex default `gpt-5.5`) is forwarded verbatim and hits a
+                    // 404 on vendors that only accept their own model id.
+                    provider
+                        .settings_config
+                        .get("model")
+                        .and_then(|v| v.as_str())
+                        .filter(|s| !s.is_empty())
+                        .map(String::from)
+                }),
         }
     }
 
@@ -385,6 +398,49 @@ mod tests {
         assert_eq!(result["model"], "claude-sonnet-4-5");
         assert_eq!(original, Some("claude-sonnet-4-5".to_string()));
         assert!(mapped.is_none());
+    }
+
+    fn create_codex_provider() -> Provider {
+        Provider {
+            id: "codex-test".to_string(),
+            name: "Codex Test".to_string(),
+            settings_config: json!({
+                "auth": { "OPENAI_API_KEY": "sk-xxx" },
+                "base_url": "https://example.com/v1",
+                "model": "mimo-v2.5-pro"
+            }),
+            website_url: None,
+            category: None,
+            created_at: None,
+            sort_index: None,
+            notes: None,
+            meta: None,
+            icon: None,
+            icon_color: None,
+            in_failover_queue: false,
+        }
+    }
+
+    #[test]
+    fn test_codex_top_level_model_rewrite() {
+        let provider = create_codex_provider();
+        let body = json!({"model": "gpt-5.5"});
+        let (result, original, mapped) = apply_model_mapping(body, &provider);
+        assert_eq!(result["model"], "mimo-v2.5-pro");
+        assert_eq!(original, Some("gpt-5.5".to_string()));
+        assert_eq!(mapped, Some("mimo-v2.5-pro".to_string()));
+    }
+
+    #[test]
+    fn test_anthropic_env_takes_precedence_over_top_level_model() {
+        // If both env.ANTHROPIC_MODEL and top-level model are set, env wins for
+        // Anthropic-shaped configs to preserve existing behavior.
+        let mut provider = create_provider_with_mapping();
+        provider.settings_config["model"] = json!("top-level-model");
+        let body = json!({"model": "some-unknown-model"});
+        let (result, _, mapped) = apply_model_mapping(body, &provider);
+        assert_eq!(result["model"], "default-model");
+        assert_eq!(mapped, Some("default-model".to_string()));
     }
 
     #[test]
