@@ -393,6 +393,46 @@ var callGetDaemonLogTail = rpc.declare({
 	expect: { '': {} }
 });
 
+var callListBackups = rpc.declare({
+	object: 'ccswitch',
+	method: 'list_backups',
+	expect: { '': {} }
+});
+
+var callCreateBackup = rpc.declare({
+	object: 'ccswitch',
+	method: 'create_backup',
+	expect: { '': {} }
+});
+
+var callDownloadBackup = rpc.declare({
+	object: 'ccswitch',
+	method: 'download_backup',
+	params: ['filename'],
+	expect: { '': {} }
+});
+
+var callImportBackup = rpc.declare({
+	object: 'ccswitch',
+	method: 'import_backup',
+	params: ['filename', 'data_base64'],
+	expect: { '': {} }
+});
+
+var callDeleteBackup = rpc.declare({
+	object: 'ccswitch',
+	method: 'delete_backup',
+	params: ['filename'],
+	expect: { '': {} }
+});
+
+var callRestoreBackup = rpc.declare({
+	object: 'ccswitch',
+	method: 'restore_backup',
+	params: ['filename'],
+	expect: { '': {} }
+});
+
 var callGetUsageSummary = rpc.declare({
 	object: 'ccswitch',
 	method: 'get_usage_summary',
@@ -648,6 +688,62 @@ function callOpenWrtDaemonLogTail(lines, maxBytes) {
 		return callDaemonAdminJson('/diagnostics/daemon-log-tail?lines=' + encodeURIComponent(String(normalizedLines)) + '&maxBytes=' + encodeURIComponent(String(normalizedMaxBytes)));
 	}, function () {
 		return L.resolveDefault(callGetDaemonLogTail(normalizedLines, normalizedMaxBytes), { ok: false });
+	});
+}
+
+function callOpenWrtListBackups() {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/backups');
+	}, function () {
+		return L.resolveDefault(callListBackups(), { ok: false });
+	});
+}
+
+function callOpenWrtCreateBackup() {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/backups', { method: 'POST' });
+	}, function () {
+		return L.resolveDefault(callCreateBackup(), { ok: false });
+	});
+}
+
+function callOpenWrtDownloadBackup(filename) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/backups/' + encodeURIComponent(filename) + '/download');
+	}, function () {
+		return L.resolveDefault(callDownloadBackup(filename), { ok: false });
+	});
+}
+
+function callOpenWrtImportBackup(filename, dataBase64) {
+	var payload = {
+		filename: filename ? String(filename) : null,
+		dataBase64: dataBase64 || ''
+	};
+
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/backups/import', {
+			method: 'POST',
+			body: payload
+		});
+	}, function () {
+		return L.resolveDefault(callImportBackup(payload.filename || '', payload.dataBase64), { ok: false });
+	});
+}
+
+function callOpenWrtDeleteBackup(filename) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/backups/' + encodeURIComponent(filename), { method: 'DELETE' });
+	}, function () {
+		return L.resolveDefault(callDeleteBackup(filename), { ok: false });
+	});
+}
+
+function callOpenWrtRestoreBackup(filename) {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/backups/' + encodeURIComponent(filename) + '/restore', { method: 'POST' });
+	}, function () {
+		return L.resolveDefault(callRestoreBackup(filename), { ok: false });
 	});
 }
 
@@ -1588,6 +1684,60 @@ return view.extend({
 		};
 	},
 
+	normalizeBackupEntry: function (entry) {
+		var item = entry && typeof entry === 'object' ? entry : {};
+		var schemaVersion = item.schemaVersion != null ? item.schemaVersion : item.schema_version;
+		var supportedSchemaVersion = item.supportedSchemaVersion != null ? item.supportedSchemaVersion : item.supported_schema_version;
+		var sizeBytes = item.sizeBytes != null ? item.sizeBytes : item.size_bytes;
+		var createdAt = item.createdAt != null ? item.createdAt : item.created_at;
+
+		return {
+			filename: item.filename != null ? String(item.filename) : '',
+			sizeBytes: typeof sizeBytes === 'number' && isFinite(sizeBytes) ? sizeBytes : 0,
+			createdAt: createdAt != null ? String(createdAt) : '',
+			schemaVersion: typeof schemaVersion === 'number' && isFinite(schemaVersion) ? schemaVersion : null,
+			supportedSchemaVersion: typeof supportedSchemaVersion === 'number' && isFinite(supportedSchemaVersion) ? supportedSchemaVersion : 0
+		};
+	},
+
+	normalizeBackupList: function (response) {
+		var payload = response && typeof response === 'object' ? response : {};
+		var backups = Array.isArray(payload.backups) ? payload.backups : [];
+
+		return {
+			backups: backups.map(L.bind(this.normalizeBackupEntry, this)),
+			dataDir: payload.dataDir != null ? String(payload.dataDir) : '',
+			backupScope: payload.backupScope != null ? String(payload.backupScope) : 'database',
+			databaseFile: payload.databaseFile != null ? String(payload.databaseFile) : 'cc-switch.db',
+			backupsDir: payload.backupsDir != null ? String(payload.backupsDir) : 'backups',
+			uciConfigFile: payload.uciConfigFile != null ? String(payload.uciConfigFile) : '/etc/config/ccswitch',
+			uciRestoreSupported: payload.uciRestoreSupported === true,
+			currentSchemaVersion: typeof payload.currentSchemaVersion === 'number' && isFinite(payload.currentSchemaVersion) ? payload.currentSchemaVersion : 0,
+			supportedSchemaVersion: typeof payload.supportedSchemaVersion === 'number' && isFinite(payload.supportedSchemaVersion) ? payload.supportedSchemaVersion : 0,
+			daemonVersion: payload.daemonVersion != null ? String(payload.daemonVersion) : ''
+		};
+	},
+
+	normalizeBackupMutation: function (response) {
+		var payload = response && typeof response === 'object' ? response : {};
+
+		return {
+			backup: this.normalizeBackupEntry(payload.backup),
+			backupScope: payload.backupScope != null ? String(payload.backupScope) : 'database'
+		};
+	},
+
+	normalizeBackupRestore: function (response) {
+		var payload = response && typeof response === 'object' ? response : {};
+
+		return {
+			restoredBackup: this.normalizeBackupEntry(payload.restoredBackup || payload.restored_backup),
+			safetyBackup: payload.safetyBackup || payload.safety_backup ? this.normalizeBackupEntry(payload.safetyBackup || payload.safety_backup) : null,
+			backupScope: payload.backupScope != null ? String(payload.backupScope) : 'database',
+			uciRestoreSupported: payload.uciRestoreSupported === true
+		};
+	},
+
 	normalizeOutboundProxyTest: function (response) {
 		var payload = response && typeof response === 'object' ? response : {};
 
@@ -1612,6 +1762,65 @@ return view.extend({
 				throw new Error(this.rpcFailureMessage(response) || _('Failed to load daemon logs.'));
 
 			return this.normalizeDaemonLogTail(response);
+		}, this));
+	},
+
+	loadNativeBackups: function () {
+		return L.resolveDefault(callOpenWrtListBackups(), { ok: false }).then(L.bind(function (response) {
+			if (!this.isRpcSuccess(response))
+				throw new Error(this.rpcFailureMessage(response) || _('Failed to load backups.'));
+
+			return this.normalizeBackupList(response);
+		}, this));
+	},
+
+	createNativeBackup: function () {
+		return L.resolveDefault(callOpenWrtCreateBackup(), { ok: false }).then(L.bind(function (response) {
+			if (!this.isRpcSuccess(response))
+				throw new Error(this.rpcFailureMessage(response) || _('Failed to create backup.'));
+
+			return this.normalizeBackupMutation(response);
+		}, this));
+	},
+
+	downloadNativeBackup: function (filename) {
+		return L.resolveDefault(callOpenWrtDownloadBackup(filename), { ok: false }).then(L.bind(function (response) {
+			if (!this.isRpcSuccess(response))
+				throw new Error(this.rpcFailureMessage(response) || _('Failed to download backup.'));
+
+			return {
+				filename: response.filename != null ? String(response.filename) : String(filename),
+				dataBase64: response.dataBase64 != null ? String(response.dataBase64) : ''
+			};
+		}, this));
+	},
+
+	importNativeBackup: function (filename, dataBase64) {
+		return L.resolveDefault(callOpenWrtImportBackup(filename, dataBase64), { ok: false }).then(L.bind(function (response) {
+			if (!this.isRpcSuccess(response))
+				throw new Error(this.rpcFailureMessage(response) || _('Failed to import backup.'));
+
+			return this.normalizeBackupMutation(response);
+		}, this));
+	},
+
+	deleteNativeBackup: function (filename) {
+		return L.resolveDefault(callOpenWrtDeleteBackup(filename), { ok: false }).then(L.bind(function (response) {
+			if (!this.isRpcSuccess(response))
+				throw new Error(this.rpcFailureMessage(response) || _('Failed to delete backup.'));
+
+			return {
+				deletedFilename: response.deletedFilename != null ? String(response.deletedFilename) : String(filename)
+			};
+		}, this));
+	},
+
+	restoreNativeBackup: function (filename) {
+		return L.resolveDefault(callOpenWrtRestoreBackup(filename), { ok: false }).then(L.bind(function (response) {
+			if (!this.isRpcSuccess(response))
+				throw new Error(this.rpcFailureMessage(response) || _('Failed to restore backup.'));
+
+			return this.normalizeBackupRestore(response);
 		}, this));
 	},
 
@@ -3010,6 +3219,24 @@ return view.extend({
 			},
 			testUpstreamProxy: async function (proxyUrl) {
 				return self.testNativeUpstreamProxy(proxyUrl);
+			},
+			listBackups: async function () {
+				return self.loadNativeBackups();
+			},
+			createBackup: async function () {
+				return self.createNativeBackup();
+			},
+			downloadBackup: async function (filename) {
+				return self.downloadNativeBackup(filename);
+			},
+			importBackup: async function (filename, dataBase64) {
+				return self.importNativeBackup(filename, dataBase64);
+			},
+			deleteBackup: async function (filename) {
+				return self.deleteNativeBackup(filename);
+			},
+			restoreBackup: async function (filename) {
+				return self.restoreNativeBackup(filename);
 			},
 			saveHostConfig: async function (payload) {
 				return self.saveNativeHostConfig(uiState, payload);

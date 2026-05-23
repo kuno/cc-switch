@@ -2,6 +2,7 @@ import { vi } from "vitest";
 import type {
   OpenWrtHostConfigPayload,
   OpenWrtHostState,
+  OpenWrtBackupList,
   OpenWrtPageMessage,
   OpenWrtPaginatedRequestLogs,
   OpenWrtProviderStat,
@@ -50,6 +51,19 @@ const DEFAULT_QUOTA_RESPONSE: QuotaResponse = {
   timestamp: "2026-04-22T00:00:00.000Z",
 };
 
+const DEFAULT_BACKUP_LIST: OpenWrtBackupList = {
+  backups: [],
+  dataDir: "/etc/cc-switch",
+  backupScope: "database",
+  databaseFile: "cc-switch.db",
+  backupsDir: "backups",
+  uciConfigFile: "/etc/config/ccswitch",
+  uciRestoreSupported: false,
+  currentSchemaVersion: 17,
+  supportedSchemaVersion: 17,
+  daemonVersion: "3.13.0",
+};
+
 const BACKEND_APP_IDS = ["claude", "codex", "gemini"] as const;
 const APP_LABELS: Record<SharedProviderAppId, string> = {
   claude: "Claude",
@@ -89,6 +103,7 @@ export interface BridgeFixtureOptions {
     Record<SharedProviderAppId, OpenWrtRecentActivityItem[]>
   >;
   quota?: QuotaResponse;
+  backups?: OpenWrtBackupList;
   status?: OpenWrtStatusResponse;
   usageSummary?: Partial<Record<SharedProviderAppId, OpenWrtUsageSummary>>;
   overrides?: Partial<OpenWrtSharedPageShellApi>;
@@ -265,6 +280,52 @@ export function createBridgeFixture(
     getUsageSummary: vi.fn(async (appId) =>
       getAppRecord(options.usageSummary, appId, DEFAULT_USAGE_SUMMARY),
     ),
+    listBackups: vi.fn(async () => options.backups ?? DEFAULT_BACKUP_LIST),
+    createBackup: vi.fn(async () => ({
+      backup: {
+        filename: "cc-switch-20260523-120000.db",
+        sizeBytes: 4096,
+        createdAt: "2026-05-23T12:00:00Z",
+        schemaVersion: 17,
+        supportedSchemaVersion: 17,
+      },
+      backupScope: "database",
+    })),
+    downloadBackup: vi.fn(async (filename) => ({
+      filename,
+      dataBase64: "U1FMaXRl",
+    })),
+    importBackup: vi.fn(async (filename) => ({
+      backup: {
+        filename: filename || "imported.db",
+        sizeBytes: 4096,
+        createdAt: "2026-05-23T12:00:00Z",
+        schemaVersion: 17,
+        supportedSchemaVersion: 17,
+      },
+      backupScope: "database",
+    })),
+    deleteBackup: vi.fn(async (filename) => ({
+      deletedFilename: filename,
+    })),
+    restoreBackup: vi.fn(async (filename) => ({
+      restoredBackup: {
+        filename,
+        sizeBytes: 4096,
+        createdAt: "2026-05-23T12:00:00Z",
+        schemaVersion: 17,
+        supportedSchemaVersion: 17,
+      },
+      safetyBackup: {
+        filename: "cc-switch-safety-20260523-120001.db",
+        sizeBytes: 4096,
+        createdAt: "2026-05-23T12:00:01Z",
+        schemaVersion: 17,
+        supportedSchemaVersion: 17,
+      },
+      backupScope: "database",
+      uciRestoreSupported: false,
+    })),
     refreshHostState: vi.fn(async () => host),
     saveHostConfig: vi.fn(async (nextHost: OpenWrtHostConfigPayload) => {
       host = {
