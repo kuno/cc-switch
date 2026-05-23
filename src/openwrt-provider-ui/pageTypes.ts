@@ -285,6 +285,48 @@ export interface OpenWrtOutboundProxyTestResult {
   error: string | null;
 }
 
+export interface OpenWrtBackupEntry {
+  filename: string;
+  sizeBytes: number;
+  createdAt: string;
+  schemaVersion?: number | null;
+  supportedSchemaVersion: number;
+}
+
+export interface OpenWrtBackupList {
+  backups: OpenWrtBackupEntry[];
+  dataDir: string;
+  backupScope: string;
+  databaseFile: string;
+  backupsDir: string;
+  uciConfigFile: string;
+  uciRestoreSupported: boolean;
+  currentSchemaVersion: number;
+  supportedSchemaVersion: number;
+  daemonVersion: string;
+}
+
+export interface OpenWrtBackupMutationResult {
+  backup: OpenWrtBackupEntry;
+  backupScope: string;
+}
+
+export interface OpenWrtBackupDownload {
+  filename: string;
+  dataBase64: string;
+}
+
+export interface OpenWrtBackupDeleteResult {
+  deletedFilename: string;
+}
+
+export interface OpenWrtBackupRestoreResult {
+  restoredBackup: OpenWrtBackupEntry;
+  safetyBackup?: OpenWrtBackupEntry | null;
+  backupScope: string;
+  uciRestoreSupported: boolean;
+}
+
 export interface OpenWrtSharedPageShellApi
   extends OpenWrtSharedProviderShellApi {
   getHostState(): OpenWrtHostState;
@@ -309,6 +351,15 @@ export interface OpenWrtSharedPageShellApi
   testUpstreamProxy?(
     proxyUrl: string,
   ): Promise<OpenWrtOutboundProxyTestResult>;
+  listBackups?(): Promise<OpenWrtBackupList>;
+  createBackup?(): Promise<OpenWrtBackupMutationResult>;
+  downloadBackup?(filename: string): Promise<OpenWrtBackupDownload>;
+  importBackup?(
+    filename: string | null,
+    dataBase64: string,
+  ): Promise<OpenWrtBackupMutationResult>;
+  deleteBackup?(filename: string): Promise<OpenWrtBackupDeleteResult>;
+  restoreBackup?(filename: string): Promise<OpenWrtBackupRestoreResult>;
   getRecentActivity(
     appId: SharedProviderAppId,
   ): Promise<OpenWrtRecentActivityItem[]>;

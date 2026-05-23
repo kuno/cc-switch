@@ -574,6 +574,13 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
               }}
               onTestUpstreamProxy={shell.testUpstreamProxy?.bind(shell)}
               onLoadDaemonLogTail={shell.getDaemonLogTail?.bind(shell)}
+              onListBackups={shell.listBackups?.bind(shell)}
+              onCreateBackup={shell.createBackup?.bind(shell)}
+              onDownloadBackup={shell.downloadBackup?.bind(shell)}
+              onImportBackup={shell.importBackup?.bind(shell)}
+              onDeleteBackup={shell.deleteBackup?.bind(shell)}
+              onRestoreBackup={shell.restoreBackup?.bind(shell)}
+              onNotify={shell.showMessage.bind(shell)}
             />
           </div>
         </section>
