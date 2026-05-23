@@ -9,20 +9,27 @@ import {
 import {
   CheckCircle2,
   ChevronRight,
+  Download,
   Globe2,
+  AlertTriangle,
   Loader2,
   Pencil,
   PlugZap,
   RefreshCcw,
   Save,
+  Trash2,
+  Upload,
 } from "lucide-react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import type {
   OpenWrtDaemonLogTail,
+  OpenWrtBackupEntry,
+  OpenWrtBackupList,
   OpenWrtHostConfigPayload,
   OpenWrtHostState,
   OpenWrtOutboundProxyTestResult,
+  OpenWrtShellMessageKind,
 } from "../pageTypes";
 
 const DEFAULT_LOG_LEVELS = ["error", "warn", "info", "debug", "trace"];
@@ -31,6 +38,18 @@ const LOG_TAIL_MAX_BYTES = 256 * 1024;
 
 type EditTarget = "endpoint" | "proxy" | null;
 type ProxyStatus = "idle" | "ok" | "fail" | "checking";
+type BackupOperation =
+  | "list"
+  | "create"
+  | "download"
+  | "import"
+  | "restore"
+  | "delete"
+  | null;
+type PendingBackupAction = {
+  filename: string;
+  kind: "delete" | "restore";
+} | null;
 
 export interface DaemonCardProps {
   host: OpenWrtHostState;
@@ -53,6 +72,24 @@ export interface DaemonCardProps {
     lines: number,
     maxBytes: number,
   ) => Promise<OpenWrtDaemonLogTail>;
+  onListBackups?: () => Promise<OpenWrtBackupList>;
+  onCreateBackup?: () => Promise<{ backup: OpenWrtBackupEntry }>;
+  onDownloadBackup?: (
+    filename: string,
+  ) => Promise<{ filename: string; dataBase64: string }>;
+  onImportBackup?: (
+    filename: string | null,
+    dataBase64: string,
+  ) => Promise<{ backup: OpenWrtBackupEntry }>;
+  onDeleteBackup?: (filename: string) => Promise<unknown>;
+  onRestoreBackup?: (
+    filename: string,
+  ) => Promise<{
+    restoredBackup: OpenWrtBackupEntry;
+    safetyBackup?: OpenWrtBackupEntry | null;
+    uciRestoreSupported: boolean;
+  }>;
+  onNotify?: (kind: OpenWrtShellMessageKind, text: string) => void;
 }
 
 function getHealthTone(health: OpenWrtHostState["health"]): string {
@@ -122,6 +159,98 @@ function formatCheckedAt(timestamp: number | null, t: TFunction): string {
   });
 }
 
+function formatBackupSize(sizeBytes: number, t: TFunction): string {
+  if (!Number.isFinite(sizeBytes) || sizeBytes < 0) {
+    return t("openwrt.daemon.backups.unknownSize");
+  }
+
+  if (sizeBytes < 1024) {
+    return t("openwrt.daemon.backups.sizeBytes", { value: sizeBytes });
+  }
+
+  if (sizeBytes < 1024 * 1024) {
+    return t("openwrt.daemon.backups.sizeKilobytes", {
+      value: (sizeBytes / 1024).toFixed(1),
+    });
+  }
+
+  return t("openwrt.daemon.backups.sizeMegabytes", {
+    value: (sizeBytes / 1024 / 1024).toFixed(2),
+  });
+}
+
+function formatBackupTime(value: string, t: TFunction): string {
+  const timestamp = Date.parse(value);
+
+  if (!Number.isFinite(timestamp)) {
+    return t("openwrt.daemon.backups.unknownTime");
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(timestamp));
+}
+
+function schemaLabel(
+  schemaVersion: number | null | undefined,
+  supportedSchemaVersion: number | null | undefined,
+  t: TFunction,
+): string {
+  const version =
+    typeof schemaVersion === "number"
+      ? String(schemaVersion)
+      : t("openwrt.daemon.backups.unknownSchema");
+  const supported =
+    typeof supportedSchemaVersion === "number"
+      ? String(supportedSchemaVersion)
+      : t("common.unknown");
+
+  return t("openwrt.daemon.backups.schemaValue", {
+    version,
+    supported,
+  });
+}
+
+function downloadBase64File(filename: string, dataBase64: string) {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return;
+  }
+
+  const binary = window.atob(dataBase64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  const blob = new Blob([bytes], { type: "application/octet-stream" });
+  const url = window.URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.style.display = "none";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.URL.revokeObjectURL(url);
+}
+
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const value = String(reader.result ?? "");
+      resolve(value.includes(",") ? value.split(",").pop() ?? "" : value);
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("read failed"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function isSupportedBackupImportFile(file: File): boolean {
+  return /\.(db|sqlite|sqlite3)$/i.test(file.name.trim());
+}
+
 function getLogLineTone(line: string): string {
   if (/\b(error|ERROR)\b/.test(line)) return "error";
   if (/\b(warn|WARN)\b/.test(line)) return "warn";
@@ -184,6 +313,13 @@ export function DaemonCard({
   onRestart,
   onTestUpstreamProxy,
   onLoadDaemonLogTail,
+  onListBackups,
+  onCreateBackup,
+  onDownloadBackup,
+  onImportBackup,
+  onDeleteBackup,
+  onRestoreBackup,
+  onNotify,
 }: DaemonCardProps) {
   const { t } = useTranslation();
   const saveFlashTimeoutRef = useRef<number | null>(null);
@@ -204,8 +340,16 @@ export function DaemonCard({
   const [logError, setLogError] = useState<string | null>(null);
   const [logCheckedAt, setLogCheckedAt] = useState<number | null>(null);
   const [logDrawerOpen, setLogDrawerOpen] = useState(false);
+  const [backupDrawerOpen, setBackupDrawerOpen] = useState(false);
+  const [backupList, setBackupList] = useState<OpenWrtBackupList | null>(null);
+  const [backupError, setBackupError] = useState<string | null>(null);
+  const [backupOperation, setBackupOperation] = useState<BackupOperation>(null);
+  const [pendingBackupAction, setPendingBackupAction] =
+    useState<PendingBackupAction>(null);
   const logViewerRef = useRef<HTMLDivElement | null>(null);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
   const logRefreshInFlightRef = useRef(false);
+  const backupRefreshInFlightRef = useRef(false);
   const [, forceFreshnessTick] = useState(0);
   const statusLabel = getStatusLabel(t);
   const healthLabel = restartInFlight
@@ -217,6 +361,8 @@ export function DaemonCard({
   const upstreamProxyLabel =
     effectiveDraftProxy.trim() || t("openwrt.daemon.upstreamProxyDirect");
   const logFreshness = formatCheckedAt(logCheckedAt, t);
+  const destructiveBackupInFlight =
+    backupOperation === "restore" || backupOperation === "import";
   const proxyTooltip = useMemo(() => {
     if (proxyStatus === "checking") return t("openwrt.daemon.proxyChecking");
     if (proxyStatus === "ok") return t("openwrt.daemon.proxyReachable");
@@ -340,6 +486,139 @@ export function DaemonCard({
     }
   }, [onLoadDaemonLogTail, t]);
 
+  const refreshBackups = useCallback(async () => {
+    if (backupRefreshInFlightRef.current) {
+      return;
+    }
+
+    if (typeof onListBackups !== "function") {
+      setBackupError(t("openwrt.daemon.backups.unavailable"));
+      return;
+    }
+
+    backupRefreshInFlightRef.current = true;
+    setBackupOperation("list");
+    setBackupError(null);
+    try {
+      setBackupList(await onListBackups());
+    } catch (error) {
+      setBackupError(error instanceof Error ? error.message : String(error));
+    } finally {
+      backupRefreshInFlightRef.current = false;
+      setBackupOperation(null);
+    }
+  }, [onListBackups, t]);
+
+  async function runBackupOperation<T>(
+    operation: BackupOperation,
+    action: () => Promise<T>,
+    successMessage: string,
+  ): Promise<T | null> {
+    setBackupOperation(operation);
+    setBackupError(null);
+    try {
+      const result = await action();
+      onNotify?.("success", successMessage);
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setBackupError(message);
+      onNotify?.("error", message);
+      return null;
+    } finally {
+      setBackupOperation(null);
+    }
+  }
+
+  async function createBackup() {
+    if (typeof onCreateBackup !== "function") {
+      setBackupError(t("openwrt.daemon.backups.unavailable"));
+      return;
+    }
+
+    const result = await runBackupOperation(
+      "create",
+      onCreateBackup,
+      t("openwrt.daemon.backups.createSuccess"),
+    );
+    if (result) {
+      await refreshBackups();
+    }
+  }
+
+  async function downloadBackup(filename: string) {
+    if (typeof onDownloadBackup !== "function") {
+      setBackupError(t("openwrt.daemon.backups.unavailable"));
+      return;
+    }
+
+    const result = await runBackupOperation(
+      "download",
+      () => onDownloadBackup(filename),
+      t("openwrt.daemon.backups.downloadSuccess"),
+    );
+    if (result) {
+      downloadBase64File(result.filename || filename, result.dataBase64);
+    }
+  }
+
+  async function importBackup(file: File) {
+    if (typeof onImportBackup !== "function") {
+      setBackupError(t("openwrt.daemon.backups.unavailable"));
+      return;
+    }
+
+    if (!isSupportedBackupImportFile(file)) {
+      const message = t("openwrt.daemon.backups.invalidImportFile");
+      setBackupError(message);
+      onNotify?.("error", message);
+      return;
+    }
+
+    const result = await runBackupOperation(
+      "import",
+      async () => onImportBackup(file.name || null, await readFileAsBase64(file)),
+      t("openwrt.daemon.backups.importSuccess"),
+    );
+    if (result) {
+      await refreshBackups();
+    }
+  }
+
+  async function deleteBackup(filename: string) {
+    if (typeof onDeleteBackup !== "function") {
+      setBackupError(t("openwrt.daemon.backups.unavailable"));
+      return;
+    }
+
+    const result = await runBackupOperation(
+      "delete",
+      () => onDeleteBackup(filename),
+      t("openwrt.daemon.backups.deleteSuccess"),
+    );
+    if (result) {
+      setPendingBackupAction(null);
+      await refreshBackups();
+    }
+  }
+
+  async function restoreBackup(filename: string) {
+    if (typeof onRestoreBackup !== "function") {
+      setBackupError(t("openwrt.daemon.backups.unavailable"));
+      return;
+    }
+
+    const result = await runBackupOperation(
+      "restore",
+      () => onRestoreBackup(filename),
+      t("openwrt.daemon.backups.restoreSuccess"),
+    );
+    if (result) {
+      setPendingBackupAction(null);
+      await refreshBackups();
+    }
+  }
+
   useEffect(() => {
     if (!logDrawerOpen) {
       return;
@@ -352,6 +631,14 @@ export function DaemonCard({
 
     return () => window.clearInterval(timer);
   }, [logDrawerOpen, refreshLogs]);
+
+  useEffect(() => {
+    if (!backupDrawerOpen || backupList) {
+      return;
+    }
+
+    void refreshBackups();
+  }, [backupDrawerOpen, backupList, refreshBackups]);
 
   useEffect(() => {
     if (!logDrawerOpen || !logTail?.entries.length || logError) {
@@ -444,7 +731,7 @@ export function DaemonCard({
             type="button"
             className="owt-pill owt-pill--primary"
             onClick={onRestart}
-            disabled={restartInFlight}
+            disabled={restartInFlight || destructiveBackupInFlight}
           >
             {restartInFlight ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -466,7 +753,9 @@ export function DaemonCard({
                   : "owt-pill owt-pill--idle"
             }
             onClick={onSave}
-            disabled={!isDirty || saveInFlight || showSaveFlash}
+            disabled={
+              !isDirty || saveInFlight || showSaveFlash || destructiveBackupInFlight
+            }
             title={t("openwrt.daemon.persistConfig")}
           >
             {saveInFlight ? (
@@ -613,6 +902,274 @@ export function DaemonCard({
       ) : null}
 
       <div className="owt-daemon-divider" />
+
+      <details
+        className="owt-backup-drawer"
+        onToggle={(event) => setBackupDrawerOpen(event.currentTarget.open)}
+      >
+        <summary className="owt-log-drawer__summary">
+          <ChevronRight className="owt-log-drawer__chevron h-4 w-4" />
+          <span className="owt-log-drawer__title">
+            {t("openwrt.daemon.backups.title")}
+          </span>
+          <span className="owt-backup-drawer__scope">
+            {t("openwrt.daemon.backups.dbOnly")}
+          </span>
+          <span className="owt-log-drawer__spacer" aria-hidden="true" />
+          {backupList ? (
+            <span className="owt-log-drawer__freshness">
+              {t("openwrt.daemon.backups.count", {
+                count: backupList.backups.length,
+              })}
+            </span>
+          ) : null}
+          <button
+            type="button"
+            className="owt-pill owt-log-drawer__refresh"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              void refreshBackups();
+            }}
+            disabled={backupOperation !== null}
+            title={t("openwrt.daemon.backups.refresh")}
+            aria-label={t("openwrt.daemon.backups.refreshAria")}
+          >
+            {backupOperation === "list" ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCcw className="h-4 w-4" />
+            )}
+            {t("openwrt.daemon.backups.refresh")}
+          </button>
+        </summary>
+
+        <div className="owt-backup-drawer__body">
+          <div className="owt-backup-drawer__topline">
+            <div className="owt-backup-drawer__meta">
+              <span>
+                {t("openwrt.daemon.backups.databaseFile", {
+                  file: backupList?.databaseFile || "cc-switch.db",
+                })}
+              </span>
+              <span>
+                {t("openwrt.daemon.backups.currentSchema", {
+                  version:
+                    backupList?.currentSchemaVersion ??
+                    t("common.unknown"),
+                  supported:
+                    backupList?.supportedSchemaVersion ??
+                    t("common.unknown"),
+                })}
+              </span>
+            </div>
+            <div className="owt-backup-drawer__actions">
+              <input
+                ref={importInputRef}
+                type="file"
+                accept=".db,.sqlite,.sqlite3,application/octet-stream"
+                className="owt-visually-hidden"
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0];
+                  event.currentTarget.value = "";
+                  if (file) void importBackup(file);
+                }}
+              />
+              <button
+                type="button"
+                className="owt-pill owt-pill--idle"
+                disabled={backupOperation !== null}
+                onClick={() => importInputRef.current?.click()}
+              >
+                {backupOperation === "import" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Upload className="h-4 w-4" />
+                )}
+                {t("openwrt.daemon.backups.import")}
+              </button>
+              <button
+                type="button"
+                className="owt-pill owt-pill--primary"
+                disabled={backupOperation !== null}
+                onClick={() => void createBackup()}
+              >
+                {backupOperation === "create" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4" />
+                )}
+                {t("openwrt.daemon.backups.create")}
+              </button>
+            </div>
+          </div>
+
+          <div className="owt-backup-warning" role="note">
+            <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+            <span>
+              {t("openwrt.daemon.backups.restoreScopeDbOnly")}
+            </span>
+          </div>
+
+          {backupError ? (
+            <div className="owt-backup-error" role="alert">
+              {backupError}
+            </div>
+          ) : null}
+
+          {backupOperation === "list" && !backupList ? (
+            <div className="owt-backup-empty" role="status">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              {t("openwrt.daemon.backups.loading")}
+            </div>
+          ) : backupList && backupList.backups.length ? (
+            <div className="owt-backup-list">
+              {backupList.backups.map((backup) => (
+                <div className="owt-backup-row" key={backup.filename}>
+                  <div className="owt-backup-row__main">
+                    <span className="owt-backup-row__name">
+                      {backup.filename}
+                    </span>
+                    <span className="owt-backup-row__meta">
+                      {formatBackupTime(backup.createdAt, t)} ·{" "}
+                      {formatBackupSize(backup.sizeBytes, t)} ·{" "}
+                      {schemaLabel(
+                        backup.schemaVersion,
+                        backup.supportedSchemaVersion,
+                        t,
+                      )}
+                    </span>
+                  </div>
+                  <div className="owt-backup-row__actions">
+                    <button
+                      type="button"
+                      className="owt-backup-icon-button"
+                      disabled={backupOperation !== null}
+                      title={t("openwrt.daemon.backups.download")}
+                      aria-label={t("openwrt.daemon.backups.downloadNamed", {
+                        filename: backup.filename,
+                      })}
+                      onClick={() => void downloadBackup(backup.filename)}
+                    >
+                      <Download className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      className="owt-backup-icon-button owt-backup-icon-button--restore"
+                      disabled={backupOperation !== null}
+                      title={t("openwrt.daemon.backups.restore")}
+                      aria-label={t("openwrt.daemon.backups.restoreNamed", {
+                        filename: backup.filename,
+                      })}
+                      onClick={() =>
+                        setPendingBackupAction({
+                          filename: backup.filename,
+                          kind: "restore",
+                        })
+                      }
+                    >
+                      <RefreshCcw className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      className="owt-backup-icon-button owt-backup-icon-button--danger"
+                      disabled={backupOperation !== null}
+                      title={t("openwrt.daemon.backups.delete")}
+                      aria-label={t("openwrt.daemon.backups.deleteNamed", {
+                        filename: backup.filename,
+                      })}
+                      onClick={() =>
+                        setPendingBackupAction({
+                          filename: backup.filename,
+                          kind: "delete",
+                        })
+                      }
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                  {pendingBackupAction?.filename === backup.filename ? (
+                    <div
+                      className="owt-backup-confirm"
+                      data-kind={pendingBackupAction.kind}
+                      role="group"
+                      aria-label={
+                        pendingBackupAction.kind === "restore"
+                          ? t("openwrt.daemon.backups.restoreConfirmTitle", {
+                              filename: backup.filename,
+                            })
+                          : t("openwrt.daemon.backups.deleteConfirmTitle", {
+                              filename: backup.filename,
+                            })
+                      }
+                    >
+                      <div className="owt-backup-confirm__copy">
+                        <strong>
+                          {pendingBackupAction.kind === "restore"
+                            ? t("openwrt.daemon.backups.restoreConfirmTitle", {
+                                filename: backup.filename,
+                              })
+                            : t("openwrt.daemon.backups.deleteConfirmTitle", {
+                                filename: backup.filename,
+                              })}
+                        </strong>
+                        <span>
+                          {pendingBackupAction.kind === "restore"
+                            ? t("openwrt.daemon.backups.restoreConfirm", {
+                                filename: backup.filename,
+                              })
+                            : t("openwrt.daemon.backups.deleteConfirm", {
+                                filename: backup.filename,
+                              })}
+                        </span>
+                      </div>
+                      <div className="owt-backup-confirm__actions">
+                        <button
+                          type="button"
+                          className="owt-pill owt-pill--idle"
+                          disabled={backupOperation !== null}
+                          onClick={() => setPendingBackupAction(null)}
+                        >
+                          {t("common.cancel")}
+                        </button>
+                        <button
+                          type="button"
+                          className={
+                            pendingBackupAction.kind === "restore"
+                              ? "owt-pill owt-pill--primary"
+                              : "owt-pill owt-pill--danger"
+                          }
+                          disabled={backupOperation !== null}
+                          onClick={() =>
+                            pendingBackupAction.kind === "restore"
+                              ? void restoreBackup(backup.filename)
+                              : void deleteBackup(backup.filename)
+                          }
+                        >
+                          {backupOperation === pendingBackupAction.kind ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : pendingBackupAction.kind === "restore" ? (
+                            <RefreshCcw className="h-4 w-4" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                          {pendingBackupAction.kind === "restore"
+                            ? t("openwrt.daemon.backups.confirmRestore")
+                            : t("openwrt.daemon.backups.confirmDelete")}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : backupList ? (
+            <div className="owt-backup-empty">
+              {t("openwrt.daemon.backups.empty")}
+            </div>
+          ) : null}
+        </div>
+      </details>
 
       <details
         className="owt-log-drawer"

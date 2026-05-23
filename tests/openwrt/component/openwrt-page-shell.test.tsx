@@ -108,6 +108,48 @@ describe("OpenWrtPageShell", () => {
     });
   });
 
+  it("wires DaemonCard backup actions through the shell bridge", async () => {
+    const user = userEvent.setup();
+    const { bridge } = renderOpenWrtPageShell({
+      bridgeOptions: {
+        backups: {
+          backups: [
+            {
+              filename: "shell-backup.db",
+              sizeBytes: 4096,
+              createdAt: "2026-05-23T12:00:00Z",
+              schemaVersion: 17,
+              supportedSchemaVersion: 17,
+            },
+          ],
+          dataDir: "/etc/cc-switch",
+          backupScope: "database",
+          databaseFile: "cc-switch.db",
+          backupsDir: "backups",
+          uciConfigFile: "/etc/config/ccswitch",
+          uciRestoreSupported: false,
+          currentSchemaVersion: 17,
+          supportedSchemaVersion: 17,
+          daemonVersion: "3.13.0",
+        },
+      },
+    });
+
+    await screen.findByRole("button", { name: "Open Claude providers" });
+    await user.click(screen.getByText("Database backups"));
+
+    await waitFor(() => expect(bridge.listBackups).toHaveBeenCalledTimes(1));
+    expect(screen.getByText("shell-backup.db")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Create backup" }));
+
+    await waitFor(() => expect(bridge.createBackup).toHaveBeenCalledTimes(1));
+    expect(bridge.showMessage).toHaveBeenCalledWith(
+      "success",
+      "Database backup created.",
+    );
+  });
+
   it("wires app-card selection through the shell bridge and opens the provider panel", async () => {
     const user = userEvent.setup();
     const { bridge } = renderOpenWrtPageShell();
