@@ -57,6 +57,13 @@ function buildDaemonCardProps(
     onRestart: vi.fn(() => {
       void bridge.restartService();
     }),
+    onListBackups: bridge.listBackups?.bind(bridge),
+    onCreateBackup: bridge.createBackup?.bind(bridge),
+    onDownloadBackup: bridge.downloadBackup?.bind(bridge),
+    onImportBackup: bridge.importBackup?.bind(bridge),
+    onDeleteBackup: bridge.deleteBackup?.bind(bridge),
+    onRestoreBackup: bridge.restoreBackup?.bind(bridge),
+    onNotify: bridge.showMessage.bind(bridge),
     ...overrides,
   };
 }
@@ -689,5 +696,87 @@ describe("DaemonCard", () => {
 
     unmount();
     vi.useRealTimers();
+  });
+
+  it("lists database backups with schema metadata and DB-only restore scope", async () => {
+    const user = userEvent.setup();
+    const { card, bridge } = renderDaemonCard({
+      backups: {
+        backups: [
+          {
+            filename: "cc-switch-20260523-120000.db",
+            sizeBytes: 1536,
+            createdAt: "2026-05-23T12:00:00Z",
+            schemaVersion: 17,
+            supportedSchemaVersion: 17,
+          },
+        ],
+        dataDir: "/etc/cc-switch",
+        backupScope: "database",
+        databaseFile: "cc-switch.db",
+        backupsDir: "backups",
+        uciConfigFile: "/etc/config/ccswitch",
+        uciRestoreSupported: false,
+        currentSchemaVersion: 17,
+        supportedSchemaVersion: 17,
+        daemonVersion: "3.13.0",
+      },
+    });
+
+    await user.click(within(card).getByText("Database backups"));
+
+    await waitFor(() => expect(bridge.listBackups).toHaveBeenCalledTimes(1));
+    expect(card).toHaveTextContent("cc-switch-20260523-120000.db");
+    expect(card).toHaveTextContent("schema 17 / 17");
+    expect(card).toHaveTextContent("Schema 17 / supported 17");
+    expect(card).toHaveTextContent(
+      "/etc/config/ccswitch is OpenWrt UCI config and will not be restored",
+    );
+  });
+
+  it("confirms restore and routes the selected backup through the shell callback", async () => {
+    const user = userEvent.setup();
+    const { card, bridge } = renderDaemonCard({
+      backups: {
+        backups: [
+          {
+            filename: "restore-me.db",
+            sizeBytes: 2048,
+            createdAt: "2026-05-23T12:00:00Z",
+            schemaVersion: 17,
+            supportedSchemaVersion: 17,
+          },
+        ],
+        dataDir: "/etc/cc-switch",
+        backupScope: "database",
+        databaseFile: "cc-switch.db",
+        backupsDir: "backups",
+        uciConfigFile: "/etc/config/ccswitch",
+        uciRestoreSupported: false,
+        currentSchemaVersion: 17,
+        supportedSchemaVersion: 17,
+        daemonVersion: "3.13.0",
+      },
+    });
+
+    await user.click(within(card).getByText("Database backups"));
+    await screen.findByRole("button", { name: "Restore restore-me.db" });
+    await user.click(
+      within(card).getByRole("button", { name: "Restore restore-me.db" }),
+    );
+
+    expect(card).toHaveTextContent(
+      "This does not restore /etc/config/ccswitch",
+    );
+    await user.click(
+      within(card).getByRole("button", { name: "Restore database" }),
+    );
+    await waitFor(() =>
+      expect(bridge.restoreBackup).toHaveBeenCalledWith("restore-me.db"),
+    );
+    expect(bridge.showMessage).toHaveBeenCalledWith(
+      "success",
+      "Database restore completed.",
+    );
   });
 });
