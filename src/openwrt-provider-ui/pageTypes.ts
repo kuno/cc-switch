@@ -329,11 +329,13 @@ export interface OpenWrtBackupRestoreResult {
 
 export interface OpenWrtConfigBackupDownload {
   filename: string;
-  dataBase64: string;
+  dataBase64?: string;
+  downloadUrl?: string;
 }
 
 export interface OpenWrtConfigBackupManifest {
   formatVersion: number;
+  backupScope?: string;
   exportedAt: string;
   daemonVersion: string;
   packageVersion?: string | null;
@@ -343,8 +345,10 @@ export interface OpenWrtConfigBackupManifest {
   providerCount: number;
   includesCredentials: boolean;
   authFileCount: number;
+  databaseIncluded?: boolean;
   rollbackSupported: boolean;
   configPath: string;
+  databasePath?: string | null;
   authPaths: string[];
 }
 

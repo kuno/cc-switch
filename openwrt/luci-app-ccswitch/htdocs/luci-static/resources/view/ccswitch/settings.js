@@ -564,6 +564,53 @@ function getDaemonApiBaseUrl() {
 	return baseUrl.replace(/\/openwrt\/admin\/?$/, '');
 }
 
+function configBackupBlobFromBase64(filename, dataBase64) {
+	var binary, bytes, index;
+
+	if (typeof window === 'undefined' || typeof window.atob !== 'function' || typeof Blob === 'undefined')
+		return null;
+
+	binary = window.atob(dataBase64 || '');
+	bytes = new Uint8Array(binary.length);
+	for (index = 0; index < binary.length; index += 1)
+		bytes[index] = binary.charCodeAt(index);
+
+	if (typeof File === 'function')
+		return new File([bytes], filename || 'restore.tar.gz', { type: 'application/gzip' });
+
+	return new Blob([bytes], { type: 'application/gzip' });
+}
+
+function callDaemonConfigRestoreDirect(filename, dataBase64, dryRun) {
+	var adminBaseUrl = getDaemonAdminBaseUrl();
+	var form, archive;
+
+	if (!adminBaseUrl || typeof window === 'undefined' || typeof window.fetch !== 'function' || typeof FormData === 'undefined')
+		return null;
+
+	archive = configBackupBlobFromBase64(filename, dataBase64);
+	if (!archive)
+		return null;
+
+	form = new FormData();
+	form.append('archive', archive, filename || 'restore.tar.gz');
+
+	return window.fetch(adminBaseUrl + (dryRun ? '/restore?dryRun=1' : '/restore'), {
+		method: 'POST',
+		body: form
+	}).then(function (response) {
+		return response.json().catch(function () {
+			return {};
+		}).then(function (payload) {
+			if (!response.ok)
+				throw new Error(payload.error || payload.message || response.statusText || 'Restore request failed.');
+
+			payload.ok = true;
+			return payload;
+		});
+	});
+}
+
 function readDaemonAdminJson(response) {
 	if (!response || typeof response.json !== 'function')
 		return Promise.reject(createDaemonAdminUnavailableError('OpenWrt daemon admin API returned an invalid response object.'));
@@ -1882,6 +1929,16 @@ return view.extend({
 	},
 
 	downloadConfigBackup: function () {
+		var adminBaseUrl = getDaemonAdminBaseUrl();
+
+		if (adminBaseUrl) {
+			return Promise.resolve({
+				filename: 'ccswitch-backup.tar.gz',
+				dataBase64: '',
+				downloadUrl: adminBaseUrl + '/backup'
+			});
+		}
+
 		return L.resolveDefault(callOpenWrtDownloadConfigBackup(), { ok: false }).then(L.bind(function (response) {
 			if (!this.isRpcSuccess(response))
 				throw new Error(this.rpcFailureMessage(response) || _('Failed to download configuration backup.'));
@@ -1894,6 +1951,16 @@ return view.extend({
 	},
 
 	dryRunConfigRestore: function (filename, dataBase64) {
+		var directRestore = callDaemonConfigRestoreDirect(filename, dataBase64, true);
+
+		if (directRestore)
+			return directRestore.then(L.bind(function (response) {
+				if (!this.isRpcSuccess(response))
+					throw new Error(this.rpcFailureMessage(response) || _('Failed to inspect configuration backup.'));
+
+				return { manifest: response.manifest || {} };
+			}, this));
+
 		return L.resolveDefault(callOpenWrtDryRunConfigRestore(filename, dataBase64), { ok: false }).then(L.bind(function (response) {
 			if (!this.isRpcSuccess(response))
 				throw new Error(this.rpcFailureMessage(response) || _('Failed to inspect configuration backup.'));
@@ -1903,6 +1970,16 @@ return view.extend({
 	},
 
 	startConfigRestore: function (filename, dataBase64) {
+		var directRestore = callDaemonConfigRestoreDirect(filename, dataBase64, false);
+
+		if (directRestore)
+			return directRestore.then(L.bind(function (response) {
+				if (!this.isRpcSuccess(response))
+					throw new Error(this.rpcFailureMessage(response) || _('Failed to start configuration restore.'));
+
+				return { jobId: response.jobId != null ? String(response.jobId) : String(response.job_id || '') };
+			}, this));
+
 		return L.resolveDefault(callOpenWrtStartConfigRestore(filename, dataBase64), { ok: false }).then(L.bind(function (response) {
 			if (!this.isRpcSuccess(response))
 				throw new Error(this.rpcFailureMessage(response) || _('Failed to start configuration restore.'));
