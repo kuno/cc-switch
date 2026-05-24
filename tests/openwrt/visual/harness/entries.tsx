@@ -1138,6 +1138,19 @@ const HARNESSES: Record<string, Record<string, HarnessScenario>> = {
           isRunning: true,
         }),
     },
+    // Focused scenario for the whole-app Backup & restore admin row.
+    // Renders the full daemon card so the admin row sits in its real
+    // context (below the daemon row + divider, above the diagnostics
+    // drawer). Use this for pixel-perfect comparison against the design's
+    // project/index.html admin-row spec.
+    "backup-admin-row": {
+      canvasClassName: "owt-visual-harness__canvas--wide",
+      render: () =>
+        renderDaemonCardScenario({
+          host: READY_HOST,
+          isRunning: true,
+        }),
+    },
   },
   shell: {
     default: {
