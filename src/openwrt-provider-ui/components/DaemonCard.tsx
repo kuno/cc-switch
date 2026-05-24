@@ -27,6 +27,8 @@ import type {
   OpenWrtDaemonLogTail,
   OpenWrtBackupEntry,
   OpenWrtBackupList,
+  OpenWrtConfigBackupManifest,
+  OpenWrtConfigRestoreEvent,
   OpenWrtHostConfigPayload,
   OpenWrtHostState,
   OpenWrtOutboundProxyTestResult,
@@ -40,10 +42,6 @@ const LOG_TAIL_MAX_BYTES = 256 * 1024;
 type EditTarget = "endpoint" | "proxy" | null;
 type ProxyStatus = "idle" | "ok" | "fail" | "checking";
 
-// Capability state for the whole-app backup/restore admin row. The design
-// ships in "pending" because the daemon does not yet expose
-// /openwrt/admin/backup or /openwrt/admin/restore. Once those endpoints land,
-// flip this to "available" so the buttons activate.
 type BackupBackendStatus = "pending" | "available" | "error";
 
 export interface DaemonCardProps {
@@ -88,6 +86,22 @@ export interface DaemonCardProps {
     safetyBackup?: OpenWrtBackupEntry | null;
     uciRestoreSupported: boolean;
   }>;
+  onDownloadConfigBackup?: () => Promise<{
+    filename: string;
+    dataBase64: string;
+  }>;
+  onDryRunConfigRestore?: (
+    filename: string,
+    dataBase64: string,
+  ) => Promise<{ manifest: OpenWrtConfigBackupManifest }>;
+  onStartConfigRestore?: (
+    filename: string,
+    dataBase64: string,
+  ) => Promise<{ jobId: string }>;
+  onGetConfigRestoreJob?: (
+    jobId: string,
+  ) => Promise<OpenWrtConfigRestoreEvent>;
+  onProbeConfigBackupRestore?: () => Promise<{ available: boolean }>;
   onNotify?: (kind: OpenWrtShellMessageKind, text: string) => void;
 }
 
@@ -220,10 +234,17 @@ export function DaemonCard({
   onRestart,
   onTestUpstreamProxy,
   onLoadDaemonLogTail,
+  onDownloadConfigBackup,
+  onDryRunConfigRestore,
+  onStartConfigRestore,
+  onGetConfigRestoreJob,
+  onProbeConfigBackupRestore,
+  onNotify,
 }: DaemonCardProps) {
   const { t } = useTranslation();
   const saveFlashTimeoutRef = useRef<number | null>(null);
   const previousSaveInFlightRef = useRef(saveInFlight);
+  const restoreInputRef = useRef<HTMLInputElement | null>(null);
   const [showSaveFlash, setShowSaveFlash] = useState(false);
   const [editTarget, setEditTarget] = useState<EditTarget>(null);
   const [endpointDraft, setEndpointDraft] = useState({
@@ -262,13 +283,49 @@ export function DaemonCard({
     return t("openwrt.daemon.proxyNotChecked");
   }, [proxyError, proxyStatus, t]);
 
-  // Whole-app backup/restore is design-ahead-of-ship. The daemon endpoints
-  // (/openwrt/admin/backup, /openwrt/admin/restore[?dryRun=1],
-  // /openwrt/admin/restore/jobs/:id) do not exist yet. Until they ship the row
-  // stays "pending": pending chip visible, both buttons disabled, hover
-  // tooltips explain why.
-  const backupBackendStatus: BackupBackendStatus = "pending";
-  const backupDisabledTip = t("openwrt.daemon.backupRestore.disabledTip");
+  const [backupBackendStatus, setBackupBackendStatus] =
+    useState<BackupBackendStatus>("pending");
+  const backupDisabledTip =
+    backupBackendStatus === "error"
+      ? t("openwrt.daemon.backupRestore.backendErrorTip")
+      : t("openwrt.daemon.backupRestore.disabledTip");
+  const backupRestoreAvailable = backupBackendStatus === "available";
+
+  useEffect(() => {
+    let cancelled = false;
+    const hasCallbacks =
+      onDownloadConfigBackup &&
+      onDryRunConfigRestore &&
+      onStartConfigRestore &&
+      onGetConfigRestoreJob &&
+      onProbeConfigBackupRestore;
+
+    if (!hasCallbacks) {
+      setBackupBackendStatus("pending");
+      return;
+    }
+
+    setBackupBackendStatus("pending");
+    void onProbeConfigBackupRestore()
+      .then((capability) => {
+        if (!cancelled) {
+          setBackupBackendStatus(capability.available ? "available" : "error");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setBackupBackendStatus("error");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    onDownloadConfigBackup,
+    onDryRunConfigRestore,
+    onGetConfigRestoreJob,
+    onProbeConfigBackupRestore,
+    onStartConfigRestore,
+  ]);
 
   useEffect(() => {
     if (saveInFlight) {
@@ -409,6 +466,107 @@ export function DaemonCard({
 
     viewer.scrollTop = viewer.scrollHeight;
   }, [logDrawerOpen, logError, logTail]);
+
+  const fileToBase64 = useCallback((file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = String(reader.result || "");
+        resolve(result.includes(",") ? result.split(",").pop() || "" : result);
+      };
+      reader.onerror = () =>
+        reject(reader.error || new Error("Failed to read restore archive."));
+      reader.readAsDataURL(file);
+    });
+  }, []);
+
+  const downloadBase64File = useCallback((filename: string, dataBase64: string) => {
+    const binary = window.atob(dataBase64);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    const url = URL.createObjectURL(
+      new Blob([bytes], { type: "application/gzip" }),
+    );
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }, []);
+
+  const pollRestoreJob = useCallback(
+    async (jobId: string) => {
+      if (!onGetConfigRestoreJob) return;
+      for (let attempt = 0; attempt < 120; attempt += 1) {
+        const event = await onGetConfigRestoreJob(jobId);
+        if (event.step === "verify" && event.state === "done") {
+          onNotify?.("success", t("openwrt.daemon.backupRestore.restoreDone"));
+          return;
+        }
+        if (event.state === "failed") {
+          const rollback = event.rolledBack
+            ? ` ${t("openwrt.daemon.backupRestore.rolledBack")}`
+            : "";
+          onNotify?.(
+            "error",
+            `${event.error || t("openwrt.daemon.backupRestore.restoreFailed")}${rollback}`,
+          );
+          return;
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 750));
+      }
+      onNotify?.("info", t("openwrt.daemon.backupRestore.restoreStillRunning"));
+    },
+    [onGetConfigRestoreJob, onNotify, t],
+  );
+
+  const handleDownloadConfigBackup = useCallback(async () => {
+    if (!onDownloadConfigBackup) return;
+    try {
+      const result = await onDownloadConfigBackup();
+      downloadBase64File(result.filename, result.dataBase64);
+      onNotify?.("success", t("openwrt.daemon.backupRestore.downloadReady"));
+    } catch (error) {
+      onNotify?.("error", error instanceof Error ? error.message : String(error));
+    }
+  }, [downloadBase64File, onDownloadConfigBackup, onNotify, t]);
+
+  const handleRestoreFile = useCallback(
+    async (file: File) => {
+      if (!onDryRunConfigRestore || !onStartConfigRestore) return;
+      try {
+        const dataBase64 = await fileToBase64(file);
+        const dryRun = await onDryRunConfigRestore(file.name, dataBase64);
+        const confirmed = window.confirm(
+          t("openwrt.daemon.backupRestore.confirmRestore", {
+            apps: dryRun.manifest.appCount,
+            providers: dryRun.manifest.providerCount,
+            version: dryRun.manifest.daemonVersion,
+          }),
+        );
+        if (!confirmed) return;
+        const started = await onStartConfigRestore(file.name, dataBase64);
+        onNotify?.("info", t("openwrt.daemon.backupRestore.restoreStarted"));
+        void pollRestoreJob(started.jobId);
+      } catch (error) {
+        onNotify?.("error", error instanceof Error ? error.message : String(error));
+      } finally {
+        if (restoreInputRef.current) restoreInputRef.current.value = "";
+      }
+    },
+    [
+      fileToBase64,
+      onDryRunConfigRestore,
+      onNotify,
+      onStartConfigRestore,
+      pollRestoreJob,
+      t,
+    ],
+  );
 
   return (
     <div
@@ -659,12 +817,9 @@ export function DaemonCard({
       <div className="owt-daemon-divider" />
 
       {/*
-        Whole-app Backup & restore admin row. The buttons stay disabled in
-        "pending" state until /openwrt/admin/backup and /openwrt/admin/restore
-        ship in the daemon. The expanded inspection panel, danger callout, and
-        progress stepper from the design only render during an active
-        transaction; with the backend pending, none of those states are
-        reachable so only the idle admin row is built here.
+        Whole-app Backup & restore admin row. The buttons stay disabled until
+        the daemon capability probe confirms that the archive endpoints are
+        available.
       */}
       <section
         className="owt-admin-row"
@@ -690,11 +845,21 @@ export function DaemonCard({
           <span
             className="owt-admin-row__pending"
             tabIndex={0}
-            data-tip={t("openwrt.daemon.backupRestore.backendPendingTip")}
-            aria-label={t("openwrt.daemon.backupRestore.backendPendingAria")}
+            data-tip={t(
+              `openwrt.daemon.backupRestore.backendStatus.${backupBackendStatus}.tip`,
+            )}
+            aria-label={t(
+              `openwrt.daemon.backupRestore.backendStatus.${backupBackendStatus}.aria`,
+            )}
           >
-            <CircleAlert className="h-3 w-3" aria-hidden="true" />
-            {t("openwrt.daemon.backupRestore.backendPending")}
+            {backupBackendStatus === "available" ? (
+              <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
+            ) : (
+              <CircleAlert className="h-3 w-3" aria-hidden="true" />
+            )}
+            {t(
+              `openwrt.daemon.backupRestore.backendStatus.${backupBackendStatus}.label`,
+            )}
           </span>
           <span
             className="owt-admin-row__secret"
@@ -713,15 +878,21 @@ export function DaemonCard({
 
         <div className="owt-admin-row__actions">
           <input
+            ref={restoreInputRef}
             type="file"
             accept=".tar,.tar.gz,.tgz,application/gzip,application/x-tar"
             hidden
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0];
+              if (file) void handleRestoreFile(file);
+            }}
           />
           <button
             type="button"
             className="owt-pill owt-pill--idle"
-            disabled
-            data-tip-disabled={backupDisabledTip}
+            disabled={!backupRestoreAvailable}
+            data-tip-disabled={backupRestoreAvailable ? undefined : backupDisabledTip}
+            onClick={() => restoreInputRef.current?.click()}
           >
             <Upload className="h-4 w-4" aria-hidden="true" />
             {t("openwrt.daemon.backupRestore.restoreAction")}
@@ -729,8 +900,9 @@ export function DaemonCard({
           <button
             type="button"
             className="owt-pill owt-pill--primary"
-            disabled
-            data-tip-disabled={backupDisabledTip}
+            disabled={!backupRestoreAvailable}
+            data-tip-disabled={backupRestoreAvailable ? undefined : backupDisabledTip}
+            onClick={() => void handleDownloadConfigBackup()}
           >
             <Download className="h-4 w-4" aria-hidden="true" />
             {t("openwrt.daemon.backupRestore.downloadAction")}
