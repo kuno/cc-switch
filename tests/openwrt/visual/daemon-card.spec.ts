@@ -10,6 +10,7 @@ const SCENARIOS = [
   "pending",
   "restarting",
   "error",
+  "backup-admin-row",
 ] as const;
 
 for (const state of SCENARIOS) {

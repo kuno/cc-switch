@@ -108,46 +108,29 @@ describe("OpenWrtPageShell", () => {
     });
   });
 
-  it("wires DaemonCard backup actions through the shell bridge", async () => {
-    const user = userEvent.setup();
-    const { bridge } = renderOpenWrtPageShell({
-      bridgeOptions: {
-        backups: {
-          backups: [
-            {
-              filename: "shell-backup.db",
-              sizeBytes: 4096,
-              createdAt: "2026-05-23T12:00:00Z",
-              schemaVersion: 17,
-              supportedSchemaVersion: 17,
-            },
-          ],
-          dataDir: "/etc/cc-switch",
-          backupScope: "database",
-          databaseFile: "cc-switch.db",
-          backupsDir: "backups",
-          uciConfigFile: "/etc/config/ccswitch",
-          uciRestoreSupported: false,
-          currentSchemaVersion: 17,
-          supportedSchemaVersion: 17,
-          daemonVersion: "3.13.0",
-        },
-      },
-    });
+  it("renders the whole-app Backup & restore admin row inside the daemon card", async () => {
+    renderOpenWrtPageShell();
 
     await screen.findByRole("button", { name: "Open Claude providers" });
-    await user.click(screen.getByText("Database backups"));
 
-    await waitFor(() => expect(bridge.listBackups).toHaveBeenCalledTimes(1));
-    expect(screen.getByText("shell-backup.db")).toBeInTheDocument();
+    const adminRow = document.querySelector(".owt-admin-row");
+    expect(adminRow).not.toBeNull();
+    expect(adminRow).toHaveAttribute("data-backend-status", "pending");
+    expect(adminRow).toHaveAttribute("aria-label", "Backup and restore");
+    expect(adminRow).toHaveTextContent("Backup & restore");
+    expect(adminRow).toHaveTextContent("Last backup: never");
+    expect(adminRow).toHaveTextContent("Backend pending");
+    expect(adminRow).toHaveTextContent("Includes credentials");
 
-    await user.click(screen.getByRole("button", { name: "Create backup" }));
+    const restoreButton = screen.getByRole("button", { name: /Restore…/ });
+    const downloadButton = screen.getByRole("button", {
+      name: /Download \.tar\.gz/,
+    });
+    expect(restoreButton).toBeDisabled();
+    expect(downloadButton).toBeDisabled();
 
-    await waitFor(() => expect(bridge.createBackup).toHaveBeenCalledTimes(1));
-    expect(bridge.showMessage).toHaveBeenCalledWith(
-      "success",
-      "Database backup created.",
-    );
+    expect(document.querySelector(".owt-backup-drawer")).toBeNull();
+    expect(screen.queryByText(/Database backups/i)).not.toBeInTheDocument();
   });
 
   it("wires app-card selection through the shell bridge and opens the provider panel", async () => {

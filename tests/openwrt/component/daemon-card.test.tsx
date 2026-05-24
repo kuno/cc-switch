@@ -698,85 +698,51 @@ describe("DaemonCard", () => {
     vi.useRealTimers();
   });
 
-  it("lists database backups with schema metadata and DB-only restore scope", async () => {
-    const user = userEvent.setup();
-    const { card, bridge } = renderDaemonCard({
-      backups: {
-        backups: [
-          {
-            filename: "cc-switch-20260523-120000.db",
-            sizeBytes: 1536,
-            createdAt: "2026-05-23T12:00:00Z",
-            schemaVersion: 17,
-            supportedSchemaVersion: 17,
-          },
-        ],
-        dataDir: "/etc/cc-switch",
-        backupScope: "database",
-        databaseFile: "cc-switch.db",
-        backupsDir: "backups",
-        uciConfigFile: "/etc/config/ccswitch",
-        uciRestoreSupported: false,
-        currentSchemaVersion: 17,
-        supportedSchemaVersion: 17,
-        daemonVersion: "3.13.0",
-      },
+  it("renders the whole-app backup & restore admin row with backend pending", () => {
+    const { card } = renderDaemonCard();
+
+    const adminRow = card.querySelector<HTMLElement>(".owt-admin-row");
+    expect(adminRow).not.toBeNull();
+    expect(adminRow).toHaveAttribute("data-backend-status", "pending");
+    expect(adminRow).toHaveAttribute("aria-label", "Backup and restore");
+    expect(card).toHaveTextContent("Backup & restore");
+    expect(card).toHaveTextContent("Last backup: never");
+    expect(card).toHaveTextContent("Backend pending");
+    expect(card).toHaveTextContent("Includes credentials");
+
+    const restoreButton = within(card).getByRole("button", {
+      name: /Restore…/,
     });
-
-    await user.click(within(card).getByText("Database backups"));
-
-    await waitFor(() => expect(bridge.listBackups).toHaveBeenCalledTimes(1));
-    expect(card).toHaveTextContent("cc-switch-20260523-120000.db");
-    expect(card).toHaveTextContent("schema 17 / 17");
-    expect(card).toHaveTextContent("Schema 17 / supported 17");
-    expect(card).toHaveTextContent(
-      "/etc/config/ccswitch is OpenWrt UCI config and will not be restored",
+    const downloadButton = within(card).getByRole("button", {
+      name: /Download \.tar\.gz/,
+    });
+    expect(restoreButton).toBeDisabled();
+    expect(downloadButton).toBeDisabled();
+    expect(restoreButton).toHaveAttribute(
+      "data-tip-disabled",
+      expect.stringContaining("Backend not available yet"),
     );
+    expect(downloadButton).toHaveAttribute(
+      "data-tip-disabled",
+      expect.stringContaining("Backend not available yet"),
+    );
+
+    expect(card.querySelector(".owt-backup-drawer")).toBeNull();
+    expect(
+      within(card).queryByRole("button", { name: /Database backups/i }),
+    ).not.toBeInTheDocument();
   });
 
-  it("confirms restore and routes the selected backup through the shell callback", async () => {
-    const user = userEvent.setup();
-    const { card, bridge } = renderDaemonCard({
-      backups: {
-        backups: [
-          {
-            filename: "restore-me.db",
-            sizeBytes: 2048,
-            createdAt: "2026-05-23T12:00:00Z",
-            schemaVersion: 17,
-            supportedSchemaVersion: 17,
-          },
-        ],
-        dataDir: "/etc/cc-switch",
-        backupScope: "database",
-        databaseFile: "cc-switch.db",
-        backupsDir: "backups",
-        uciConfigFile: "/etc/config/ccswitch",
-        uciRestoreSupported: false,
-        currentSchemaVersion: 17,
-        supportedSchemaVersion: 17,
-        daemonVersion: "3.13.0",
-      },
-    });
-
-    await user.click(within(card).getByText("Database backups"));
-    await screen.findByRole("button", { name: "Restore restore-me.db" });
-    await user.click(
-      within(card).getByRole("button", { name: "Restore restore-me.db" }),
+  it("uses the design's archive file accept list on the (hidden) restore picker", () => {
+    const { card } = renderDaemonCard();
+    const input = card.querySelector<HTMLInputElement>(
+      'input[type="file"]',
     );
 
-    expect(card).toHaveTextContent(
-      "This does not restore /etc/config/ccswitch",
-    );
-    await user.click(
-      within(card).getByRole("button", { name: "Restore database" }),
-    );
-    await waitFor(() =>
-      expect(bridge.restoreBackup).toHaveBeenCalledWith("restore-me.db"),
-    );
-    expect(bridge.showMessage).toHaveBeenCalledWith(
-      "success",
-      "Database restore completed.",
-    );
+    expect(input).not.toBeNull();
+    const accept = (input.getAttribute("accept") ?? "").toLowerCase();
+    expect(accept).toBe(".tar,.tar.gz,.tgz,application/gzip,application/x-tar");
+    expect(accept).not.toMatch(/\.json/);
+    expect(accept).not.toMatch(/\.db/);
   });
 });
