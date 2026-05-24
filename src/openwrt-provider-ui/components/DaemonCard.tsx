@@ -88,7 +88,8 @@ export interface DaemonCardProps {
   }>;
   onDownloadConfigBackup?: () => Promise<{
     filename: string;
-    dataBase64: string;
+    dataBase64?: string;
+    downloadUrl?: string;
   }>;
   onDryRunConfigRestore?: (
     filename: string,
@@ -498,6 +499,15 @@ export function DaemonCard({
     URL.revokeObjectURL(url);
   }, []);
 
+  const downloadUrlFile = useCallback((filename: string, downloadUrl: string) => {
+    const anchor = document.createElement("a");
+    anchor.href = downloadUrl;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+  }, []);
+
   const pollRestoreJob = useCallback(
     async (jobId: string) => {
       if (!onGetConfigRestoreJob) return;
@@ -528,12 +538,18 @@ export function DaemonCard({
     if (!onDownloadConfigBackup) return;
     try {
       const result = await onDownloadConfigBackup();
-      downloadBase64File(result.filename, result.dataBase64);
+      if (result.downloadUrl) {
+        downloadUrlFile(result.filename, result.downloadUrl);
+      } else if (result.dataBase64) {
+        downloadBase64File(result.filename, result.dataBase64);
+      } else {
+        throw new Error("Backup download returned an empty payload.");
+      }
       onNotify?.("success", t("openwrt.daemon.backupRestore.downloadReady"));
     } catch (error) {
       onNotify?.("error", error instanceof Error ? error.message : String(error));
     }
-  }, [downloadBase64File, onDownloadConfigBackup, onNotify, t]);
+  }, [downloadBase64File, downloadUrlFile, onDownloadConfigBackup, onNotify, t]);
 
   const handleRestoreFile = useCallback(
     async (file: File) => {
