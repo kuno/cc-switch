@@ -484,12 +484,11 @@ impl ProxyServer {
             // Gemini 的 GA 版本也叫 /v1，给原 SDK 留一条出口
             .route("/gemini/v1/*path", any(handlers::handle_gemini))
             // 提高默认请求体大小限制（避免 413 Payload Too Large）
-            .layer(DefaultBodyLimit::max(200 * 1024 * 1024))
-            .layer(cors);
+            .layer(DefaultBodyLimit::max(200 * 1024 * 1024));
 
         let router = (self.route_mounter)(router);
 
-        router.with_state(self.state.clone())
+        router.layer(cors).with_state(self.state.clone())
     }
 
     /// 在不重启服务的情况下更新运行时配置
@@ -619,7 +618,11 @@ mod tests {
             None,
         );
 
-        for uri in ["/v1/models", "/claude/v1/models", "/gateway/claude/v1/models"] {
+        for uri in [
+            "/v1/models",
+            "/claude/v1/models",
+            "/gateway/claude/v1/models",
+        ] {
             let mut app = server.build_router();
             let response = app
                 .call(
