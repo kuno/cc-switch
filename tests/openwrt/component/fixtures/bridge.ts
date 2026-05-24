@@ -326,6 +326,42 @@ export function createBridgeFixture(
       backupScope: "database",
       uciRestoreSupported: false,
     })),
+    downloadConfigBackup: vi.fn(async () => ({
+      filename: "ccswitch-backup-2026-05-24.tar.gz",
+      dataBase64: "H4sIAAAAAAAA",
+    })),
+    dryRunConfigRestore: vi.fn(async () => ({
+      manifest: {
+        formatVersion: 1,
+        exportedAt: "2026-05-24T00:00:00Z",
+        daemonVersion: "3.14.1-test",
+        packageVersion: "3.14.1-test-1",
+        schemaVersion: 12,
+        supportedSchemaVersion: 12,
+        appCount: 3,
+        providerCount: 5,
+        includesCredentials: true,
+        authFileCount: 2,
+        rollbackSupported: false,
+        configPath: "/etc/config/ccswitch",
+        authPaths: ["data/codex_auth/provider.json"],
+      },
+    })),
+    startConfigRestore: vi.fn(async () => ({
+      jobId: "restore-job-1",
+    })),
+    getConfigRestoreJob: vi.fn(async () => ({
+      step: "verify" as const,
+      state: "done" as const,
+      error: null,
+      rolledBack: null,
+    })),
+    probeConfigBackupRestore: vi.fn(async () => ({
+      available: true,
+      rollbackSupported: false,
+      jobPersistence: "process",
+      restartDuringRestore: false,
+    })),
     refreshHostState: vi.fn(async () => host),
     saveHostConfig: vi.fn(async (nextHost: OpenWrtHostConfigPayload) => {
       host = {

@@ -412,6 +412,39 @@ var callDownloadBackup = rpc.declare({
 	expect: { '': {} }
 });
 
+var callDownloadConfigBackup = rpc.declare({
+	object: 'ccswitch',
+	method: 'download_config_backup',
+	expect: { '': {} }
+});
+
+var callDryRunConfigRestore = rpc.declare({
+	object: 'ccswitch',
+	method: 'dry_run_config_restore',
+	params: ['filename', 'data_base64'],
+	expect: { '': {} }
+});
+
+var callStartConfigRestore = rpc.declare({
+	object: 'ccswitch',
+	method: 'start_config_restore',
+	params: ['filename', 'data_base64'],
+	expect: { '': {} }
+});
+
+var callGetConfigRestoreJob = rpc.declare({
+	object: 'ccswitch',
+	method: 'get_config_restore_job',
+	params: ['job_id'],
+	expect: { '': {} }
+});
+
+var callProbeConfigBackupRestore = rpc.declare({
+	object: 'ccswitch',
+	method: 'probe_config_backup_restore',
+	expect: { '': {} }
+});
+
 var callImportBackup = rpc.declare({
 	object: 'ccswitch',
 	method: 'import_backup',
@@ -744,6 +777,30 @@ function callOpenWrtRestoreBackup(filename) {
 		return callDaemonAdminJson('/backups/' + encodeURIComponent(filename) + '/restore', { method: 'POST' });
 	}, function () {
 		return L.resolveDefault(callRestoreBackup(filename), { ok: false });
+	});
+}
+
+function callOpenWrtDownloadConfigBackup() {
+	return L.resolveDefault(callDownloadConfigBackup(), { ok: false });
+}
+
+function callOpenWrtDryRunConfigRestore(filename, dataBase64) {
+	return L.resolveDefault(callDryRunConfigRestore(filename || 'restore.tar.gz', dataBase64 || ''), { ok: false });
+}
+
+function callOpenWrtStartConfigRestore(filename, dataBase64) {
+	return L.resolveDefault(callStartConfigRestore(filename || 'restore.tar.gz', dataBase64 || ''), { ok: false });
+}
+
+function callOpenWrtGetConfigRestoreJob(jobId) {
+	return L.resolveDefault(callGetConfigRestoreJob(jobId || ''), { ok: false });
+}
+
+function callOpenWrtProbeConfigBackupRestore() {
+	return daemonAdminOrFallback(function () {
+		return callDaemonAdminJson('/restore/capability');
+	}, function () {
+		return L.resolveDefault(callProbeConfigBackupRestore(), { ok: false });
 	});
 }
 
@@ -1824,7 +1881,65 @@ return view.extend({
 		}, this));
 	},
 
-	testNativeUpstreamProxy: function (proxyUrl) {
+	downloadConfigBackup: function () {
+		return L.resolveDefault(callOpenWrtDownloadConfigBackup(), { ok: false }).then(L.bind(function (response) {
+			if (!this.isRpcSuccess(response))
+				throw new Error(this.rpcFailureMessage(response) || _('Failed to download configuration backup.'));
+
+			return {
+				filename: response.filename != null ? String(response.filename) : 'ccswitch-backup.tar.gz',
+				dataBase64: response.dataBase64 != null ? String(response.dataBase64) : ''
+			};
+		}, this));
+	},
+
+	dryRunConfigRestore: function (filename, dataBase64) {
+		return L.resolveDefault(callOpenWrtDryRunConfigRestore(filename, dataBase64), { ok: false }).then(L.bind(function (response) {
+			if (!this.isRpcSuccess(response))
+				throw new Error(this.rpcFailureMessage(response) || _('Failed to inspect configuration backup.'));
+
+			return { manifest: response.manifest || {} };
+		}, this));
+	},
+
+	startConfigRestore: function (filename, dataBase64) {
+		return L.resolveDefault(callOpenWrtStartConfigRestore(filename, dataBase64), { ok: false }).then(L.bind(function (response) {
+			if (!this.isRpcSuccess(response))
+				throw new Error(this.rpcFailureMessage(response) || _('Failed to start configuration restore.'));
+
+			return { jobId: response.jobId != null ? String(response.jobId) : String(response.job_id || '') };
+		}, this));
+	},
+
+		getConfigRestoreJob: function (jobId) {
+			return L.resolveDefault(callOpenWrtGetConfigRestoreJob(jobId), { ok: false }).then(L.bind(function (response) {
+				if (!this.isRpcSuccess(response))
+					throw new Error(this.rpcFailureMessage(response) || _('Failed to read restore job.'));
+
+			return {
+				step: response.step != null ? String(response.step) : 'validate',
+				state: response.state != null ? String(response.state) : 'active',
+				error: response.error != null ? String(response.error) : null,
+				rolledBack: response.rolledBack === true || response.rolled_back === true
+				};
+			}, this));
+		},
+
+		probeConfigBackupRestore: function () {
+			return L.resolveDefault(callOpenWrtProbeConfigBackupRestore(), { ok: false }).then(L.bind(function (response) {
+				if (!this.isRpcSuccess(response))
+					throw new Error(this.rpcFailureMessage(response) || _('Backup and restore endpoints are unavailable.'));
+
+				return {
+					available: response.available === true,
+					rollbackSupported: response.rollbackSupported === true || response.rollback_supported === true,
+					jobPersistence: response.jobPersistence != null ? String(response.jobPersistence) : String(response.job_persistence || 'process'),
+					restartDuringRestore: response.restartDuringRestore === true || response.restart_during_restore === true
+				};
+			}, this));
+		},
+
+		testNativeUpstreamProxy: function (proxyUrl) {
 		return L.resolveDefault(callOpenWrtOutboundProxyTest(proxyUrl), { ok: false }).then(L.bind(function (response) {
 			if (!this.isRpcSuccess(response))
 				throw new Error(this.rpcFailureMessage(response) || _('Failed to test upstream proxy.'));
@@ -3238,9 +3353,24 @@ return view.extend({
 			restoreBackup: async function (filename) {
 				return self.restoreNativeBackup(filename);
 			},
-			saveHostConfig: async function (payload) {
-				return self.saveNativeHostConfig(uiState, payload);
+			downloadConfigBackup: async function () {
+				return self.downloadConfigBackup();
 			},
+			dryRunConfigRestore: async function (filename, dataBase64) {
+				return self.dryRunConfigRestore(filename, dataBase64);
+			},
+			startConfigRestore: async function (filename, dataBase64) {
+				return self.startConfigRestore(filename, dataBase64);
+			},
+				getConfigRestoreJob: async function (jobId) {
+					return self.getConfigRestoreJob(jobId);
+				},
+				probeConfigBackupRestore: async function () {
+					return self.probeConfigBackupRestore();
+				},
+				saveHostConfig: async function (payload) {
+					return self.saveNativeHostConfig(uiState, payload);
+				},
 			showMessage: function (kind, text) {
 				self.setMessage(uiState, kind, text);
 				self.notifyShellListeners(uiState);

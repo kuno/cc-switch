@@ -63,6 +63,11 @@ function buildDaemonCardProps(
     onImportBackup: bridge.importBackup?.bind(bridge),
     onDeleteBackup: bridge.deleteBackup?.bind(bridge),
     onRestoreBackup: bridge.restoreBackup?.bind(bridge),
+    onDownloadConfigBackup: bridge.downloadConfigBackup?.bind(bridge),
+    onDryRunConfigRestore: bridge.dryRunConfigRestore?.bind(bridge),
+    onStartConfigRestore: bridge.startConfigRestore?.bind(bridge),
+    onGetConfigRestoreJob: bridge.getConfigRestoreJob?.bind(bridge),
+    onProbeConfigBackupRestore: undefined,
     onNotify: bridge.showMessage.bind(bridge),
     ...overrides,
   };
@@ -699,7 +704,16 @@ describe("DaemonCard", () => {
   });
 
   it("renders the whole-app backup & restore admin row with backend pending", () => {
-    const { card } = renderDaemonCard();
+    const { card } = renderDaemonCard(
+      {},
+      {
+        onDownloadConfigBackup: undefined,
+        onDryRunConfigRestore: undefined,
+        onStartConfigRestore: undefined,
+        onGetConfigRestoreJob: undefined,
+        onProbeConfigBackupRestore: undefined,
+      },
+    );
 
     const adminRow = card.querySelector<HTMLElement>(".owt-admin-row");
     expect(adminRow).not.toBeNull();
@@ -707,7 +721,7 @@ describe("DaemonCard", () => {
     expect(adminRow).toHaveAttribute("aria-label", "Backup and restore");
     expect(card).toHaveTextContent("Backup & restore");
     expect(card).toHaveTextContent("Last backup: never");
-    expect(card).toHaveTextContent("Backend pending");
+    expect(card).toHaveTextContent("Checking backend");
     expect(card).toHaveTextContent("Includes credentials");
 
     const restoreButton = within(card).getByRole("button", {
@@ -733,6 +747,30 @@ describe("DaemonCard", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("enables the whole-app backup & restore row after the backend probe succeeds", async () => {
+    const { card } = renderDaemonCard(
+      {},
+      {
+        onProbeConfigBackupRestore: vi.fn(async () => ({
+          available: true,
+        })),
+      },
+    );
+
+    const adminRow = card.querySelector<HTMLElement>(".owt-admin-row");
+    expect(adminRow).toHaveAttribute("data-backend-status", "pending");
+    await waitFor(() => {
+      expect(adminRow).toHaveAttribute("data-backend-status", "available");
+      expect(card).toHaveTextContent("Backend ready");
+      expect(
+        within(card).getByRole("button", { name: /Restore…/ }),
+      ).toBeEnabled();
+      expect(
+        within(card).getByRole("button", { name: /Download \.tar\.gz/ }),
+      ).toBeEnabled();
+    });
+  });
+
   it("uses the design's archive file accept list on the (hidden) restore picker", () => {
     const { card } = renderDaemonCard();
     const input = card.querySelector<HTMLInputElement>(
@@ -740,7 +778,7 @@ describe("DaemonCard", () => {
     );
 
     expect(input).not.toBeNull();
-    const accept = (input.getAttribute("accept") ?? "").toLowerCase();
+    const accept = (input?.getAttribute("accept") ?? "").toLowerCase();
     expect(accept).toBe(".tar,.tar.gz,.tgz,application/gzip,application/x-tar");
     expect(accept).not.toMatch(/\.json/);
     expect(accept).not.toMatch(/\.db/);

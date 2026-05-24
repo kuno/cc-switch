@@ -180,15 +180,37 @@
         "lastBackupNever": "上次备份：从未",
         "ariaLabel": "备份与恢复",
         "iconAria": "备份",
-        "backendPending": "后端待支持",
-        "backendPendingAria": "后端支持待发布",
-        "backendPendingTip": "守护进程尚未实现备份与恢复接口。在后端发布之前，按钮处于禁用状态。",
+        "backendStatus": {
+          "pending": {
+            "label": "正在检查后端",
+            "aria": "正在检查后端支持",
+            "tip": "正在检查守护进程备份与恢复接口是否可用。"
+          },
+          "available": {
+            "label": "后端就绪",
+            "aria": "后端支持可用",
+            "tip": "守护进程备份与恢复接口已成功响应。"
+          },
+          "error": {
+            "label": "后端不可用",
+            "aria": "后端支持不可用",
+            "tip": "守护进程备份与恢复接口未成功响应。"
+          }
+        },
         "includesCredentials": "含凭据",
         "includesCredentialsAria": "备份包含凭据",
         "includesCredentialsTip": "备份会包含提供方 API Key、令牌及上传的 auth.json 文件。请妥善保管，不要分享。",
         "restoreAction": "恢复…",
         "downloadAction": "下载 .tar.gz",
-        "disabledTip": "后端尚未就绪 —— 当前构建尚未接入备份与恢复接口。"
+        "disabledTip": "后端尚未就绪 - 正在检查备份与恢复接口。",
+        "backendErrorTip": "后端不可用 - 守护进程备份与恢复接口未成功响应。",
+        "downloadReady": "备份下载已准备好。",
+        "confirmRestore": "要恢复来自守护进程 {{version}} 的备份吗？包含 {{apps}} 个应用和 {{providers}} 个提供方。此操作会替换当前配置并在不重启守护进程的情况下校验结果。",
+        "restoreStarted": "配置恢复已开始。",
+        "restoreDone": "配置已恢复。",
+        "restoreFailed": "恢复失败。",
+        "restoreStillRunning": "恢复仍在运行。重试前请检查守护进程任务状态。",
+        "rolledBack": "已回滚。"
       },
       "luciAppLabel": "luci-app-ccswitch",
       "luciAppVersion": "luci-app-ccswitch 版本",
