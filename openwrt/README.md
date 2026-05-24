@@ -157,6 +157,30 @@ file is OpenWrt-owned configuration and remains separate from daemon runtime
 data; this maintenance slice backs up and restores the daemon database/data-dir
 state first.
 
+## Whole-app configuration archives
+
+The Daemon card Backup & restore row uses separate whole-app archive endpoints:
+
+- `GET /openwrt/admin/backup` downloads `application/gzip` as
+  `ccswitch-backup-YYYY-MM-DD.tar.gz`.
+- `POST /openwrt/admin/restore?dryRun=1` accepts multipart field `archive`,
+  validates the tar.gz server-side, and returns `{ manifest }` without writing.
+- `POST /openwrt/admin/restore` accepts multipart field `archive`, starts a
+  restore job, and returns `202 { jobId }`.
+- `GET /openwrt/admin/restore/jobs/<jobId>` returns the latest JSON event, or
+  streams JSON SSE events when `Accept: text/event-stream` is sent.
+
+Archive entries are `manifest.json`, `etc/config/ccswitch`, and top-level
+provider auth files under `data/codex_auth/*.json` and
+`data/claude_auth/*.json`. Restore validates regular-file tar entries only,
+rejects traversal and unsupported paths, validates UCI syntax when `uci` is
+available, writes through temporary files, clears managed auth dirs before
+applying archive auth files, reloads daemon settings in-process, and verifies
+the applied config/auth files plus database schema readability. The manifest
+reports `rollbackSupported: false`; failed apply/verify paths still attempt
+best-effort local file rollback, but the API does not promise automatic
+transactional rollback.
+
 ## LuCI
 
 Open the LuCI page at:
