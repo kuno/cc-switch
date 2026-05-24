@@ -104,6 +104,7 @@ const DEFAULT_TOKEN_FIELD: &str = CLAUDE_DEFAULT_TOKEN_FIELD;
 type ClaudeProviderPayload = OpenWrtProviderPayload;
 
 const OPENWRT_BACKUP_SCOPE: &str = "database";
+const OPENWRT_WHOLE_APP_BACKUP_SCOPE: &str = "full-app";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1162,7 +1163,7 @@ pub fn get_admin_meta() -> anyhow::Result<OpenWrtAdminMetaView> {
             admin_base_path: "/openwrt/admin",
             version: version::build_version().to_string(),
             data_dir: crate::config::get_app_config_dir().display().to_string(),
-            backup_scope: OPENWRT_BACKUP_SCOPE,
+            backup_scope: OPENWRT_WHOLE_APP_BACKUP_SCOPE,
             database_file: "cc-switch.db",
             backups_dir: "backups",
             supported_schema_version: Database::supported_schema_version(),

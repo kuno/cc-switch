@@ -384,6 +384,7 @@ async fn openwrt_download_config_backup(State(state): State<ProxyState>) -> Resp
 async fn openwrt_get_config_restore_capability() -> (StatusCode, Json<Value>) {
     openwrt_admin_ok(json!({
         "available": true,
+        "backupScope": "full-app",
         "backupEndpoint": "/openwrt/admin/backup",
         "restoreEndpoint": "/openwrt/admin/restore",
         "jobEndpoint": "/openwrt/admin/restore/jobs/:jobId",
@@ -417,7 +418,7 @@ async fn openwrt_upload_config_restore(
             Err(error) => openwrt_admin_error(error),
         }
     } else {
-        match crate::openwrt_backup_restore::start_config_restore_job(state.db.as_ref(), archive) {
+        match crate::openwrt_backup_restore::start_config_restore_job(state.db.clone(), archive) {
             Ok(result) => match serde_json::to_value(result) {
                 Ok(Value::Object(map)) => (StatusCode::ACCEPTED, Json(Value::Object(map))),
                 Ok(value) => (StatusCode::ACCEPTED, Json(json!({ "value": value }))),
@@ -1368,7 +1369,7 @@ mod tests {
         );
         assert_eq!(
             body["service"]["backupScope"],
-            Value::String("database".to_string())
+            Value::String("full-app".to_string())
         );
         assert_eq!(
             body["service"]["databaseFile"],

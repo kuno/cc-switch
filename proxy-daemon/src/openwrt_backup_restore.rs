@@ -10,18 +10,25 @@ use std::fs;
 use std::io::{Cursor, Read};
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
-use std::sync::{Mutex, TryLockError};
+use std::sync::{Arc, Mutex, TryLockError};
 use tar::{Archive, Builder, EntryType, Header};
 use uuid::Uuid;
 
 const MANIFEST_PATH: &str = "manifest.json";
 const CONFIG_ARCHIVE_PATH: &str = "etc/config/ccswitch";
-const MAX_ARCHIVE_BYTES: usize = 8 * 1024 * 1024;
-pub const MAX_RESTORE_MULTIPART_BYTES: usize = 10 * 1024 * 1024;
+const DATABASE_ARCHIVE_PATH: &str = "data/cc-switch.db";
+const BACKUP_SCOPE: &str = "full-app";
+const MAX_ARCHIVE_BYTES: usize = 160 * 1024 * 1024;
+pub const MAX_RESTORE_MULTIPART_BYTES: usize = 192 * 1024 * 1024;
 const MAX_FILE_BYTES: usize = 512 * 1024;
+const MAX_DATABASE_BYTES: usize = 128 * 1024 * 1024;
 const MAX_TOTAL_AUTH_BYTES: usize = 2 * 1024 * 1024;
 const MAX_AUTH_FILES: usize = 64;
 const MAX_JOBS: usize = 24;
+
+fn default_backup_scope() -> String {
+    BACKUP_SCOPE.to_string()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -29,6 +36,8 @@ pub struct OpenWrtConfigBackupManifest {
     #[serde(rename = "$schema")]
     pub schema: String,
     pub format_version: u32,
+    #[serde(default = "default_backup_scope")]
+    pub backup_scope: String,
     pub exported_at: String,
     pub daemon_version: String,
     pub package_version: Option<String>,
@@ -38,8 +47,12 @@ pub struct OpenWrtConfigBackupManifest {
     pub provider_count: usize,
     pub includes_credentials: bool,
     pub auth_file_count: usize,
+    #[serde(default)]
+    pub database_included: bool,
     pub rollback_supported: bool,
     pub config_path: String,
+    #[serde(default)]
+    pub database_path: Option<String>,
     pub auth_paths: Vec<String>,
 }
 
@@ -70,6 +83,7 @@ pub struct OpenWrtConfigRestoreEvent {
 struct RestorePayload {
     manifest: OpenWrtConfigBackupManifest,
     config: Vec<u8>,
+    database: Option<Vec<u8>>,
     auth_files: Vec<(String, Vec<u8>)>,
 }
 
@@ -96,8 +110,15 @@ pub fn create_config_backup_archive(db: &Database) -> anyhow::Result<Vec<u8>> {
         return Err(anyhow!("ccswitch config exceeds backup size limit"));
     }
 
+    let database_bytes = db
+        .snapshot_database_bytes()
+        .map_err(|e| anyhow!("failed to snapshot database: {e}"))?;
+    if database_bytes.len() > MAX_DATABASE_BYTES {
+        return Err(anyhow!("cc-switch database exceeds backup size limit"));
+    }
+
     let auth_files = collect_auth_files()?;
-    let manifest = build_manifest(db, &auth_files)?;
+    let manifest = build_manifest(db, &auth_files, true)?;
 
     let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
     {
@@ -109,6 +130,7 @@ pub fn create_config_backup_archive(db: &Database) -> anyhow::Result<Vec<u8>> {
             0o644,
         )?;
         append_bytes(&mut tar, CONFIG_ARCHIVE_PATH, &config_bytes, 0o600)?;
+        append_bytes(&mut tar, DATABASE_ARCHIVE_PATH, &database_bytes, 0o600)?;
         for (archive_path, bytes) in &auth_files {
             append_bytes(&mut tar, archive_path, bytes, 0o600)?;
         }
@@ -129,7 +151,7 @@ pub fn validate_config_restore_archive(
 }
 
 pub fn start_config_restore_job(
-    db: &Database,
+    db: Arc<Database>,
     archive_bytes: Vec<u8>,
 ) -> anyhow::Result<OpenWrtConfigRestoreStartView> {
     let job_id = Uuid::new_v4().to_string();
@@ -143,14 +165,10 @@ pub fn start_config_restore_job(
         },
     );
 
-    let supported_schema = Database::supported_schema_version();
-    let current_schema = db
-        .current_schema_version()
-        .map_err(|e| anyhow!("failed to read current schema version: {e}"))?;
     std::thread::spawn({
         let job_id = job_id.clone();
         move || {
-            run_restore_job(&job_id, archive_bytes, current_schema, supported_schema);
+            run_restore_job(&job_id, db, archive_bytes);
         }
     });
 
@@ -171,12 +189,7 @@ pub fn get_restore_job_events(job_id: &str) -> anyhow::Result<Vec<OpenWrtConfigR
         .ok_or_else(|| anyhow!("restore job not found"))
 }
 
-fn run_restore_job(
-    job_id: &str,
-    archive_bytes: Vec<u8>,
-    current_schema: i32,
-    supported_schema: i32,
-) {
+fn run_restore_job(job_id: &str, db: Arc<Database>, archive_bytes: Vec<u8>) {
     let result = (|| -> anyhow::Result<bool> {
         let _restore_guard = match RESTORE_LOCK.try_lock() {
             Ok(guard) => guard,
@@ -192,22 +205,22 @@ fn run_restore_job(
             }
             Err(TryLockError::Poisoned(error)) => error.into_inner(),
         };
-        let payload =
-            parse_restore_archive_with_versions(&archive_bytes, current_schema, supported_schema)?;
+        let payload = parse_restore_archive(&db, &archive_bytes)?;
         validate_uci_config(&payload.config)?;
         push_event(job_id, "validate", "done", None, None);
         push_event(job_id, "apply", "active", None, None);
 
-        let safety = capture_current_files().context("failed to create restore safety backup")?;
-        if let Err(error) = apply_payload(&payload) {
-            let rolled_back = rollback_files(&safety).is_ok();
+        let safety =
+            capture_current_files(&db).context("failed to create restore safety backup")?;
+        if let Err(error) = apply_payload(&db, &payload) {
+            let rolled_back = rollback_files(&db, &safety).is_ok();
             return Err(anyhow!("apply failed: {error}; rolledBack={rolled_back}"));
         }
         push_event(job_id, "apply", "done", None, None);
 
         push_event(job_id, "reload", "active", None, None);
         if let Err(error) = reload_daemon_state() {
-            let rolled_back = rollback_files(&safety).is_ok();
+            let rolled_back = rollback_files(&db, &safety).is_ok();
             push_event(
                 job_id,
                 "reload",
@@ -220,8 +233,8 @@ fn run_restore_job(
         push_event(job_id, "reload", "done", None, None);
 
         push_event(job_id, "verify", "active", None, None);
-        if let Err(error) = verify_restore(&payload) {
-            let rolled_back = rollback_files(&safety).is_ok();
+        if let Err(error) = verify_restore(&db, &payload) {
+            let rolled_back = rollback_files(&db, &safety).is_ok();
             push_event(
                 job_id,
                 "verify",
@@ -263,6 +276,7 @@ fn run_restore_job(
 fn build_manifest(
     db: &Database,
     auth_files: &[(String, Vec<u8>)],
+    database_included: bool,
 ) -> anyhow::Result<OpenWrtConfigBackupManifest> {
     let apps = [
         ("claude", crate::app_config::AppType::Claude),
@@ -284,6 +298,7 @@ fn build_manifest(
     Ok(OpenWrtConfigBackupManifest {
         schema: "https://ccswitch.dev/schema/openwrt-config-backup-v1.json".to_string(),
         format_version: 1,
+        backup_scope: BACKUP_SCOPE.to_string(),
         exported_at: Utc::now().to_rfc3339(),
         daemon_version: version::build_version().to_string(),
         package_version: std::env::var("CC_SWITCH_PACKAGE_VERSION").ok(),
@@ -295,8 +310,10 @@ fn build_manifest(
         provider_count,
         includes_credentials: !auth_files.is_empty(),
         auth_file_count: auth_files.len(),
+        database_included,
         rollback_supported: false,
         config_path: "/etc/config/ccswitch".to_string(),
+        database_path: database_included.then(|| "/etc/cc-switch/cc-switch.db".to_string()),
         auth_paths: auth_files.iter().map(|(path, _)| path.clone()).collect(),
     })
 }
@@ -326,6 +343,7 @@ fn parse_restore_archive_with_versions(
     let mut archive = Archive::new(decoder);
     let mut manifest = None;
     let mut config = None;
+    let mut database = None;
     let mut auth_files = Vec::new();
     let mut total_auth_bytes = 0usize;
 
@@ -340,7 +358,12 @@ fn parse_restore_archive_with_versions(
         }
         let path = entry.path().context("tar entry path is invalid")?;
         let path = normalize_archive_path(&path)?;
-        if entry.size() as usize > MAX_FILE_BYTES {
+        let max_entry_bytes = if path == DATABASE_ARCHIVE_PATH {
+            MAX_DATABASE_BYTES
+        } else {
+            MAX_FILE_BYTES
+        };
+        if entry.size() as usize > max_entry_bytes {
             return Err(anyhow!("restore archive entry {path} exceeds size limit"));
         }
         let mut bytes = Vec::new();
@@ -354,6 +377,7 @@ fn parse_restore_archive_with_versions(
                 );
             }
             CONFIG_ARCHIVE_PATH => config = Some(bytes),
+            DATABASE_ARCHIVE_PATH => database = Some(bytes),
             path if is_auth_archive_path(path) => {
                 if auth_files.len() >= MAX_AUTH_FILES {
                     return Err(anyhow!("restore archive contains too many auth files"));
@@ -384,11 +408,15 @@ fn parse_restore_archive_with_versions(
             supported_schema
         ));
     }
+    if manifest.database_included && database.is_none() {
+        return Err(anyhow!("restore archive missing data/cc-switch.db"));
+    }
     let config = config.ok_or_else(|| anyhow!("restore archive missing etc/config/ccswitch"))?;
 
     Ok(RestorePayload {
         manifest,
         config,
+        database,
         auth_files,
     })
 }
@@ -481,8 +509,12 @@ fn is_auth_archive_path(path: &str) -> bool {
     !name.is_empty() && name.ends_with(".json") && !name.contains('/') && !name.contains("..")
 }
 
-fn apply_payload(payload: &RestorePayload) -> anyhow::Result<()> {
+fn apply_payload(db: &Database, payload: &RestorePayload) -> anyhow::Result<()> {
     write_private_file(&openwrt_config_path(), &payload.config)?;
+    if let Some(database) = &payload.database {
+        db.restore_database_bytes(database)
+            .map_err(|e| anyhow!("failed to restore database: {e}"))?;
+    }
     let data_dir = crate::config::get_app_config_dir();
     clear_managed_auth_dirs(&data_dir)?;
     for (archive_path, bytes) in &payload.auth_files {
@@ -497,11 +529,12 @@ fn apply_payload(payload: &RestorePayload) -> anyhow::Result<()> {
 #[derive(Debug)]
 struct SafetyBackup {
     config: Option<Vec<u8>>,
+    database: Option<Vec<u8>>,
     auth_files: Vec<(PathBuf, Vec<u8>)>,
     auth_dirs: Vec<PathBuf>,
 }
 
-fn capture_current_files() -> anyhow::Result<SafetyBackup> {
+fn capture_current_files(db: &Database) -> anyhow::Result<SafetyBackup> {
     let config_path = openwrt_config_path();
     let config = match fs::read(&config_path) {
         Ok(bytes) => Some(bytes),
@@ -510,6 +543,10 @@ fn capture_current_files() -> anyhow::Result<SafetyBackup> {
             return Err(error).with_context(|| format!("failed to read {}", config_path.display()))
         }
     };
+    let database = Some(
+        db.snapshot_database_bytes()
+            .map_err(|e| anyhow!("failed to snapshot database: {e}"))?,
+    );
     let mut auth_files = Vec::new();
     let mut auth_dirs = Vec::new();
     let data_dir = crate::config::get_app_config_dir();
@@ -523,17 +560,22 @@ fn capture_current_files() -> anyhow::Result<SafetyBackup> {
     }
     Ok(SafetyBackup {
         config,
+        database,
         auth_files,
         auth_dirs,
     })
 }
 
-fn rollback_files(safety: &SafetyBackup) -> anyhow::Result<()> {
+fn rollback_files(db: &Database, safety: &SafetyBackup) -> anyhow::Result<()> {
     let config_path = openwrt_config_path();
     if let Some(bytes) = &safety.config {
         write_private_file(&config_path, bytes)?;
     } else if config_path.exists() {
         fs::remove_file(&config_path)?;
+    }
+    if let Some(bytes) = &safety.database {
+        db.restore_database_bytes(bytes)
+            .map_err(|e| anyhow!("failed to roll back database: {e}"))?;
     }
     let data_dir = crate::config::get_app_config_dir();
     clear_managed_auth_dirs(&data_dir)?;
@@ -633,7 +675,7 @@ fn validate_uci_config(config: &[u8]) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn verify_restore(payload: &RestorePayload) -> anyhow::Result<()> {
+fn verify_restore(db: &Database, payload: &RestorePayload) -> anyhow::Result<()> {
     let applied_config =
         fs::read(openwrt_config_path()).context("failed to read applied config")?;
     if applied_config != payload.config {
@@ -699,7 +741,6 @@ fn verify_restore(payload: &RestorePayload) -> anyhow::Result<()> {
     }
 
     validate_uci_config(&payload.config)?;
-    let db = Database::init().context("failed to open database after restore")?;
     db.current_schema_version()
         .map_err(|e| anyhow!("failed to read database schema after restore: {e}"))?;
     Ok(())
@@ -798,11 +839,21 @@ mod tests {
         }
     }
 
+    fn test_db() -> Database {
+        let db = Database::memory().expect("db");
+        {
+            let conn = db.conn.lock().expect("db lock");
+            Database::set_user_version(&conn, Database::supported_schema_version())
+                .expect("set schema version");
+        }
+        db
+    }
+
     #[test]
     #[serial]
     fn backup_archive_creation_and_dry_run_validation() {
         let env = test_env();
-        let db = Database::memory().expect("db");
+        let db = test_db();
         let auth_dir = crate::config::get_app_config_dir().join("codex_auth");
         fs::create_dir_all(&auth_dir).expect("auth dir");
         fs::write(
@@ -815,6 +866,8 @@ mod tests {
         let dry_run = validate_config_restore_archive(&db, &archive).expect("dry run");
         assert_eq!(dry_run.manifest.format_version, 1);
         assert_eq!(dry_run.manifest.auth_file_count, 1);
+        assert!(dry_run.manifest.database_included);
+        assert_eq!(dry_run.manifest.backup_scope, BACKUP_SCOPE);
         assert!(dry_run.manifest.includes_credentials);
         assert_eq!(
             fs::read(&env.config_path).expect("config"),
@@ -826,7 +879,7 @@ mod tests {
     #[serial]
     fn restore_rejects_traversal_and_malformed_archive() {
         let _env = test_env();
-        let db = Database::memory().expect("db");
+        let db = test_db();
         let mut gz = GzEncoder::new(Vec::new(), Compression::default());
         gz.write_all(&raw_tar_entry("../manifest.json", b"{}"))
             .expect("write tar");
@@ -876,10 +929,11 @@ mod tests {
     #[serial]
     fn restore_job_success_status() {
         let env = test_env();
-        let db = Database::memory().expect("db");
-        let mut archive = create_config_backup_archive(&db).expect("backup");
+        let db = Arc::new(test_db());
+        let mut archive = create_config_backup_archive(db.as_ref()).expect("backup");
         fs::write(&env.config_path, b"old").expect("overwrite");
-        let started = start_config_restore_job(&db, std::mem::take(&mut archive)).expect("start");
+        let started =
+            start_config_restore_job(db.clone(), std::mem::take(&mut archive)).expect("start");
 
         for _ in 0..50 {
             let event = get_restore_job_event(&started.job_id).expect("job");
@@ -899,9 +953,9 @@ mod tests {
     #[serial]
     fn restore_job_failure_reports_rollback() {
         let env = test_env();
-        let db = Database::memory().expect("db");
+        let db = Arc::new(test_db());
         let archive = b"broken".to_vec();
-        let started = start_config_restore_job(&db, archive).expect("start");
+        let started = start_config_restore_job(db, archive).expect("start");
         for _ in 0..50 {
             let event = get_restore_job_event(&started.job_id).expect("job");
             if event.state == "failed" {
@@ -922,8 +976,8 @@ mod tests {
     #[serial]
     fn restore_rejects_nested_auth_archive_paths() {
         let _env = test_env();
-        let db = Database::memory().expect("db");
-        let manifest = build_manifest(&db, &[]).expect("manifest");
+        let db = test_db();
+        let manifest = build_manifest(&db, &[], false).expect("manifest");
         let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
         {
             let mut tar = Builder::new(&mut encoder);
@@ -959,13 +1013,13 @@ mod tests {
     #[serial]
     fn whole_app_restore_removes_stale_managed_auth_files() {
         let env = test_env();
-        let db = Database::memory().expect("db");
-        let archive = create_config_backup_archive(&db).expect("backup");
+        let db = Arc::new(test_db());
+        let archive = create_config_backup_archive(db.as_ref()).expect("backup");
         let auth_dir = crate::config::get_app_config_dir().join("codex_auth");
         fs::create_dir_all(&auth_dir).expect("auth dir");
         fs::write(auth_dir.join("stale.json"), br#"{"access_token":"stale"}"#).expect("stale auth");
 
-        let started = start_config_restore_job(&db, archive).expect("start");
+        let started = start_config_restore_job(db, archive).expect("start");
         for _ in 0..50 {
             let event = get_restore_job_event(&started.job_id).expect("job");
             if event.state == "done" && event.step == "verify" {
@@ -988,7 +1042,8 @@ mod tests {
     #[serial]
     fn rollback_removes_new_managed_auth_directories() {
         let _env = test_env();
-        let safety = capture_current_files().expect("safety");
+        let db = test_db();
+        let safety = capture_current_files(&db).expect("safety");
         let auth_dir = crate::config::get_app_config_dir().join("claude_auth");
         fs::create_dir_all(&auth_dir).expect("auth dir");
         fs::write(
@@ -997,7 +1052,7 @@ mod tests {
         )
         .expect("created auth");
 
-        rollback_files(&safety).expect("rollback");
+        rollback_files(&db, &safety).expect("rollback");
         assert!(
             !auth_dir.exists(),
             "rollback should remove auth dirs created after the safety snapshot"

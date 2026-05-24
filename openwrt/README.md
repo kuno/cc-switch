@@ -170,16 +170,21 @@ The Daemon card Backup & restore row uses separate whole-app archive endpoints:
 - `GET /openwrt/admin/restore/jobs/<jobId>` returns the latest JSON event, or
   streams JSON SSE events when `Accept: text/event-stream` is sent.
 
-Archive entries are `manifest.json`, `etc/config/ccswitch`, and top-level
-provider auth files under `data/codex_auth/*.json` and
-`data/claude_auth/*.json`. Restore validates regular-file tar entries only,
+Archive entries are `manifest.json`, `etc/config/ccswitch`,
+`data/cc-switch.db`, and top-level provider auth files under
+`data/codex_auth/*.json` and `data/claude_auth/*.json`. The database entry is
+a consistent SQLite snapshot created through SQLite's backup API rather than a
+raw copy of the live file. Restore validates regular-file tar entries only,
 rejects traversal and unsupported paths, validates UCI syntax when `uci` is
-available, writes through temporary files, clears managed auth dirs before
-applying archive auth files, reloads daemon settings in-process, and verifies
-the applied config/auth files plus database schema readability. The manifest
-reports `rollbackSupported: false`; failed apply/verify paths still attempt
-best-effort local file rollback, but the API does not promise automatic
-transactional rollback.
+available, restores the database through SQLite's backup API, writes
+config/auth through temporary files, clears managed auth dirs before applying
+archive auth files, reloads daemon settings in-process, and verifies the
+applied config/auth files plus database schema readability. Older
+config/auth-only archives remain accepted for compatibility, but new archives
+report `backupScope: "full-app"` and `databaseIncluded: true` in the manifest.
+The manifest reports `rollbackSupported: false`; failed apply/verify paths
+still attempt best-effort local file rollback, but the API does not promise
+automatic transactional rollback.
 
 ## LuCI
 

@@ -293,6 +293,56 @@ impl Database {
         }
     }
 
+    pub(crate) fn snapshot_database_bytes(&self) -> Result<Vec<u8>, AppError> {
+        let temp_file = NamedTempFile::new()
+            .map_err(|e| AppError::Config(format!("创建临时数据库快照失败: {e}")))?;
+
+        {
+            let conn = lock_conn!(self.conn);
+            let mut snapshot = Connection::open(temp_file.path())
+                .map_err(|e| AppError::Database(e.to_string()))?;
+            let backup =
+                Backup::new(&conn, &mut snapshot).map_err(|e| AppError::Database(e.to_string()))?;
+            Self::complete_backup(&backup, "创建数据库字节快照")?;
+        }
+
+        fs::read(temp_file.path()).map_err(|e| AppError::io(temp_file.path(), e))
+    }
+
+    pub(crate) fn restore_database_bytes(&self, bytes: &[u8]) -> Result<String, AppError> {
+        if bytes.len() > BACKUP_IMPORT_LIMIT_BYTES {
+            return Err(AppError::InvalidInput(
+                "Database backup payload exceeds import limit".to_string(),
+            ));
+        }
+
+        let temp_file = NamedTempFile::new()
+            .map_err(|e| AppError::Config(format!("创建临时数据库恢复文件失败: {e}")))?;
+        fs::write(temp_file.path(), bytes).map_err(|e| AppError::io(temp_file.path(), e))?;
+        Self::validate_sqlite_backup_file(temp_file.path())?;
+
+        let safety_backup = self.backup_database_file()?;
+        let safety_id = safety_backup
+            .and_then(|p| p.file_stem().map(|s| s.to_string_lossy().to_string()))
+            .unwrap_or_default();
+
+        let source_conn =
+            Connection::open(temp_file.path()).map_err(|e| AppError::Database(e.to_string()))?;
+
+        {
+            let mut main_conn = lock_conn!(self.conn);
+            let backup = Backup::new(&source_conn, &mut main_conn)
+                .map_err(|e| AppError::Database(e.to_string()))?;
+            Self::complete_backup(&backup, "恢复数据库字节备份")?;
+        }
+
+        self.create_tables()?;
+        self.apply_schema_migrations()?;
+        self.ensure_model_pricing_seeded()?;
+
+        Ok(safety_id)
+    }
+
     fn validate_cc_switch_sql_export(sql: &str) -> Result<(), AppError> {
         let trimmed = sql.trim_start();
         if trimmed.starts_with(CC_SWITCH_SQL_EXPORT_HEADER) {
