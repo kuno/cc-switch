@@ -412,9 +412,15 @@ export interface OpenWrtSharedPageShellApi
     filename: string,
     dataBase64: string,
   ): Promise<OpenWrtConfigRestoreDryRunResult>;
+  dryRunConfigRestoreFile?(
+    file: File,
+  ): Promise<OpenWrtConfigRestoreDryRunResult>;
   startConfigRestore?(
     filename: string,
     dataBase64: string,
+  ): Promise<OpenWrtConfigRestoreStartResult>;
+  startConfigRestoreFile?(
+    file: File,
   ): Promise<OpenWrtConfigRestoreStartResult>;
   getConfigRestoreJob?(jobId: string): Promise<OpenWrtConfigRestoreEvent>;
   probeConfigBackupRestore?(): Promise<OpenWrtConfigBackupRestoreCapability>;
