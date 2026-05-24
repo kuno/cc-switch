@@ -180,15 +180,37 @@
         "lastBackupNever": "Last backup: never",
         "ariaLabel": "Backup and restore",
         "iconAria": "Backup",
-        "backendPending": "Backend pending",
-        "backendPendingAria": "Backend support pending",
-        "backendPendingTip": "Daemon endpoints for backup and restore are not implemented yet. The buttons are disabled until the backend ships.",
+        "backendStatus": {
+          "pending": {
+            "label": "Checking backend",
+            "aria": "Checking backend support",
+            "tip": "Checking whether the daemon backup and restore endpoints are available."
+          },
+          "available": {
+            "label": "Backend ready",
+            "aria": "Backend support available",
+            "tip": "Daemon backup and restore endpoints responded successfully."
+          },
+          "error": {
+            "label": "Backend unavailable",
+            "aria": "Backend support unavailable",
+            "tip": "The daemon backup and restore endpoints did not respond successfully."
+          }
+        },
         "includesCredentials": "Includes credentials",
         "includesCredentialsAria": "Backup includes credentials",
         "includesCredentialsTip": "Backups contain provider API keys, tokens, and any uploaded auth.json files. Store the file in an encrypted location and never share it.",
         "restoreAction": "Restore…",
         "downloadAction": "Download .tar.gz",
-        "disabledTip": "Backend not available yet — admin endpoints for backup and restore aren't wired in this build."
+        "disabledTip": "Backend not available yet - admin endpoints for backup and restore are still being checked.",
+        "backendErrorTip": "Backend unavailable - daemon backup and restore endpoints did not respond successfully.",
+        "downloadReady": "Backup download is ready.",
+        "confirmRestore": "Restore backup from daemon {{version}} with {{apps}} apps and {{providers}} providers? This replaces the current configuration and verifies it without restarting the daemon.",
+        "restoreStarted": "Configuration restore started.",
+        "restoreDone": "Configuration restored.",
+        "restoreFailed": "Restore failed.",
+        "restoreStillRunning": "Restore is still running. Check the daemon job status before retrying.",
+        "rolledBack": "Rolled back."
       },
       "luciAppLabel": "luci-app-ccswitch",
       "luciAppVersion": "luci-app-ccswitch version",

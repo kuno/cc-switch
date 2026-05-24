@@ -115,19 +115,21 @@ describe("OpenWrtPageShell", () => {
 
     const adminRow = document.querySelector(".owt-admin-row");
     expect(adminRow).not.toBeNull();
-    expect(adminRow).toHaveAttribute("data-backend-status", "pending");
+    await waitFor(() =>
+      expect(adminRow).toHaveAttribute("data-backend-status", "available"),
+    );
     expect(adminRow).toHaveAttribute("aria-label", "Backup and restore");
     expect(adminRow).toHaveTextContent("Backup & restore");
     expect(adminRow).toHaveTextContent("Last backup: never");
-    expect(adminRow).toHaveTextContent("Backend pending");
+    expect(adminRow).toHaveTextContent("Backend ready");
     expect(adminRow).toHaveTextContent("Includes credentials");
 
     const restoreButton = screen.getByRole("button", { name: /Restore…/ });
     const downloadButton = screen.getByRole("button", {
       name: /Download \.tar\.gz/,
     });
-    expect(restoreButton).toBeDisabled();
-    expect(downloadButton).toBeDisabled();
+    expect(restoreButton).toBeEnabled();
+    expect(downloadButton).toBeEnabled();
 
     expect(document.querySelector(".owt-backup-drawer")).toBeNull();
     expect(screen.queryByText(/Database backups/i)).not.toBeInTheDocument();

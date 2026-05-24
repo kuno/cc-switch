@@ -10,14 +10,19 @@ use crate::proxy::server::ProxyState;
 use crate::services::usage_stats::LogFilters;
 use axum::{
     body::Bytes,
-    extract::{Path, Query, State},
-    http::StatusCode,
-    response::{IntoResponse, Response},
+    extract::{DefaultBodyLimit, Multipart, Path, Query, State},
+    http::{header, HeaderMap, StatusCode},
+    response::{
+        sse::{Event, Sse},
+        IntoResponse, Response,
+    },
     routing::{delete, get, post, put},
     Json, Router,
 };
+use futures::Stream;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::{convert::Infallible, time::Duration};
 
 pub(crate) fn mount_openwrt_admin_routes(router: Router<ProxyState>) -> Router<ProxyState> {
     router
@@ -47,6 +52,21 @@ pub(crate) fn mount_openwrt_admin_routes(router: Router<ProxyState>) -> Router<P
         .route(
             "/openwrt/admin/backups/:filename/restore",
             post(openwrt_restore_backup),
+        )
+        .route("/openwrt/admin/backup", get(openwrt_download_config_backup))
+        .route(
+            "/openwrt/admin/restore/capability",
+            get(openwrt_get_config_restore_capability),
+        )
+        .route(
+            "/openwrt/admin/restore",
+            post(openwrt_upload_config_restore).layer(DefaultBodyLimit::max(
+                crate::openwrt_backup_restore::MAX_RESTORE_MULTIPART_BYTES,
+            )),
+        )
+        .route(
+            "/openwrt/admin/restore/jobs/:job_id",
+            get(openwrt_get_config_restore_job),
         )
         .route(
             "/openwrt/admin/apps/:app/runtime",
@@ -214,6 +234,12 @@ struct OpenWrtDaemonLogTailQuery {
     max_bytes: Option<u32>,
 }
 
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OpenWrtRestoreQuery {
+    dry_run: Option<String>,
+}
+
 fn openwrt_admin_ok<T: serde::Serialize>(value: T) -> (StatusCode, Json<Value>) {
     match serde_json::to_value(value) {
         Ok(Value::Object(mut map)) => {
@@ -331,6 +357,150 @@ async fn openwrt_restore_backup(
         Ok(restored) => openwrt_admin_ok(restored),
         Err(error) => openwrt_admin_error(error),
     }
+}
+
+async fn openwrt_download_config_backup(State(state): State<ProxyState>) -> Response {
+    match crate::openwrt_backup_restore::create_config_backup_archive(state.db.as_ref()) {
+        Ok(bytes) => (
+            StatusCode::OK,
+            [
+                (header::CONTENT_TYPE, "application/gzip".to_string()),
+                (
+                    header::CONTENT_DISPOSITION,
+                    format!(
+                        "attachment; filename=\"{}\"",
+                        crate::openwrt_backup_restore::config_backup_filename()
+                    ),
+                ),
+                (header::CONTENT_LENGTH, bytes.len().to_string()),
+            ],
+            Bytes::from(bytes),
+        )
+            .into_response(),
+        Err(error) => openwrt_admin_error(error).into_response(),
+    }
+}
+
+async fn openwrt_get_config_restore_capability() -> (StatusCode, Json<Value>) {
+    openwrt_admin_ok(json!({
+        "available": true,
+        "backupEndpoint": "/openwrt/admin/backup",
+        "restoreEndpoint": "/openwrt/admin/restore",
+        "jobEndpoint": "/openwrt/admin/restore/jobs/:jobId",
+        "rollbackSupported": false,
+        "jobPersistence": "process",
+        "restartDuringRestore": false
+    }))
+}
+
+async fn openwrt_upload_config_restore(
+    State(state): State<ProxyState>,
+    Query(query): Query<OpenWrtRestoreQuery>,
+    multipart: Multipart,
+) -> (StatusCode, Json<Value>) {
+    let archive = match read_restore_archive_upload(multipart).await {
+        Ok(archive) => archive,
+        Err(error) => return openwrt_admin_error(error),
+    };
+
+    let dry_run = matches!(
+        query.dry_run.as_deref(),
+        Some("1") | Some("true") | Some("yes")
+    );
+
+    if dry_run {
+        match crate::openwrt_backup_restore::validate_config_restore_archive(
+            state.db.as_ref(),
+            &archive,
+        ) {
+            Ok(result) => openwrt_admin_ok(result),
+            Err(error) => openwrt_admin_error(error),
+        }
+    } else {
+        match crate::openwrt_backup_restore::start_config_restore_job(state.db.as_ref(), archive) {
+            Ok(result) => match serde_json::to_value(result) {
+                Ok(Value::Object(map)) => (StatusCode::ACCEPTED, Json(Value::Object(map))),
+                Ok(value) => (StatusCode::ACCEPTED, Json(json!({ "value": value }))),
+                Err(error) => openwrt_admin_error(anyhow::anyhow!(
+                    "failed to serialize restore job response: {error}"
+                )),
+            },
+            Err(error) => openwrt_admin_error(error),
+        }
+    }
+}
+
+async fn openwrt_get_config_restore_job(
+    Path(job_id): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    let wants_sse = headers
+        .get(header::ACCEPT)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.contains("text/event-stream"))
+        .unwrap_or(false);
+
+    if wants_sse {
+        match crate::openwrt_backup_restore::get_restore_job_event(&job_id) {
+            Ok(_) => restore_job_sse(job_id).into_response(),
+            Err(error) => openwrt_admin_error(error).into_response(),
+        }
+    } else {
+        match crate::openwrt_backup_restore::get_restore_job_event(&job_id) {
+            Ok(event) => (StatusCode::OK, Json(event)).into_response(),
+            Err(error) => openwrt_admin_error(error).into_response(),
+        }
+    }
+}
+
+async fn read_restore_archive_upload(mut multipart: Multipart) -> anyhow::Result<Vec<u8>> {
+    let mut archive = None;
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to parse multipart upload: {e}"))?
+    {
+        if field.name() == Some("archive") {
+            let bytes = field
+                .bytes()
+                .await
+                .map_err(|e| anyhow::anyhow!("failed to read archive upload: {e}"))?;
+            archive = Some(bytes.to_vec());
+            break;
+        }
+    }
+    archive.ok_or_else(|| anyhow::anyhow!("multipart field `archive` is required"))
+}
+
+fn restore_job_sse(job_id: String) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    let stream = async_stream::stream! {
+        let mut sent = 0usize;
+        loop {
+            match crate::openwrt_backup_restore::get_restore_job_events(&job_id) {
+                Ok(events) => {
+                    for event in events.iter().skip(sent) {
+                        sent += 1;
+                        let data = serde_json::to_string(event).unwrap_or_else(|_| "{}".to_string());
+                        yield Ok(Event::default().data(data));
+                    }
+                    if events.last().map(|event| event.state == "done" || event.state == "failed").unwrap_or(false) {
+                        break;
+                    }
+                }
+                Err(error) => {
+                    yield Ok(Event::default().data(json!({
+                        "step": "validate",
+                        "state": "failed",
+                        "error": error.to_string(),
+                        "rolledBack": false
+                    }).to_string()));
+                    break;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+    };
+    Sse::new(stream)
 }
 
 async fn openwrt_get_runtime_status(State(state): State<ProxyState>) -> (StatusCode, Json<Value>) {

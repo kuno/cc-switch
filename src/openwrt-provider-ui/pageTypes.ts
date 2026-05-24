@@ -327,6 +327,49 @@ export interface OpenWrtBackupRestoreResult {
   uciRestoreSupported: boolean;
 }
 
+export interface OpenWrtConfigBackupDownload {
+  filename: string;
+  dataBase64: string;
+}
+
+export interface OpenWrtConfigBackupManifest {
+  formatVersion: number;
+  exportedAt: string;
+  daemonVersion: string;
+  packageVersion?: string | null;
+  schemaVersion: number;
+  supportedSchemaVersion: number;
+  appCount: number;
+  providerCount: number;
+  includesCredentials: boolean;
+  authFileCount: number;
+  rollbackSupported: boolean;
+  configPath: string;
+  authPaths: string[];
+}
+
+export interface OpenWrtConfigRestoreDryRunResult {
+  manifest: OpenWrtConfigBackupManifest;
+}
+
+export interface OpenWrtConfigRestoreStartResult {
+  jobId: string;
+}
+
+export interface OpenWrtConfigRestoreEvent {
+  step: "validate" | "apply" | "reload" | "verify";
+  state: "active" | "done" | "failed";
+  error?: string | null;
+  rolledBack?: boolean | null;
+}
+
+export interface OpenWrtConfigBackupRestoreCapability {
+  available: boolean;
+  rollbackSupported: boolean;
+  jobPersistence: "process" | "persistent" | string;
+  restartDuringRestore: boolean;
+}
+
 export interface OpenWrtSharedPageShellApi
   extends OpenWrtSharedProviderShellApi {
   getHostState(): OpenWrtHostState;
@@ -360,6 +403,17 @@ export interface OpenWrtSharedPageShellApi
   ): Promise<OpenWrtBackupMutationResult>;
   deleteBackup?(filename: string): Promise<OpenWrtBackupDeleteResult>;
   restoreBackup?(filename: string): Promise<OpenWrtBackupRestoreResult>;
+  downloadConfigBackup?(): Promise<OpenWrtConfigBackupDownload>;
+  dryRunConfigRestore?(
+    filename: string,
+    dataBase64: string,
+  ): Promise<OpenWrtConfigRestoreDryRunResult>;
+  startConfigRestore?(
+    filename: string,
+    dataBase64: string,
+  ): Promise<OpenWrtConfigRestoreStartResult>;
+  getConfigRestoreJob?(jobId: string): Promise<OpenWrtConfigRestoreEvent>;
+  probeConfigBackupRestore?(): Promise<OpenWrtConfigBackupRestoreCapability>;
   getRecentActivity(
     appId: SharedProviderAppId,
   ): Promise<OpenWrtRecentActivityItem[]>;

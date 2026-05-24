@@ -658,6 +658,66 @@ function downloadBackup(filename) {
 	};
 }
 
+function downloadConfigBackup() {
+	let url = buildAdminUrl('/openwrt/admin/backup');
+	let command = `tmp="/tmp/ccswitch-config-backup.$$"; ` +
+		`${shellquote(CURL)} -fsS --max-time 30 ${shellquote(url)} -D "$tmp.headers" -o "$tmp" && ` +
+		`fname="$(sed -n 's/.*filename="\\([^"]*\\)".*/\\1/p' "$tmp.headers" | head -n1)"; ` +
+		`[ -n "$fname" ] || fname="ccswitch-backup.tar.gz"; ` +
+		`printf '%s\\n' "$fname"; ${shellquote(BASE64)} "$tmp"; ` +
+		`code=$?; rm -f "$tmp" "$tmp.headers"; exit $code`;
+	let result = runReadCommand(command);
+	let lines, filename, data;
+
+	if (!result.ok)
+		return { ok: false, error: result.error || 'config backup download failed' };
+
+	lines = split(result.output || '', "\n");
+	filename = lines[0] || 'ccswitch-backup.tar.gz';
+	shift(lines);
+	data = replace(join('', lines), "\r", '');
+
+	return { ok: true, filename: filename, dataBase64: data };
+}
+
+function uploadConfigRestore(filename, dataBase64, dryRun) {
+	let url = buildAdminUrl(dryRun ? '/openwrt/admin/restore?dryRun=1' : '/openwrt/admin/restore');
+	let command, result, parsed;
+
+	if (!dataBase64)
+		return { ok: false, error: 'data_base64 is required' };
+
+	command = `tmp="/tmp/ccswitch-restore.$$"; ` +
+		`printf %s ${shellquote(dataBase64)} | ${shellquote(BASE64)} -d > "$tmp" && ` +
+		`${shellquote(CURL)} -fsS --max-time 60 -X POST -F ${shellquote('archive=@')}"$tmp;filename=restore.tar.gz" ${shellquote(url)}; ` +
+		`code=$?; rm -f "$tmp"; exit $code`;
+	result = runReadCommand(command);
+
+	if (!result.ok)
+		return { ok: false, error: result.error || 'config restore upload failed' };
+
+	parsed = json(result.output);
+	if (parsed == null)
+		return { ok: false, error: 'invalid JSON from daemon' };
+
+	if (parsed.ok === false)
+		return { ok: false, error: parsed.error || 'daemon request failed' };
+
+	parsed.ok = true;
+	return parsed;
+}
+
+function getConfigRestoreJob(jobId) {
+	if (!jobId)
+		return { ok: false, error: 'job_id is required' };
+
+	return runAdminHttpJson('GET', '/openwrt/admin/restore/jobs/' + percentEncodePath(jobId));
+}
+
+function probeConfigBackupRestore() {
+	return runAdminHttpJson('GET', '/openwrt/admin/restore/capability');
+}
+
 function upsertProvider(app, providerId, provider) {
 	let normalizedApp = normalizeApp(app);
 
@@ -1174,6 +1234,50 @@ return {
 
 			call: function(request) {
 				return downloadBackup(request.args.filename);
+			}
+		},
+
+		download_config_backup: {
+			call: function() {
+				return downloadConfigBackup();
+			}
+		},
+
+		dry_run_config_restore: {
+			args: {
+				filename: 'backup.tar.gz',
+				data_base64: ''
+			},
+
+			call: function(request) {
+				return uploadConfigRestore(request.args.filename, request.args.data_base64, true);
+			}
+		},
+
+		start_config_restore: {
+			args: {
+				filename: 'backup.tar.gz',
+				data_base64: ''
+			},
+
+			call: function(request) {
+				return uploadConfigRestore(request.args.filename, request.args.data_base64, false);
+			}
+		},
+
+		get_config_restore_job: {
+			args: {
+				job_id: ''
+			},
+
+			call: function(request) {
+				return getConfigRestoreJob(request.args.job_id);
+			}
+		},
+
+		probe_config_backup_restore: {
+			call: function() {
+				return probeConfigBackupRestore();
 			}
 		},
 

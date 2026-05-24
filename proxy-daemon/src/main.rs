@@ -17,6 +17,7 @@ mod hermes_config;
 mod openclaw_config;
 mod opencode_config;
 mod openwrt_admin;
+mod openwrt_backup_restore;
 mod openwrt_http;
 mod prompt;
 mod prompt_files;

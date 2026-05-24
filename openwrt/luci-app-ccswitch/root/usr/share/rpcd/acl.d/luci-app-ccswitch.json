@@ -30,6 +30,9 @@
 					"get_status",
 					"list_backups",
 					"download_backup",
+					"download_config_backup",
+					"get_config_restore_job",
+					"probe_config_backup_restore",
 					"get_available_failover_providers"
 				]
 			}
@@ -60,7 +63,9 @@
 					"create_backup",
 					"import_backup",
 					"delete_backup",
-					"restore_backup"
+					"restore_backup",
+					"dry_run_config_restore",
+					"start_config_restore"
 				]
 			}
 		}

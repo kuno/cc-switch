@@ -580,6 +580,11 @@ export function OpenWrtPageShell({ options }: OpenWrtPageShellProps) {
               onImportBackup={shell.importBackup?.bind(shell)}
               onDeleteBackup={shell.deleteBackup?.bind(shell)}
               onRestoreBackup={shell.restoreBackup?.bind(shell)}
+              onDownloadConfigBackup={shell.downloadConfigBackup?.bind(shell)}
+              onDryRunConfigRestore={shell.dryRunConfigRestore?.bind(shell)}
+              onStartConfigRestore={shell.startConfigRestore?.bind(shell)}
+              onGetConfigRestoreJob={shell.getConfigRestoreJob?.bind(shell)}
+              onProbeConfigBackupRestore={shell.probeConfigBackupRestore?.bind(shell)}
               onNotify={shell.showMessage.bind(shell)}
             />
           </div>
