@@ -1,12 +1,11 @@
 'use strict';
 
-import { popen } from 'fs';
+import { popen, readfile, writefile, unlink } from 'fs';
 import { cursor } from 'uci';
 
 const DATA_DIR = '/etc/cc-switch';
 const BINARY = '/usr/bin/cc-switch';
 const CURL = '/usr/bin/curl';
-const BASE64 = '/usr/bin/base64';
 const INIT_SCRIPT = '/etc/init.d/ccswitch';
 const DEFAULT_APP = 'claude';
 const DEFAULT_ADMIN_PORT = '15721';
@@ -62,6 +61,87 @@ function runReadCommand(command) {
 		code: code,
 		output: output
 	};
+}
+
+function makeTempFile(prefix) {
+	let result = runReadCommand(`${shellquote('/bin/mktemp')} ${shellquote('/tmp/' + prefix + '.XXXXXX')} 2>&1`);
+	let path;
+
+	if (!result.ok)
+		return null;
+
+	path = trim(result.output || '');
+	if (!path)
+		return null;
+
+	return path;
+}
+
+function removeTempFile(path) {
+	if (path)
+		unlink(path);
+}
+
+function readFileBase64(path, emptyError) {
+	let data = readfile(path);
+
+	if (data == null)
+		return { ok: false, error: 'failed to read temporary file' };
+
+	if (length(data) == 0)
+		return { ok: false, error: emptyError };
+
+	return { ok: true, dataBase64: b64enc(data) };
+}
+
+function writeBase64File(path, dataBase64) {
+	let data = b64dec(dataBase64);
+	let written;
+
+	if (data == null)
+		return false;
+
+	written = writefile(path, data);
+	return written !== false && written != null;
+}
+
+function contentDispositionFilename(headers, fallback) {
+	let lines = split(headers || '', "\n");
+	let marker, start, rest, end, i, line;
+
+	for (i = 0; i < length(lines); i++) {
+		line = trim(lines[i]);
+		marker = 'filename="';
+		start = index(line, marker);
+
+		if (start >= 0) {
+			start += length(marker);
+			rest = substr(line, start);
+			end = index(rest, '"');
+
+			if (end >= 0)
+				return substr(rest, 0, end);
+
+			if (rest)
+				return rest;
+		}
+
+		marker = 'filename=';
+		start = index(line, marker);
+
+		if (start >= 0) {
+			rest = trim(substr(line, start + length(marker)));
+			end = index(rest, ';');
+
+			if (end >= 0)
+				rest = trim(substr(rest, 0, end));
+
+			if (rest)
+				return rest;
+		}
+	}
+
+	return fallback;
 }
 
 function getAdminListenPort() {
@@ -632,66 +712,87 @@ function restoreBackup(filename) {
 
 function downloadBackup(filename) {
 	let invalid = requireBackupFilename(filename);
-	let url, command, result, data;
+	let url, command, result, tmp, encoded;
 	if (invalid)
 		return invalid;
 
+	tmp = makeTempFile('ccswitch-backup-download');
+	if (!tmp)
+		return { ok: false, error: 'failed to create temporary file' };
+
 	url = buildAdminUrl(`${adminBackupPath(filename)}/download`);
-	command = `tmp="/tmp/ccswitch-backup-download.$$"; ` +
-		`${shellquote(CURL)} -fsS --max-time 30 ${shellquote(url)} -o "$tmp" && ` +
-		`${shellquote(BASE64)} "$tmp"; code=$?; rm -f "$tmp"; exit $code`;
+	command = `${shellquote(CURL)} -fsS --max-time 30 ${shellquote(url)} -o ${shellquote(tmp)} 2>&1`;
 	result = runReadCommand(command);
 
-	if (!result.ok)
+	if (!result.ok) {
+		removeTempFile(tmp);
 		return { ok: false, error: result.error || 'backup download failed' };
+	}
 
-	data = replace(result.output || '', "\n", '');
-	data = replace(data, "\r", '');
+	encoded = readFileBase64(tmp, 'backup download returned empty payload');
+	removeTempFile(tmp);
 
-	if (!data)
-		return { ok: false, error: 'backup download returned empty payload' };
+	if (!encoded.ok)
+		return encoded;
 
 	return {
 		ok: true,
 		filename: '' + filename,
-		dataBase64: data
+		dataBase64: encoded.dataBase64
 	};
 }
 
 function downloadConfigBackup() {
 	let url = buildAdminUrl('/openwrt/admin/backup');
-	let command = `tmp="/tmp/ccswitch-config-backup.$$"; ` +
-		`${shellquote(CURL)} -fsS --max-time 30 ${shellquote(url)} -D "$tmp.headers" -o "$tmp" && ` +
-		`fname="$(sed -n 's/.*filename="\\([^"]*\\)".*/\\1/p' "$tmp.headers" | head -n1)"; ` +
-		`[ -n "$fname" ] || fname="ccswitch-backup.tar.gz"; ` +
-		`printf '%s\\n' "$fname"; ${shellquote(BASE64)} "$tmp"; ` +
-		`code=$?; rm -f "$tmp" "$tmp.headers"; exit $code`;
-	let result = runReadCommand(command);
-	let lines, filename, data;
+	let tmp = makeTempFile('ccswitch-config-backup');
+	let headers = makeTempFile('ccswitch-config-backup-headers');
+	let command, result, filename, encoded;
 
-	if (!result.ok)
+	if (!tmp || !headers) {
+		removeTempFile(tmp);
+		removeTempFile(headers);
+		return { ok: false, error: 'failed to create temporary file' };
+	}
+
+	command = `${shellquote(CURL)} -fsS --max-time 30 ${shellquote(url)} -D ${shellquote(headers)} -o ${shellquote(tmp)} 2>&1`;
+	result = runReadCommand(command);
+
+	if (!result.ok) {
+		removeTempFile(tmp);
+		removeTempFile(headers);
 		return { ok: false, error: result.error || 'config backup download failed' };
+	}
 
-	lines = split(result.output || '', "\n");
-	filename = lines[0] || 'ccswitch-backup.tar.gz';
-	shift(lines);
-	data = replace(join('', lines), "\r", '');
+	filename = contentDispositionFilename(readfile(headers), 'ccswitch-backup.tar.gz');
+	encoded = readFileBase64(tmp, 'config backup download returned empty payload');
+	removeTempFile(tmp);
+	removeTempFile(headers);
 
-	return { ok: true, filename: filename, dataBase64: data };
+	if (!encoded.ok)
+		return encoded;
+
+	return { ok: true, filename: filename, dataBase64: encoded.dataBase64 };
 }
 
 function uploadConfigRestore(filename, dataBase64, dryRun) {
 	let url = buildAdminUrl(dryRun ? '/openwrt/admin/restore?dryRun=1' : '/openwrt/admin/restore');
-	let command, result, parsed;
+	let command, result, parsed, tmp;
 
 	if (!dataBase64)
 		return { ok: false, error: 'data_base64 is required' };
 
-	command = `tmp="/tmp/ccswitch-restore.$$"; ` +
-		`printf %s ${shellquote(dataBase64)} | ${shellquote(BASE64)} -d > "$tmp" && ` +
-		`${shellquote(CURL)} -fsS --max-time 60 -X POST -F ${shellquote('archive=@')}"$tmp;filename=restore.tar.gz" ${shellquote(url)}; ` +
-		`code=$?; rm -f "$tmp"; exit $code`;
+	tmp = makeTempFile('ccswitch-restore');
+	if (!tmp)
+		return { ok: false, error: 'failed to create temporary file' };
+
+	if (!writeBase64File(tmp, dataBase64)) {
+		removeTempFile(tmp);
+		return { ok: false, error: 'invalid restore payload' };
+	}
+
+	command = `${shellquote(CURL)} -fsS --max-time 60 -X POST -F ${shellquote('archive=@' + tmp + ';filename=restore.tar.gz')} ${shellquote(url)} 2>&1`;
 	result = runReadCommand(command);
+	removeTempFile(tmp);
 
 	if (!result.ok)
 		return { ok: false, error: result.error || 'config restore upload failed' };
