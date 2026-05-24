@@ -564,6 +564,13 @@ function getDaemonApiBaseUrl() {
 	return baseUrl.replace(/\/openwrt\/admin\/?$/, '');
 }
 
+function getLuciConfigBackupProxyBaseUrl() {
+	if (typeof L !== 'undefined' && L && typeof L.url === 'function')
+		return L.url('admin/services/ccswitch/proxy');
+
+	return null;
+}
+
 function configBackupBlobFromBase64(filename, dataBase64) {
 	var binary, bytes, index;
 
@@ -581,23 +588,36 @@ function configBackupBlobFromBase64(filename, dataBase64) {
 	return new Blob([bytes], { type: 'application/gzip' });
 }
 
-function callDaemonConfigRestoreDirect(filename, dataBase64, dryRun) {
+function callConfigRestoreMultipart(filename, archive, dryRun) {
 	var adminBaseUrl = getDaemonAdminBaseUrl();
-	var form, archive;
+	var proxyBaseUrl = null;
+	var form, url, token;
 
-	if (!adminBaseUrl || typeof window === 'undefined' || typeof window.fetch !== 'function' || typeof FormData === 'undefined')
+	if (typeof window === 'undefined' || typeof window.fetch !== 'function' || typeof FormData === 'undefined')
 		return null;
 
-	archive = configBackupBlobFromBase64(filename, dataBase64);
-	if (!archive)
+	if (!adminBaseUrl)
+		proxyBaseUrl = getLuciConfigBackupProxyBaseUrl();
+
+	if (!adminBaseUrl && !proxyBaseUrl)
 		return null;
 
 	form = new FormData();
 	form.append('archive', archive, filename || 'restore.tar.gz');
 
-	return window.fetch(adminBaseUrl + (dryRun ? '/restore?dryRun=1' : '/restore'), {
+	if (adminBaseUrl) {
+		url = adminBaseUrl + (dryRun ? '/restore?dryRun=1' : '/restore');
+	} else {
+		token = L && L.env ? L.env.token : '';
+		url = proxyBaseUrl + '/restore?token=' + encodeURIComponent(token || '');
+		if (dryRun)
+			url += '&dryRun=1';
+	}
+
+	return window.fetch(url, {
 		method: 'POST',
-		body: form
+		body: form,
+		credentials: 'same-origin'
 	}).then(function (response) {
 		return response.json().catch(function () {
 			return {};
@@ -609,6 +629,15 @@ function callDaemonConfigRestoreDirect(filename, dataBase64, dryRun) {
 			return payload;
 		});
 	});
+}
+
+function callConfigRestoreBase64Multipart(filename, dataBase64, dryRun) {
+	var archive = configBackupBlobFromBase64(filename, dataBase64);
+
+	if (!archive)
+		return null;
+
+	return callConfigRestoreMultipart(filename, archive, dryRun);
 }
 
 function readDaemonAdminJson(response) {
@@ -1930,12 +1959,21 @@ return view.extend({
 
 	downloadConfigBackup: function () {
 		var adminBaseUrl = getDaemonAdminBaseUrl();
+		var proxyBaseUrl = getLuciConfigBackupProxyBaseUrl();
 
 		if (adminBaseUrl) {
 			return Promise.resolve({
 				filename: 'ccswitch-backup.tar.gz',
 				dataBase64: '',
 				downloadUrl: adminBaseUrl + '/backup'
+			});
+		}
+
+		if (proxyBaseUrl) {
+			return Promise.resolve({
+				filename: 'ccswitch-backup.tar.gz',
+				dataBase64: '',
+				downloadUrl: proxyBaseUrl + '/backup'
 			});
 		}
 
@@ -1951,7 +1989,7 @@ return view.extend({
 	},
 
 	dryRunConfigRestore: function (filename, dataBase64) {
-		var directRestore = callDaemonConfigRestoreDirect(filename, dataBase64, true);
+		var directRestore = callConfigRestoreBase64Multipart(filename, dataBase64, true);
 
 		if (directRestore)
 			return directRestore.then(L.bind(function (response) {
@@ -1969,8 +2007,22 @@ return view.extend({
 		}, this));
 	},
 
+	dryRunConfigRestoreFile: function (file) {
+		var restore = callConfigRestoreMultipart(file && file.name ? file.name : 'restore.tar.gz', file, true);
+
+		if (!restore)
+			return Promise.reject(new Error(_('Failed to inspect configuration backup.')));
+
+		return restore.then(L.bind(function (response) {
+			if (!this.isRpcSuccess(response))
+				throw new Error(this.rpcFailureMessage(response) || _('Failed to inspect configuration backup.'));
+
+			return { manifest: response.manifest || {} };
+		}, this));
+	},
+
 	startConfigRestore: function (filename, dataBase64) {
-		var directRestore = callDaemonConfigRestoreDirect(filename, dataBase64, false);
+		var directRestore = callConfigRestoreBase64Multipart(filename, dataBase64, false);
 
 		if (directRestore)
 			return directRestore.then(L.bind(function (response) {
@@ -1981,6 +2033,20 @@ return view.extend({
 			}, this));
 
 		return L.resolveDefault(callOpenWrtStartConfigRestore(filename, dataBase64), { ok: false }).then(L.bind(function (response) {
+			if (!this.isRpcSuccess(response))
+				throw new Error(this.rpcFailureMessage(response) || _('Failed to start configuration restore.'));
+
+			return { jobId: response.jobId != null ? String(response.jobId) : String(response.job_id || '') };
+		}, this));
+	},
+
+	startConfigRestoreFile: function (file) {
+		var restore = callConfigRestoreMultipart(file && file.name ? file.name : 'restore.tar.gz', file, false);
+
+		if (!restore)
+			return Promise.reject(new Error(_('Failed to start configuration restore.')));
+
+		return restore.then(L.bind(function (response) {
 			if (!this.isRpcSuccess(response))
 				throw new Error(this.rpcFailureMessage(response) || _('Failed to start configuration restore.'));
 
@@ -3436,8 +3502,14 @@ return view.extend({
 			dryRunConfigRestore: async function (filename, dataBase64) {
 				return self.dryRunConfigRestore(filename, dataBase64);
 			},
+			dryRunConfigRestoreFile: async function (file) {
+				return self.dryRunConfigRestoreFile(file);
+			},
 			startConfigRestore: async function (filename, dataBase64) {
 				return self.startConfigRestore(filename, dataBase64);
+			},
+			startConfigRestoreFile: async function (file) {
+				return self.startConfigRestoreFile(file);
 			},
 				getConfigRestoreJob: async function (jobId) {
 					return self.getConfigRestoreJob(jobId);

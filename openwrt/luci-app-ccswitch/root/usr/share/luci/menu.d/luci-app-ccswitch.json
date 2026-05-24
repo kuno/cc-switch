@@ -12,5 +12,35 @@
 				"ccswitch": true
 			}
 		}
+	},
+	"admin/services/ccswitch/proxy/backup": {
+		"action": {
+			"type": "function",
+			"module": "luci.controller.ccswitch.proxy",
+			"function": "action_backup"
+		},
+		"depends": {
+			"acl": ["luci-app-ccswitch"]
+		}
+	},
+	"admin/services/ccswitch/proxy/restore": {
+		"action": {
+			"type": "function",
+			"module": "luci.controller.ccswitch.proxy",
+			"function": "action_restore"
+		},
+		"depends": {
+			"acl": ["luci-app-ccswitch"]
+		}
+	},
+	"admin/services/ccswitch/proxy/restore/*": {
+		"action": {
+			"type": "function",
+			"module": "luci.controller.ccswitch.proxy",
+			"function": "action_restore_job"
+		},
+		"depends": {
+			"acl": ["luci-app-ccswitch"]
+		}
 	}
 }

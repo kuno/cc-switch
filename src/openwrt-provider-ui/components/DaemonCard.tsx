@@ -95,10 +95,14 @@ export interface DaemonCardProps {
     filename: string,
     dataBase64: string,
   ) => Promise<{ manifest: OpenWrtConfigBackupManifest }>;
+  onDryRunConfigRestoreFile?: (
+    file: File,
+  ) => Promise<{ manifest: OpenWrtConfigBackupManifest }>;
   onStartConfigRestore?: (
     filename: string,
     dataBase64: string,
   ) => Promise<{ jobId: string }>;
+  onStartConfigRestoreFile?: (file: File) => Promise<{ jobId: string }>;
   onGetConfigRestoreJob?: (
     jobId: string,
   ) => Promise<OpenWrtConfigRestoreEvent>;
@@ -237,7 +241,9 @@ export function DaemonCard({
   onLoadDaemonLogTail,
   onDownloadConfigBackup,
   onDryRunConfigRestore,
+  onDryRunConfigRestoreFile,
   onStartConfigRestore,
+  onStartConfigRestoreFile,
   onGetConfigRestoreJob,
   onProbeConfigBackupRestore,
   onNotify,
@@ -296,8 +302,8 @@ export function DaemonCard({
     let cancelled = false;
     const hasCallbacks =
       onDownloadConfigBackup &&
-      onDryRunConfigRestore &&
-      onStartConfigRestore &&
+      ((onDryRunConfigRestore && onStartConfigRestore) ||
+        (onDryRunConfigRestoreFile && onStartConfigRestoreFile)) &&
       onGetConfigRestoreJob &&
       onProbeConfigBackupRestore;
 
@@ -323,9 +329,11 @@ export function DaemonCard({
   }, [
     onDownloadConfigBackup,
     onDryRunConfigRestore,
+    onDryRunConfigRestoreFile,
     onGetConfigRestoreJob,
     onProbeConfigBackupRestore,
     onStartConfigRestore,
+    onStartConfigRestoreFile,
   ]);
 
   useEffect(() => {
@@ -553,10 +561,21 @@ export function DaemonCard({
 
   const handleRestoreFile = useCallback(
     async (file: File) => {
-      if (!onDryRunConfigRestore || !onStartConfigRestore) return;
+      if (
+        (!onDryRunConfigRestore || !onStartConfigRestore) &&
+        (!onDryRunConfigRestoreFile || !onStartConfigRestoreFile)
+      ) {
+        return;
+      }
+
       try {
-        const dataBase64 = await fileToBase64(file);
-        const dryRun = await onDryRunConfigRestore(file.name, dataBase64);
+        const useFileUpload = !!(
+          onDryRunConfigRestoreFile && onStartConfigRestoreFile
+        );
+        const dataBase64 = useFileUpload ? "" : await fileToBase64(file);
+        const dryRun = useFileUpload
+          ? await onDryRunConfigRestoreFile(file)
+          : await onDryRunConfigRestore!(file.name, dataBase64);
         const confirmed = window.confirm(
           t("openwrt.daemon.backupRestore.confirmRestore", {
             apps: dryRun.manifest.appCount,
@@ -565,7 +584,9 @@ export function DaemonCard({
           }),
         );
         if (!confirmed) return;
-        const started = await onStartConfigRestore(file.name, dataBase64);
+        const started = useFileUpload
+          ? await onStartConfigRestoreFile!(file)
+          : await onStartConfigRestore!(file.name, dataBase64);
         onNotify?.("info", t("openwrt.daemon.backupRestore.restoreStarted"));
         void pollRestoreJob(started.jobId);
       } catch (error) {
@@ -577,8 +598,10 @@ export function DaemonCard({
     [
       fileToBase64,
       onDryRunConfigRestore,
+      onDryRunConfigRestoreFile,
       onNotify,
       onStartConfigRestore,
+      onStartConfigRestoreFile,
       pollRestoreJob,
       t,
     ],

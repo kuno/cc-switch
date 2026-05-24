@@ -783,4 +783,79 @@ describe("DaemonCard", () => {
     expect(accept).not.toMatch(/\.json/);
     expect(accept).not.toMatch(/\.db/);
   });
+
+  it("uses direct file restore callbacks without base64 encoding when available", async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const fileReaderSpy = vi.spyOn(FileReader.prototype, "readAsDataURL");
+    const onDryRunConfigRestore = vi.fn();
+    const onStartConfigRestore = vi.fn();
+    const onDryRunConfigRestoreFile = vi.fn(async () => ({
+      manifest: {
+        formatVersion: 1,
+        backupScope: "full-app",
+        exportedAt: "2026-05-24T00:00:00Z",
+        daemonVersion: "v3.14.1-test",
+        schemaVersion: 12,
+        supportedSchemaVersion: 12,
+        appCount: 2,
+        providerCount: 5,
+        includesCredentials: true,
+        authFileCount: 2,
+        databaseIncluded: true,
+        rollbackSupported: false,
+        configPath: "/etc/config/ccswitch",
+        databasePath: "/etc/cc-switch/cc-switch.db",
+        authPaths: [],
+      },
+    }));
+    const onStartConfigRestoreFile = vi.fn(async () => ({
+      jobId: "restore-job-1",
+    }));
+    const onGetConfigRestoreJob = vi.fn(async () => ({
+      step: "verify",
+      state: "done",
+      error: null,
+      rolledBack: false,
+    }));
+    const { card } = renderDaemonCard(
+      {},
+      {
+        onProbeConfigBackupRestore: vi.fn(async () => ({ available: true })),
+        onDryRunConfigRestore,
+        onStartConfigRestore,
+        onDryRunConfigRestoreFile,
+        onStartConfigRestoreFile,
+        onGetConfigRestoreJob,
+      },
+    );
+
+    await waitFor(() => {
+      expect(
+        within(card).getByRole("button", { name: /Restore…/ }),
+      ).toBeEnabled();
+    });
+
+    const input = card.querySelector<HTMLInputElement>('input[type="file"]');
+    const file = new File(["archive"], "ccswitch-backup.tar.gz", {
+      type: "application/gzip",
+    });
+
+    if (!input) {
+      throw new Error("Expected restore file input to render");
+    }
+
+    await user.upload(input, file);
+
+    await waitFor(() => {
+      expect(onStartConfigRestoreFile).toHaveBeenCalledWith(file);
+    });
+    expect(onDryRunConfigRestoreFile).toHaveBeenCalledWith(file);
+    expect(onDryRunConfigRestore).not.toHaveBeenCalled();
+    expect(onStartConfigRestore).not.toHaveBeenCalled();
+    expect(fileReaderSpy).not.toHaveBeenCalled();
+
+    confirmSpy.mockRestore();
+    fileReaderSpy.mockRestore();
+  });
 });

@@ -186,6 +186,18 @@ The manifest reports `rollbackSupported: false`; failed apply/verify paths
 still attempt best-effort local file rollback, but the API does not promise
 automatic transactional rollback.
 
+When LuCI is loaded over plain HTTP, the browser can upload/download archives
+directly against the daemon admin listener. When LuCI is loaded over HTTPS, the
+browser cannot POST an active mixed-content request to the daemon's HTTP admin
+port, so the LuCI app uses authenticated same-origin proxy routes instead:
+
+- `GET /cgi-bin/luci/admin/services/ccswitch/proxy/backup`
+- `POST /cgi-bin/luci/admin/services/ccswitch/proxy/restore?token=<luci-token>`
+- `POST /cgi-bin/luci/admin/services/ccswitch/proxy/restore?dryRun=1&token=<luci-token>`
+
+These proxy routes forward the raw multipart body to the daemon without the
+older rpcd/base64 bridge, so large full-app archives remain usable over HTTPS.
+
 ## LuCI
 
 Open the LuCI page at:
