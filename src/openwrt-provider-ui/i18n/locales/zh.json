@@ -181,20 +181,25 @@
         "ariaLabel": "备份与恢复",
         "iconAria": "备份",
         "backendStatus": {
+          "checking": {
+            "label": "正在检查备份支持…",
+            "aria": "正在检查备份支持",
+            "tip": "正在检查守护进程是否支持备份与恢复…"
+          },
           "pending": {
-            "label": "正在检查后端",
-            "aria": "正在检查后端支持",
-            "tip": "正在检查守护进程备份与恢复接口是否可用。"
+            "label": "当前构建未包含",
+            "aria": "当前守护进程构建未包含备份支持",
+            "tip": "当前守护进程构建尚未实现备份与恢复接口。"
           },
           "available": {
-            "label": "后端就绪",
-            "aria": "后端支持可用",
-            "tip": "守护进程备份与恢复接口已成功响应。"
+            "label": "可用",
+            "aria": "备份支持可用",
+            "tip": "守护进程备份与恢复接口可用。"
           },
           "error": {
-            "label": "后端不可用",
-            "aria": "后端支持不可用",
-            "tip": "守护进程备份与恢复接口未成功响应。"
+            "label": "检查失败",
+            "aria": "备份支持检查失败",
+            "tip": "守护进程备份与恢复能力检查失败。"
           }
         },
         "includesCredentials": "含凭据",
@@ -202,9 +207,16 @@
         "includesCredentialsTip": "备份会包含提供方 API Key、令牌及上传的 auth.json 文件。请妥善保管，不要分享。",
         "restoreAction": "恢复…",
         "downloadAction": "下载 .tar.gz",
-        "disabledTip": "后端尚未就绪 - 正在检查备份与恢复接口。",
-        "backendErrorTip": "后端不可用 - 守护进程备份与恢复接口未成功响应。",
-        "downloadReady": "备份下载已准备好。",
+        "downloadGenerating": "正在生成备份…",
+        "disabledTip": {
+          "checking": "正在检查守护进程是否支持备份与恢复…",
+          "pending": "当前守护进程构建尚未实现备份与恢复接口。",
+          "available": "",
+          "error": "请修复或重试备份支持检查后再使用备份与恢复。"
+        },
+        "backendErrorDetail": "备份支持检查失败。守护进程未确认备份与恢复能力。",
+        "downloadReady": "备份已就绪：{{filename}}",
+        "retry": "重试",
         "confirmRestore": "要恢复来自守护进程 {{version}} 的备份吗？包含 {{apps}} 个应用和 {{providers}} 个提供方。此操作会替换当前配置并在不重启守护进程的情况下校验结果。",
         "restoreStarted": "配置恢复已开始。",
         "restoreDone": "配置已恢复。",

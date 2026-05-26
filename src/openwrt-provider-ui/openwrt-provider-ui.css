@@ -5028,10 +5028,7 @@ select.owt-provider-panel__input {
   align-items: center;
 }
 
-/* "Backend pending" — dashed border, uppercase. Signals the daemon endpoints
-   are not implemented yet so reviewers don't mistake the row for a working
-   feature. */
-.owt-admin-row__pending {
+.owt-admin-row__capability {
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -5049,9 +5046,24 @@ select.owt-provider-panel__input {
   letter-spacing: 0.04em;
 }
 
-.owt-admin-row__pending svg {
+.owt-admin-row__capability svg {
   width: 11px;
   height: 11px;
+}
+
+.owt-admin-row[data-backend-status="checking"] .owt-admin-row__capability {
+  background: rgba(59, 130, 246, 0.1);
+  color: #2563eb;
+  border-style: solid;
+  border-color: rgba(37, 99, 235, 0.22);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.owt-admin-row[data-backend-status="pending"] .owt-admin-row__capability {
+  background: rgba(245, 158, 11, 0.08);
+  color: var(--warn);
+  border-color: var(--warn-line);
 }
 
 /* "Includes credentials" — warn chip, lock icon. Sits inline with the
@@ -5080,7 +5092,7 @@ select.owt-provider-panel__input {
 
 /* Tooltip shown on hover/focus of admin row chips. Mirrors the design's
    instant data-tip pattern (native title= is slow + easy to miss). */
-.owt-admin-row__pending::after,
+.owt-admin-row__capability::after,
 .owt-admin-row__secret::after {
   content: attr(data-tip);
   position: absolute;
@@ -5108,23 +5120,20 @@ select.owt-provider-panel__input {
   z-index: 30;
 }
 
-.owt-admin-row__pending:hover::after,
-.owt-admin-row__pending:focus-visible::after,
+.owt-admin-row__capability:hover::after,
+.owt-admin-row__capability:focus-visible::after,
 .owt-admin-row__secret:hover::after,
 .owt-admin-row__secret:focus-visible::after {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
 
-.owt-admin-row__pending:not([data-tip])::after,
+.owt-admin-row__capability:not([data-tip])::after,
 .owt-admin-row__secret:not([data-tip])::after {
   display: none;
 }
 
-.owt-admin-row[data-backend-status="available"] .owt-admin-row__pending {
-  display: none;
-}
-
+.owt-admin-row[data-backend-status="checking"] .owt-pill[disabled],
 .owt-admin-row[data-backend-status="pending"] .owt-pill[disabled],
 .owt-admin-row[data-backend-status="error"] .owt-pill[disabled] {
   opacity: 0.55;
@@ -5166,6 +5175,44 @@ select.owt-provider-panel__input {
 .owt-admin-row .owt-pill[disabled][data-tip-disabled]:focus-visible::after {
   opacity: 1;
   transform: translateY(0);
+}
+
+.owt-admin-row__error-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 4px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--fail-line);
+  border-radius: 10px;
+  background: var(--fail-soft);
+  color: var(--fail);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.owt-admin-row__error-strip span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.owt-admin-row__retry {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--fail-line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--fail);
+  font-size: 11px;
+  font-weight: 720;
+  cursor: pointer;
+}
+
+.owt-admin-row__retry:hover {
+  background: var(--fail-soft);
 }
 
 .owt-log-drawer__summary {

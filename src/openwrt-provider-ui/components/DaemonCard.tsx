@@ -42,7 +42,7 @@ const LOG_TAIL_MAX_BYTES = 256 * 1024;
 type EditTarget = "endpoint" | "proxy" | null;
 type ProxyStatus = "idle" | "ok" | "fail" | "checking";
 
-type BackupBackendStatus = "pending" | "available" | "error";
+type BackupBackendStatus = "checking" | "pending" | "available" | "error";
 
 export interface DaemonCardProps {
   host: OpenWrtHostState;
@@ -270,6 +270,7 @@ export function DaemonCard({
   const [logDrawerOpen, setLogDrawerOpen] = useState(false);
   const logViewerRef = useRef<HTMLDivElement | null>(null);
   const logRefreshInFlightRef = useRef(false);
+  const backupProbeSeqRef = useRef(0);
   const [, forceFreshnessTick] = useState(0);
   const statusLabel = getStatusLabel(t);
   const healthLabel = restartInFlight
@@ -291,15 +292,19 @@ export function DaemonCard({
   }, [proxyError, proxyStatus, t]);
 
   const [backupBackendStatus, setBackupBackendStatus] =
-    useState<BackupBackendStatus>("pending");
-  const backupDisabledTip =
-    backupBackendStatus === "error"
-      ? t("openwrt.daemon.backupRestore.backendErrorTip")
-      : t("openwrt.daemon.backupRestore.disabledTip");
+    useState<BackupBackendStatus>("checking");
+  const [backupCapabilityError, setBackupCapabilityError] = useState<
+    string | null
+  >(null);
+  const [backupDownloadInFlight, setBackupDownloadInFlight] = useState(false);
+  const backupDisabledTip = t(
+    `openwrt.daemon.backupRestore.disabledTip.${backupBackendStatus}`,
+  );
   const backupRestoreAvailable = backupBackendStatus === "available";
 
-  useEffect(() => {
-    let cancelled = false;
+  const probeBackupRestoreCapability = useCallback(async () => {
+    const probeSeq = backupProbeSeqRef.current + 1;
+    backupProbeSeqRef.current = probeSeq;
     const hasCallbacks =
       onDownloadConfigBackup &&
       ((onDryRunConfigRestore && onStartConfigRestore) ||
@@ -309,23 +314,23 @@ export function DaemonCard({
 
     if (!hasCallbacks) {
       setBackupBackendStatus("pending");
+      setBackupCapabilityError(null);
       return;
     }
 
-    setBackupBackendStatus("pending");
-    void onProbeConfigBackupRestore()
-      .then((capability) => {
-        if (!cancelled) {
-          setBackupBackendStatus(capability.available ? "available" : "error");
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setBackupBackendStatus("error");
-      });
-
-    return () => {
-      cancelled = true;
-    };
+    setBackupBackendStatus("checking");
+    setBackupCapabilityError(null);
+    try {
+      const capability = await onProbeConfigBackupRestore();
+      if (backupProbeSeqRef.current !== probeSeq) return;
+      setBackupBackendStatus(capability.available ? "available" : "pending");
+    } catch (error) {
+      if (backupProbeSeqRef.current !== probeSeq) return;
+      setBackupBackendStatus("error");
+      setBackupCapabilityError(
+        error instanceof Error ? error.message : String(error),
+      );
+    }
   }, [
     onDownloadConfigBackup,
     onDryRunConfigRestore,
@@ -335,6 +340,14 @@ export function DaemonCard({
     onStartConfigRestore,
     onStartConfigRestoreFile,
   ]);
+
+  useEffect(() => {
+    void probeBackupRestoreCapability();
+
+    return () => {
+      backupProbeSeqRef.current += 1;
+    };
+  }, [probeBackupRestoreCapability]);
 
   useEffect(() => {
     if (saveInFlight) {
@@ -543,7 +556,8 @@ export function DaemonCard({
   );
 
   const handleDownloadConfigBackup = useCallback(async () => {
-    if (!onDownloadConfigBackup) return;
+    if (!onDownloadConfigBackup || backupDownloadInFlight) return;
+    setBackupDownloadInFlight(true);
     try {
       const result = await onDownloadConfigBackup();
       if (result.downloadUrl) {
@@ -553,11 +567,25 @@ export function DaemonCard({
       } else {
         throw new Error("Backup download returned an empty payload.");
       }
-      onNotify?.("success", t("openwrt.daemon.backupRestore.downloadReady"));
+      onNotify?.(
+        "success",
+        t("openwrt.daemon.backupRestore.downloadReady", {
+          filename: result.filename,
+        }),
+      );
     } catch (error) {
       onNotify?.("error", error instanceof Error ? error.message : String(error));
+    } finally {
+      setBackupDownloadInFlight(false);
     }
-  }, [downloadBase64File, downloadUrlFile, onDownloadConfigBackup, onNotify, t]);
+  }, [
+    backupDownloadInFlight,
+    downloadBase64File,
+    downloadUrlFile,
+    onDownloadConfigBackup,
+    onNotify,
+    t,
+  ]);
 
   const handleRestoreFile = useCallback(
     async (file: File) => {
@@ -881,25 +909,31 @@ export function DaemonCard({
         </div>
 
         <div className="owt-admin-row__meta">
-          <span
-            className="owt-admin-row__pending"
-            tabIndex={0}
-            data-tip={t(
-              `openwrt.daemon.backupRestore.backendStatus.${backupBackendStatus}.tip`,
-            )}
-            aria-label={t(
-              `openwrt.daemon.backupRestore.backendStatus.${backupBackendStatus}.aria`,
-            )}
-          >
-            {backupBackendStatus === "available" ? (
-              <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
-            ) : (
-              <CircleAlert className="h-3 w-3" aria-hidden="true" />
-            )}
-            {t(
-              `openwrt.daemon.backupRestore.backendStatus.${backupBackendStatus}.label`,
-            )}
-          </span>
+          {backupBackendStatus === "checking" ||
+          backupBackendStatus === "pending" ? (
+            <span
+              className="owt-admin-row__capability"
+              tabIndex={0}
+              data-tip={t(
+                `openwrt.daemon.backupRestore.backendStatus.${backupBackendStatus}.tip`,
+              )}
+              aria-label={t(
+                `openwrt.daemon.backupRestore.backendStatus.${backupBackendStatus}.aria`,
+              )}
+            >
+              {backupBackendStatus === "checking" ? (
+                <Loader2
+                  className="h-3 w-3 animate-spin"
+                  aria-hidden="true"
+                />
+              ) : (
+                <CircleAlert className="h-3 w-3" aria-hidden="true" />
+              )}
+              {t(
+                `openwrt.daemon.backupRestore.backendStatus.${backupBackendStatus}.label`,
+              )}
+            </span>
+          ) : null}
           <span
             className="owt-admin-row__secret"
             tabIndex={0}
@@ -929,7 +963,7 @@ export function DaemonCard({
           <button
             type="button"
             className="owt-pill owt-pill--idle"
-            disabled={!backupRestoreAvailable}
+            disabled={!backupRestoreAvailable || backupDownloadInFlight}
             data-tip-disabled={backupRestoreAvailable ? undefined : backupDisabledTip}
             onClick={() => restoreInputRef.current?.click()}
           >
@@ -939,15 +973,38 @@ export function DaemonCard({
           <button
             type="button"
             className="owt-pill owt-pill--primary"
-            disabled={!backupRestoreAvailable}
+            disabled={!backupRestoreAvailable || backupDownloadInFlight}
             data-tip-disabled={backupRestoreAvailable ? undefined : backupDisabledTip}
             onClick={() => void handleDownloadConfigBackup()}
           >
-            <Download className="h-4 w-4" aria-hidden="true" />
-            {t("openwrt.daemon.backupRestore.downloadAction")}
+            {backupDownloadInFlight ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Download className="h-4 w-4" aria-hidden="true" />
+            )}
+            {backupDownloadInFlight
+              ? t("openwrt.daemon.backupRestore.downloadGenerating")
+              : t("openwrt.daemon.backupRestore.downloadAction")}
           </button>
         </div>
       </section>
+
+      {backupBackendStatus === "error" ? (
+        <div className="owt-admin-row__error-strip" role="status">
+          <CircleAlert className="h-4 w-4" aria-hidden="true" />
+          <span>
+            {backupCapabilityError ||
+              t("openwrt.daemon.backupRestore.backendErrorDetail")}
+          </span>
+          <button
+            type="button"
+            className="owt-admin-row__retry"
+            onClick={() => void probeBackupRestoreCapability()}
+          >
+            {t("openwrt.daemon.backupRestore.retry")}
+          </button>
+        </div>
+      ) : null}
 
       <details
         className="owt-log-drawer"

@@ -181,20 +181,25 @@
         "ariaLabel": "Backup and restore",
         "iconAria": "Backup",
         "backendStatus": {
+          "checking": {
+            "label": "Checking backup support...",
+            "aria": "Checking backup support",
+            "tip": "Checking whether the daemon supports backup & restore..."
+          },
           "pending": {
-            "label": "Checking backend",
-            "aria": "Checking backend support",
-            "tip": "Checking whether the daemon backup and restore endpoints are available."
+            "label": "Not in this build",
+            "aria": "Backup support is not in this daemon build",
+            "tip": "Backup and restore endpoints are not implemented in this daemon build."
           },
           "available": {
-            "label": "Backend ready",
-            "aria": "Backend support available",
-            "tip": "Daemon backup and restore endpoints responded successfully."
+            "label": "Available",
+            "aria": "Backup support available",
+            "tip": "Daemon backup and restore endpoints are available."
           },
           "error": {
-            "label": "Backend unavailable",
-            "aria": "Backend support unavailable",
-            "tip": "The daemon backup and restore endpoints did not respond successfully."
+            "label": "Check failed",
+            "aria": "Backup support check failed",
+            "tip": "The daemon backup and restore capability check failed."
           }
         },
         "includesCredentials": "Includes credentials",
@@ -202,9 +207,16 @@
         "includesCredentialsTip": "Backups contain provider API keys, tokens, and any uploaded auth.json files. Store the file in an encrypted location and never share it.",
         "restoreAction": "Restore…",
         "downloadAction": "Download .tar.gz",
-        "disabledTip": "Backend not available yet - admin endpoints for backup and restore are still being checked.",
-        "backendErrorTip": "Backend unavailable - daemon backup and restore endpoints did not respond successfully.",
-        "downloadReady": "Backup download is ready.",
+        "downloadGenerating": "Generating backup...",
+        "disabledTip": {
+          "checking": "Checking whether the daemon supports backup & restore...",
+          "pending": "Backup and restore endpoints are not implemented in this daemon build.",
+          "available": "",
+          "error": "Fix the backup support check or retry before using backup and restore."
+        },
+        "backendErrorDetail": "Backup support check failed. The daemon did not confirm the backup and restore capability.",
+        "downloadReady": "Backup ready: {{filename}}",
+        "retry": "Retry",
         "confirmRestore": "Restore backup from daemon {{version}} with {{apps}} apps and {{providers}} providers? This replaces the current configuration and verifies it without restarting the daemon.",
         "restoreStarted": "Configuration restore started.",
         "restoreDone": "Configuration restored.",
