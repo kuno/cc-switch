@@ -703,25 +703,23 @@ describe("DaemonCard", () => {
     vi.useRealTimers();
   });
 
-  it("renders the whole-app backup & restore admin row with backend pending", () => {
+  it("shows checking while the backup capability probe is in flight", () => {
     const { card } = renderDaemonCard(
       {},
       {
-        onDownloadConfigBackup: undefined,
-        onDryRunConfigRestore: undefined,
-        onStartConfigRestore: undefined,
-        onGetConfigRestoreJob: undefined,
-        onProbeConfigBackupRestore: undefined,
+        onProbeConfigBackupRestore: vi.fn(
+          () => new Promise<{ available: boolean }>(() => {}),
+        ),
       },
     );
 
     const adminRow = card.querySelector<HTMLElement>(".owt-admin-row");
     expect(adminRow).not.toBeNull();
-    expect(adminRow).toHaveAttribute("data-backend-status", "pending");
+    expect(adminRow).toHaveAttribute("data-backend-status", "checking");
     expect(adminRow).toHaveAttribute("aria-label", "Backup and restore");
     expect(card).toHaveTextContent("Backup & restore");
     expect(card).toHaveTextContent("Last backup: never");
-    expect(card).toHaveTextContent("Checking backend");
+    expect(card).toHaveTextContent("Checking backup support...");
     expect(card).toHaveTextContent("Includes credentials");
 
     const restoreButton = within(card).getByRole("button", {
@@ -734,17 +732,44 @@ describe("DaemonCard", () => {
     expect(downloadButton).toBeDisabled();
     expect(restoreButton).toHaveAttribute(
       "data-tip-disabled",
-      expect.stringContaining("Backend not available yet"),
+      "Checking whether the daemon supports backup & restore...",
     );
     expect(downloadButton).toHaveAttribute(
       "data-tip-disabled",
-      expect.stringContaining("Backend not available yet"),
+      "Checking whether the daemon supports backup & restore...",
     );
 
     expect(card.querySelector(".owt-backup-drawer")).toBeNull();
     expect(
       within(card).queryByRole("button", { name: /Database backups/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("resolves missing backup callbacks to the persistent not-in-this-build state", async () => {
+    const { card } = renderDaemonCard(
+      {},
+      {
+        onDownloadConfigBackup: undefined,
+        onDryRunConfigRestore: undefined,
+        onStartConfigRestore: undefined,
+        onGetConfigRestoreJob: undefined,
+        onProbeConfigBackupRestore: undefined,
+      },
+    );
+
+    const adminRow = card.querySelector<HTMLElement>(".owt-admin-row");
+    await waitFor(() => {
+      expect(adminRow).toHaveAttribute("data-backend-status", "pending");
+      expect(card).toHaveTextContent("Not in this build");
+    });
+
+    const downloadButton = within(card).getByRole("button", {
+      name: /Download \.tar\.gz/,
+    });
+    expect(downloadButton).toHaveAttribute(
+      "data-tip-disabled",
+      "Backup and restore endpoints are not implemented in this daemon build.",
+    );
   });
 
   it("enables the whole-app backup & restore row after the backend probe succeeds", async () => {
@@ -758,10 +783,9 @@ describe("DaemonCard", () => {
     );
 
     const adminRow = card.querySelector<HTMLElement>(".owt-admin-row");
-    expect(adminRow).toHaveAttribute("data-backend-status", "pending");
+    expect(adminRow).toHaveAttribute("data-backend-status", "checking");
     await waitFor(() => {
       expect(adminRow).toHaveAttribute("data-backend-status", "available");
-      expect(card).toHaveTextContent("Backend ready");
       expect(
         within(card).getByRole("button", { name: /Restore…/ }),
       ).toBeEnabled();
@@ -769,6 +793,112 @@ describe("DaemonCard", () => {
         within(card).getByRole("button", { name: /Download \.tar\.gz/ }),
       ).toBeEnabled();
     });
+    expect(card).not.toHaveTextContent("Available");
+  });
+
+  it("keeps unavailable probe results as not-in-this-build instead of error", async () => {
+    const { card } = renderDaemonCard(
+      {},
+      {
+        onProbeConfigBackupRestore: vi.fn(async () => ({
+          available: false,
+        })),
+      },
+    );
+
+    const adminRow = card.querySelector<HTMLElement>(".owt-admin-row");
+    await waitFor(() => {
+      expect(adminRow).toHaveAttribute("data-backend-status", "pending");
+      expect(card).toHaveTextContent("Not in this build");
+    });
+    expect(card.querySelector(".owt-admin-row__error-strip")).toBeNull();
+  });
+
+  it("shows an error strip with retry when the backup capability probe rejects", async () => {
+    const onProbeConfigBackupRestore = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("probe timeout"))
+      .mockResolvedValueOnce({ available: true });
+    const { card } = renderDaemonCard(
+      {},
+      {
+        onProbeConfigBackupRestore,
+      },
+    );
+
+    const adminRow = card.querySelector<HTMLElement>(".owt-admin-row");
+    await waitFor(() => {
+      expect(adminRow).toHaveAttribute("data-backend-status", "error");
+      expect(card).toHaveTextContent("probe timeout");
+    });
+
+    fireEvent.click(within(card).getByRole("button", { name: "Retry" }));
+
+    await waitFor(() => {
+      expect(adminRow).toHaveAttribute("data-backend-status", "available");
+    });
+  });
+
+  it("shows download busy copy and notifies Backup ready with the filename", async () => {
+    const user = userEvent.setup();
+    let finishDownload!: (value: {
+      filename: string;
+      dataBase64: string;
+    }) => void;
+    const onDownloadConfigBackup = vi.fn(
+      () =>
+        new Promise<{ filename: string; dataBase64: string }>((resolve) => {
+          finishDownload = resolve;
+        }),
+    );
+    const onNotify = vi.fn();
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    const createObjectURLSpy = vi.fn(() => "blob:backup");
+    const revokeObjectURLSpy = vi.fn();
+    URL.createObjectURL = createObjectURLSpy;
+    URL.revokeObjectURL = revokeObjectURLSpy;
+    const anchorClickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
+
+    const { card } = renderDaemonCard(
+      {},
+      {
+        onProbeConfigBackupRestore: vi.fn(async () => ({ available: true })),
+        onDownloadConfigBackup,
+        onNotify,
+      },
+    );
+
+    await waitFor(() => {
+      expect(
+        within(card).getByRole("button", { name: /Download \.tar\.gz/ }),
+      ).toBeEnabled();
+    });
+
+    await user.click(
+      within(card).getByRole("button", { name: /Download \.tar\.gz/ }),
+    );
+    expect(card).toHaveTextContent("Generating backup...");
+
+    finishDownload({
+      filename: "ccswitch-backup-2026-05-26.tar.gz",
+      dataBase64: "YQ==",
+    });
+
+    await waitFor(() => {
+      expect(onNotify).toHaveBeenCalledWith(
+        "success",
+        "Backup ready: ccswitch-backup-2026-05-26.tar.gz",
+      );
+    });
+
+    expect(anchorClickSpy).toHaveBeenCalled();
+
+    URL.createObjectURL = originalCreateObjectURL;
+    URL.revokeObjectURL = originalRevokeObjectURL;
+    anchorClickSpy.mockRestore();
   });
 
   it("uses the design's archive file accept list on the (hidden) restore picker", () => {

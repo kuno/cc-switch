@@ -848,12 +848,112 @@ function renderDaemonCardScenario({
   isRunning,
   restartInFlight = false,
   restartPending = false,
+  backupState,
 }: {
   host: OpenWrtHostState;
   isRunning: boolean;
   restartInFlight?: boolean;
   restartPending?: boolean;
+  backupState?: "checking" | "pending" | "available" | "error";
 }) {
+  const backupProps =
+    backupState === "checking"
+      ? {
+          onDownloadConfigBackup: async () => ({
+            filename: "ccswitch-backup-2026-05-26.tar.gz",
+            dataBase64: "YQ==",
+          }),
+          onDryRunConfigRestore: async () => ({
+            manifest: {
+              formatVersion: 1,
+              exportedAt: "2026-05-26T00:00:00Z",
+              daemonVersion: "3.14.1-test",
+              schemaVersion: 12,
+              supportedSchemaVersion: 12,
+              appCount: 3,
+              providerCount: 5,
+              includesCredentials: true,
+              authFileCount: 2,
+              rollbackSupported: false,
+              configPath: "/etc/config/ccswitch",
+              authPaths: [],
+            },
+          }),
+          onStartConfigRestore: async () => ({ jobId: "restore-job-1" }),
+          onGetConfigRestoreJob: async () => ({
+            step: "verify" as const,
+            state: "done" as const,
+            error: null,
+            rolledBack: false,
+          }),
+          onProbeConfigBackupRestore: () => new Promise<{ available: boolean }>(() => {}),
+        }
+      : backupState === "available"
+        ? {
+            onDownloadConfigBackup: async () => ({
+              filename: "ccswitch-backup-2026-05-26.tar.gz",
+              dataBase64: "YQ==",
+            }),
+            onDryRunConfigRestore: async () => ({
+              manifest: {
+                formatVersion: 1,
+                exportedAt: "2026-05-26T00:00:00Z",
+                daemonVersion: "3.14.1-test",
+                schemaVersion: 12,
+                supportedSchemaVersion: 12,
+                appCount: 3,
+                providerCount: 5,
+                includesCredentials: true,
+                authFileCount: 2,
+                rollbackSupported: false,
+                configPath: "/etc/config/ccswitch",
+                authPaths: [],
+              },
+            }),
+            onStartConfigRestore: async () => ({ jobId: "restore-job-1" }),
+            onGetConfigRestoreJob: async () => ({
+              step: "verify" as const,
+              state: "done" as const,
+              error: null,
+              rolledBack: false,
+            }),
+            onProbeConfigBackupRestore: async () => ({ available: true }),
+          }
+        : backupState === "error"
+          ? {
+              onDownloadConfigBackup: async () => ({
+                filename: "ccswitch-backup-2026-05-26.tar.gz",
+                dataBase64: "YQ==",
+              }),
+              onDryRunConfigRestore: async () => ({
+                manifest: {
+                  formatVersion: 1,
+                  exportedAt: "2026-05-26T00:00:00Z",
+                  daemonVersion: "3.14.1-test",
+                  schemaVersion: 12,
+                  supportedSchemaVersion: 12,
+                  appCount: 3,
+                  providerCount: 5,
+                  includesCredentials: true,
+                  authFileCount: 2,
+                  rollbackSupported: false,
+                  configPath: "/etc/config/ccswitch",
+                  authPaths: [],
+                },
+              }),
+              onStartConfigRestore: async () => ({ jobId: "restore-job-1" }),
+              onGetConfigRestoreJob: async () => ({
+                step: "verify" as const,
+                state: "done" as const,
+                error: null,
+                rolledBack: false,
+              }),
+              onProbeConfigBackupRestore: async () => {
+                throw new Error("Capability probe timed out.");
+              },
+            }
+          : {};
+
   return (
     <DaemonCard
       host={host}
@@ -866,6 +966,7 @@ function renderDaemonCardScenario({
       onDraftChange={() => {}}
       onSave={() => {}}
       onRestart={() => {}}
+      {...backupProps}
     />
   );
 }
@@ -1138,17 +1239,49 @@ const HARNESSES: Record<string, Record<string, HarnessScenario>> = {
           isRunning: true,
         }),
     },
-    // Focused scenario for the whole-app Backup & restore admin row.
-    // Renders the full daemon card so the admin row sits in its real
-    // context (below the daemon row + divider, above the diagnostics
-    // drawer). Use this for pixel-perfect comparison against the design's
-    // project/index.html admin-row spec.
+    "backup-admin-checking": {
+      canvasClassName: "owt-visual-harness__canvas--wide",
+      render: () =>
+        renderDaemonCardScenario({
+          host: READY_HOST,
+          isRunning: true,
+          backupState: "checking",
+        }),
+    },
+    "backup-admin-pending": {
+      canvasClassName: "owt-visual-harness__canvas--wide",
+      render: () =>
+        renderDaemonCardScenario({
+          host: READY_HOST,
+          isRunning: true,
+          backupState: "pending",
+        }),
+    },
+    "backup-admin-available": {
+      canvasClassName: "owt-visual-harness__canvas--wide",
+      render: () =>
+        renderDaemonCardScenario({
+          host: READY_HOST,
+          isRunning: true,
+          backupState: "available",
+        }),
+    },
+    "backup-admin-error": {
+      canvasClassName: "owt-visual-harness__canvas--wide",
+      render: () =>
+        renderDaemonCardScenario({
+          host: READY_HOST,
+          isRunning: true,
+          backupState: "error",
+        }),
+    },
     "backup-admin-row": {
       canvasClassName: "owt-visual-harness__canvas--wide",
       render: () =>
         renderDaemonCardScenario({
           host: READY_HOST,
           isRunning: true,
+          backupState: "pending",
         }),
     },
   },
