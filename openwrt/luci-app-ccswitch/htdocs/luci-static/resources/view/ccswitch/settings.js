@@ -14,6 +14,7 @@ var SHARED_PROVIDER_UI_STYLE_ID = 'ccswitch-openwrt-shared-provider-ui-styles';
 var HOST_PAGE_STYLE_ID = 'ccswitch-openwrt-host-page-shell-styles';
 var SHARED_PROVIDER_UI_BUNDLE_PATH = '/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js';
 var SHARED_PROVIDER_UI_STYLE_PATH = '/luci-static/resources/ccswitch/provider-ui/openwrt-luci-host.css';
+var SHARED_PROVIDER_UI_ASSET_VERSION = '20260526-backup-ui-four-state';
 var BANNER_COLORS = {
 	success: '#256f3a',
 	warning: '#d97706',
@@ -2828,11 +2829,17 @@ return view.extend({
 	},
 
 	getBundleAssetPath: function () {
-		return SHARED_PROVIDER_UI_BUNDLE_PATH;
+		return this.withProviderUiAssetVersion(SHARED_PROVIDER_UI_BUNDLE_PATH);
 	},
 
 	getBundleStylePath: function () {
-		return SHARED_PROVIDER_UI_STYLE_PATH;
+		return this.withProviderUiAssetVersion(SHARED_PROVIDER_UI_STYLE_PATH);
+	},
+
+	withProviderUiAssetVersion: function (path) {
+		var separator = path.indexOf('?') === -1 ? '?' : '&';
+
+		return path + separator + 'v=' + encodeURIComponent(SHARED_PROVIDER_UI_ASSET_VERSION);
 	},
 
 	createUiState: function (isRunning, providerStateOrSelectedApp, selectedApp) {

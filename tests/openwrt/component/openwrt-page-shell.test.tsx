@@ -121,7 +121,7 @@ describe("OpenWrtPageShell", () => {
     expect(adminRow).toHaveAttribute("aria-label", "Backup and restore");
     expect(adminRow).toHaveTextContent("Backup & restore");
     expect(adminRow).toHaveTextContent("Last backup: never");
-    expect(adminRow).toHaveTextContent("Backend ready");
+    expect(adminRow).not.toHaveTextContent("Available");
     expect(adminRow).toHaveTextContent("Includes credentials");
 
     const restoreButton = screen.getByRole("button", { name: /Restore…/ });
