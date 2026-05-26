@@ -137,6 +137,8 @@ type UcodeApi = {
 const SHARED_PROVIDER_UI_GLOBAL_KEY = "__CCSWITCH_OPENWRT_SHARED_PROVIDER_UI__";
 const SHARED_PROVIDER_UI_SCRIPT_ID =
   "ccswitch-openwrt-shared-provider-ui-bundle";
+const SHARED_PROVIDER_UI_ASSET_QUERY =
+  "?v=20260526-backup-ui-four-state";
 const DAEMON_ADMIN_BASE_URL_OVERRIDE_KEY =
   "__CCSWITCH_OPENWRT_DAEMON_ADMIN_BASE_URL__";
 
@@ -495,10 +497,10 @@ describe("OpenWrt settings shared-provider shell", () => {
 
     expect(settings.getSelectedApp()).toBe("gemini");
     expect(settings.getBundleAssetPath()).toBe(
-      "/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js",
+      `/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js${SHARED_PROVIDER_UI_ASSET_QUERY}`,
     );
     expect(settings.getBundleStylePath()).toBe(
-      "/luci-static/resources/ccswitch/provider-ui/openwrt-luci-host.css",
+      `/luci-static/resources/ccswitch/provider-ui/openwrt-luci-host.css${SHARED_PROVIDER_UI_ASSET_QUERY}`,
     );
 
     settings.saveSelectedApp("codex");
@@ -750,11 +752,11 @@ describe("OpenWrt settings shared-provider shell", () => {
 
     expect(stylesheet).not.toBeNull();
     expect(stylesheet?.getAttribute("href")).toBe(
-      "/luci-static/resources/ccswitch/provider-ui/openwrt-luci-host.css",
+      `/luci-static/resources/ccswitch/provider-ui/openwrt-luci-host.css${SHARED_PROVIDER_UI_ASSET_QUERY}`,
     );
     expect(script).not.toBeNull();
     expect(script?.getAttribute("src")).toBe(
-      "/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js",
+      `/luci-static/resources/ccswitch/provider-ui/ccswitch-provider-ui.js${SHARED_PROVIDER_UI_ASSET_QUERY}`,
     );
 
     (window as unknown as Record<string, unknown>)[
