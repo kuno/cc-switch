@@ -21,6 +21,8 @@ use super::{
     types::{CopilotOptimizerConfig, OptimizerConfig, ProxyStatus, RectifierConfig},
     ProxyError,
 };
+#[cfg(feature = "tauri-desktop")]
+use crate::proxy::auth_state::CopilotAuthState;
 use crate::proxy::providers::codex_oauth_auth::CodexOAuthManager;
 use crate::proxy::providers::codex_oauth_store::load_codex_auth_for_provider;
 use crate::proxy::providers::copilot_auth::CopilotAuthManager;
@@ -28,6 +30,7 @@ use crate::services::oauth_refresh::{
     ClaudeTokenRefresher, ClaudeUploadedAuthManager, OAuthTokenRefresher,
 };
 use crate::{app_config::AppType, provider::Provider};
+use futures::StreamExt;
 use http::Extensions;
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -532,9 +535,6 @@ impl RequestForwarder {
 
     #[cfg(test)]
     fn set_claude_oauth_refresher_for_tests(&mut self, refresher: Arc<dyn OAuthTokenRefresher>) {
-        self.claude_oauth_refresher = Some(refresher);
-    }
-
         self.claude_oauth_refresher = Some(refresher);
     }
 
@@ -2341,6 +2341,7 @@ impl RequestForwarder {
 
     /// 用 Copilot live `/models` 列表确认 model ID 真实可用，找不到时按 family 降级。
     /// 命中缓存后是同步的；首次请求或 5 min 缓存过期后会触发一次 HTTP。
+    #[cfg(feature = "tauri-desktop")]
     async fn apply_copilot_live_model_resolution(
         &self,
         provider: &Provider,
@@ -2380,6 +2381,14 @@ impl RequestForwarder {
             log::info!("[Copilot] live-model resolve: {model_id} → {resolved}");
             body["model"] = serde_json::Value::String(resolved);
         }
+    }
+
+    #[cfg(not(feature = "tauri-desktop"))]
+    async fn apply_copilot_live_model_resolution(
+        &self,
+        _provider: &Provider,
+        _body: &mut serde_json::Value,
+    ) {
     }
 
     async fn is_copilot_openai_vendor_model(&self, provider: &Provider, model_id: &str) -> bool {

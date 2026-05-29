@@ -255,7 +255,7 @@ function getRowSubtitle(
   const parts = [
     entry.model || t("openwrt.activity.defaultModel"),
     filterMode === "all" ? getAppLabel(t, entry.resolvedAppId) : null,
-    formatRelativeTime(entry.createdAt),
+    formatRelativeTime(entry.createdAt, Date.now(), { compact: true }),
   ].filter(Boolean);
 
   return parts.join(" · ");

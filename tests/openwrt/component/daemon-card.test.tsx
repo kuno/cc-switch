@@ -813,8 +813,8 @@ describe("DaemonCard", () => {
       jobId: "restore-job-1",
     }));
     const onGetConfigRestoreJob = vi.fn(async () => ({
-      step: "verify",
-      state: "done",
+      step: "verify" as const,
+      state: "done" as const,
       error: null,
       rolledBack: false,
     }));
