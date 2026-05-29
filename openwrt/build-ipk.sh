@@ -88,6 +88,13 @@ die() {
 	exit 1
 }
 
+remove_macos_sidecars() {
+	local target="$1"
+
+	[ -e "$target" ] || return 0
+	find "$target" -name '._*' -type f -exec rm -f {} +
+}
+
 require_command() {
 	command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
 }
@@ -141,6 +148,7 @@ ensure_openwrt_provider_ui_asset() {
 	fi
 
 	"$PREPARE_PROVIDER_UI_BUNDLE" --output-dir "$(dirname "$OPENWRT_PROVIDER_UI_ASSET")"
+	remove_macos_sidecars "$(dirname "$OPENWRT_PROVIDER_UI_ASSET")"
 	[ -f "$OPENWRT_PROVIDER_UI_ASSET" ] || die "expected OpenWrt provider UI bundle was not produced: $OPENWRT_PROVIDER_UI_ASSET"
 	[ -f "$OPENWRT_PROVIDER_UI_HOST_STYLESHEET" ] || die "expected OpenWrt provider UI host stylesheet was not produced: $OPENWRT_PROVIDER_UI_HOST_STYLESHEET"
 	[ -d "$OPENWRT_PROVIDER_UI_ICONS_DIR" ] || die "expected OpenWrt provider UI icon directory was not produced: $OPENWRT_PROVIDER_UI_ICONS_DIR"
@@ -304,6 +312,9 @@ install_openwrt_provider_ui_icons() {
 	[ -d "$source_dir" ] || return 0
 
 	while IFS= read -r -d '' icon_path; do
+		case "$(basename "$icon_path")" in
+			._*) continue ;;
+		esac
 		rel_path="${icon_path#"$source_dir"/}"
 		install -d "$(dirname "$dest_dir/$rel_path")"
 		install -m 0644 "$icon_path" "$dest_dir/$rel_path"
