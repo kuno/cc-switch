@@ -3678,7 +3678,8 @@ mod tests {
         handler_context::RequestContext,
         provider_router::ProviderRouter,
         providers::{
-            claude_oauth_store::save_claude_auth_for_provider, gemini_shadow::GeminiShadowStore,
+            claude_oauth_store::save_claude_auth_for_provider,
+            codex_chat_history::CodexChatHistoryStore, gemini_shadow::GeminiShadowStore,
         },
         rate_limit::{new_rate_limit_store, BalanceSnapshot, RateLimitSnapshot, RateLimitWindow},
         server::ProxyState,
@@ -4501,6 +4502,7 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
             current_providers: current_providers.clone(),
             provider_router: Arc::new(ProviderRouter::new(db.clone())),
             gemini_shadow: Arc::new(GeminiShadowStore::default()),
+            codex_chat_history: Arc::new(CodexChatHistoryStore::default()),
             copilot_auth: None,
             codex_oauth_auth: None,
             failover_manager: Arc::new(FailoverSwitchManager::new(db, current_providers)),
