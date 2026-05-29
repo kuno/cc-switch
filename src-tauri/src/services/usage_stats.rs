@@ -1582,7 +1582,7 @@ impl Database {
             params.push(Box::new(app_type.clone()));
         }
         if let Some(ref provider_id) = filters.provider_id {
-            conditions.push("l.provider_id = ?");
+            conditions.push("l.provider_id = ?".to_string());
             params.push(Box::new(provider_id.clone()));
         }
         // 与 Dashboard 顶部下拉筛选同口径：Provider 按展示名精确匹配（会话占位
@@ -1600,7 +1600,7 @@ impl Database {
             params.push(Box::new(status as i64));
         }
         if filters.failures_only {
-            conditions.push("(l.status_code < 200 OR l.status_code >= 300)");
+            conditions.push("(l.status_code < 200 OR l.status_code >= 300)".to_string());
         }
         if let Some(start) = filters.start_date {
             conditions.push("l.created_at >= ?".to_string());
@@ -4078,7 +4078,11 @@ mod tests {
             "deleted provider must not appear"
         );
         assert_eq!(
-            stats.iter().find(|s| s.provider_id == "p1").unwrap().provider_name,
+            stats
+                .iter()
+                .find(|s| s.provider_id == "p1")
+                .unwrap()
+                .provider_name,
             "Provider1"
         );
 

@@ -607,9 +607,6 @@ impl RequestForwarder {
         self.claude_oauth_refresher = Some(refresher);
     }
 
-        self.claude_oauth_refresher = Some(refresher);
-    }
-
     /// 转发请求（带故障转移）
     ///
     /// 这是 thin wrapper：在客户端请求维度记一次 `total_requests` / 调整
@@ -3069,6 +3066,7 @@ impl RequestForwarder {
 
     /// 用 Copilot live `/models` 列表确认 model ID 真实可用，找不到时按 family 降级。
     /// 命中缓存后是同步的；首次请求或 5 min 缓存过期后会触发一次 HTTP。
+    #[cfg(feature = "tauri-desktop")]
     async fn apply_copilot_live_model_resolution(
         &self,
         provider: &Provider,
@@ -3108,6 +3106,14 @@ impl RequestForwarder {
             log::info!("[Copilot] live-model resolve: {model_id} → {resolved}");
             body["model"] = serde_json::Value::String(resolved);
         }
+    }
+
+    #[cfg(not(feature = "tauri-desktop"))]
+    async fn apply_copilot_live_model_resolution(
+        &self,
+        _provider: &Provider,
+        _body: &mut serde_json::Value,
+    ) {
     }
 
     async fn is_copilot_openai_vendor_model(&self, provider: &Provider, model_id: &str) -> bool {
