@@ -1,11 +1,9 @@
 //! Daemon-facing app config surface.
 //!
-//! The router daemon intentionally depends only on shared config types that are
-//! needed at runtime. Legacy desktop JSON config loading/migration lives in
-//! `src-tauri/src/app_config.rs` and is kept out of the daemon build.
+//! The OpenWrt daemon reuses proxy/service modules from `src-tauri`, so its
+//! `AppType` must stay in lockstep with the desktop crate after upstream rebases.
 
-#[allow(unused_imports)]
-pub use cc_switch_shared::app_config::{
-    AppType, CommonConfigSnippets, InstalledSkill, McpApps, McpConfig, McpRoot, McpServer,
-    SkillApps, UnmanagedSkill,
-};
+#[path = "../../src-tauri/src/app_config.rs"]
+mod desktop_app_config;
+
+pub use desktop_app_config::*;

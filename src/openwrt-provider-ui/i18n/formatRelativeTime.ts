@@ -14,6 +14,7 @@ function normalizeEpochMs(value: number): number {
 export function formatRelativeTime(
   epochMs: number,
   now: number = Date.now(),
+  options: { compact?: boolean } = {},
 ): string {
   const normalizedEpochMs = normalizeEpochMs(epochMs);
 
@@ -42,12 +43,18 @@ export function formatRelativeTime(
   const minutes = Math.round(-diffMs / 60_000);
 
   if (Math.abs(minutes) < 60) {
+    if (options.compact) {
+      return `${Math.abs(minutes)}m ago`;
+    }
     return rtf.format(minutes, "minute");
   }
 
   const hours = Math.round(minutes / 60);
 
   if (Math.abs(hours) < 24) {
+    if (options.compact) {
+      return `${Math.abs(hours)}h ago`;
+    }
     return rtf.format(hours, "hour");
   }
 
