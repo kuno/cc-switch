@@ -39,6 +39,8 @@ use futures::StreamExt;
 use http::Extensions;
 use serde_json::{json, Value};
 use std::sync::Arc;
+#[cfg(feature = "tauri-desktop")]
+use tauri::Manager;
 use tokio::sync::RwLock;
 
 const PROXY_AUTH_PLACEHOLDER: &str = "PROXY_MANAGED";
@@ -4281,16 +4283,18 @@ mod tests {
         streaming_first_byte_timeout: Duration,
     ) -> RequestForwarder {
         let db = Arc::new(Database::memory().expect("memory db"));
+        let current_providers = Arc::new(RwLock::new(HashMap::new()));
 
         RequestForwarder {
             router: Arc::new(ProviderRouter::new(db.clone())),
             status: Arc::new(RwLock::new(ProxyStatus::default())),
-            current_providers: Arc::new(RwLock::new(HashMap::new())),
+            current_providers: current_providers.clone(),
             gemini_shadow: Arc::new(GeminiShadowStore::new()),
             codex_chat_history: Arc::new(CodexChatHistoryStore::default()),
-            failover_manager: Arc::new(FailoverSwitchManager::new(db)),
+            failover_manager: Arc::new(FailoverSwitchManager::new(db, current_providers)),
             copilot_auth: None,
             codex_oauth_auth: None,
+            claude_uploaded_auth: ClaudeUploadedAuthManager::new(),
             #[cfg(feature = "tauri-desktop")]
             app_handle: None,
             current_provider_id_at_start: String::new(),
@@ -4302,7 +4306,7 @@ mod tests {
             non_streaming_timeout,
             streaming_first_byte_timeout,
             max_attempts: 1,
-            rate_limits: super::rate_limit::new_rate_limit_store(),
+            rate_limits: crate::proxy::rate_limit::new_rate_limit_store(),
             #[cfg(test)]
             claude_oauth_refresher: None,
         }
@@ -4629,6 +4633,7 @@ mod tests {
             forwarder
                 .forward_with_retry(
                     &AppType::Claude,
+                    http::Method::POST,
                     "/v1/messages",
                     claude_request_body(),
                     claude_request_headers(None),
@@ -6133,6 +6138,7 @@ mod tests {
             forwarder
                 .forward_with_retry(
                     &AppType::Claude,
+                    http::Method::POST,
                     "/v1/messages",
                     claude_request_body(),
                     claude_request_headers(Some("Bearer inbound-token")),
@@ -6173,6 +6179,7 @@ mod tests {
             forwarder
                 .forward_with_retry(
                     &AppType::Claude,
+                    http::Method::POST,
                     "/v1/messages",
                     claude_request_body(),
                     claude_request_headers(Some("Bearer PROXY_MANAGED")),
@@ -6214,6 +6221,7 @@ mod tests {
             forwarder
                 .forward_with_retry(
                     &AppType::Claude,
+                    http::Method::POST,
                     "/v1/messages",
                     claude_request_body(),
                     claude_request_headers_with_beta(
@@ -6262,6 +6270,7 @@ mod tests {
             forwarder
                 .forward_with_retry(
                     &AppType::Claude,
+                    http::Method::POST,
                     "/v1/messages",
                     claude_request_body(),
                     claude_request_headers_with_beta(
@@ -6310,6 +6319,7 @@ mod tests {
             forwarder
                 .forward_with_retry(
                     &AppType::Claude,
+                    http::Method::POST,
                     "/v1/messages",
                     claude_request_body(),
                     claude_request_headers(Some("Bearer inbound-token")),
@@ -6345,6 +6355,7 @@ mod tests {
             forwarder
                 .forward_with_retry(
                     &AppType::Claude,
+                    http::Method::POST,
                     "/v1/messages",
                     claude_request_body(),
                     claude_request_headers(Some("Bearer PROXY_MANAGED")),
@@ -6383,6 +6394,7 @@ mod tests {
             forwarder
                 .forward_with_retry(
                     &AppType::Claude,
+                    http::Method::POST,
                     "/v1/messages",
                     claude_request_body(),
                     claude_request_headers_with_beta(
@@ -6421,6 +6433,7 @@ mod tests {
             forwarder
                 .forward_with_retry(
                     &AppType::Claude,
+                    http::Method::POST,
                     "/v1/messages",
                     claude_request_body(),
                     claude_request_headers(Some("Bearer sk-ant-oat01-valid")),
@@ -6449,6 +6462,7 @@ mod tests {
             forwarder
                 .forward_with_retry(
                     &AppType::Claude,
+                    http::Method::POST,
                     "/v1/messages",
                     claude_request_body(),
                     claude_request_headers(Some("Bearer inbound-token")),
@@ -6481,6 +6495,7 @@ mod tests {
             forwarder
                 .forward_with_retry(
                     &AppType::Claude,
+                    http::Method::POST,
                     "/v1/messages",
                     claude_request_body(),
                     claude_request_headers(Some("Bearer sk-ant-oat01-valid")),
@@ -6539,6 +6554,7 @@ mod tests {
             forwarder
                 .forward_with_retry(
                     &AppType::Claude,
+                    http::Method::POST,
                     "/v1/messages",
                     claude_request_body(),
                     claude_request_headers(Some("Bearer inbound-token")),
@@ -6593,6 +6609,7 @@ mod tests {
             forwarder
                 .forward_with_retry(
                     &AppType::Claude,
+                    http::Method::POST,
                     "/v1/messages",
                     claude_request_body(),
                     claude_request_headers(Some("Bearer inbound-token")),
@@ -6625,6 +6642,7 @@ mod tests {
             forwarder
                 .forward_with_retry(
                     &AppType::Claude,
+                    http::Method::POST,
                     "/v1/messages",
                     claude_request_body(),
                     claude_request_headers(Some("Bearer inbound-token")),
@@ -6657,6 +6675,7 @@ mod tests {
             forwarder
                 .forward_with_retry(
                     &AppType::Claude,
+                    http::Method::POST,
                     "/v1/messages",
                     claude_request_body(),
                     claude_request_headers(None),
@@ -6695,6 +6714,7 @@ mod tests {
             forwarder
                 .forward_with_retry(
                     &AppType::Claude,
+                    http::Method::POST,
                     "/v1/messages",
                     claude_request_body(),
                     claude_request_headers(Some("Bearer client-fallback-token")),
