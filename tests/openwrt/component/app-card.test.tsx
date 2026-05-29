@@ -328,15 +328,15 @@ describe("AppCard", () => {
     expect(screen.getByText("1")).toBeInTheDocument();
     expect(screen.getByText("Claude Primary")).toBeInTheDocument();
     expect(screen.getByText("Serving traffic")).toBeInTheDocument();
-    expect(screen.getByText("ACTIVE")).toBeInTheDocument();
+    expect(screen.getByText("Active")).toBeInTheDocument();
     expect(screen.getByText("2")).toBeInTheDocument();
     expect(screen.getByText("Claude Backup")).toBeInTheDocument();
     expect(screen.getByText("Standby · 0 retries used")).toBeInTheDocument();
-    expect(screen.getByText("STANDBY")).toBeInTheDocument();
+    expect(screen.getByText("Standby")).toBeInTheDocument();
     expect(
       screen.getByText("Auto-failover on · max 3 retries"),
     ).toBeInTheDocument();
-    expect(screen.getByText("Head: 1 of 2")).toBeInTheDocument();
+    expect(screen.getByText("Queue: 1 of 2")).toBeInTheDocument();
   });
 
   it("opens a failover queue provider directly from its queue row", async () => {

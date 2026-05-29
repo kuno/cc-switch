@@ -8,11 +8,11 @@ use crate::gemini_config::get_gemini_dir;
 use crate::openclaw_config::get_openclaw_dir;
 use crate::opencode_config::get_opencode_dir;
 
-fn unsupported_hermes_prompt_error() -> AppError {
+fn unsupported_prompt_error(app: &str) -> AppError {
     AppError::localized(
-        "hermes.prompt.unsupported",
-        "proxy-daemon 不支持 Hermes 提示词文件",
-        "Hermes prompt files are not supported in proxy-daemon",
+        "prompt.unsupported",
+        format!("proxy-daemon 不支持 {app} 提示词文件"),
+        format!("{app} prompt files are not supported in proxy-daemon"),
     )
 }
 
@@ -24,7 +24,9 @@ pub fn prompt_file_path(app: &AppType) -> Result<PathBuf, AppError> {
         AppType::Gemini => get_gemini_dir(),
         AppType::OpenCode => get_opencode_dir(),
         AppType::OpenClaw => get_openclaw_dir(),
-        AppType::Hermes => return Err(unsupported_hermes_prompt_error()),
+        AppType::Hermes | AppType::ClaudeDesktop => {
+            return Err(unsupported_prompt_error(app.as_str()));
+        }
     };
 
     let filename = match app {
@@ -33,7 +35,9 @@ pub fn prompt_file_path(app: &AppType) -> Result<PathBuf, AppError> {
         AppType::Gemini => "GEMINI.md",
         AppType::OpenCode => "AGENTS.md",
         AppType::OpenClaw => "AGENTS.md", // OpenClaw uses AGENTS.md for agent instructions
-        AppType::Hermes => return Err(unsupported_hermes_prompt_error()),
+        AppType::Hermes | AppType::ClaudeDesktop => {
+            return Err(unsupported_prompt_error(app.as_str()));
+        }
     };
 
     Ok(base_dir.join(filename))

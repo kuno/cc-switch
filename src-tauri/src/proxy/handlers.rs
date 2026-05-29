@@ -47,6 +47,7 @@ use super::{
     ProxyError,
 };
 use crate::app_config::AppType;
+use crate::database::PRICING_SOURCE_REQUEST;
 use crate::proxy::circuit_breaker::CircuitBreakerStats;
 use crate::proxy::rate_limit::{
     quota_exhausted_reset, BalanceSnapshot, RateLimitSnapshot, RateLimitWindow,
@@ -613,19 +614,22 @@ async fn build_app_status(
             empty_api_status_usage()
         }
     };
-    let provider_stats: HashMap<String, ProviderStats> =
-        match state.db.get_provider_stats(None, None, Some(&app_key)) {
-            Ok(stats) => stats
-                .into_iter()
-                .map(|stats| (stats.provider_id.clone(), stats))
-                .collect(),
-            Err(error) => {
-                log::warn!(
+    let provider_stats: HashMap<String, ProviderStats> = match state.db.get_provider_stats(
+        None,
+        None,
+        Some(&app_key),
+    ) {
+        Ok(stats) => stats
+            .into_iter()
+            .map(|stats| (stats.provider_id.clone(), stats))
+            .collect(),
+        Err(error) => {
+            log::warn!(
                     "[Status] provider stats unavailable for {app_key}; returning providers without stats: {error}"
                 );
-                HashMap::new()
-            }
-        };
+            HashMap::new()
+        }
+    };
 
     let mut circuit_stats = HashMap::new();
     for provider_id in providers.keys() {
@@ -5595,8 +5599,11 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
     #[tokio::test]
     async fn api_status_keeps_configured_apps_when_request_log_store_is_unavailable() {
         let db = Arc::new(Database::memory().expect("db"));
-        db.save_provider("claude", &test_provider("configured", "Configured Provider"))
-            .expect("save provider");
+        db.save_provider(
+            "claude",
+            &test_provider("configured", "Configured Provider"),
+        )
+        .expect("save provider");
         db.set_current_provider("claude", "configured")
             .expect("set current provider");
         {
@@ -5611,7 +5618,9 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
         let provider = app.providers.get("configured").expect("provider");
 
         assert_eq!(
-            app.active_provider.as_ref().map(|provider| provider.provider_id.as_str()),
+            app.active_provider
+                .as_ref()
+                .map(|provider| provider.provider_id.as_str()),
             Some("configured")
         );
         assert_eq!(app.usage.total_requests, 0);

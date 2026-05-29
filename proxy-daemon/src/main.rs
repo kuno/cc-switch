@@ -9,6 +9,8 @@
 
 mod app_config;
 mod app_store;
+#[path = "../../src-tauri/src/claude_desktop_config.rs"]
+mod claude_desktop_config;
 mod codex_config;
 mod config;
 mod error;
@@ -26,6 +28,7 @@ mod provider_defaults;
 mod settings;
 mod shared_core;
 mod store;
+mod usage_events;
 mod usage_script;
 mod version;
 

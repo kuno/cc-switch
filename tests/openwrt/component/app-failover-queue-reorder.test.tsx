@@ -2,10 +2,12 @@ import { type ReactNode } from "react";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { AppsGrid } from "@/openwrt-provider-ui/components/AppsGrid";
+import type { OpenWrtStatusResponse } from "@/openwrt-provider-ui/pageTypes";
 import {
   createProviderState,
   createProviderView,
 } from "../provider-panel-fixtures";
+import type { SharedProviderState } from "@/shared/providers/domain";
 import { createBridgeFixture } from "./fixtures/bridge";
 import { createProviderTransportFixture } from "./fixtures/providerTransport";
 
@@ -63,9 +65,101 @@ vi.mock("@dnd-kit/utilities", () => ({
   },
 }));
 
+function createStatusFromProviderState(
+  providerState: SharedProviderState,
+  failoverQueue: string[],
+): OpenWrtStatusResponse {
+  const activeProviderId = providerState.activeProviderId;
+  const providers = Object.fromEntries(
+    providerState.providers.map((provider) => [
+      provider.providerId ?? provider.name,
+      {
+        ...provider,
+        providerId: provider.providerId,
+        configured: provider.configured,
+        active: provider.providerId === activeProviderId,
+        baseUrl: provider.baseUrl,
+        tokenField: provider.tokenField,
+        tokenConfigured: provider.tokenConfigured,
+        tokenMasked: provider.tokenMasked,
+        stats: null,
+        quota: null,
+      },
+    ]),
+  );
+  const providersById = new Map(
+    providerState.providers.map((provider) => [provider.providerId, provider]),
+  );
+
+  return {
+    daemon: {
+      health: true,
+      running: true,
+      uptimeSeconds: 3600,
+      lastError: null,
+      checkedAt: "2026-04-22T00:00:00.000Z",
+    },
+    apps: {
+      claude: {
+        mode: "failover",
+        proxyEnabled: true,
+        health: true,
+        healthReason: null,
+        maxRetries: 3,
+        usage: null,
+        activeProvider: activeProviderId
+          ? {
+              providerId: activeProviderId,
+              name: providerState.activeProvider.name,
+            }
+          : null,
+        providers,
+        failoverQueue: failoverQueue.map((providerId, index) => ({
+          providerId,
+          providerName: providersById.get(providerId)?.name ?? providerId,
+          sortIndex: index,
+          active: providerId === activeProviderId,
+          health: {
+            providerId,
+            observed: false,
+            healthy: true,
+            consecutiveFailures: 0,
+            lastSuccessAt: null,
+            lastFailureAt: null,
+            lastError: null,
+            updatedAt: null,
+          },
+        })),
+        failoverStatus: Object.fromEntries(
+          failoverQueue.map((providerId, index) => [
+            providerId,
+            {
+              inFailoverQueue: true,
+              queuePosition: index,
+              currentRole:
+                providerId === activeProviderId ? "active" : "standby",
+              health: {
+                providerId,
+                observed: false,
+                healthy: true,
+                consecutiveFailures: 0,
+                lastSuccessAt: null,
+                lastFailureAt: null,
+                lastError: null,
+                updatedAt: null,
+              },
+            },
+          ]),
+        ),
+      },
+      codex: { mode: "normal", maxRetries: 3, providers: {} },
+      gemini: { mode: "normal", maxRetries: 3, providers: {} },
+    },
+  };
+}
+
 describe("AppsGrid failover queue reorder", () => {
   it("persists queue row drag through provider display order", async () => {
-    const shell = createBridgeFixture({ selectedApp: "claude" });
     const primaryProvider = createProviderView("claude", {
       active: true,
       name: "Claude Primary",
@@ -81,12 +175,13 @@ describe("AppsGrid failover queue reorder", () => {
       name: "Claude Fallback",
       providerId: "claude-fallback",
     });
+    const providerState = createProviderState("claude", [
+      primaryProvider,
+      backupProvider,
+      fallbackProvider,
+    ]);
     const { transport, getFailoverState } = createProviderTransportFixture({
-      claude: createProviderState("claude", [
-        primaryProvider,
-        backupProvider,
-        fallbackProvider,
-      ]),
+      claude: providerState,
       codex: createProviderState("codex", [], null),
       gemini: createProviderState("gemini", [], null),
     });
@@ -94,6 +189,13 @@ describe("AppsGrid failover queue reorder", () => {
     await transport.addToFailoverQueue?.("claude", "claude-primary");
     await transport.addToFailoverQueue?.("claude", "claude-fallback");
     await transport.setAutoFailoverEnabled?.("claude", true);
+    const shell = createBridgeFixture({
+      selectedApp: "claude",
+      status: createStatusFromProviderState(
+        providerState,
+        getFailoverState("claude").queue,
+      ),
+    });
 
     render(
       <AppsGrid
