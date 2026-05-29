@@ -766,7 +766,7 @@ pub fn get_effective_current_provider(
 }
 
 #[cfg(test)]
-mod tests {
+mod visible_apps_tests {
     use super::*;
     use serde_json::Value;
     use tempfile::TempDir;
