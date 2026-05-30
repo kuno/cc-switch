@@ -240,6 +240,7 @@ impl RequestContext {
             state.copilot_auth.clone(),
             state.codex_oauth_auth.clone(),
             state.claude_uploaded_auth.clone(),
+            state.oauth_refresh_locks.clone(),
             self.current_provider_id.clone(),
             self.session_id.clone(),
             self.session_client_provided,

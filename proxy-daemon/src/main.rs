@@ -38,9 +38,13 @@ pub use shared_core::*;
 use std::io::Read;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::RwLock;
 
 const OPENWRT_COMMAND_HELP: &str = "unsupported command. expected one of: `cc-switch openwrt get-meta`, `cc-switch openwrt get-runtime-status`, `cc-switch openwrt [claude|codex|gemini] get-runtime-status`, `cc-switch openwrt [claude|codex|gemini] get-config`, `cc-switch openwrt [claude|codex|gemini] set-config`, `cc-switch openwrt [claude|codex|gemini] get-usage-summary`, `cc-switch openwrt [claude|codex|gemini] get-provider-stats`, `cc-switch openwrt [claude|codex|gemini] get-recent-activity`, `cc-switch openwrt [claude|codex|gemini] get-request-logs [page] [page-size]`, `cc-switch openwrt [claude|codex|gemini] get-request-detail <request-id>`, `cc-switch openwrt [claude|codex|gemini] get-active-provider`, `cc-switch openwrt [claude|codex|gemini] upsert-active-provider`, `cc-switch openwrt [claude|codex|gemini] list-providers`, `cc-switch openwrt [claude|codex|gemini] get-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] get-provider-failover <provider-id>`, `cc-switch openwrt [claude|codex|gemini] get-circuit-breaker-stats <provider-id>`, `cc-switch openwrt [claude|codex|gemini] reset-circuit-breaker <provider-id>`, `cc-switch openwrt [claude|codex|gemini] upsert-provider [provider-id]`, `cc-switch openwrt [claude|codex|gemini] delete-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] activate-provider <provider-id>`, `cc-switch openwrt [claude|codex|gemini] get-available-failover-providers`, `cc-switch openwrt [claude|codex|gemini] add-to-failover-queue <provider-id>`, `cc-switch openwrt [claude|codex|gemini] remove-from-failover-queue <provider-id>`, `cc-switch openwrt [claude|codex|gemini] reorder-failover-queue`, `cc-switch openwrt [claude|codex|gemini] set-auto-failover-enabled <true|false>`, `cc-switch openwrt [claude|codex|gemini] set-max-retries <value>`, `cc-switch openwrt claude upload-claude-auth <provider-id>`, `cc-switch openwrt claude remove-claude-auth <provider-id>`, `cc-switch openwrt codex upload-codex-auth <provider-id>`, `cc-switch openwrt codex remove-codex-auth <provider-id>`";
+const OAUTH_REFRESH_SKEW_MS: i64 = 5 * 60 * 1000;
+const OAUTH_REFRESH_MIN_SLEEP: Duration = Duration::from_secs(60);
+const OAUTH_REFRESH_MAX_SLEEP: Duration = Duration::from_secs(5 * 60);
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -417,6 +421,7 @@ async fn startup_claude_oauth_refresh_with_refresher<R>(
     db: &database::Database,
     claude_uploaded_auth: &services::oauth_refresh::ClaudeUploadedAuthManager,
     refresher: &R,
+    warn_unusable: bool,
 ) where
     R: services::oauth_refresh::OAuthTokenRefresher,
 {
@@ -445,22 +450,157 @@ async fn startup_claude_oauth_refresh_with_refresher<R>(
             .get_valid_access_token(&provider_id, refresher)
             .await;
 
-        if result.is_none() {
+        if warn_unusable && result.is_none() {
             log::warn!("[Startup] Claude OAuth provider {provider_id} has no usable token after refresh attempt");
         }
     }
 }
 
-async fn startup_claude_oauth_refresh(
+fn is_codex_oauth_provider_for_refresh(provider: &provider::Provider) -> bool {
+    provider.id == "codex-official"
+        || provider
+            .settings_config
+            .get("auth_mode")
+            .and_then(|v| v.as_str())
+            .is_some_and(|auth_mode| matches!(auth_mode, "codex_oauth" | "client_passthrough"))
+}
+
+async fn refresh_due_codex_oauth_with_refresher<R>(
     db: &database::Database,
-    claude_uploaded_auth: &services::oauth_refresh::ClaudeUploadedAuthManager,
+    oauth_refresh_locks: &services::oauth_refresh::OAuthRefreshLockManager,
+    refresher: &R,
+) where
+    R: services::oauth_refresh::OAuthTokenRefresher,
+{
+    let providers = match db.get_all_providers("codex") {
+        Ok(providers) => providers,
+        Err(error) => {
+            log::warn!(
+                "[OAuthRefresh] failed to list Codex providers for scheduled refresh: {error}"
+            );
+            return;
+        }
+    };
+
+    for provider in providers
+        .into_values()
+        .filter(is_codex_oauth_provider_for_refresh)
+    {
+        let provider_id = provider.id.clone();
+        let provider_key = format!("codex:{provider_id}");
+        let _ = services::oauth_refresh::load_or_refresh_oauth_credentials(
+            "Codex",
+            &provider_id,
+            &provider_key,
+            refresher,
+            oauth_refresh_locks,
+            || services::oauth_refresh::storage::load_codex_refresh_auth_for_provider(&provider_id),
+            |stored, refreshed| {
+                services::oauth_refresh::storage::save_refreshed_codex_auth_for_provider(
+                    &provider_id,
+                    stored,
+                    refreshed,
+                )
+            },
+        )
+        .await;
+    }
+}
+
+async fn refresh_due_codex_oauth(
+    db: &database::Database,
+    oauth_refresh_locks: &services::oauth_refresh::OAuthRefreshLockManager,
 ) {
-    startup_claude_oauth_refresh_with_refresher(
+    refresh_due_codex_oauth_with_refresher(
         db,
-        claude_uploaded_auth,
-        &services::oauth_refresh::ClaudeTokenRefresher::new(),
+        oauth_refresh_locks,
+        &services::oauth_refresh::CodexTokenRefresher::new(),
     )
     .await;
+}
+
+fn delay_until_oauth_refresh(expires_at_ms: Option<i64>, now_ms: i64) -> Option<Duration> {
+    let expires_at_ms = expires_at_ms?;
+    let refresh_at_ms = expires_at_ms.saturating_sub(OAUTH_REFRESH_SKEW_MS);
+    if refresh_at_ms <= now_ms {
+        return Some(OAUTH_REFRESH_MIN_SLEEP);
+    }
+
+    let delay_ms = refresh_at_ms.saturating_sub(now_ms);
+    let delay = Duration::from_millis(delay_ms as u64);
+    Some(delay.clamp(OAUTH_REFRESH_MIN_SLEEP, OAUTH_REFRESH_MAX_SLEEP))
+}
+
+fn min_delay(current: Duration, candidate: Option<Duration>) -> Duration {
+    candidate.map_or(current, |delay| current.min(delay))
+}
+
+fn next_oauth_refresh_delay(db: &database::Database) -> Duration {
+    next_oauth_refresh_delay_at(db, chrono::Utc::now().timestamp_millis())
+}
+
+fn next_oauth_refresh_delay_at(db: &database::Database, now_ms: i64) -> Duration {
+    let mut next = OAUTH_REFRESH_MAX_SLEEP;
+
+    if let Ok(providers) = db.get_all_providers("claude") {
+        for provider in providers.into_values() {
+            if provider
+                .settings_config
+                .get("auth_mode")
+                .and_then(|v| v.as_str())
+                != Some("claude_oauth")
+            {
+                continue;
+            }
+
+            if let Ok(Some(auth)) =
+                services::oauth_refresh::storage::load_claude_refresh_auth_for_provider(
+                    &provider.id,
+                )
+            {
+                next = min_delay(next, delay_until_oauth_refresh(auth.expires_at_ms, now_ms));
+            }
+        }
+    }
+
+    if let Ok(providers) = db.get_all_providers("codex") {
+        for provider in providers
+            .into_values()
+            .filter(is_codex_oauth_provider_for_refresh)
+        {
+            if let Ok(Some(auth)) =
+                services::oauth_refresh::storage::load_codex_refresh_auth_for_provider(&provider.id)
+            {
+                next = min_delay(next, delay_until_oauth_refresh(auth.expires_at_ms, now_ms));
+            }
+        }
+    }
+
+    next
+}
+
+async fn run_oauth_refresh_scheduler(
+    db: Arc<database::Database>,
+    claude_uploaded_auth: services::oauth_refresh::ClaudeUploadedAuthManager,
+    oauth_refresh_locks: services::oauth_refresh::OAuthRefreshLockManager,
+) {
+    loop {
+        startup_claude_oauth_refresh_with_refresher(
+            db.as_ref(),
+            &claude_uploaded_auth,
+            &services::oauth_refresh::ClaudeTokenRefresher::new(),
+            false,
+        )
+        .await;
+        refresh_due_codex_oauth(db.as_ref(), &oauth_refresh_locks).await;
+
+        let delay = next_oauth_refresh_delay(db.as_ref());
+        log::debug!(
+            "[OAuthRefresh] next scheduled OAuth refresh scan in {}s",
+            delay.as_secs()
+        );
+        tokio::time::sleep(delay).await;
+    }
 }
 
 async fn run_daemon() -> anyhow::Result<()> {
@@ -528,14 +668,18 @@ async fn run_daemon() -> anyhow::Result<()> {
         .await
         .map_err(|e| anyhow::anyhow!("Failed to start proxy: {e}"))?;
 
-    // Eagerly refresh any Claude OAuth providers whose access_token is already
-    // expired so they are ready for the first request without needing a quota
-    // call to trigger lazy refresh.
-    if let Some(claude_uploaded_auth) = proxy_service.clone_claude_uploaded_auth_manager().await {
-        let db_for_refresh = db.clone();
-        tokio::spawn(async move {
-            startup_claude_oauth_refresh(db_for_refresh.as_ref(), &claude_uploaded_auth).await;
-        });
+    // Keep uploaded OAuth access tokens warm without relying on request traffic
+    // or `/api/status` polling. Request/status paths still use the same refresh
+    // helpers and locks as a fallback.
+    if let (Some(claude_uploaded_auth), Some(oauth_refresh_locks)) = (
+        proxy_service.clone_claude_uploaded_auth_manager().await,
+        proxy_service.clone_oauth_refresh_lock_manager().await,
+    ) {
+        tokio::spawn(run_oauth_refresh_scheduler(
+            db.clone(),
+            claude_uploaded_auth,
+            oauth_refresh_locks,
+        ));
     }
 
     log::info!("Proxy listening on {}:{}", info.address, info.port);
@@ -569,6 +713,7 @@ async fn wait_for_shutdown_signal() -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
     use serial_test::serial;
     use std::io::Cursor;
     use std::sync::{Mutex, OnceLock};
@@ -652,6 +797,14 @@ mod tests {
                 .join("claude_auth")
                 .join(format!("{provider_id}.json"))
         }
+
+        fn codex_auth_path(&self, provider_id: &str) -> std::path::PathBuf {
+            self._tmp
+                .path()
+                .join("data")
+                .join("codex_auth")
+                .join(format!("{provider_id}.json"))
+        }
     }
 
     impl Drop for TestAuthEnv {
@@ -667,6 +820,41 @@ mod tests {
                 "refreshToken": "valid-refresh-token",
                 "expiresAt": 1_738_000_000_000i64,
                 "scopes": ["user:inference"]
+            }
+        })
+        .to_string()
+        .into_bytes()
+    }
+
+    fn claude_auth_json(expires_at_ms: i64) -> Vec<u8> {
+        serde_json::json!({
+            "claudeAiOauth": {
+                "accessToken": "access-token",
+                "refreshToken": "refresh-token",
+                "expiresAt": expires_at_ms,
+                "scopes": ["user:inference"]
+            }
+        })
+        .to_string()
+        .into_bytes()
+    }
+
+    fn jwt_with_exp(exp_secs: i64) -> String {
+        format!(
+            "{}.{}.",
+            URL_SAFE_NO_PAD.encode(br#"{"alg":"none"}"#),
+            URL_SAFE_NO_PAD.encode(format!(
+                r#"{{"exp":{exp_secs},"https://api.openai.com/auth":{{"chatgpt_account_id":"acc-123"}}}}"#
+            ))
+        )
+    }
+
+    fn codex_auth_json(expires_at_ms: i64) -> Vec<u8> {
+        serde_json::json!({
+            "tokens": {
+                "access_token": jwt_with_exp(expires_at_ms / 1000),
+                "refresh_token": "refresh-token",
+                "account_id": "acc-123"
             }
         })
         .to_string()
@@ -714,6 +902,73 @@ mod tests {
             .expect("save provider");
     }
 
+    fn insert_codex_oauth_provider(db: &database::Database, provider_id: &str) {
+        let provider = crate::provider::Provider {
+            id: provider_id.to_string(),
+            name: "Codex OAuth".to_string(),
+            settings_config: serde_json::json!({ "auth_mode": "codex_oauth" }),
+            website_url: None,
+            category: None,
+            created_at: None,
+            sort_index: None,
+            notes: None,
+            meta: None,
+            icon: None,
+            icon_color: None,
+            in_failover_queue: false,
+        };
+        db.save_provider("codex", &provider).expect("save provider");
+    }
+
+    #[test]
+    fn delay_until_oauth_refresh_uses_skew_and_clamps_bounds() {
+        let now_ms = 1_800_000_000_000;
+
+        assert_eq!(delay_until_oauth_refresh(None, now_ms), None);
+        assert_eq!(
+            delay_until_oauth_refresh(Some(now_ms + 2 * 60 * 1000), now_ms),
+            Some(OAUTH_REFRESH_MIN_SLEEP)
+        );
+        assert_eq!(
+            delay_until_oauth_refresh(Some(now_ms + 8 * 60 * 1000), now_ms),
+            Some(Duration::from_secs(3 * 60))
+        );
+        assert_eq!(
+            delay_until_oauth_refresh(Some(now_ms + 20 * 60 * 1000), now_ms),
+            Some(OAUTH_REFRESH_MAX_SLEEP)
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn next_oauth_refresh_delay_uses_soonest_uploaded_auth_expiry() {
+        let env = TestAuthEnv::new();
+        let db = database::Database::memory().expect("db");
+        let now_ms = 1_800_000_000_000;
+
+        insert_claude_oauth_provider(&db, "claude-oauth");
+        insert_codex_oauth_provider(&db, "codex-oauth");
+
+        let claude_auth_path = env.claude_auth_path("claude-oauth");
+        std::fs::create_dir_all(claude_auth_path.parent().expect("claude auth parent"))
+            .expect("create claude auth dir");
+        std::fs::write(&claude_auth_path, claude_auth_json(now_ms + 8 * 60 * 1000))
+            .expect("write claude auth");
+
+        let codex_auth_path = env.codex_auth_path("codex-oauth");
+        std::fs::create_dir_all(codex_auth_path.parent().expect("codex auth parent"))
+            .expect("create codex auth dir");
+        std::fs::write(&codex_auth_path, codex_auth_json(now_ms + 20 * 60 * 1000))
+            .expect("write codex auth");
+
+        assert_eq!(
+            next_oauth_refresh_delay_at(&db, now_ms),
+            Duration::from_secs(3 * 60)
+        );
+
+        drop(env);
+    }
+
     #[tokio::test]
     #[serial]
     async fn startup_refresh_updates_expired_claude_oauth_token() {
@@ -735,7 +990,8 @@ mod tests {
             new_access_token: "refreshed-access-token".to_string(),
         };
 
-        startup_claude_oauth_refresh_with_refresher(&db, &claude_uploaded_auth, &refresher).await;
+        startup_claude_oauth_refresh_with_refresher(&db, &claude_uploaded_auth, &refresher, true)
+            .await;
 
         let updated =
             services::oauth_refresh::storage::load_claude_refresh_auth_for_provider("claude-oauth")
@@ -785,7 +1041,8 @@ mod tests {
         };
 
         // Should complete without touching any auth file.
-        startup_claude_oauth_refresh_with_refresher(&db, &claude_uploaded_auth, &refresher).await;
+        startup_claude_oauth_refresh_with_refresher(&db, &claude_uploaded_auth, &refresher, true)
+            .await;
 
         // No auth file should have been created.
         assert!(!env.claude_auth_path("claude-apikey").exists());
