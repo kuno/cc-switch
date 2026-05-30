@@ -7,6 +7,11 @@ import type {
   SharedProviderTokenField,
   SharedProviderView,
 } from "./types";
+import type {
+  CodexApiFormat,
+  CodexCatalogModel,
+  CodexChatReasoning,
+} from "@/types";
 
 type ProviderLike = Record<string, unknown>;
 
@@ -34,7 +39,10 @@ function getString(provider: ProviderLike, keys: string[]): string {
   return "";
 }
 
-function getOptionalNumber(provider: ProviderLike, keys: string[]): number | null {
+function getOptionalNumber(
+  provider: ProviderLike,
+  keys: string[],
+): number | null {
   for (const key of keys) {
     const value = provider[key];
     if (typeof value === "number" && Number.isFinite(value)) {
@@ -76,8 +84,7 @@ function parseCodexAuthSummary(
   }
 
   return {
-    accountId:
-      getString(typedValue, ["accountId", "account_id"]) || undefined,
+    accountId: getString(typedValue, ["accountId", "account_id"]) || undefined,
     expiresAt: getOptionalNumber(typedValue, ["expiresAt", "expires_at"]),
     refreshTokenPresent,
   };
@@ -119,6 +126,64 @@ function parseClaudeAuthSummary(
     refreshTokenPresent,
     subscriptionType,
   };
+}
+
+function parseCodexApiFormat(value: unknown): CodexApiFormat | undefined {
+  return value === "openai_chat" || value === "openai_responses"
+    ? value
+    : undefined;
+}
+
+function parseCodexModelCatalog(
+  value: unknown,
+): { models: CodexCatalogModel[] } | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const modelsValue = (value as ProviderLike).models;
+  if (!Array.isArray(modelsValue)) {
+    return undefined;
+  }
+
+  const models = modelsValue.flatMap((entry): CodexCatalogModel[] => {
+    if (!entry || typeof entry !== "object") {
+      return [];
+    }
+
+    const typedEntry = entry as ProviderLike;
+    const model = getString(typedEntry, ["model"]).trim();
+    if (!model) {
+      return [];
+    }
+
+    const displayName = getString(typedEntry, [
+      "displayName",
+      "display_name",
+    ]).trim();
+    const contextWindow = getOptionalNumber(typedEntry, [
+      "contextWindow",
+      "context_window",
+    ]);
+
+    return [
+      {
+        model,
+        displayName: displayName || undefined,
+        contextWindow: contextWindow ?? undefined,
+      },
+    ];
+  });
+
+  return models.length ? { models } : undefined;
+}
+
+function parseCodexChatReasoning(
+  value: unknown,
+): CodexChatReasoning | undefined {
+  return value && typeof value === "object"
+    ? (value as CodexChatReasoning)
+    : undefined;
 }
 
 export function emptySharedProviderView(
@@ -210,6 +275,13 @@ export function normalizeSharedProviderView(
     notes: getString(provider, ["notes"]),
     active: isActive,
     authMode: getString(provider, ["authMode", "auth_mode"]) || undefined,
+    apiFormat: parseCodexApiFormat(provider.apiFormat ?? provider.api_format),
+    modelCatalog: parseCodexModelCatalog(
+      provider.modelCatalog ?? provider.model_catalog,
+    ),
+    codexChatReasoning: parseCodexChatReasoning(
+      provider.codexChatReasoning ?? provider.codex_chat_reasoning,
+    ),
     codexAuth: parseCodexAuthSummary(provider.codexAuth ?? provider.codex_auth),
     claudeAuth: parseClaudeAuthSummary(
       provider.claudeAuth ?? provider.claude_auth,

@@ -29,6 +29,20 @@ export interface OpenWrtRpcResult {
   token_field?: string;
   failoverQueue?: unknown;
   failover_queue?: unknown;
+  success?: boolean;
+  modelIds?: unknown;
+  model_ids?: unknown;
+  models?: unknown;
+  endpoint?: string;
+}
+
+export interface OpenWrtFetchedModel {
+  id?: string;
+  model?: string;
+  displayName?: string;
+  display_name?: string;
+  contextWindow?: number | string;
+  context_window?: number | string;
 }
 
 export interface OpenWrtProviderTransport {
@@ -114,6 +128,10 @@ export interface OpenWrtProviderTransport {
   setMaxRetries?(
     appId: SharedProviderAppId,
     value: number,
+  ): Promise<OpenWrtRpcResult | null>;
+  fetchProviderModels?(
+    appId: SharedProviderAppId,
+    providerId: string,
   ): Promise<OpenWrtRpcResult | null>;
   uploadCodexAuth?(
     appId: SharedProviderAppId,
