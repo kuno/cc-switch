@@ -1,5 +1,10 @@
 import type { AppId } from "@/lib/api";
-import type { ProviderCategory } from "@/types";
+import type {
+  CodexApiFormat,
+  CodexCatalogModel,
+  CodexChatReasoning,
+  ProviderCategory,
+} from "@/types";
 
 export type SharedProviderAppId = Extract<AppId, "claude" | "codex" | "gemini">;
 
@@ -43,6 +48,11 @@ export interface SharedProviderPreset {
   iconColor?: string;
   accentColor?: string;
   authMode?: SharedProviderAuthMode;
+  apiFormat?: CodexApiFormat;
+  modelCatalog?: {
+    models: CodexCatalogModel[];
+  };
+  codexChatReasoning?: CodexChatReasoning;
   supportedOn: {
     desktop: boolean;
     openwrt: boolean;
@@ -82,6 +92,11 @@ export interface SharedProviderView {
   notes: string;
   active: boolean;
   authMode?: SharedProviderAuthMode;
+  apiFormat?: CodexApiFormat;
+  modelCatalog?: {
+    models: CodexCatalogModel[];
+  };
+  codexChatReasoning?: CodexChatReasoning;
   codexAuth?: SharedProviderCodexAuthSummary;
   claudeAuth?: SharedProviderClaudeAuthSummary;
 }
@@ -136,6 +151,11 @@ export interface SharedProviderEditorPayload {
   notes: string;
   authMode?: SharedProviderAuthMode;
   authContent?: string | null;
+  apiFormat?: CodexApiFormat;
+  modelCatalog?: {
+    models: CodexCatalogModel[];
+  };
+  codexChatReasoning?: CodexChatReasoning;
 }
 
 export interface SharedProviderCapabilities {

@@ -2,6 +2,7 @@ import { CheckCircle2, Loader2, Pencil, Save, X } from "lucide-react";
 import type { TFunction } from "i18next";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import type { CodexCatalogModel } from "@/types";
 import type {
   SharedProviderClaudeAuthSummary,
   SharedProviderCodexAuthSummary,
@@ -29,10 +30,13 @@ interface ProviderSidePanelConfigureTabProps {
   }>;
   website: string;
   canSave: boolean;
+  modelFetchPending?: boolean;
+  modelFetchError?: string | null;
   onCancel: () => void;
   onClearAuth: () => void;
   onDraftChange: (draft: SharedProviderEditorPayload) => void;
   onEdit: () => void;
+  onFetchModels?: () => void;
   onPasteAuth: () => void;
   onSave: () => void;
 }
@@ -120,6 +124,46 @@ function openExternalUrl(value: string) {
   }
 
   window.open(url, "_blank", "noopener,noreferrer");
+}
+
+function formatModelCatalog(models: CodexCatalogModel[] | undefined): string {
+  return (models ?? [])
+    .map((model) =>
+      [
+        model.model,
+        model.displayName ?? "",
+        model.contextWindow == null ? "" : String(model.contextWindow),
+      ].join(" | "),
+    )
+    .join("\n");
+}
+
+function parseModelCatalog(
+  value: string,
+): { models: CodexCatalogModel[] } | undefined {
+  const models = value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .flatMap((line): CodexCatalogModel[] => {
+      const [modelId = "", displayName = "", contextWindow = ""] = line
+        .split("|")
+        .map((part) => part.trim());
+
+      if (!modelId) {
+        return [];
+      }
+
+      return [
+        {
+          model: modelId,
+          displayName: displayName || undefined,
+          contextWindow: contextWindow || undefined,
+        },
+      ];
+    });
+
+  return models.length ? { models } : undefined;
 }
 
 function getStoredAuthConnectionLabel(
@@ -265,10 +309,13 @@ export function ProviderSidePanelConfigureTab({
   tokenFieldOptions,
   website,
   canSave,
+  modelFetchPending = false,
+  modelFetchError = null,
   onCancel,
   onClearAuth,
   onDraftChange,
   onEdit,
+  onFetchModels,
   onPasteAuth,
   onSave,
 }: ProviderSidePanelConfigureTabProps) {
@@ -325,6 +372,13 @@ export function ProviderSidePanelConfigureTab({
     : t("openwrt.configure.notConfigured");
   const authTextareaValue =
     draft.authContent === "" ? "" : (draft.authContent ?? "");
+  const modelCatalogText = formatModelCatalog(draft.modelCatalog?.models);
+  const codexApiFormatLabel =
+    draft.apiFormat === "openai_chat"
+      ? "Chat Completions via router"
+      : draft.apiFormat === "openai_responses"
+        ? "Responses native"
+        : "Responses native";
 
   return (
     <div className="owt-provider-panel__config">
@@ -374,6 +428,71 @@ export function ProviderSidePanelConfigureTab({
           }
           value={formatValue(draft.model, t("openwrt.activity.defaultModel"))}
         />
+
+        {isCodex ? (
+          <>
+            <ConfigureRow
+              editing={editing}
+              label="API format"
+              value={codexApiFormatLabel}
+            />
+
+            <ConfigureRow
+              editing={editing}
+              editable
+              label="Model catalog"
+              input={
+                <div className="owt-provider-panel__catalog-editor">
+                  <textarea
+                    aria-label="Model catalog"
+                    className="owt-provider-panel__config-input owt-provider-panel__config-input--mono owt-provider-panel__config-textarea"
+                    rows={4}
+                    spellCheck={false}
+                    placeholder="model-id | Display name | 200000"
+                    value={modelCatalogText}
+                    onChange={(event) =>
+                      onDraftChange({
+                        ...draft,
+                        modelCatalog: parseModelCatalog(event.target.value),
+                      })
+                    }
+                  />
+                  <div className="owt-provider-panel__auth-meta">
+                    <span
+                      className="owt-provider-panel__auth-status"
+                      data-tone="muted"
+                    >
+                      Restart Codex/routing after catalog changes.
+                    </span>
+                    {onFetchModels ? (
+                      <button
+                        type="button"
+                        className="owt-provider-panel__button owt-provider-panel__button--ghost"
+                        disabled={modelFetchPending}
+                        onClick={onFetchModels}
+                      >
+                        {modelFetchPending ? "Fetching..." : "Fetch models"}
+                      </button>
+                    ) : null}
+                  </div>
+                  {modelFetchError ? (
+                    <div
+                      className="owt-provider-panel__auth-status"
+                      data-tone="fail"
+                    >
+                      {modelFetchError}
+                    </div>
+                  ) : null}
+                </div>
+              }
+              value={
+                draft.modelCatalog?.models?.length
+                  ? `${draft.modelCatalog.models.length} models`
+                  : "Not configured"
+              }
+            />
+          </>
+        ) : null}
 
         <ConfigureRow
           editing={editing}

@@ -11,6 +11,7 @@ import {
 } from "react";
 import {
   createOpenWrtProviderAdapter,
+  type OpenWrtRpcResult,
   type OpenWrtProviderTransport,
 } from "@/platform/openwrt/providers";
 import {
@@ -38,6 +39,7 @@ import {
 } from "./ProviderSidePanel";
 import type { ProviderSidePanelPresetGroup } from "./ProviderSidePanelPresetTab";
 import type { OpenWrtPageMessage } from "../pageTypes";
+import type { CodexCatalogModel } from "@/types";
 
 type ProviderSidePanelMode = "new" | "edit";
 type ProviderSidePanelViewMode = "detail" | "preset-picker";
@@ -160,8 +162,11 @@ function createDraftFromProvider(
   return {
     authContent: null,
     authMode: provider.authMode,
+    apiFormat: provider.apiFormat,
     baseUrl: provider.baseUrl,
+    codexChatReasoning: provider.codexChatReasoning,
     model: provider.model,
+    modelCatalog: provider.modelCatalog,
     name: provider.name,
     notes: provider.notes,
     token: "",
@@ -174,8 +179,11 @@ function normalizeDraftForCompare(draft: SharedProviderEditorPayload) {
   return {
     authContent: draft.authContent ?? null,
     authMode: draft.authMode || "",
+    apiFormat: draft.apiFormat || "",
     baseUrl: draft.baseUrl,
+    codexChatReasoning: draft.codexChatReasoning ?? null,
     model: draft.model,
+    modelCatalog: draft.modelCatalog ?? null,
     name: draft.name,
     notes: draft.notes,
     token: draft.token,
@@ -200,7 +208,12 @@ function areDraftsEqual(
     normalizedLeft.model === normalizedRight.model &&
     normalizedLeft.notes === normalizedRight.notes &&
     normalizedLeft.authMode === normalizedRight.authMode &&
-    normalizedLeft.authContent === normalizedRight.authContent
+    normalizedLeft.authContent === normalizedRight.authContent &&
+    normalizedLeft.apiFormat === normalizedRight.apiFormat &&
+    JSON.stringify(normalizedLeft.modelCatalog) ===
+      JSON.stringify(normalizedRight.modelCatalog) &&
+    JSON.stringify(normalizedLeft.codexChatReasoning) ===
+      JSON.stringify(normalizedRight.codexChatReasoning)
   );
 }
 
@@ -228,6 +241,41 @@ function deriveWebsite(baseUrl: string): string {
 
 function getDisplayWebsite(draft: SharedProviderEditorPayload): string {
   return (draft.websiteUrl ?? "").trim() || deriveWebsite(draft.baseUrl);
+}
+
+function getFetchedModelId(model: unknown): string {
+  if (!model || typeof model !== "object") {
+    return "";
+  }
+
+  const record = model as Record<string, unknown>;
+  return typeof record.id === "string"
+    ? record.id
+    : typeof record.model === "string"
+      ? record.model
+      : "";
+}
+
+function normalizeFetchedModels(result: OpenWrtRpcResult): CodexCatalogModel[] {
+  const rawModels = Array.isArray(result.models) ? result.models : [];
+  const fromModels = rawModels.flatMap((entry): CodexCatalogModel[] => {
+    const model = getFetchedModelId(entry).trim();
+    return model ? [{ model }] : [];
+  });
+
+  if (fromModels.length) {
+    return fromModels;
+  }
+
+  const rawIds = Array.isArray(result.modelIds)
+    ? result.modelIds
+    : Array.isArray(result.model_ids)
+      ? result.model_ids
+      : [];
+
+  return rawIds.flatMap((entry): CodexCatalogModel[] =>
+    typeof entry === "string" && entry.trim() ? [{ model: entry.trim() }] : [],
+  );
 }
 
 function getProviderById(
@@ -411,6 +459,8 @@ const ProviderSidePanelHostComponent = forwardRef<
   const [savePending, setSavePending] = useState(false);
   const [activatePending, setActivatePending] = useState(false);
   const [deletePending, setDeletePending] = useState(false);
+  const [modelFetchPending, setModelFetchPending] = useState(false);
+  const [modelFetchError, setModelFetchError] = useState<string | null>(null);
   const [panelMessage, setPanelMessage] = useState<OpenWrtPageMessage | null>(
     null,
   );
@@ -862,8 +912,11 @@ const ProviderSidePanelHostComponent = forwardRef<
     const nextDraft: SharedProviderEditorPayload = {
       ...nextDraftBase,
       authMode: preset.authMode,
+      apiFormat: preset.apiFormat,
       baseUrl: preset.baseUrl,
+      codexChatReasoning: preset.codexChatReasoning,
       model: preset.model,
+      modelCatalog: preset.modelCatalog,
       name: preset.providerName,
       token: "",
       tokenField: preset.tokenField,
@@ -893,6 +946,52 @@ const ProviderSidePanelHostComponent = forwardRef<
     }
 
     closePanel();
+  }
+
+  async function handleFetchModels() {
+    if (
+      appId !== "codex" ||
+      !selectedProviderId ||
+      !transport.fetchProviderModels ||
+      modelFetchPending
+    ) {
+      return;
+    }
+
+    setModelFetchPending(true);
+    setModelFetchError(null);
+    try {
+      const result = await transport.fetchProviderModels(
+        appId,
+        selectedProviderId,
+      );
+      if (!result?.ok && !result?.success) {
+        throw new Error(
+          result?.error || result?.message || "Failed to fetch models.",
+        );
+      }
+
+      const models = normalizeFetchedModels(result);
+      if (!models.length) {
+        throw new Error("No models returned by provider.");
+      }
+
+      setDraft((current) => ({
+        ...current,
+        model: current.model || models[0]?.model || "",
+        modelCatalog: { models },
+      }));
+      setPanelMessage({
+        kind: "success",
+        text: `Fetched ${models.length} models from provider.`,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to fetch models.";
+      setModelFetchError(message);
+    } finally {
+      setModelFetchPending(false);
+    }
   }
 
   async function refreshSelectionAfterMutation(
@@ -1171,6 +1270,8 @@ const ProviderSidePanelHostComponent = forwardRef<
       canDelete={Boolean(canDelete)}
       canSave={canSave}
       saveIdle={saveIdle}
+      modelFetchPending={modelFetchPending}
+      modelFetchError={modelFetchError}
       failoverControlsAvailable={Boolean(
         failoverAdapter && selectedProvider?.providerId,
       )}
@@ -1198,6 +1299,13 @@ const ProviderSidePanelHostComponent = forwardRef<
         setTab("configure");
         setEditing(true);
       }}
+      onFetchModels={
+        appId === "codex" && selectedProviderId && transport.fetchProviderModels
+          ? () => {
+              void handleFetchModels();
+            }
+          : undefined
+      }
       onPasteAuth={handlePasteAuth}
       onClearAuth={() => {
         setDraft((currentDraft) => ({

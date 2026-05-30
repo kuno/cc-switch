@@ -464,6 +464,9 @@ export interface ProviderTransportFixtureOptions {
   getActiveProvider?: Partial<
     Record<SharedProviderAppId, Error | OpenWrtRpcResult | null>
   >;
+  fetchProviderModels?: Partial<
+    Record<SharedProviderAppId, Error | OpenWrtRpcResult | null>
+  >;
 }
 
 export function createProviderTransportFixture(
@@ -487,6 +490,14 @@ export function createProviderTransportFixture(
         options.getActiveProvider?.[appId],
         createActiveProviderResponse(appId),
       ).then((result) => result ?? { ok: false });
+    },
+    async fetchProviderModels(appId) {
+      return resolveTransportResult(options.fetchProviderModels?.[appId], {
+        ok: true,
+        success: true,
+        modelIds: [],
+        models: [],
+      });
     },
     async restartService() {
       return { ok: true };

@@ -7,7 +7,11 @@ import type {
   SharedProviderPresetCategoryId,
   SharedProviderTokenField,
 } from "@/shared/providers/domain/types";
-import type { ProviderCategory } from "@/types";
+import type { CodexCatalogModel, ProviderCategory } from "@/types";
+import {
+  extractCodexBaseUrl,
+  extractCodexModelName,
+} from "@/utils/providerConfigUtils";
 
 type OpenWrtPresetDefinition = {
   id: string;
@@ -17,14 +21,21 @@ type OpenWrtPresetDefinition = {
   model?: string;
   description?: string;
   authMode?: string;
+  apiFormat?: SharedProviderPreset["apiFormat"];
+  modelCatalog?: SharedProviderPreset["modelCatalog"];
+  codexChatReasoning?: SharedProviderPreset["codexChatReasoning"];
 };
 
 type SourcePresetLike = {
   name: string;
   websiteUrl?: string;
+  config?: string;
   category?: ProviderCategory;
   icon?: string;
   iconColor?: string;
+  apiFormat?: string;
+  modelCatalog?: CodexCatalogModel[];
+  codexChatReasoning?: SharedProviderPreset["codexChatReasoning"];
   theme?: {
     backgroundColor?: string;
   };
@@ -54,7 +65,8 @@ const RAW_OPENWRT_PROVIDER_PRESETS: Record<
       id: "claude-official",
       label: "Claude Official",
       baseUrl: "https://api.anthropic.com",
-      description: "Official Anthropic Claude endpoint. API key is optional — client credentials are forwarded automatically.",
+      description:
+        "Official Anthropic Claude endpoint. API key is optional — client credentials are forwarded automatically.",
       authMode: "client_passthrough",
     },
     {
@@ -237,117 +249,7 @@ const RAW_OPENWRT_PROVIDER_PRESETS: Record<
       model: "mimo-v2-pro",
     },
   ],
-  codex: [
-    {
-      id: "codex-official",
-      label: "OpenAI Official",
-      baseUrl: "https://api.openai.com/v1",
-      model: "gpt-5.4",
-      description:
-        "Official OpenAI endpoint. Choose either an API key or an uploaded auth.json for this provider.",
-      authMode: "codex_oauth",
-    },
-    {
-      id: "codex-azure-openai",
-      label: "Azure OpenAI",
-      baseUrl: "https://YOUR_RESOURCE_NAME.openai.azure.com/openai",
-      model: "gpt-5.4",
-      description:
-        "Azure OpenAI Codex endpoint template. Replace YOUR_RESOURCE_NAME before saving.",
-    },
-    {
-      id: "codex-aihubmix",
-      label: "AiHubMix",
-      baseUrl: "https://aihubmix.com/v1",
-      model: "gpt-5.4",
-    },
-    {
-      id: "codex-dmxapi",
-      label: "DMXAPI",
-      baseUrl: "https://www.dmxapi.cn/v1",
-      model: "gpt-5.4",
-    },
-    {
-      id: "codex-packycode",
-      label: "PackyCode",
-      baseUrl: "https://www.packyapi.com/v1",
-      model: "gpt-5.4",
-      description: "PackyCode Codex-compatible endpoint.",
-    },
-    {
-      id: "codex-cubence",
-      label: "Cubence",
-      baseUrl: "https://api.cubence.com/v1",
-      model: "gpt-5.4",
-    },
-    {
-      id: "codex-aigocode",
-      label: "AIGoCode",
-      baseUrl: "https://api.aigocode.com",
-      model: "gpt-5.4",
-    },
-    {
-      id: "codex-rightcode",
-      label: "RightCode",
-      baseUrl: "https://right.codes/codex/v1",
-      model: "gpt-5.4",
-    },
-    {
-      id: "codex-aicodemirror",
-      label: "AICodeMirror",
-      baseUrl: "https://api.aicodemirror.com/api/codex/backend-api/codex",
-      model: "gpt-5.4",
-    },
-    {
-      id: "codex-aicoding",
-      label: "AICoding",
-      baseUrl: "https://api.aicoding.sh",
-      model: "gpt-5.4",
-    },
-    {
-      id: "codex-crazyrouter",
-      label: "CrazyRouter",
-      baseUrl: "https://crazyrouter.com/v1",
-      model: "gpt-5.4",
-    },
-    {
-      id: "codex-sssaicode",
-      label: "SSSAiCode",
-      baseUrl: "https://node-hk.sssaicode.com/api/v1",
-      model: "gpt-5.4",
-    },
-    {
-      id: "codex-compshare",
-      label: "Compshare",
-      baseUrl: "https://api.modelverse.cn/v1",
-      model: "gpt-5.4",
-    },
-    {
-      id: "codex-micu",
-      label: "Micu",
-      baseUrl: "https://www.openclaudecode.cn/v1",
-      model: "gpt-5.4",
-    },
-    {
-      id: "codex-x-code-api",
-      label: "X-Code API",
-      baseUrl: "https://x-code.cc/v1",
-      model: "gpt-5.4",
-    },
-    {
-      id: "codex-ctok",
-      label: "CTok.ai",
-      baseUrl: "https://api.ctok.ai/v1",
-      model: "gpt-5.4",
-    },
-    {
-      id: "codex-openrouter",
-      label: "OpenRouter",
-      baseUrl: "https://openrouter.ai/api/v1",
-      model: "gpt-5.4",
-      description: "OpenRouter Responses-compatible endpoint for Codex.",
-    },
-  ],
+  codex: [],
   gemini: [
     {
       id: "gemini-official",
@@ -466,11 +368,61 @@ function buildOpenWrtPreset(
     iconColor: sourcePreset?.iconColor,
     accentColor: sourcePreset?.theme?.backgroundColor,
     authMode: definition.authMode,
+    apiFormat: definition.apiFormat,
+    modelCatalog: definition.modelCatalog,
+    codexChatReasoning: definition.codexChatReasoning,
     supportedOn: {
       desktop: true,
       openwrt: true,
     },
   };
+}
+
+function slugifyPresetName(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function buildCodexOpenWrtPresetDefinitions(): OpenWrtPresetDefinition[] {
+  return codexProviderPresets.flatMap((preset): OpenWrtPresetDefinition[] => {
+    const isOfficial = preset.name === "OpenAI Official";
+    const baseUrl = isOfficial
+      ? "https://api.openai.com/v1"
+      : extractCodexBaseUrl(preset.config);
+
+    if (!baseUrl) {
+      return [];
+    }
+
+    const model = isOfficial
+      ? "gpt-5.5"
+      : (extractCodexModelName(preset.config) ?? "gpt-5.5");
+
+    return [
+      {
+        id: isOfficial
+          ? "codex-official"
+          : `codex-${slugifyPresetName(preset.name)}`,
+        label: preset.name,
+        baseUrl,
+        model,
+        description: isOfficial
+          ? "Official OpenAI endpoint. Choose either an API key or an uploaded auth.json for this provider."
+          : preset.apiFormat === "openai_chat"
+            ? "Codex Chat-routing preset. Keep OpenWrt local routing running while this provider is in use."
+            : "",
+        authMode: isOfficial ? "codex_oauth" : undefined,
+        apiFormat: preset.apiFormat ?? "openai_responses",
+        modelCatalog: preset.modelCatalog
+          ? { models: preset.modelCatalog }
+          : undefined,
+        codexChatReasoning: preset.codexChatReasoning,
+      },
+    ];
+  });
 }
 
 export const OPENWRT_SHARED_PROVIDER_PRESET_CATALOG: Record<
@@ -480,7 +432,7 @@ export const OPENWRT_SHARED_PROVIDER_PRESET_CATALOG: Record<
   claude: RAW_OPENWRT_PROVIDER_PRESETS.claude.map((definition) =>
     buildOpenWrtPreset("claude", definition),
   ),
-  codex: RAW_OPENWRT_PROVIDER_PRESETS.codex.map((definition) =>
+  codex: buildCodexOpenWrtPresetDefinitions().map((definition) =>
     buildOpenWrtPreset("codex", definition),
   ),
   gemini: RAW_OPENWRT_PROVIDER_PRESETS.gemini.map((definition) =>

@@ -305,6 +305,13 @@ var callListProviders = rpc.declare({
 	expect: { '': {} }
 });
 
+var callFetchProviderModels = rpc.declare({
+	object: 'ccswitch',
+	method: 'fetch_provider_models',
+	params: ['app', 'provider_id'],
+	expect: { '': {} }
+});
+
 var callUpsertActiveProvider = rpc.declare({
 	object: 'ccswitch',
 	method: 'upsert_active_provider',
@@ -3299,6 +3306,9 @@ return view.extend({
 			},
 			getProviderFailoverState: function (appId, providerId) {
 				return callOpenWrtGetProviderFailover(appId, providerId);
+			},
+			fetchProviderModels: function (appId, providerId) {
+				return callFetchProviderModels(appId, providerId);
 			},
 			upsertProvider: function (appId, provider) {
 				return callOpenWrtCreateProvider(appId, provider);

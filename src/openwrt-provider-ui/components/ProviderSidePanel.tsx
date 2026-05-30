@@ -90,6 +90,8 @@ interface ProviderSidePanelProps {
   canDelete: boolean;
   canSave: boolean;
   saveIdle: boolean;
+  modelFetchPending?: boolean;
+  modelFetchError?: string | null;
   failoverControlsAvailable?: boolean;
   failoverControlsReady?: boolean;
   failoverControlsLoading?: boolean;
@@ -108,6 +110,7 @@ interface ProviderSidePanelProps {
   onPresetCancel?: () => void;
   onDraftChange: (draft: SharedProviderEditorPayload) => void;
   onEdit: () => void;
+  onFetchModels?: () => void;
   onPasteAuth: () => void;
   onClearAuth: () => void;
   onActivate: () => void;
@@ -260,6 +263,8 @@ export function ProviderSidePanel({
   canDelete,
   canSave,
   saveIdle,
+  modelFetchPending = false,
+  modelFetchError = null,
   failoverControlsAvailable = false,
   failoverControlsReady = false,
   failoverControlsLoading = false,
@@ -279,6 +284,7 @@ export function ProviderSidePanel({
   onPresetCancel,
   onDraftChange,
   onEdit,
+  onFetchModels,
   onPasteAuth,
   onClearAuth,
   onActivate,
@@ -859,6 +865,8 @@ export function ProviderSidePanel({
                     saveIdle={saveIdle}
                     savePending={savePending}
                     showSaveFlash={showSaveFlash}
+                    modelFetchPending={modelFetchPending}
+                    modelFetchError={modelFetchError}
                     tokenFieldOptions={tokenFieldOptions}
                     website={website}
                     canSave={canSave}
@@ -866,6 +874,7 @@ export function ProviderSidePanel({
                     onClearAuth={onClearAuth}
                     onDraftChange={onDraftChange}
                     onEdit={onEdit}
+                    onFetchModels={onFetchModels}
                     onPasteAuth={onPasteAuth}
                     onSave={onSave}
                   />

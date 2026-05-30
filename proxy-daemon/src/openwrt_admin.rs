@@ -3,7 +3,7 @@ use crate::config::sanitize_provider_name;
 use crate::database::backup::BackupEntry;
 use crate::database::Database;
 use crate::error::AppError;
-use crate::provider::Provider;
+use crate::provider::{CodexChatReasoningConfig, Provider, ProviderMeta};
 use crate::proxy::providers::{
     claude_oauth_store::{
         claude_auth_upload_limit_bytes, delete_claude_auth_for_provider,
@@ -50,6 +50,7 @@ const CLAUDE_PROVIDER_ID_PREFIX: &str = "openwrt-claude-";
 const CLAUDE_DEFAULT_TOKEN_FIELD: &str = "ANTHROPIC_AUTH_TOKEN";
 const CLAUDE_ALT_TOKEN_FIELD: &str = "ANTHROPIC_API_KEY";
 const CODEX_DEFAULT_PROVIDER_ID: &str = "openwrt-codex";
+const CODEX_OFFICIAL_PROVIDER_ID: &str = "codex-official";
 const CODEX_PROVIDER_ID_PREFIX: &str = "openwrt-codex-";
 const CODEX_TOKEN_FIELD: &str = "OPENAI_API_KEY";
 const GEMINI_DEFAULT_PROVIDER_ID: &str = "openwrt-gemini";
@@ -127,6 +128,12 @@ pub struct OpenWrtProviderPayload {
     pub auth_mode: Option<String>,
     #[serde(default)]
     pub auth_content: Option<String>,
+    #[serde(default)]
+    pub api_format: Option<String>,
+    #[serde(default)]
+    pub model_catalog: Option<Value>,
+    #[serde(default)]
+    pub codex_chat_reasoning: Option<CodexChatReasoningConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -177,6 +184,12 @@ pub struct OpenWrtProviderView {
     pub sort_index: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auth_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api_format: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_catalog: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub codex_chat_reasoning: Option<CodexChatReasoningConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub codex_auth: Option<SavedAuthSummary>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -3349,6 +3362,25 @@ fn is_codex_oauth_auth_mode(auth_mode: Option<&str>) -> bool {
     matches!(auth_mode, Some("codex_oauth" | "client_passthrough"))
 }
 
+fn is_official_codex_openai_provider(
+    provider_id: &str,
+    provider_name: &str,
+    base_url: &str,
+) -> bool {
+    let normalized_base_url = base_url.trim().trim_end_matches('/').to_ascii_lowercase();
+    let normalized_name = provider_name.trim().to_ascii_lowercase();
+    let normalized_provider_id = provider_id.trim().to_ascii_lowercase();
+
+    matches!(
+        normalized_base_url.as_str(),
+        "https://api.openai.com/v1" | "https://api.openai.com"
+    ) && (normalized_name == "openai official"
+        || normalized_name == "openai"
+        || normalized_provider_id == CODEX_DEFAULT_PROVIDER_ID
+        || normalized_provider_id == CODEX_OFFICIAL_PROVIDER_ID
+        || normalized_provider_id == "codex-official")
+}
+
 fn build_codex_provider(
     profile: OpenWrtAppProfile,
     existing: Option<Provider>,
@@ -3375,8 +3407,16 @@ fn build_codex_provider(
     let model = resolve_model_value(profile, &provider, &payload.model);
     let provider_id_for_default = provider.id.clone();
     let provider_name_for_default = provider.name.clone();
+    let is_official_openai = is_official_codex_openai_provider(&provider.id, name, base_url);
 
     let root = ensure_settings_object(&mut provider, "Codex provider settings")?;
+    let api_format = payload
+        .api_format
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let use_custom_history_bucket = !is_passthrough && !is_official_openai;
 
     if is_passthrough {
         root.insert("auth_mode".to_string(), json!("codex_oauth"));
@@ -3399,6 +3439,25 @@ fn build_codex_provider(
         }
     }
 
+    match api_format.as_deref() {
+        Some("openai_chat") | Some("openai_responses") => {
+            let value = api_format.as_deref().unwrap();
+            root.insert("apiFormat".to_string(), json!(value));
+            root.insert("api_format".to_string(), json!(value));
+        }
+        Some(other) => return Err(anyhow!("unsupported Codex apiFormat: {other}")),
+        None => {
+            root.remove("apiFormat");
+            root.remove("api_format");
+        }
+    }
+
+    if let Some(model_catalog) = payload.model_catalog {
+        root.insert("modelCatalog".to_string(), model_catalog);
+    } else {
+        root.remove("modelCatalog");
+    }
+
     let config_seed = root
         .get("config")
         .and_then(Value::as_str)
@@ -3410,8 +3469,15 @@ fn build_codex_provider(
                 &provider_name_for_default,
                 base_url,
                 model.as_deref(),
+                use_custom_history_bucket,
+                is_official_openai,
             )
         });
+    let config_seed = if use_custom_history_bucket {
+        force_codex_custom_model_provider(&config_seed)
+    } else {
+        config_seed
+    };
     let updated_base_url =
         crate::codex_config::update_codex_toml_field(&config_seed, "base_url", base_url)
             .map_err(|e| anyhow!("failed to update Codex config base_url: {e}"))?;
@@ -3422,6 +3488,10 @@ fn build_codex_provider(
     )
     .map_err(|e| anyhow!("failed to update Codex config model: {e}"))?;
     root.insert("config".to_string(), json!(updated_config));
+
+    let meta = provider.meta.get_or_insert_with(ProviderMeta::default);
+    meta.api_format = api_format;
+    meta.codex_chat_reasoning = payload.codex_chat_reasoning;
 
     Ok(provider)
 }
@@ -3654,6 +3724,9 @@ fn empty_provider_view(profile: OpenWrtAppProfile) -> OpenWrtProviderView {
         notes: String::new(),
         sort_index: None,
         auth_mode: None,
+        api_format: None,
+        model_catalog: None,
+        codex_chat_reasoning: None,
         codex_auth: None,
         claude_auth: None,
     }
@@ -3695,6 +3768,35 @@ fn provider_to_view(
     } else {
         None
     };
+    let api_format = if matches!(app_type, AppType::Codex) {
+        provider
+            .meta
+            .as_ref()
+            .and_then(|meta| meta.api_format.clone())
+            .or_else(|| {
+                provider
+                    .settings_config
+                    .get("apiFormat")
+                    .or_else(|| provider.settings_config.get("api_format"))
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            })
+    } else {
+        None
+    };
+    let model_catalog = if matches!(app_type, AppType::Codex) {
+        provider.settings_config.get("modelCatalog").cloned()
+    } else {
+        None
+    };
+    let codex_chat_reasoning = if matches!(app_type, AppType::Codex) {
+        provider
+            .meta
+            .as_ref()
+            .and_then(|meta| meta.codex_chat_reasoning.clone())
+    } else {
+        None
+    };
     let claude_auth = if matches!(app_type, AppType::Claude) {
         match load_claude_auth_summary_for_provider(&provider.id) {
             Ok(summary) => summary,
@@ -3728,6 +3830,9 @@ fn provider_to_view(
         notes: provider.notes.clone().unwrap_or_default(),
         sort_index: provider.sort_index,
         auth_mode,
+        api_format,
+        model_catalog,
+        codex_chat_reasoning,
         codex_auth,
         claude_auth,
     }
@@ -3917,8 +4022,16 @@ fn default_codex_config(
     provider_name: &str,
     base_url: &str,
     model: Option<&str>,
+    use_custom_history_bucket: bool,
+    is_official_openai: bool,
 ) -> String {
-    let provider_key = sanitize_codex_provider_key(provider_name, provider_id);
+    let provider_key = if use_custom_history_bucket {
+        "custom".to_string()
+    } else if is_official_openai {
+        "openai".to_string()
+    } else {
+        sanitize_codex_provider_key(provider_name, provider_id)
+    };
     let display_name = provider_name.replace('"', "'");
     let model_line = model
         .filter(|value| !value.trim().is_empty())
@@ -3936,6 +4049,53 @@ base_url = \"{base_url}\"\n\
 wire_api = \"responses\"\n\
 requires_openai_auth = true\n"
     )
+}
+
+fn force_codex_custom_model_provider(config: &str) -> String {
+    match config.parse::<toml_edit::DocumentMut>() {
+        Ok(mut doc) => {
+            let previous_provider_key = doc
+                .get("model_provider")
+                .and_then(|item| item.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty() && *value != "custom")
+                .map(str::to_string);
+
+            if doc.get("model_providers").is_none() {
+                doc["model_providers"] = toml_edit::table();
+            }
+            if let Some(model_providers) = doc["model_providers"].as_table_mut() {
+                let previous_provider_table = previous_provider_key
+                    .as_deref()
+                    .and_then(|key| model_providers.get(key))
+                    .cloned();
+
+                if !model_providers.contains_key("custom") {
+                    if let Some(previous_provider_table) = previous_provider_table {
+                        model_providers["custom"] = previous_provider_table;
+                    } else {
+                        model_providers["custom"] = toml_edit::table();
+                    }
+                } else if let Some(previous_provider_table) = previous_provider_table {
+                    if let (Some(previous_table), Some(custom_table)) = (
+                        previous_provider_table.as_table(),
+                        model_providers
+                            .get_mut("custom")
+                            .and_then(|item| item.as_table_mut()),
+                    ) {
+                        for (key, value) in previous_table.iter() {
+                            if !custom_table.contains_key(key) {
+                                custom_table.insert(key, value.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            doc["model_provider"] = toml_edit::value("custom");
+            doc.to_string()
+        }
+        Err(_) => config.to_string(),
+    }
 }
 
 fn sanitize_codex_provider_key(provider_name: &str, provider_id: &str) -> String {
@@ -4167,6 +4327,9 @@ mod tests {
             notes: "notes".to_string(),
             auth_mode: None,
             auth_content: None,
+            api_format: None,
+            model_catalog: None,
+            codex_chat_reasoning: None,
         }
     }
 
@@ -4182,6 +4345,9 @@ mod tests {
             notes: "codex".to_string(),
             auth_mode: auth_mode.map(str::to_string),
             auth_content: None,
+            api_format: None,
+            model_catalog: None,
+            codex_chat_reasoning: None,
         }
     }
 
@@ -5031,6 +5197,9 @@ mod tests {
                 notes: String::new(),
                 auth_mode: Some("claude_oauth".to_string()),
                 auth_content: None,
+                api_format: None,
+                model_catalog: None,
+                codex_chat_reasoning: None,
             },
         )
         .expect("create claude oauth provider");
@@ -5102,6 +5271,9 @@ mod tests {
                 notes: String::new(),
                 auth_mode: Some("claude_oauth".to_string()),
                 auth_content: None,
+                api_format: None,
+                model_catalog: None,
+                codex_chat_reasoning: None,
             },
         )
         .expect("create claude oauth provider");
@@ -5755,6 +5927,9 @@ mod tests {
             notes: "codex-notes".to_string(),
             auth_mode: None,
             auth_content: None,
+            api_format: None,
+            model_catalog: None,
+            codex_chat_reasoning: None,
         };
 
         let created = upsert_provider_with_payload(&db, &AppType::Codex, Some("codex-a"), payload)
@@ -5800,6 +5975,191 @@ mod tests {
 
     #[test]
     #[serial]
+    fn codex_chat_provider_persists_api_format_catalog_and_custom_history_bucket() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+        let mut payload = codex_payload("DeepSeek", "sk-codex-secret", Some("api_key"));
+        payload.base_url = "https://api.deepseek.com".to_string();
+        payload.model = "deepseek-v4-flash".to_string();
+        payload.api_format = Some("openai_chat".to_string());
+        payload.model_catalog = Some(json!({
+            "models": [
+                {
+                    "model": "deepseek-v4-flash",
+                    "displayName": "DeepSeek V4 Flash",
+                    "contextWindow": 1000000
+                }
+            ]
+        }));
+        payload.codex_chat_reasoning = Some(CodexChatReasoningConfig {
+            supports_thinking: Some(true),
+            supports_effort: Some(true),
+            thinking_param: Some("thinking".to_string()),
+            effort_param: Some("reasoning_effort".to_string()),
+            effort_value_mode: Some("deepseek".to_string()),
+            output_format: Some("reasoning_content".to_string()),
+        });
+
+        let created =
+            upsert_provider_with_payload(&db, &AppType::Codex, Some("codex-deepseek"), payload)
+                .expect("create chat codex provider");
+
+        assert_eq!(created.api_format.as_deref(), Some("openai_chat"));
+        assert_eq!(
+            created
+                .model_catalog
+                .as_ref()
+                .and_then(|catalog| catalog.get("models"))
+                .and_then(Value::as_array)
+                .map(Vec::len),
+            Some(1)
+        );
+        assert_eq!(
+            created
+                .codex_chat_reasoning
+                .as_ref()
+                .and_then(|config| config.thinking_param.as_deref()),
+            Some("thinking")
+        );
+
+        let stored = db
+            .get_provider_by_id("codex-deepseek", CODEX_APP_ID)
+            .expect("load stored codex provider")
+            .expect("stored codex provider");
+        assert_eq!(
+            stored
+                .settings_config
+                .get("apiFormat")
+                .and_then(Value::as_str),
+            Some("openai_chat")
+        );
+        assert_eq!(
+            stored
+                .settings_config
+                .get("modelCatalog")
+                .and_then(|catalog| catalog.get("models"))
+                .and_then(Value::as_array)
+                .map(Vec::len),
+            Some(1)
+        );
+        assert_eq!(
+            stored
+                .meta
+                .as_ref()
+                .and_then(|meta| meta.api_format.as_deref()),
+            Some("openai_chat")
+        );
+        let config = stored
+            .settings_config
+            .get("config")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        assert!(config.contains("model_provider = \"custom\""));
+        assert!(config.contains("[model_providers.custom]"));
+    }
+
+    #[test]
+    #[serial]
+    fn codex_custom_history_bucket_preserves_existing_provider_table_metadata_on_edit() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+        let provider = Provider {
+            id: "codex-deepseek".to_string(),
+            name: "DeepSeek".to_string(),
+            settings_config: json!({
+                "auth_mode": "api_key",
+                "auth": {
+                    CODEX_TOKEN_FIELD: "sk-existing"
+                },
+                "base_url": "https://api.deepseek.com",
+                "model": "deepseek-v4-flash",
+                "config": r#"model_provider = "deepseek_old"
+model = "deepseek-v4-flash"
+model_reasoning_effort = "high"
+disable_response_storage = true
+
+[model_providers.deepseek_old]
+name = "DeepSeek Old"
+base_url = "https://api.deepseek.com"
+wire_api = "responses"
+requires_openai_auth = true
+extra_field = "preserve-me"
+"#
+            }),
+            website_url: None,
+            category: Some("codex".to_string()),
+            created_at: None,
+            sort_index: None,
+            notes: None,
+            meta: None,
+            icon: None,
+            icon_color: None,
+            in_failover_queue: false,
+        };
+        db.save_provider(CODEX_APP_ID, &provider)
+            .expect("insert existing codex provider");
+
+        let mut payload = codex_payload("DeepSeek", "", Some("api_key"));
+        payload.base_url = "https://api.deepseek.com/v2".to_string();
+        payload.model = "deepseek-v4-pro".to_string();
+
+        upsert_provider_with_payload(&db, &AppType::Codex, Some("codex-deepseek"), payload)
+            .expect("edit codex provider");
+
+        let stored = db
+            .get_provider_by_id("codex-deepseek", CODEX_APP_ID)
+            .expect("load stored codex provider")
+            .expect("stored codex provider");
+        let config = stored
+            .settings_config
+            .get("config")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+
+        assert!(config.contains("model_provider = \"custom\""));
+        assert!(config.contains("[model_providers.custom]"));
+        assert!(config.contains("name = \"DeepSeek Old\""));
+        assert!(config.contains("wire_api = \"responses\""));
+        assert!(config.contains("requires_openai_auth = true"));
+        assert!(config.contains("extra_field = \"preserve-me\""));
+        assert!(config.contains("base_url = \"https://api.deepseek.com/v2\""));
+        assert!(config.contains("model = \"deepseek-v4-pro\""));
+    }
+
+    #[test]
+    #[serial]
+    fn codex_official_openai_api_key_provider_keeps_official_model_provider_bucket() {
+        let _env = TestEnv::new();
+        let db = Database::memory().expect("db");
+        let mut payload = codex_payload("OpenAI Official", "sk-openai", Some("api_key"));
+        payload.base_url = "https://api.openai.com/v1".to_string();
+        payload.model = "gpt-5.5".to_string();
+
+        upsert_provider_with_payload(
+            &db,
+            &AppType::Codex,
+            Some("codex-official-api-key"),
+            payload,
+        )
+        .expect("create official OpenAI API-key provider");
+
+        let stored = db
+            .get_provider_by_id("codex-official-api-key", CODEX_APP_ID)
+            .expect("load stored codex provider")
+            .expect("stored codex provider");
+        let config = stored
+            .settings_config
+            .get("config")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+
+        assert!(config.contains("model_provider = \"openai\""));
+        assert!(config.contains("[model_providers.openai]"));
+        assert!(!config.contains("model_provider = \"custom\""));
+    }
+
+    #[test]
+    #[serial]
     fn claude_client_passthrough_provider_allows_empty_token() {
         let _env = TestEnv::new();
         let db = Database::memory().expect("db");
@@ -5814,6 +6174,9 @@ mod tests {
             notes: String::new(),
             auth_mode: Some("client_passthrough".to_string()),
             auth_content: None,
+            api_format: None,
+            model_catalog: None,
+            codex_chat_reasoning: None,
         };
 
         let created =
@@ -5845,6 +6208,9 @@ mod tests {
             notes: String::new(),
             auth_mode: Some("claude_oauth".to_string()),
             auth_content: None,
+            api_format: None,
+            model_catalog: None,
+            codex_chat_reasoning: None,
         };
 
         let created =
@@ -5884,6 +6250,9 @@ mod tests {
             notes: String::new(),
             auth_mode: Some("claude_oauth".to_string()),
             auth_content: None,
+            api_format: None,
+            model_catalog: None,
+            codex_chat_reasoning: None,
         };
         upsert_provider_with_payload(&db, &AppType::Claude, Some("claude-oauth"), payload)
             .expect("create claude oauth provider");
@@ -5960,6 +6329,9 @@ mod tests {
             notes: String::new(),
             auth_mode: Some("codex_oauth".to_string()),
             auth_content: None,
+            api_format: None,
+            model_catalog: None,
+            codex_chat_reasoning: None,
         };
 
         let created =
@@ -6032,6 +6404,9 @@ mod tests {
             notes: String::new(),
             auth_mode: None,
             auth_content: None,
+            api_format: None,
+            model_catalog: None,
+            codex_chat_reasoning: None,
         };
 
         let result = upsert_provider_with_payload(&db, &AppType::Claude, None, payload);
@@ -6058,6 +6433,9 @@ mod tests {
             notes: String::new(),
             auth_mode: None,
             auth_content: None,
+            api_format: None,
+            model_catalog: None,
+            codex_chat_reasoning: None,
         };
         let payload_b = OpenWrtProviderPayload {
             provider_id: None,
@@ -6070,6 +6448,9 @@ mod tests {
             notes: String::new(),
             auth_mode: None,
             auth_content: None,
+            api_format: None,
+            model_catalog: None,
+            codex_chat_reasoning: None,
         };
 
         upsert_provider_with_payload(&db, &AppType::Gemini, Some("gemini-a"), payload_a)
@@ -6130,6 +6511,9 @@ mod tests {
             notes: String::new(),
             auth_mode: None,
             auth_content: None,
+            api_format: None,
+            model_catalog: None,
+            codex_chat_reasoning: None,
         };
 
         upsert_provider_with_payload(&db, &AppType::Codex, Some("shared-id"), payload)
