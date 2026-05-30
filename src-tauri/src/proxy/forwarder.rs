@@ -24,10 +24,14 @@ use super::{
 #[cfg(feature = "tauri-desktop")]
 use crate::proxy::auth_state::CopilotAuthState;
 use crate::proxy::providers::codex_oauth_auth::CodexOAuthManager;
-use crate::proxy::providers::codex_oauth_store::load_codex_auth_for_provider;
+use crate::proxy::providers::codex_oauth_store::TmpCodexAuth;
 use crate::proxy::providers::copilot_auth::CopilotAuthManager;
+use crate::services::oauth_refresh::storage::{
+    load_codex_refresh_auth_for_provider, save_refreshed_codex_auth_for_provider,
+};
 use crate::services::oauth_refresh::{
-    ClaudeTokenRefresher, ClaudeUploadedAuthManager, OAuthTokenRefresher,
+    load_or_refresh_oauth_credentials, ClaudeTokenRefresher, ClaudeUploadedAuthManager,
+    CodexTokenRefresher, OAuthRefreshLockManager, OAuthTokenRefresher,
 };
 use crate::{app_config::AppType, provider::Provider};
 use futures::StreamExt;
@@ -40,6 +44,8 @@ use tokio::sync::RwLock;
 
 const PROXY_AUTH_PLACEHOLDER: &str = "PROXY_MANAGED";
 
+#[cfg(test)]
+use crate::proxy::providers::codex_oauth_store::load_codex_auth_for_provider;
 #[cfg(test)]
 use crate::services::oauth_refresh::storage::load_claude_refresh_auth_for_provider;
 
@@ -110,6 +116,8 @@ pub struct RequestForwarder {
     codex_oauth_auth: Option<Arc<RwLock<CodexOAuthManager>>>,
     /// Shared Claude uploaded-auth cache and refresh coordinator
     claude_uploaded_auth: ClaudeUploadedAuthManager,
+    /// Shared refresh locks for uploaded Codex auth files.
+    oauth_refresh_locks: OAuthRefreshLockManager,
     /// 请求开始时的"当前供应商 ID"（用于判断是否需要同步 UI/托盘）
     current_provider_id_at_start: String,
     /// 代理会话 ID（用于 Gemini Native shadow replay）
@@ -365,6 +373,7 @@ impl RequestForwarder {
         copilot_auth: Option<Arc<RwLock<CopilotAuthManager>>>,
         codex_oauth_auth: Option<Arc<RwLock<CodexOAuthManager>>>,
         claude_uploaded_auth: ClaudeUploadedAuthManager,
+        oauth_refresh_locks: OAuthRefreshLockManager,
         current_provider_id_at_start: String,
         session_id: String,
         session_client_provided: bool,
@@ -390,6 +399,7 @@ impl RequestForwarder {
             copilot_auth,
             codex_oauth_auth,
             claude_uploaded_auth,
+            oauth_refresh_locks,
             current_provider_id_at_start,
             session_id,
             session_client_provided,
@@ -533,6 +543,32 @@ impl RequestForwarder {
         let refresher = ClaudeTokenRefresher::new();
         load_claude_oauth_auth_with_refresher(&self.claude_uploaded_auth, provider, &refresher)
             .await
+    }
+
+    async fn load_codex_uploaded_auth_for_provider(
+        &self,
+        provider: &Provider,
+    ) -> Option<TmpCodexAuth> {
+        let provider_id = provider.id.clone();
+        let provider_key = format!("codex:{provider_id}");
+        let refresher = CodexTokenRefresher::new();
+        let auth = load_or_refresh_oauth_credentials(
+            "Codex",
+            &provider_id,
+            &provider_key,
+            &refresher,
+            &self.oauth_refresh_locks,
+            || load_codex_refresh_auth_for_provider(&provider_id),
+            |stored, refreshed| {
+                save_refreshed_codex_auth_for_provider(&provider_id, stored, refreshed)
+            },
+        )
+        .await?;
+
+        Some(TmpCodexAuth {
+            access_token: auth.access_token,
+            account_id: auth.account_id,
+        })
     }
 
     #[cfg(test)]
@@ -1537,7 +1573,7 @@ impl RequestForwarder {
             }
         }
         let tmp_codex_auth = if is_codex_oauth_upload_eligible(app_type_str, provider, &base_url) {
-            load_codex_auth_for_provider(&provider.id)
+            self.load_codex_uploaded_auth_for_provider(provider).await
         } else {
             None
         };
@@ -2987,6 +3023,7 @@ mod tests {
             copilot_auth: None,
             codex_oauth_auth: None,
             claude_uploaded_auth: ClaudeUploadedAuthManager::new(),
+            oauth_refresh_locks: OAuthRefreshLockManager::new(),
             #[cfg(feature = "tauri-desktop")]
             app_handle: None,
             current_provider_id_at_start: String::new(),
@@ -3120,6 +3157,7 @@ mod tests {
             None,
             None,
             crate::services::oauth_refresh::ClaudeUploadedAuthManager::new(),
+            crate::services::oauth_refresh::OAuthRefreshLockManager::new(),
             String::new(),
             "test-session".to_string(),
             true,
