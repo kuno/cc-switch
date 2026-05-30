@@ -1162,7 +1162,7 @@ mod tests {
     use crate::proxy::{
         failover_switch::FailoverSwitchManager,
         provider_router::ProviderRouter,
-        providers::gemini_shadow::GeminiShadowStore,
+        providers::{codex_chat_history::CodexChatHistoryStore, gemini_shadow::GeminiShadowStore},
         quota_cache::RateLimitSnapshotCache,
         rate_limit::new_rate_limit_store,
         types::{ProxyConfig, ProxyStatus},
@@ -1187,6 +1187,7 @@ mod tests {
             current_providers: current_providers.clone(),
             provider_router: Arc::new(ProviderRouter::new(db.clone())),
             gemini_shadow: Arc::new(GeminiShadowStore::default()),
+            codex_chat_history: Arc::new(CodexChatHistoryStore::default()),
             copilot_auth: None,
             codex_oauth_auth: None,
             failover_manager: Arc::new(FailoverSwitchManager::new(db, current_providers)),
