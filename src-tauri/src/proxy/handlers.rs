@@ -48,7 +48,9 @@ use super::{
 };
 use crate::app_config::AppType;
 use crate::database::PRICING_SOURCE_REQUEST;
+use crate::provider::Provider;
 use crate::proxy::circuit_breaker::CircuitBreakerStats;
+use crate::proxy::providers::copilot_auth::{CopilotUsageResponse, QuotaDetail};
 use crate::proxy::rate_limit::{
     quota_exhausted_reset, BalanceSnapshot, RateLimitSnapshot, RateLimitWindow,
 };
@@ -59,7 +61,9 @@ use crate::services::oauth_refresh::{
     load_or_refresh_oauth_credentials, ClaudeTokenRefresher, CodexTokenRefresher,
     OAuthTokenRefresher,
 };
-use crate::services::subscription::{query_claude_quota, query_codex_quota, SubscriptionQuota};
+use crate::services::subscription::{
+    get_subscription_quota, query_claude_quota, query_codex_quota, SubscriptionQuota,
+};
 use crate::services::usage_stats::{ProviderStats, UsageSummary};
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use bytes::Bytes;
@@ -73,8 +77,11 @@ use std::future::Future;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 const CODEX_OFFICIAL_PROVIDER_ID: &str = "codex-official";
+const GEMINI_OFFICIAL_PROVIDER_ID: &str = "gemini-official";
 const CODEX_OAUTH_AUTH_MODE: &str = "codex_oauth";
 const CODEX_LEGACY_CLIENT_PASSTHROUGH_AUTH_MODE: &str = "client_passthrough";
+const GITHUB_COPILOT_PROVIDER_TYPE: &str = "github_copilot";
+const GEMINI_GOOGLE_OFFICIAL_PARTNER_KEY: &str = "google-official";
 const CLAUDE_MODEL_LIST: &[(&str, &str)] = &[
     ("claude-haiku-4-5-20251001", "Claude Haiku 4.5"),
     ("claude-sonnet-4-6", "Claude Sonnet 4.6"),
@@ -178,6 +185,38 @@ fn is_claude_oauth_provider(provider: &crate::provider::Provider) -> bool {
         .get("auth_mode")
         .and_then(Value::as_str)
         == Some(CLAUDE_OAUTH_AUTH_MODE)
+}
+
+fn is_gemini_oauth_provider(provider: &Provider) -> bool {
+    provider.id == GEMINI_OFFICIAL_PROVIDER_ID
+        || provider
+            .meta
+            .as_ref()
+            .and_then(|meta| meta.partner_promotion_key.as_deref())
+            .is_some_and(|key| key.eq_ignore_ascii_case(GEMINI_GOOGLE_OFFICIAL_PARTNER_KEY))
+        || {
+            let name = provider.name.to_ascii_lowercase();
+            name == "google" || name.starts_with("google ")
+        }
+}
+
+fn is_github_copilot_provider(provider: &Provider) -> bool {
+    provider
+        .meta
+        .as_ref()
+        .and_then(|meta| meta.provider_type.as_deref())
+        == Some(GITHUB_COPILOT_PROVIDER_TYPE)
+        || provider
+            .meta
+            .as_ref()
+            .and_then(|meta| meta.usage_script.as_ref())
+            .and_then(|script| script.template_type.as_deref())
+            == Some(GITHUB_COPILOT_PROVIDER_TYPE)
+        || provider
+            .settings_config
+            .pointer("/env/ANTHROPIC_BASE_URL")
+            .and_then(Value::as_str)
+            .is_some_and(|url| url.contains("githubcopilot.com"))
 }
 
 fn quota_cache_key(app_type: &str, provider_id: &str) -> String {
@@ -460,9 +499,256 @@ async fn refresh_claude_quota_snapshots(state: &ProxyState) {
     .await;
 }
 
+async fn refresh_gemini_quota_snapshots_with_query<F, Fut>(state: &ProxyState, query_quota: F)
+where
+    F: Fn() -> Fut + Clone,
+    Fut: Future<Output = Result<SubscriptionQuota, String>>,
+{
+    #[cfg(test)]
+    record_live_quota_refresh_call();
+
+    let providers = match state.db.get_all_providers("gemini") {
+        Ok(providers) => providers,
+        Err(error) => {
+            log::warn!("[Quota] failed to list gemini providers for live quota refresh: {error}");
+            return;
+        }
+    };
+
+    let mut live_refresh_provider_ids = HashSet::new();
+    let mut live_fetches = Vec::new();
+
+    for provider in providers.into_values().filter(is_gemini_oauth_provider) {
+        let query_quota = query_quota.clone();
+        let provider_id = provider.id.clone();
+        let provider_name = provider.name.clone();
+
+        live_refresh_provider_ids.insert(provider.id.clone());
+        live_fetches.push(refresh_cached_quota_snapshot(
+            state,
+            "gemini",
+            provider_id.clone(),
+            provider_name.clone(),
+            move || async move {
+                let quota = query_quota().await?;
+                build_subscription_quota_snapshot(
+                    state,
+                    "gemini",
+                    &provider_id,
+                    &provider_name,
+                    quota,
+                )
+                .await
+            },
+        ));
+    }
+
+    {
+        let mut store = state.rate_limits.write().await;
+        store.retain(|_, snapshot| {
+            !(snapshot.app_type == "gemini"
+                && snapshot.source.as_deref() == Some("subscription_quota")
+                && !live_refresh_provider_ids.contains(&snapshot.provider_id))
+        });
+    }
+
+    if live_fetches.is_empty() {
+        return;
+    }
+
+    let refreshed = join_all(live_fetches).await;
+    let mut store = state.rate_limits.write().await;
+    for snapshot in refreshed.into_iter().flatten() {
+        store.insert(snapshot.provider_id.clone(), snapshot);
+    }
+}
+
+async fn refresh_gemini_quota_snapshots(state: &ProxyState) {
+    refresh_gemini_quota_snapshots_with_query(state, || async {
+        get_subscription_quota("gemini").await
+    })
+    .await;
+}
+
+fn copilot_reset_timestamp(reset_date: &str) -> Option<i64> {
+    chrono::DateTime::parse_from_rfc3339(reset_date)
+        .map(|dt| dt.timestamp())
+        .ok()
+        .or_else(|| {
+            chrono::NaiveDate::parse_from_str(reset_date, "%Y-%m-%d")
+                .ok()
+                .and_then(|date| date.and_hms_opt(0, 0, 0))
+                .map(|dt| dt.and_utc().timestamp())
+        })
+}
+
+fn copilot_quota_window(name: &str, detail: &QuotaDetail, reset: Option<i64>) -> RateLimitWindow {
+    let utilization = if detail.unlimited {
+        Some(0.0)
+    } else {
+        Some((1.0 - (detail.percent_remaining / 100.0)).clamp(0.0, 1.0))
+    };
+
+    RateLimitWindow {
+        name: name.to_string(),
+        status: if !detail.unlimited && detail.remaining <= 0 {
+            Some("rejected".to_string())
+        } else {
+            None
+        },
+        utilization,
+        reset,
+    }
+}
+
+fn build_copilot_quota_snapshot(
+    app_type: &str,
+    provider: &Provider,
+    usage: &CopilotUsageResponse,
+    captured_at: i64,
+) -> RateLimitSnapshot {
+    let reset = copilot_reset_timestamp(&usage.quota_reset_date);
+    let premium = &usage.quota_snapshots.premium_interactions;
+
+    RateLimitSnapshot {
+        app_type: app_type.to_string(),
+        provider_id: provider.id.clone(),
+        provider_name: provider.name.clone(),
+        source: Some("copilot_usage".to_string()),
+        status: None,
+        windows: vec![
+            copilot_quota_window("chat", &usage.quota_snapshots.chat, reset),
+            copilot_quota_window("completions", &usage.quota_snapshots.completions, reset),
+            copilot_quota_window("premium_interactions", premium, reset),
+        ],
+        representative_claim: Some(usage.copilot_plan.clone()),
+        overage_status: None,
+        fallback_percentage: None,
+        requests_limit: if premium.unlimited {
+            None
+        } else {
+            Some(premium.entitlement.max(0) as u64)
+        },
+        requests_remaining: if premium.unlimited {
+            None
+        } else {
+            Some(premium.remaining.max(0) as u64)
+        },
+        tokens_limit: None,
+        tokens_remaining: None,
+        balances: None,
+        captured_at,
+    }
+}
+
+async fn refresh_copilot_quota_snapshots_with_query<F, Fut>(state: &ProxyState, query_usage: F)
+where
+    F: Fn(Option<String>) -> Fut + Clone,
+    Fut: Future<Output = Result<CopilotUsageResponse, String>>,
+{
+    #[cfg(test)]
+    record_live_quota_refresh_call();
+
+    let providers = match state.db.get_all_providers("claude") {
+        Ok(providers) => providers,
+        Err(error) => {
+            log::warn!(
+                "[Quota] failed to list claude providers for Copilot quota refresh: {error}"
+            );
+            return;
+        }
+    };
+
+    let mut live_fetches = Vec::new();
+
+    for provider in providers.into_values().filter(is_github_copilot_provider) {
+        let account_id = provider
+            .meta
+            .as_ref()
+            .and_then(|meta| meta.managed_account_id_for(GITHUB_COPILOT_PROVIDER_TYPE));
+        let app_type = "claude".to_string();
+        let provider_id = provider.id.clone();
+        let provider_name = provider.name.clone();
+        let provider_for_refresh = provider.clone();
+        let cache_key = format!(
+            "copilot_usage:{}:{}:{}",
+            app_type,
+            provider_id,
+            account_id.as_deref().unwrap_or("default")
+        );
+        let query_usage = query_usage.clone();
+
+        live_fetches.push(async move {
+            match state
+                .quota_snapshot_cache
+                .get_or_refresh(&cache_key, move || async move {
+                    let usage = query_usage(account_id.clone()).await?;
+                    Ok(build_copilot_quota_snapshot(
+                        &app_type,
+                        &provider_for_refresh,
+                        &usage,
+                        chrono::Utc::now().timestamp_millis(),
+                    ))
+                })
+                .await
+            {
+                Ok(mut snapshot) => {
+                    snapshot.provider_id = provider_id;
+                    snapshot.provider_name = provider_name;
+                    Some(snapshot)
+                }
+                Err(error) => {
+                    log::warn!(
+                        "[Quota] failed to refresh Copilot quota for {} ({}): {}",
+                        provider_name,
+                        provider_id,
+                        error
+                    );
+                    None
+                }
+            }
+        });
+    }
+
+    if live_fetches.is_empty() {
+        return;
+    }
+
+    let refreshed = join_all(live_fetches).await;
+    let mut store = state.rate_limits.write().await;
+    for snapshot in refreshed.into_iter().flatten() {
+        store.insert(snapshot.provider_id.clone(), snapshot);
+    }
+}
+
+async fn refresh_copilot_quota_snapshots(state: &ProxyState) {
+    let Some(copilot_auth) = state.copilot_auth.clone() else {
+        #[cfg(test)]
+        record_live_quota_refresh_call();
+        return;
+    };
+
+    refresh_copilot_quota_snapshots_with_query(state, move |account_id: Option<String>| {
+        let copilot_auth = copilot_auth.clone();
+        async move {
+            let auth = copilot_auth.read().await;
+            match account_id.as_deref() {
+                Some(account_id) => auth
+                    .fetch_usage_for_account(account_id)
+                    .await
+                    .map_err(|error| error.to_string()),
+                None => auth.fetch_usage().await.map_err(|error| error.to_string()),
+            }
+        }
+    })
+    .await;
+}
+
 async fn refresh_live_quota_snapshots(state: &ProxyState) {
     refresh_codex_quota_snapshots(&state).await;
+    refresh_gemini_quota_snapshots(&state).await;
     refresh_claude_quota_snapshots(&state).await;
+    refresh_copilot_quota_snapshots(&state).await;
     super::third_party_quota::refresh_third_party_coding_plan_snapshots(&state).await;
     super::third_party_quota::refresh_third_party_balance_snapshots(&state).await;
 }
@@ -3857,18 +4143,23 @@ mod tests {
         build_api_status_response, build_provider_quota, get_api_status,
         body_looks_like_sse, chat_sse_to_response_value, classify_body_for_diagnostics,
         codex_proxy_error_json, is_claude_oauth_provider, is_codex_oauth_provider,
+        is_gemini_oauth_provider, is_github_copilot_provider,
         live_quota_refresh_call_count,
         normalize_claude_gateway_endpoint,
         refresh_claude_quota_snapshots_with_query,
         refresh_claude_quota_snapshots_with_query_and_refresher,
         refresh_codex_quota_snapshots_with_query_and_refresher,
-        reset_live_quota_refresh_call_count,
-        responses_sse_stream_to_anthropic_message, responses_sse_to_response_value,
+        refresh_copilot_quota_snapshots_with_query, refresh_gemini_quota_snapshots_with_query,
+        reset_live_quota_refresh_call_count, responses_sse_stream_to_anthropic_message,
+        responses_sse_to_response_value,
         should_use_claude_transform_streaming, transform, upstream_body_parse_error,
     };
     use crate::app_config::AppType;
     use crate::database::Database;
-    use crate::provider::Provider;
+    use crate::provider::{AuthBinding, AuthBindingSource, Provider, ProviderMeta};
+    use crate::proxy::providers::copilot_auth::{
+        CopilotUsageResponse, QuotaDetail, QuotaSnapshots,
+    };
     use crate::proxy::{
         failover_switch::FailoverSwitchManager,
         handler_context::RequestContext,
@@ -4680,6 +4971,45 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
         assert!(is_claude_oauth_provider(&provider));
     }
 
+    #[test]
+    fn gemini_official_seed_counts_as_gemini_oauth_provider() {
+        let provider = Provider::with_id(
+            "gemini-official".to_string(),
+            "Google Official".to_string(),
+            json!({ "env": {}, "config": {} }),
+            None,
+        );
+
+        assert!(is_gemini_oauth_provider(&provider));
+    }
+
+    #[test]
+    fn github_copilot_provider_detection_accepts_metadata_or_base_url() {
+        let mut typed_provider = Provider::with_id(
+            "copilot".to_string(),
+            "GitHub Copilot".to_string(),
+            json!({ "env": {} }),
+            None,
+        );
+        typed_provider.meta = Some(ProviderMeta {
+            provider_type: Some("github_copilot".to_string()),
+            ..ProviderMeta::default()
+        });
+        assert!(is_github_copilot_provider(&typed_provider));
+
+        let url_provider = Provider::with_id(
+            "copilot-url".to_string(),
+            "Copilot URL".to_string(),
+            json!({
+                "env": {
+                    "ANTHROPIC_BASE_URL": "https://api.githubcopilot.com"
+                }
+            }),
+            None,
+        );
+        assert!(is_github_copilot_provider(&url_provider));
+    }
+
     fn env_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
@@ -5101,6 +5431,34 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
         }
     }
 
+    fn sample_copilot_usage() -> CopilotUsageResponse {
+        CopilotUsageResponse {
+            copilot_plan: "pro".to_string(),
+            quota_reset_date: "2026-05-01".to_string(),
+            quota_snapshots: QuotaSnapshots {
+                chat: QuotaDetail {
+                    entitlement: 100,
+                    remaining: 80,
+                    percent_remaining: 80.0,
+                    unlimited: false,
+                },
+                completions: QuotaDetail {
+                    entitlement: 1000,
+                    remaining: 1000,
+                    percent_remaining: 100.0,
+                    unlimited: true,
+                },
+                premium_interactions: QuotaDetail {
+                    entitlement: 50,
+                    remaining: 12,
+                    percent_remaining: 24.0,
+                    unlimited: false,
+                },
+            },
+            endpoints: None,
+        }
+    }
+
     #[tokio::test]
     async fn api_status_empty_db_includes_supported_apps_with_empty_state() {
         let db = Arc::new(Database::memory().expect("db"));
@@ -5443,7 +5801,7 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
 
         assert_eq!(
             live_quota_refresh_call_count(),
-            4,
+            6,
             "/api/status should run the cached quota refresh pass before rendering quota data"
         );
     }
@@ -6235,5 +6593,95 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
             .expect("refreshed auth");
         assert_eq!(refreshed_auth.refresh_token, "rotated-refresh");
         assert_eq!(refreshed_auth.account_id.as_deref(), Some("acc-999"));
+    }
+
+    #[tokio::test]
+    async fn refresh_gemini_quota_snapshots_uses_official_provider_credentials_path() {
+        let db = Arc::new(Database::memory().expect("db"));
+        db.save_provider(
+            "gemini",
+            &Provider::with_id(
+                "gemini-official".to_string(),
+                "Google Official".to_string(),
+                json!({ "env": {}, "config": {} }),
+                None,
+            ),
+        )
+        .expect("save gemini provider");
+        let state = test_proxy_state(db);
+        let calls = Arc::new(Mutex::new(0usize));
+
+        refresh_gemini_quota_snapshots_with_query(&state, {
+            let calls = calls.clone();
+            move || {
+                let calls = calls.clone();
+                async move {
+                    *calls.lock().expect("calls") += 1;
+                    Ok(sample_quota("gemini", "gemini_pro", 66.0))
+                }
+            }
+        })
+        .await;
+
+        assert_eq!(*calls.lock().expect("calls"), 1);
+        let store = state.rate_limits.read().await;
+        let snapshot = store.get("gemini-official").expect("snapshot");
+        assert_eq!(snapshot.app_type, "gemini");
+        assert_eq!(snapshot.source.as_deref(), Some("subscription_quota"));
+        assert_eq!(snapshot.windows[0].name, "gemini_pro");
+    }
+
+    #[tokio::test]
+    async fn refresh_copilot_quota_snapshots_uses_managed_account_binding() {
+        let db = Arc::new(Database::memory().expect("db"));
+        let mut provider = Provider::with_id(
+            "copilot".to_string(),
+            "GitHub Copilot".to_string(),
+            json!({
+                "env": {
+                    "ANTHROPIC_BASE_URL": "https://api.githubcopilot.com"
+                }
+            }),
+            None,
+        );
+        provider.meta = Some(ProviderMeta {
+            provider_type: Some("github_copilot".to_string()),
+            auth_binding: Some(AuthBinding {
+                source: AuthBindingSource::ManagedAccount,
+                auth_provider: Some("github_copilot".to_string()),
+                account_id: Some("acct-1".to_string()),
+            }),
+            ..ProviderMeta::default()
+        });
+        db.save_provider("claude", &provider)
+            .expect("save copilot provider");
+        let state = test_proxy_state(db);
+        let seen_accounts = Arc::new(Mutex::new(Vec::new()));
+
+        refresh_copilot_quota_snapshots_with_query(&state, {
+            let seen_accounts = seen_accounts.clone();
+            move |account_id: Option<String>| {
+                let seen_accounts = seen_accounts.clone();
+                async move {
+                    seen_accounts.lock().expect("accounts").push(account_id);
+                    Ok(sample_copilot_usage())
+                }
+            }
+        })
+        .await;
+
+        assert_eq!(
+            seen_accounts.lock().expect("accounts").as_slice(),
+            &[Some("acct-1".to_string())]
+        );
+        let store = state.rate_limits.read().await;
+        let snapshot = store.get("copilot").expect("snapshot");
+        assert_eq!(snapshot.app_type, "claude");
+        assert_eq!(snapshot.source.as_deref(), Some("copilot_usage"));
+        assert_eq!(snapshot.representative_claim.as_deref(), Some("pro"));
+        assert_eq!(snapshot.requests_limit, Some(50));
+        assert_eq!(snapshot.requests_remaining, Some(12));
+        assert_eq!(snapshot.windows[2].name, "premium_interactions");
+        assert_eq!(snapshot.windows[2].utilization, Some(0.76));
     }
 }
