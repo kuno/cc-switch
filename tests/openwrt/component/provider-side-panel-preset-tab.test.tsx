@@ -16,6 +16,7 @@ import { createBridgeFixture } from "./fixtures/bridge";
 import { createProviderTransportFixture } from "./fixtures/providerTransport";
 import {
   createPresetGroups,
+  createProviderView,
   createProviderState,
 } from "../provider-panel-fixtures";
 
@@ -387,14 +388,132 @@ describe("ProviderSidePanelPresetTab", () => {
       expect(transport.upsertProvider).toHaveBeenCalledWith("codex", {
         authContent: null,
         authMode: "codex_oauth",
+        apiFormat: "openai_responses",
         baseUrl: "https://api.openai.com/v1",
-        model: "gpt-5.4",
+        codexChatReasoning: undefined,
+        model: "gpt-5.5",
+        modelCatalog: undefined,
         name: "OpenAI Official",
         notes: "",
         token: "",
         tokenField: "OPENAI_API_KEY",
         websiteUrl: "https://chatgpt.com/codex",
       }),
+    );
+  });
+
+  it("hydrates Codex chat-routing preset metadata and model catalog into the editor payload", async () => {
+    const user = userEvent.setup();
+    const shell = createBridgeFixture({
+      selectedApp: "codex",
+      serviceStatus: {
+        isRunning: false,
+      },
+    });
+    const { transport } = createProviderTransportFixture({
+      codex: createProviderState("codex", [], null),
+    });
+
+    render(<HostHarness shell={shell} transport={transport} />);
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Open codex provider panel",
+      }),
+    );
+    await screen.findByRole("dialog", {
+      name: "Codex providers",
+    });
+
+    await user.click(screen.getByRole("radio", { name: /DeepSeek/i }));
+    await user.click(screen.getByRole("button", { name: "Select preset" }));
+
+    expect(screen.getByLabelText("Model")).toHaveValue("deepseek-v4-flash");
+    expect(screen.getByText("Chat Completions via router")).toBeInTheDocument();
+    expect(screen.getByLabelText("Model catalog")).toHaveValue(
+      "deepseek-v4-flash | DeepSeek V4 Flash | 1000000\ndeepseek-v4-pro | DeepSeek V4 Pro | 1000000",
+    );
+
+    await user.type(screen.getByLabelText("API token"), "sk-deepseek");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(transport.upsertProvider).toHaveBeenCalledWith(
+        "codex",
+        expect.objectContaining({
+          apiFormat: "openai_chat",
+          baseUrl: "https://api.deepseek.com",
+          model: "deepseek-v4-flash",
+          modelCatalog: {
+            models: expect.arrayContaining([
+              expect.objectContaining({
+                model: "deepseek-v4-flash",
+                displayName: "DeepSeek V4 Flash",
+                contextWindow: 1000000,
+              }),
+            ]),
+          },
+          codexChatReasoning: expect.objectContaining({
+            thinkingParam: "thinking",
+          }),
+        }),
+      ),
+    );
+  });
+
+  it("fetches models for an existing Codex provider and stores them in the catalog draft", async () => {
+    const user = userEvent.setup();
+    const shell = createBridgeFixture({
+      selectedApp: "codex",
+      serviceStatus: {
+        isRunning: false,
+      },
+    });
+    const provider = createProviderView("codex", {
+      providerId: "codex-existing",
+      name: "Existing Codex",
+      baseUrl: "https://router.example/v1",
+      model: "",
+      tokenConfigured: true,
+    });
+    const { transport } = createProviderTransportFixture({
+      codex: createProviderState("codex", [provider], "codex-existing"),
+    });
+
+    render(<HostHarness shell={shell} transport={transport} />);
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Open codex provider panel",
+      }),
+    );
+    await screen.findByRole("dialog", {
+      name: "Codex providers",
+    });
+
+    await user.click(screen.getByRole("button", { name: "Configure" }));
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    await user.click(screen.getByRole("button", { name: "Fetch models" }));
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Model catalog")).toHaveValue(
+        "router-model-a |  | \nrouter-model-b |  | ",
+      ),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(transport.upsertProviderByProviderId).toHaveBeenCalledWith(
+        "codex",
+        "codex-existing",
+        expect.objectContaining({
+          model: "router-model-a",
+          modelCatalog: {
+            models: [{ model: "router-model-a" }, { model: "router-model-b" }],
+          },
+        }),
+      ),
     );
   });
 });

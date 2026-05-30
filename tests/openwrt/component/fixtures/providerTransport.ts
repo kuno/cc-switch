@@ -29,6 +29,7 @@ type FailoverStateMap = Partial<
 function toResponseProvider(provider: SharedProviderView) {
   return {
     active: provider.active,
+    apiFormat: provider.apiFormat,
     authMode: provider.authMode,
     baseUrl: provider.baseUrl,
     claudeAuth: provider.claudeAuth,
@@ -37,12 +38,14 @@ function toResponseProvider(provider: SharedProviderView) {
     icon: provider.icon,
     iconColor: provider.iconColor,
     model: provider.model,
+    modelCatalog: provider.modelCatalog,
     name: provider.name,
     notes: provider.notes,
     providerId: provider.providerId,
     tokenConfigured: provider.tokenConfigured,
     tokenField: provider.tokenField,
     tokenMasked: provider.tokenMasked,
+    codexChatReasoning: provider.codexChatReasoning,
   };
 }
 
@@ -209,9 +212,13 @@ export function createProviderTransportFixture(
       model: draft.model,
       notes: draft.notes,
       active: currentProvider?.active ?? false,
+      apiFormat: draft.apiFormat ?? currentProvider?.apiFormat,
       authMode: draft.authMode ?? currentProvider?.authMode,
       claudeAuth: nextClaudeAuth,
+      codexChatReasoning:
+        draft.codexChatReasoning ?? currentProvider?.codexChatReasoning,
       codexAuth: nextCodexAuth,
+      modelCatalog: draft.modelCatalog ?? currentProvider?.modelCatalog,
     });
   }
 
@@ -370,6 +377,12 @@ export function createProviderTransportFixture(
     getProviderFailoverState: vi.fn(async (appId, providerId) =>
       createProviderFailoverResponse(appId, providerId),
     ),
+    fetchProviderModels: vi.fn(async () => ({
+      ok: true,
+      success: true,
+      modelIds: ["router-model-a", "router-model-b"],
+      models: [{ id: "router-model-a" }, { id: "router-model-b" }],
+    })),
     addToFailoverQueue: vi.fn(async (appId, providerId) => {
       const currentFailoverState = getFailoverState(appId);
 

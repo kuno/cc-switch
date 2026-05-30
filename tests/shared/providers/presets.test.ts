@@ -43,7 +43,7 @@ describe("shared provider preset catalog", () => {
       expect.objectContaining({
         sourcePresetName: "OpenRouter",
         baseUrl: "https://openrouter.ai/api/v1",
-        model: "gpt-5.4",
+        model: "gpt-5.5",
       }),
     );
     expect(getSharedProviderPresetById("gemini", "gemini-openrouter")).toEqual(
@@ -97,8 +97,10 @@ describe("shared provider preset catalog", () => {
       getSharedProviderPresetById("claude", "claude-deepseek")?.description,
     ).toBe("DeepSeek Claude-compatible endpoint.");
     expect(
-      getSharedProviderPresetById("codex", "codex-openrouter")?.description,
-    ).toBe("OpenRouter Responses-compatible endpoint for Codex.");
+      getSharedProviderPresetById("codex", "codex-deepseek")?.description,
+    ).toBe(
+      "Codex Chat-routing preset. Keep OpenWrt local routing running while this provider is in use.",
+    );
     expect(
       getSharedProviderPresetById("gemini", "gemini-openrouter")?.description,
     ).toBe("OpenRouter Gemini-compatible endpoint.");
@@ -107,6 +109,32 @@ describe("shared provider preset catalog", () => {
     ).toBe("");
     expect(getGenericPresetDescription()).toBe(
       "Preset selected. You can still adjust the fields below before saving.",
+    );
+  });
+
+  it("carries v3.16 Codex chat-routing metadata into OpenWrt presets", () => {
+    expect(getSharedProviderPresetById("codex", "codex-deepseek")).toEqual(
+      expect.objectContaining({
+        apiFormat: "openai_chat",
+        model: "deepseek-v4-flash",
+        modelCatalog: {
+          models: expect.arrayContaining([
+            expect.objectContaining({
+              model: "deepseek-v4-flash",
+              contextWindow: 1000000,
+            }),
+          ]),
+        },
+        codexChatReasoning: expect.objectContaining({
+          thinkingParam: "thinking",
+        }),
+      }),
+    );
+    expect(getSharedProviderPresetById("codex", "codex-official")).toEqual(
+      expect.objectContaining({
+        authMode: "codex_oauth",
+        model: "gpt-5.5",
+      }),
     );
   });
 
