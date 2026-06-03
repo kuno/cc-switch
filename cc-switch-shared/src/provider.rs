@@ -147,13 +147,15 @@ impl Provider {
                 .map(ToString::to_string)
                 .or_else(|| {
                     config_text.and_then(|config| {
-                        toml::from_str::<toml::Value>(config).ok().and_then(|parsed| {
-                            parsed
-                                .get("experimental_bearer_token")
-                                .and_then(|value| value.as_str())
-                                .filter(|value| !value.is_empty())
-                                .map(ToString::to_string)
-                        })
+                        toml::from_str::<toml::Value>(config)
+                            .ok()
+                            .and_then(|parsed| {
+                                parsed
+                                    .get("experimental_bearer_token")
+                                    .and_then(|value| value.as_str())
+                                    .filter(|value| !value.is_empty())
+                                    .map(ToString::to_string)
+                            })
                     })
                 })
                 .unwrap_or_default()
@@ -163,7 +165,9 @@ impl Provider {
             config_text
                 .and_then(|config| toml::from_str::<toml::Value>(config).ok())
                 .and_then(|parsed| {
-                    let provider_id = parsed.get("model_provider").and_then(|value| value.as_str())?;
+                    let provider_id = parsed
+                        .get("model_provider")
+                        .and_then(|value| value.as_str())?;
                     parsed
                         .get("model_providers")
                         .and_then(|value| value.as_table())
@@ -179,7 +183,10 @@ impl Provider {
             AppType::Codex => {
                 let auth = settings.get("auth");
                 let config_text = settings.get("config").and_then(|v| v.as_str());
-                (codex_base_url(config_text), codex_api_key(auth, config_text))
+                (
+                    codex_base_url(config_text),
+                    codex_api_key(auth, config_text),
+                )
             }
             AppType::Gemini => {
                 let env = settings.get("env");
