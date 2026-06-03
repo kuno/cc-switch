@@ -28,6 +28,7 @@ impl McpApps {
             AppType::OpenCode => self.opencode,
             AppType::OpenClaw => false,
             AppType::Hermes => self.hermes,
+            AppType::ClaudeDesktop => false,
         }
     }
 
@@ -39,6 +40,7 @@ impl McpApps {
             AppType::OpenCode => self.opencode = enabled,
             AppType::OpenClaw => {}
             AppType::Hermes => self.hermes = enabled,
+            AppType::ClaudeDesktop => {}
         }
     }
 
@@ -91,6 +93,7 @@ impl SkillApps {
             AppType::OpenCode => self.opencode,
             AppType::OpenClaw => false,
             AppType::Hermes => self.hermes,
+            AppType::ClaudeDesktop => false,
         }
     }
 
@@ -102,6 +105,7 @@ impl SkillApps {
             AppType::OpenCode => self.opencode = enabled,
             AppType::OpenClaw => {}
             AppType::Hermes => self.hermes = enabled,
+            AppType::ClaudeDesktop => {}
         }
     }
 
@@ -250,6 +254,8 @@ pub enum AppType {
     OpenCode,
     OpenClaw,
     Hermes,
+    #[serde(rename = "claude-desktop")]
+    ClaudeDesktop,
 }
 
 impl AppType {
@@ -261,6 +267,7 @@ impl AppType {
             AppType::OpenCode => "opencode",
             AppType::OpenClaw => "openclaw",
             AppType::Hermes => "hermes",
+            AppType::ClaudeDesktop => "claude-desktop",
         }
     }
 
@@ -279,6 +286,7 @@ impl AppType {
             AppType::OpenCode,
             AppType::OpenClaw,
             AppType::Hermes,
+            AppType::ClaudeDesktop,
         ]
         .into_iter()
     }
@@ -296,6 +304,7 @@ impl FromStr for AppType {
             "opencode" => Ok(AppType::OpenCode),
             "openclaw" => Ok(AppType::OpenClaw),
             "hermes" => Ok(AppType::Hermes),
+            "claude-desktop" | "claude_desktop" | "claudedesktop" => Ok(AppType::ClaudeDesktop),
             other => Err(AppError::localized(
                 "unsupported_app",
                 format!(
@@ -334,6 +343,7 @@ impl CommonConfigSnippets {
             AppType::OpenCode => self.opencode.as_ref(),
             AppType::OpenClaw => self.openclaw.as_ref(),
             AppType::Hermes => self.hermes.as_ref(),
+            AppType::ClaudeDesktop => None,
         }
     }
 
@@ -345,6 +355,7 @@ impl CommonConfigSnippets {
             AppType::OpenCode => self.opencode = snippet,
             AppType::OpenClaw => self.openclaw = snippet,
             AppType::Hermes => self.hermes = snippet,
+            AppType::ClaudeDesktop => {}
         }
     }
 }

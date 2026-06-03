@@ -2410,6 +2410,7 @@ fn codex_proxy_error_code(error: &ProxyError) -> &'static str {
         ProxyError::NoProvidersConfigured => "cc_switch_no_providers_configured",
         ProxyError::MaxRetriesExceeded => "cc_switch_max_retries_exceeded",
         ProxyError::ProviderUnhealthy(_) => "cc_switch_provider_unhealthy",
+        ProxyError::ProxyDisabled(_) => "cc_switch_proxy_disabled",
         ProxyError::ConfigError(_) => "cc_switch_config_error",
         ProxyError::TransformError(_) => "cc_switch_transform_error",
         ProxyError::InvalidRequest(_) => "cc_switch_invalid_request",
@@ -2692,11 +2693,10 @@ async fn log_usage(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_api_status_response, build_provider_quota, codex_proxy_error_json,
-        get_api_status, is_claude_oauth_provider,
-        is_codex_oauth_provider, is_gemini_oauth_provider, is_github_copilot_provider,
-        live_quota_refresh_call_count, normalize_claude_gateway_endpoint,
-        refresh_claude_quota_snapshots_with_query,
+        build_api_status_response, build_provider_quota, codex_proxy_error_json, get_api_status,
+        is_claude_oauth_provider, is_codex_oauth_provider, is_gemini_oauth_provider,
+        is_github_copilot_provider, live_quota_refresh_call_count,
+        normalize_claude_gateway_endpoint, refresh_claude_quota_snapshots_with_query,
         refresh_claude_quota_snapshots_with_query_and_refresher,
         refresh_codex_quota_snapshots_with_query_and_refresher,
         refresh_copilot_quota_snapshots_with_query, refresh_gemini_quota_snapshots_with_query,

@@ -413,8 +413,14 @@ pub async fn queryProviderUsage(
 /// Resolve `(base_url, api_key)` for native usage queries, delegating to the
 /// per-app resolver on `Provider`. Missing provider → empty credentials.
 fn resolve_native_credentials(app_type: &AppType, provider: Option<&Provider>) -> (String, String) {
+    let shared_app_type = cc_switch_shared::app_config::AppType::from_str(app_type.as_str()).ok();
+
     provider
-        .map(|p| p.resolve_usage_credentials(app_type))
+        .and_then(|p| {
+            shared_app_type
+                .as_ref()
+                .map(|app_type| p.resolve_usage_credentials(app_type))
+        })
         .unwrap_or_default()
 }
 
