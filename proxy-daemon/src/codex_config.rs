@@ -204,6 +204,29 @@ pub fn extract_codex_api_key(auth: Option<&Value>, config_text: Option<&str>) ->
         .or_else(|| config_text.and_then(extract_codex_experimental_bearer_token))
 }
 
+/// Extract the upstream base URL from a Codex `config.toml` string.
+///
+/// Prefers the active `[model_providers.<model_provider>].base_url`, falling
+/// back to a top-level `base_url` when no model provider is selected.
+pub fn extract_codex_base_url(config_text: &str) -> Option<String> {
+    let doc = config_text.parse::<toml::Value>().ok()?;
+
+    if let Some(active_provider) = doc.get("model_provider").and_then(|v| v.as_str()) {
+        if let Some(base_url) = doc
+            .get("model_providers")
+            .and_then(|providers| providers.get(active_provider))
+            .and_then(|provider| provider.get("base_url"))
+            .and_then(|v| v.as_str())
+        {
+            return Some(base_url.to_string());
+        }
+    }
+
+    doc.get("base_url")
+        .and_then(|v| v.as_str())
+        .map(ToString::to_string)
+}
+
 pub fn codex_auth_has_login_material(auth: &Value) -> bool {
     let Some(obj) = auth.as_object() else {
         return false;
@@ -512,6 +535,20 @@ pub fn prepare_codex_config_text_with_model_catalog(
     }
 }
 
+/// Decide the `config.toml` text to write during a takeover-off restore,
+/// projecting the model catalog only when `settings` carries an inline
+/// `modelCatalog`.
+pub fn prepare_codex_live_config_text_with_optional_catalog(
+    settings: &Value,
+    config_text: &str,
+) -> Result<String, AppError> {
+    if settings.get("modelCatalog").is_some() {
+        prepare_codex_config_text_with_model_catalog(settings, config_text)
+    } else {
+        Ok(config_text.to_string())
+    }
+}
+
 /// Reverse of `prepare_codex_config_text_with_model_catalog`: read the
 /// cc-switch–maintained catalog file referenced by `~/.codex/config.toml` and
 /// convert it back into the simplified shape the frontend table uses:
@@ -739,7 +776,10 @@ fn set_codex_experimental_bearer_token(config_text: &str, token: &str) -> Result
     Ok(doc.to_string())
 }
 
-fn remove_codex_experimental_bearer_token(config_text: &str) -> Result<String, AppError> {
+pub fn remove_codex_experimental_bearer_token_if(
+    config_text: &str,
+    predicate: impl Fn(&str) -> bool,
+) -> Result<String, AppError> {
     if config_text.trim().is_empty() || !config_text.contains("experimental_bearer_token") {
         return Ok(config_text.to_string());
     }
@@ -755,12 +795,30 @@ fn remove_codex_experimental_bearer_token(config_text: &str) -> Result<String, A
             .and_then(|table| table.get_mut(provider_id.as_str()))
             .and_then(|item| item.as_table_mut())
         {
-            provider_table.remove("experimental_bearer_token");
+            let should_remove = provider_table
+                .get("experimental_bearer_token")
+                .and_then(|item| item.as_str())
+                .map(str::trim)
+                .is_some_and(&predicate);
+            if should_remove {
+                provider_table.remove("experimental_bearer_token");
+            }
         }
     }
 
-    doc.as_table_mut().remove("experimental_bearer_token");
+    let should_remove_top_level = doc
+        .get("experimental_bearer_token")
+        .and_then(|item| item.as_str())
+        .map(str::trim)
+        .is_some_and(&predicate);
+    if should_remove_top_level {
+        doc.as_table_mut().remove("experimental_bearer_token");
+    }
     Ok(doc.to_string())
+}
+
+fn remove_codex_experimental_bearer_token(config_text: &str) -> Result<String, AppError> {
+    remove_codex_experimental_bearer_token_if(config_text, |_| true)
 }
 
 /// Read the current Codex live settings as a `{ auth, config }` object.
