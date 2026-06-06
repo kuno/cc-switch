@@ -504,6 +504,8 @@ mod tests {
                 name: "monthly".to_string(),
                 utilization: 37.5,
                 resets_at: Some("2026-05-01T00:00:00Z".to_string()),
+                used_value_usd: None,
+                max_value_usd: None,
             }],
             extra_usage: None,
             error: None,

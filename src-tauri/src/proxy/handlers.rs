@@ -381,7 +381,8 @@ async fn refresh_codex_quota_snapshots(state: &ProxyState) {
     .await;
 }
 
-/// Reconcile stored Claude rate-limit snapshots before rendering `/api/status`.
+/// Reconcile stored Claude rate-limit snapshots during the best-effort quota
+/// refresh pass triggered by `/api/status`.
 ///
 /// Retain rules:
 /// - keep non-Claude snapshots untouched;
@@ -746,6 +747,20 @@ async fn refresh_live_quota_snapshots(state: &ProxyState) {
     refresh_copilot_quota_snapshots(&state).await;
     super::third_party_quota::refresh_third_party_coding_plan_snapshots(&state).await;
     super::third_party_quota::refresh_third_party_balance_snapshots(&state).await;
+}
+
+fn trigger_live_quota_refresh_snapshots(state: ProxyState) {
+    #[cfg(not(test))]
+    {
+        tokio::spawn(async move {
+            refresh_live_quota_snapshots(&state).await;
+        });
+    }
+
+    #[cfg(test)]
+    {
+        let _ = state;
+    }
 }
 
 pub async fn get_quota(State(_state): State<ProxyState>) -> (StatusCode, Json<Value>) {
@@ -1329,7 +1344,7 @@ fn derive_app_health(
 pub async fn get_api_status(
     State(state): State<ProxyState>,
 ) -> Result<Json<ApiStatusResponse>, ProxyError> {
-    refresh_live_quota_snapshots(&state).await;
+    trigger_live_quota_refresh_snapshots(state.clone());
     Ok(Json(build_api_status_response(&state).await?))
 }
 
@@ -5167,6 +5182,8 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
                 name: tier_name.to_string(),
                 utilization,
                 resets_at: Some("2026-04-30T12:00:00Z".to_string()),
+                used_value_usd: None,
+                max_value_usd: None,
             }],
             extra_usage: None,
             error: None,
@@ -5535,7 +5552,7 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
 
     #[tokio::test]
     #[serial]
-    async fn api_status_refreshes_live_quota_snapshots_before_rendering() {
+    async fn api_status_does_not_wait_for_live_quota_refresh_before_rendering() {
         reset_live_quota_refresh_call_count();
         let db = Arc::new(Database::memory().expect("db"));
         let state = test_proxy_state(db);
@@ -5544,8 +5561,8 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
 
         assert_eq!(
             live_quota_refresh_call_count(),
-            6,
-            "/api/status should run the cached quota refresh pass before rendering quota data"
+            0,
+            "/api/status must render from DB and cached snapshots without waiting on live quota refresh"
         );
     }
 
