@@ -426,7 +426,8 @@ impl ProxyServer {
             .route("/api/status", get(handlers::get_api_status))
             .route("/api/quota", get(handlers::get_quota))
             // Claude API (支持带前缀和不带前缀两种格式)
-            .route("/v1/models", get(handlers::get_claude_models))
+            // /v1/models 是 Claude 与 Codex CLI 共用的探针入口，使用合并处理器
+            .route("/v1/models", get(handlers::handle_v1_models))
             .route("/claude/v1/models", get(handlers::get_claude_models))
             .route(
                 "/gateway/claude/v1/models",
@@ -463,7 +464,6 @@ impl ProxyServer {
             )
             // OpenAI Models API (Codex CLI reachability check)
             .route("/models", get(handlers::handle_models))
-            .route("/v1/models", get(handlers::handle_models))
             // OpenAI Responses API (Codex CLI，支持带前缀和不带前缀)
             .route("/responses", post(handlers::handle_responses))
             .route("/v1/responses", post(handlers::handle_responses))
