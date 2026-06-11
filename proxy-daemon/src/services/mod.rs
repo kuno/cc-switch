@@ -45,5 +45,10 @@ pub mod usage_stats;
 // Stub: webdav_auto_sync needs a Tauri AppHandle; provide a no-op version
 pub mod webdav_auto_sync;
 
+// Stub: S3 auto sync is desktop-only; shared database hooks only need this symbol.
+pub mod s3_auto_sync {
+    pub fn notify_db_changed(_table: &str) {}
+}
+
 pub use omo::OmoService;
 pub use proxy::ProxyService;
