@@ -916,6 +916,7 @@ impl RequestForwarder {
                                     app_type,
                                     &method,
                                     provider,
+                                    app_type_str,
                                     endpoint,
                                     &media_body,
                                     &headers,
@@ -954,14 +955,21 @@ impl RequestForwarder {
                                         if should_switch {
                                             status.failover_count += 1;
                                             let fm = self.failover_manager.clone();
-                                            let ah = self.app_handle.clone();
                                             let pid = provider.id.clone();
                                             let pname = provider.name.clone();
                                             let at = app_type_str.to_string();
+                                            #[cfg(feature = "tauri-desktop")]
+                                            let ah = self.app_handle.clone();
 
                                             tokio::spawn(async move {
                                                 let _ = fm
-                                                    .try_switch(ah.as_ref(), &at, &pid, &pname)
+                                                    .try_switch(
+                                                        #[cfg(feature = "tauri-desktop")]
+                                                        ah.as_ref(),
+                                                        &at,
+                                                        &pid,
+                                                        &pname,
+                                                    )
                                                     .await;
                                             });
                                         }
