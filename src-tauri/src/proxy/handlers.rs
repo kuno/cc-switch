@@ -125,6 +125,13 @@ pub async fn health_check() -> (StatusCode, Json<Value>) {
 ///
 /// OpenWrt uses this to satisfy Claude clients that probe `GET /v1/models`.
 pub async fn get_claude_models() -> (StatusCode, Json<Value>) {
+    (
+        StatusCode::OK,
+        Json(claude_models_json()),
+    )
+}
+
+fn claude_models_json() -> Value {
     let data: Vec<Value> = CLAUDE_MODEL_LIST
         .iter()
         .map(|(id, display_name)| {
@@ -137,15 +144,37 @@ pub async fn get_claude_models() -> (StatusCode, Json<Value>) {
         })
         .collect();
 
-    (
-        StatusCode::OK,
-        Json(json!({
-            "data": data,
-            "has_more": false,
-            "first_id": CLAUDE_MODEL_LIST.first().map(|(id, _)| *id),
-            "last_id": CLAUDE_MODEL_LIST.last().map(|(id, _)| *id),
-        })),
-    )
+    json!({
+        "data": data,
+        "has_more": false,
+        "first_id": CLAUDE_MODEL_LIST.first().map(|(id, _)| *id),
+        "last_id": CLAUDE_MODEL_LIST.last().map(|(id, _)| *id),
+    })
+}
+
+/// GET /v1/models — shared entrypoint for both Claude and Codex clients.
+///
+/// Codex CLI probes this endpoint at startup. When a cc-switch-managed Codex
+/// model catalog is active, return it in Codex's `{"models": [...]}` format.
+/// Otherwise fall back to the Claude-compatible model list so OpenWrt and
+/// Claude clients still get a usable response.
+pub async fn handle_v1_models() -> Result<Json<Value>, ProxyError> {
+    let generated_path = crate::codex_config::get_codex_model_catalog_path();
+    let active_catalog_path = match crate::codex_config::read_codex_config_text() {
+        Ok(config_text) => {
+            crate::codex_config::resolve_cc_switch_catalog_path(&config_text, &generated_path)
+        }
+        Err(_) => None,
+    };
+
+    if let Some(catalog_path) = active_catalog_path.as_ref().filter(|path| path.exists()) {
+        let text = std::fs::read_to_string(catalog_path).unwrap_or_default();
+        let catalog = serde_json::from_str(&text).unwrap_or(json!({"models": []}));
+        return Ok(Json(catalog));
+    }
+
+    // No active Codex catalog: fall back to the Claude-compatible model list.
+    Ok(Json(claude_models_json()))
 }
 
 fn normalize_claude_gateway_endpoint(endpoint: &str) -> String {
