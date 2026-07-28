@@ -104,7 +104,11 @@ fn resolve_script_credentials(
     api_key: Option<&str>,
     base_url: Option<&str>,
 ) -> (String, String) {
-    let (provider_base_url, provider_api_key) = provider.resolve_usage_credentials(app_type);
+    let (provider_base_url, provider_api_key) = app_type
+        .as_str()
+        .parse::<cc_switch_shared::app_config::AppType>()
+        .map(|shared| provider.resolve_usage_credentials(&shared))
+        .unwrap_or_default();
 
     let api_key = api_key
         .map(str::trim)

@@ -309,7 +309,7 @@ async fn refresh_codex_quota_snapshots_with_query_and_refresher<F, Fut, R>(
     refresher: &R,
 ) where
     F: Fn(String, Option<String>) -> Fut + Clone,
-    Fut: Future<Output = SubscriptionQuota>,
+    Fut: Future<Output = Result<SubscriptionQuota, String>>,
     R: OAuthTokenRefresher,
 {
     #[cfg(test)]
@@ -355,7 +355,7 @@ async fn refresh_codex_quota_snapshots_with_query_and_refresher<F, Fut, R>(
             provider_id.clone(),
             provider_name.clone(),
             move || async move {
-                let quota = query_quota(auth.access_token.clone(), auth.account_id.clone()).await;
+                let quota = query_quota(auth.access_token.clone(), auth.account_id.clone()).await?;
 
                 build_subscription_quota_snapshot(
                     state,
@@ -422,7 +422,7 @@ async fn refresh_claude_quota_snapshots_with_query_and_refresher<F, Fut, R>(
     refresher: &R,
 ) where
     F: Fn(String) -> Fut + Clone,
-    Fut: Future<Output = SubscriptionQuota>,
+    Fut: Future<Output = Result<SubscriptionQuota, String>>,
     R: OAuthTokenRefresher,
 {
     #[cfg(test)]
@@ -462,7 +462,7 @@ async fn refresh_claude_quota_snapshots_with_query_and_refresher<F, Fut, R>(
             provider_id.clone(),
             provider_name.clone(),
             move || async move {
-                let quota = query_quota(access_token.clone()).await;
+                let quota = query_quota(access_token.clone()).await?;
                 build_subscription_quota_snapshot(
                     state,
                     "claude",
@@ -508,7 +508,7 @@ async fn refresh_claude_quota_snapshots_with_query_and_refresher<F, Fut, R>(
 async fn refresh_claude_quota_snapshots_with_query<F, Fut>(state: &ProxyState, query_quota: F)
 where
     F: Fn(String) -> Fut + Clone,
-    Fut: Future<Output = SubscriptionQuota>,
+    Fut: Future<Output = Result<SubscriptionQuota, String>>,
 {
     let refresher = ClaudeTokenRefresher::new();
     refresh_claude_quota_snapshots_with_query_and_refresher(state, query_quota, &refresher).await;
@@ -927,7 +927,10 @@ async fn build_app_status(
         })
         .collect();
 
-    let usage = match state.db.get_usage_summary(None, None, Some(&app_key)) {
+    let usage = match state
+        .db
+        .get_usage_summary(None, None, Some(&app_key), None, None)
+    {
         Ok(summary) => build_usage(summary),
         Err(error) => {
             log::warn!(
@@ -940,6 +943,8 @@ async fn build_app_status(
         None,
         None,
         Some(&app_key),
+        None,
+        None,
     ) {
         Ok(stats) => stats
             .into_iter()
@@ -2209,6 +2214,7 @@ async fn handle_responses_for_app(
             &state,
             connection_guard,
             namespace_restore_map,
+            is_stream,
         )
         .await;
     }
@@ -2339,6 +2345,7 @@ async fn handle_responses_compact_for_app(
             &state,
             connection_guard,
             namespace_restore_map,
+            is_stream,
         )
         .await;
     }
@@ -2368,6 +2375,7 @@ async fn handle_codex_responses_namespace_restore(
         String,
         transform_codex_responses_namespace::NamespacedName,
     >,
+    request_is_streaming: bool,
 ) -> Result<axum::response::Response, ProxyError> {
     let status = response.status();
 
@@ -2375,8 +2383,15 @@ async fn handle_codex_responses_namespace_restore(
     // restorable function calls; hand them to the generic passthrough so error
     // shape and usage handling stay identical to the untransformed path.
     if !status.is_success() {
-        return process_response(response, ctx, state, &CODEX_PARSER_CONFIG, connection_guard)
-            .await;
+        return process_response(
+            response,
+            ctx,
+            state,
+            &CODEX_PARSER_CONFIG,
+            connection_guard,
+            request_is_streaming,
+        )
+        .await;
     }
 
     if response.is_sse() {
@@ -6127,7 +6142,7 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
                         .lock()
                         .expect("lock seen tokens")
                         .push(access_token);
-                    sample_quota("claude", "seven_day_claude_design", 42.0)
+                    Ok(sample_quota("claude", "seven_day_claude_design", 42.0))
                 }
             }
         })
@@ -6198,7 +6213,7 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
                             .lock()
                             .expect("lock seen tokens")
                             .push(_access_token);
-                        sample_quota("claude", "seven_day_claude_design", 42.0)
+                        Ok(sample_quota("claude", "seven_day_claude_design", 42.0))
                     }
                 }
             },
@@ -6289,7 +6304,7 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
                     let query_calls = query_calls.clone();
                     async move {
                         *query_calls.lock().expect("lock query calls") += 1;
-                        sample_quota("claude", "seven_day_claude_design", 42.0)
+                        Ok(sample_quota("claude", "seven_day_claude_design", 42.0))
                     }
                 }
             },
@@ -6355,7 +6370,7 @@ data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n
                             .lock()
                             .expect("lock codex requests")
                             .push((access_token, account_id));
-                        sample_quota("codex", "five_hour", 12.0)
+                        Ok(sample_quota("codex", "five_hour", 12.0))
                     }
                 }
             },

@@ -36,7 +36,7 @@ use crate::services::oauth_refresh::{
 };
 use crate::{
     app_config::AppType,
-    provider::{LocalProxyRequestOverrides, Provider, ProviderProxyConfig},
+    provider::{LocalProxyRequestOverrides, Provider},
 };
 use bytes::Bytes;
 use futures::StreamExt;
@@ -2111,6 +2111,7 @@ impl RequestForwarder {
             // xAI OAuth: resolve a managed account token immediately before
             // sending the request. Invalid refresh credentials are persisted as
             // requiring re-authentication by the manager.
+            #[cfg(feature = "tauri-desktop")]
             if auth.strategy == AuthStrategy::XaiOAuth {
                 if let Some(app_handle) = &self.app_handle {
                     let xai_state = app_handle.state::<XaiOAuthState>();
@@ -2144,6 +2145,12 @@ impl RequestForwarder {
                         "xAI OAuth 认证不可用（无 AppHandle）".to_string(),
                     ));
                 }
+            }
+            #[cfg(not(feature = "tauri-desktop"))]
+            if auth.strategy == AuthStrategy::XaiOAuth {
+                return Err(ProxyError::AuthError(
+                    "xAI OAuth 认证不可用（无 AppHandle）".to_string(),
+                ));
             }
 
             for secret in std::iter::once(&auth.api_key).chain(auth.access_token.iter()) {

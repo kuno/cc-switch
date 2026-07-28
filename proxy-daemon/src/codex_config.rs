@@ -5,6 +5,7 @@ use crate::config::{
     write_json_file, write_text_file,
 };
 use crate::error::AppError;
+use crate::model_capabilities::{image_input_capability_from_modalities, ImageInputCapability};
 use serde_json::{json, Value};
 use std::fs;
 use std::process::Command;
@@ -13,6 +14,7 @@ use toml_edit::DocumentMut;
 pub const CC_SWITCH_CODEX_MODEL_PROVIDER_ID: &str = "custom";
 pub const CC_SWITCH_CODEX_MODEL_CATALOG_FILENAME: &str = "cc-switch-model-catalog.json";
 const CODEX_MODEL_CATALOG_TEMPLATE_SLUG: &str = "gpt-5.5";
+const CODEX_PROXY_AUTH_PLACEHOLDER: &str = "PROXY_MANAGED";
 
 /// Reserved built-in provider IDs from OpenAI Codex's config/model-provider
 /// catalog. Keep in sync with Codex `RESERVED_MODEL_PROVIDER_IDS` and legacy
@@ -307,37 +309,105 @@ fn extract_codex_top_level_u64(config_text: &str, field: &str) -> Option<u64> {
         .filter(|value| *value > 0)
 }
 
+fn codex_catalog_input_modalities(
+    model: &str,
+    declared_modalities: Option<&[String]>,
+) -> Vec<String> {
+    let modalities = match image_input_capability_from_modalities(model, declared_modalities) {
+        ImageInputCapability::Unsupported => &["text"][..],
+        ImageInputCapability::Supported | ImageInputCapability::Unknown => &["text", "image"][..],
+    };
+    modalities.iter().map(|item| (*item).to_string()).collect()
+}
+
 fn codex_catalog_model_entry(
     template: &Value,
-    model: &str,
-    display_name: &str,
-    context_window: u64,
+    spec: &CodexCatalogModelSpec,
     priority: usize,
+    profile: CodexCatalogToolProfile,
 ) -> Value {
     let mut entry = template.clone();
     let Some(entry_obj) = entry.as_object_mut() else {
         return json!({});
     };
 
-    entry_obj.insert("slug".to_string(), json!(model));
-    entry_obj.insert("display_name".to_string(), json!(display_name));
-    entry_obj.insert("description".to_string(), json!(display_name));
-    entry_obj.insert("context_window".to_string(), json!(context_window));
-    entry_obj.insert("max_context_window".to_string(), json!(context_window));
+    entry_obj.insert("slug".to_string(), json!(spec.model));
+    entry_obj.insert("display_name".to_string(), json!(spec.display_name));
+    entry_obj.insert("description".to_string(), json!(spec.display_name));
+    entry_obj.insert("context_window".to_string(), json!(spec.context_window));
+    entry_obj.insert("max_context_window".to_string(), json!(spec.context_window));
     entry_obj.insert("priority".to_string(), json!(1000 + priority));
     entry_obj.insert("additional_speed_tiers".to_string(), json!([]));
     entry_obj.insert("service_tiers".to_string(), json!([]));
     entry_obj.insert("availability_nux".to_string(), Value::Null);
     entry_obj.insert("upgrade".to_string(), Value::Null);
 
+    // Image support is a model capability, not a tool-profile capability.
+    // Trust hidden preset metadata first, then the confirmed text-only registry;
+    // every unknown model fails open so GPT/relay aliases are never declared
+    // text-only merely because a template had a conservative default.
+    entry_obj.insert(
+        "input_modalities".to_string(),
+        json!(codex_catalog_input_modalities(
+            &spec.model,
+            spec.input_modalities.as_deref(),
+        )),
+    );
+
+    if profile != CodexCatalogToolProfile::ProxyChat {
+        // Native `/responses` and Anthropic gateways reject / drop Codex's freeform
+        // `apply_patch` (type=="custom") tool. Strip any key that would make Codex
+        // emit a custom/freeform tool, and rely on shell_type="shell_command" for
+        // edits. Defensive even though the native template is already clean
+        // (guards against template drift / an accidental gpt-5.5 clone).
+        //
+        // NOTE: `base_instructions` is NOT stripped — Codex's catalog parser
+        // treats it as a REQUIRED field and refuses to load the file without
+        // it ("missing field `base_instructions`"). The template carries a
+        // neutral identity default; per-vendor official text overrides below.
+        for key in [
+            "apply_patch_tool_type",
+            "web_search_tool_type",
+            "tools",
+            "model_messages",
+        ] {
+            entry_obj.remove(key);
+        }
+        entry_obj.insert("shell_type".to_string(), json!("shell_command"));
+
+        if let Some(base_instructions) = spec
+            .base_instructions
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            entry_obj.insert("base_instructions".to_string(), json!(base_instructions));
+        }
+        if let Some(parallel) = spec.supports_parallel_tool_calls {
+            entry_obj.insert("supports_parallel_tool_calls".to_string(), json!(parallel));
+        }
+    }
+
     entry
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
 struct CodexCatalogModelSpec {
     model: String,
     display_name: String,
     context_window: u64,
+    /// Per-row override for the native template's `supports_parallel_tool_calls`
+    /// (e.g. MiniMax=true, MiMo=false). Only consulted for `NativeResponses`.
+    supports_parallel_tool_calls: Option<bool>,
+    /// Hidden per-row capability declaration from built-in provider metadata.
+    /// When omitted, all catalog profiles consult the shared text-only model
+    /// registry and otherwise default to `["text", "image"]`.
+    input_modalities: Option<Vec<String>>,
+    /// Per-row override for the native template's `base_instructions` (the
+    /// model identity / system preamble). Carries each vendor's OFFICIAL value
+    /// (e.g. MiMo "developed by Xiaomi", MiniMax "based on MiniMax-M3"); falls
+    /// back to the template default when absent. Only consulted for
+    /// `NativeResponses`.
+    base_instructions: Option<String>,
 }
 
 fn codex_catalog_model_specs(settings: &Value, config_text: &str) -> Vec<CodexCatalogModelSpec> {
@@ -382,10 +452,38 @@ fn codex_catalog_model_specs(settings: &Value, config_text: &str) -> Vec<CodexCa
         )
         .unwrap_or(default_context_window);
 
+        let supports_parallel_tool_calls = model_config
+            .get("supportsParallelToolCalls")
+            .or_else(|| model_config.get("supports_parallel_tool_calls"))
+            .and_then(|value| value.as_bool());
+        let input_modalities = model_config
+            .get("inputModalities")
+            .or_else(|| model_config.get("input_modalities"))
+            .and_then(|value| value.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str())
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .filter(|items| !items.is_empty());
+
+        let base_instructions = model_config
+            .get("baseInstructions")
+            .or_else(|| model_config.get("base_instructions"))
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .map(str::to_string);
+
         specs.push(CodexCatalogModelSpec {
             model: model.to_string(),
             display_name: display_name.to_string(),
             context_window,
+            supports_parallel_tool_calls,
+            input_modalities,
+            base_instructions,
         });
     }
 
@@ -455,19 +553,65 @@ fn load_codex_model_catalog_template() -> Result<Value, AppError> {
     )))
 }
 
-fn codex_model_catalog_from_specs(specs: &[CodexCatalogModelSpec], template: &Value) -> Value {
+fn load_codex_native_responses_template() -> Value {
+    let text = include_str!("resources/codex_native_responses_template.json");
+    serde_json::from_str(text).expect("bundled codex native responses template must be valid JSON")
+}
+
+/// Fields Codex's external-catalog parser REQUIRES (no serde default): when
+/// one is missing Codex rejects the whole catalog file at startup ("missing
+/// field ..."). `base_instructions` is the other known required field; the
+/// templates always carry it and `codex_catalog_model_entry` handles it.
+/// When Codex requires a new field, add it here AND to the static templates.
+const CODEX_CATALOG_PARSER_REQUIRED_FIELDS: &[&str] = &["supports_reasoning_summaries"];
+
+/// `models_cache.json` is shared by every Codex install on the machine (npm
+/// CLI, desktop-bundled binary, ...), and each version serializes its own
+/// `ModelInfo` shape — the cache's field set follows whichever process wrote
+/// it last, so it cannot be assumed to satisfy the current external-catalog
+/// schema (observed live: 0.144.5 requires `supports_reasoning_summaries`
+/// while a coexisting build kept rewriting the cache without it). Backfill
+/// ONLY parser-required fields from the bundled static template: optional
+/// capability fields keep their missing-means-default semantics, and existing
+/// values always win.
+fn load_codex_model_template_static() -> Option<Value> {
+    let text = include_str!("resources/gpt5_5_template.json");
+    match serde_json::from_str(text) {
+        Ok(template) => Some(template),
+        Err(e) => {
+            log::warn!("Failed to parse bundled gpt-5.5 template: {e}");
+            None
+        }
+    }
+}
+
+fn fill_template_fields_from_static(template: &mut Value) {
+    let Some(static_template) = load_codex_model_template_static() else {
+        return;
+    };
+    let (Some(template_obj), Some(static_obj)) =
+        (template.as_object_mut(), static_template.as_object())
+    else {
+        return;
+    };
+    for key in CODEX_CATALOG_PARSER_REQUIRED_FIELDS {
+        if !template_obj.contains_key(*key) {
+            if let Some(value) = static_obj.get(*key) {
+                template_obj.insert((*key).to_string(), value.clone());
+            }
+        }
+    }
+}
+
+fn codex_model_catalog_from_specs(
+    specs: &[CodexCatalogModelSpec],
+    template: &Value,
+    profile: CodexCatalogToolProfile,
+) -> Value {
     let entries: Vec<Value> = specs
         .iter()
         .enumerate()
-        .map(|(index, spec)| {
-            codex_catalog_model_entry(
-                template,
-                &spec.model,
-                &spec.display_name,
-                spec.context_window,
-                index,
-            )
-        })
+        .map(|(index, spec)| codex_catalog_model_entry(template, spec, index, profile))
         .collect();
 
     json!({ "models": entries })
@@ -476,14 +620,25 @@ fn codex_model_catalog_from_specs(specs: &[CodexCatalogModelSpec], template: &Va
 fn codex_model_catalog_from_settings(
     settings: &Value,
     config_text: &str,
+    profile: CodexCatalogToolProfile,
 ) -> Result<Option<Value>, AppError> {
     let specs = codex_catalog_model_specs(settings, config_text);
     if specs.is_empty() {
         return Ok(None);
     }
 
-    let template = load_codex_model_catalog_template()?;
-    Ok(Some(codex_model_catalog_from_specs(&specs, &template)))
+    // Native providers use the bundled clean template (no freeform apply_patch,
+    // no cache dependency); proxy-chat providers keep cloning Codex's gpt-5.5
+    // entry so the proxy can rewrite custom<->function tools as before.
+    let template = match profile {
+        CodexCatalogToolProfile::NativeResponses | CodexCatalogToolProfile::Anthropic => {
+            load_codex_native_responses_template()
+        }
+        CodexCatalogToolProfile::ProxyChat => load_codex_model_catalog_template()?,
+    };
+    Ok(Some(codex_model_catalog_from_specs(
+        &specs, &template, profile,
+    )))
 }
 
 fn set_codex_model_catalog_json_field(
@@ -518,32 +673,153 @@ fn set_codex_model_catalog_json_field(
     Ok(doc.to_string())
 }
 
+/// Native `/responses` gateways whose first-party models do NOT support the Codex
+/// `web_search` hosted tool. A BLACKLIST (default-on): everything not listed keeps
+/// Codex's default, so relays/aggregators fronting real GPT — and any unknown
+/// provider — are never touched. This avoids a whitelist's dangerous failure mode
+/// (a fragile "is this GPT?" heuristic wrongly keeping web_search ON → hard 400);
+/// the blacklist's failure mode is the safe, recoverable one (a not-yet-listed
+/// broken gateway errors once → add it here).
+///
+/// Matched two ways so an aggregator (e.g. SiliconFlow) fronting these vendors'
+/// models is also caught:
+/// - `base_url` host substring, and
+/// - the model id's brand prefix (after stripping any `vendor/` path segment).
+///
+/// Verified 2026-06-28 doc audit — reject: MiMo (hard 400), LongCat (official
+/// config ships `web_search = "disabled"`), MiniMax (tool-type enum `['function']`
+/// only), and Qwen3-Coder models (百炼 marks built-in tools unsupported for
+/// the coder series). Deliberately NOT listed by host: 火山方舟豆包, general
+/// 阿里百炼 Qwen models that support built-in web_search, and GPT-native relays.
+const CODEX_WEB_SEARCH_REJECT_HOSTS: &[&str] = &[
+    "xiaomimimo.com", // Xiaomi MiMo (api.xiaomimimo.com, token-plan-cn.xiaomimimo.com)
+    "longcat.chat",   // Meituan LongCat (api.longcat.chat)
+    "minimax.io",     // MiniMax global (api.minimax.io)
+    "minimaxi.com",   // MiniMax CN (api.minimaxi.com)
+];
+
+/// Brand prefixes of models whose native gateways reject `web_search`, matched
+/// against the model id's last `/`-segment so aggregator ids like
+/// `MiniMaxAI/MiniMax-M3` are caught. Exact brand names (not a fuzzy heuristic),
+/// so a supporting gateway is never wrongly matched.
+const CODEX_WEB_SEARCH_REJECT_MODEL_PREFIXES: &[&str] =
+    &["mimo", "longcat", "minimax", "qwen3-coder"];
+
+/// Top-level `model` id from a Codex `config.toml`.
+fn codex_top_level_model(config_text: &str) -> Option<String> {
+    let doc = config_text.parse::<toml::Value>().ok()?;
+    doc.get("model")
+        .and_then(|value| value.as_str())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+/// Whether a native `/responses` provider's gateway is known to reject the Codex
+/// `web_search` hosted tool — by `base_url` host OR by the active model's brand
+/// (so an aggregator fronting a reject vendor's model is caught too). Driven by
+/// the live `config.toml`, so it applies to existing providers without a re-save.
+fn codex_native_gateway_rejects_web_search(config_text: &str) -> bool {
+    if let Some(base_url) = extract_codex_base_url(config_text) {
+        let base_url = base_url.to_ascii_lowercase();
+        if CODEX_WEB_SEARCH_REJECT_HOSTS
+            .iter()
+            .any(|host| base_url.contains(host))
+        {
+            return true;
+        }
+    }
+    if let Some(model) = codex_top_level_model(config_text) {
+        let model = model.to_ascii_lowercase();
+        // Strip any aggregator "vendor/" prefix, e.g. "MiniMaxAI/MiniMax-M3"
+        // or "qwen/qwen3-coder-plus".
+        let model = model.rsplit('/').next().unwrap_or(model.as_str());
+        if CODEX_WEB_SEARCH_REJECT_MODEL_PREFIXES
+            .iter()
+            .any(|prefix| model.starts_with(prefix))
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// user's manual setting.
+///
+/// The caller decides `disable` (see `codex_native_gateway_rejects_web_search`);
+/// lifecycle is bound to the cc-switch catalog pointer so the field is set/cleaned
+/// up wherever the native catalog is written/removed.
+fn set_codex_native_web_search_field(config_text: &str, disable: bool) -> Result<String, AppError> {
+    let mut doc = config_text
+        .parse::<DocumentMut>()
+        .map_err(|e| AppError::Message(format!("Invalid Codex config.toml: {e}")))?;
+
+    if disable {
+        doc[CODEX_WEB_SEARCH_FIELD] = toml_edit::value(CODEX_WEB_SEARCH_DISABLED);
+    } else {
+        let owned = doc
+            .get(CODEX_WEB_SEARCH_FIELD)
+            .and_then(|item| item.as_str())
+            == Some(CODEX_WEB_SEARCH_DISABLED);
+        if owned {
+            doc.as_table_mut().remove(CODEX_WEB_SEARCH_FIELD);
+        }
+    }
+
+    Ok(doc.to_string())
+}
+
 /// Generate Codex `model_catalog_json` from provider settings and inject/remove
 /// the top-level TOML field that points Codex to the generated file.
 pub fn prepare_codex_config_text_with_model_catalog(
     settings: &Value,
     config_text: &str,
+    profile: CodexCatalogToolProfile,
 ) -> Result<String, AppError> {
     let catalog_path = get_codex_model_catalog_path();
 
-    if let Some(catalog) = codex_model_catalog_from_settings(settings, config_text)? {
+    if let Some(catalog) = codex_model_catalog_from_settings(settings, config_text, profile)? {
         let config_text = set_codex_model_catalog_json_field(config_text, Some(&catalog_path))?;
+        // Disable web_search only for native gateways on the reject blacklist
+        // (MiMo/LongCat/MiniMax by host or model brand; Qwen3-Coder by model).
+        // Everything else — relays, DouBao, web-search-capable Qwen models,
+        // unknown providers — keeps Codex's default.
+        let disable_web_search = match profile {
+            // The Responses→Anthropic transform silently drops the Codex web_search
+            // hosted tool, so always disable it here rather than present a dead tool.
+            CodexCatalogToolProfile::Anthropic => true,
+            CodexCatalogToolProfile::NativeResponses => {
+                codex_native_gateway_rejects_web_search(&config_text)
+            }
+            CodexCatalogToolProfile::ProxyChat => false,
+        };
+        let config_text = set_codex_native_web_search_field(&config_text, disable_web_search)?;
         write_json_file(&catalog_path, &catalog)?;
         Ok(config_text)
     } else {
-        set_codex_model_catalog_json_field(config_text, None)
+        let config_text = set_codex_model_catalog_json_field(config_text, None)?;
+        // Even without a generated catalog, the Responses→Anthropic transform drops the
+        // Codex web_search hosted tool, so keep the invariant that an Anthropic provider
+        // never presents it as a dead tool.
+        let disable_web_search = profile == CodexCatalogToolProfile::Anthropic;
+        set_codex_native_web_search_field(&config_text, disable_web_search)
     }
 }
 
-/// Decide the `config.toml` text to write during a takeover-off restore,
-/// projecting the model catalog only when `settings` carries an inline
-/// `modelCatalog`.
+///
+/// Gating on the presence of the inline `modelCatalog` key routes each shape
+/// correctly; an empty inline catalog still projects (and so correctly drops a
+/// now-stale pointer), while an absent key leaves the text untouched. This is
+/// **orthogonal to auth** — a provider-rebuilt backup can pair an inline
+/// `modelCatalog` with empty `auth.json` (the API key living in the config's
+/// `experimental_bearer_token`), so the caller must decide config projection
+/// independently of whether it writes or deletes `auth.json`.
 pub fn prepare_codex_live_config_text_with_optional_catalog(
     settings: &Value,
     config_text: &str,
+    profile: CodexCatalogToolProfile,
 ) -> Result<String, AppError> {
     if settings.get("modelCatalog").is_some() {
-        prepare_codex_config_text_with_model_catalog(settings, config_text)
+        prepare_codex_config_text_with_model_catalog(settings, config_text, profile)
     } else {
         Ok(config_text.to_string())
     }
@@ -682,7 +958,13 @@ pub fn write_codex_live_with_catalog(
     config_text: Option<&str>,
 ) -> Result<(), AppError> {
     let prepared_config = config_text
-        .map(|text| prepare_codex_config_text_with_model_catalog(settings, text))
+        .map(|text| {
+            prepare_codex_config_text_with_model_catalog(
+                settings,
+                text,
+                CodexCatalogToolProfile::ProxyChat,
+            )
+        })
         .transpose()?;
 
     write_codex_live_atomic(auth, prepared_config.as_deref())
@@ -693,9 +975,10 @@ pub fn write_codex_provider_live_with_catalog(
     category: Option<&str>,
     auth: &Value,
     config_text: Option<&str>,
+    profile: CodexCatalogToolProfile,
 ) -> Result<(), AppError> {
     let prepared_config = config_text
-        .map(|text| prepare_codex_config_text_with_model_catalog(settings, text))
+        .map(|text| prepare_codex_config_text_with_model_catalog(settings, text, profile))
         .transpose()?;
 
     write_codex_live_for_provider(category, auth, prepared_config.as_deref())
@@ -1542,7 +1825,8 @@ base_url = "https://production.api/v1"
             }
         });
         let specs = codex_catalog_model_specs(&settings, r#"model_context_window = 128000"#);
-        let catalog = codex_model_catalog_from_specs(&specs, &template);
+        let catalog =
+            codex_model_catalog_from_specs(&specs, &template, CodexCatalogToolProfile::ProxyChat);
         let models = catalog
             .get("models")
             .and_then(|value| value.as_array())
@@ -1738,4 +2022,391 @@ name = "any"
             "entries lacking slug are skipped; a fully-skipped catalog yields None"
         );
     }
+}
+
+// ── v3.18.0 rebase parity: ported from src-tauri/src/codex_config.rs ──
+
+pub const CC_SWITCH_CODEX_OFFICIAL_PROXY_PROVIDER_ID: &str = "cc-switch-official";
+
+/// Top-level `config.toml` key that controls Codex's built-in web-search tool.
+pub(crate) const CODEX_WEB_SEARCH_FIELD: &str = "web_search";
+/// Value that disables the web-search tool. Some native `/responses` gateways
+/// reject a `web_search` tool with `responses_feature_not_supported` ("tool type
+/// 'web_search' is not supported by this gateway phase"), so for those we write
+/// this per the vendors' official Codex docs. Also doubles as cc-switch's
+/// ownership sentinel: we only ever remove a `web_search` key whose value equals
+/// this string, never a user's own setting.
+pub(crate) const CODEX_WEB_SEARCH_DISABLED: &str = "disabled";
+
+/// Which Codex tool surface the generated model catalog should target.
+///
+/// - `ProxyChat`: cc-switch's proxy takes over and converts Responses<->Chat,
+///   so the catalog keeps Codex's default tool set (incl. the freeform
+///   `apply_patch` custom tool, which the proxy rewrites to a function tool).
+/// - `NativeResponses`: Codex talks directly to a provider's native
+///   `/responses` endpoint (no proxy). Such gateways (e.g. Xiaomi MiMo,
+///   MiniMax) reject `type=="custom"` tools, so the catalog must suppress the
+///   freeform `apply_patch` and rely on `shell_type="shell_command"` for edits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CodexCatalogToolProfile {
+    ProxyChat,
+    NativeResponses,
+    /// Codex talks (through cc-switch's proxy) to a native Anthropic Messages
+    /// gateway. Like `NativeResponses` it must suppress Codex's freeform custom
+    /// tools — the Responses→Anthropic transform keeps only `function` tools.
+    /// Additionally the Codex `web_search` hosted tool is unusable on this path
+    /// (the transform drops it), so it is always disabled — see
+    /// `prepare_codex_config_text_with_model_catalog`.
+    Anthropic,
+}
+
+impl CodexCatalogToolProfile {
+    /// Pick the catalog tool profile from a provider's `apiFormat` meta value.
+    ///
+    /// Prefer [`crate::proxy::providers::codex::resolve_codex_catalog_tool_profile`],
+    /// which also honors settings-level `apiFormat` and the TOML `wire_api` (matching
+    /// the proxy router). This string-only mapping is the fallback for non-Anthropic
+    /// cases.
+    pub fn from_api_format(api_format: Option<&str>) -> Self {
+        match api_format {
+            Some("anthropic") => CodexCatalogToolProfile::Anthropic,
+            // Native (direct) Responses gateways reject Codex's freeform custom
+            // tools (apply_patch, etc.); strip them via the NativeResponses profile.
+            Some("openai_responses") => CodexCatalogToolProfile::NativeResponses,
+            _ => CodexCatalogToolProfile::ProxyChat,
+        }
+    }
+}
+
+/// `[model_providers.custom]` entry that makes an official (ChatGPT OAuth)
+/// provider behave like Codex's built-in `openai` entry while running under
+/// the shared custom id: `requires_openai_auth` routes auth to the ChatGPT
+/// login in `auth.json` (base_url then defaults to the official Codex
+/// backend), `name = "OpenAI"` keeps Codex's `is_openai()` feature gates
+/// (web search, remote compaction), and `supports_websockets` restores the
+/// built-in default that custom entries otherwise lose.
+fn codex_official_provider_table(
+    base_url: Option<&str>,
+    supports_websockets: bool,
+) -> toml_edit::Table {
+    let mut table = toml_edit::Table::new();
+    table["name"] = toml_edit::value("OpenAI");
+    table["requires_openai_auth"] = toml_edit::value(true);
+    table["supports_websockets"] = toml_edit::value(supports_websockets);
+    table["wire_api"] = toml_edit::value("responses");
+    if let Some(base_url) = base_url {
+        table["base_url"] = toml_edit::value(base_url.trim_end_matches('/'));
+    }
+    table
+}
+
+fn codex_unified_official_provider_table() -> toml_edit::Table {
+    codex_official_provider_table(None, true)
+}
+
+fn remove_codex_proxy_placeholders_from_providers(providers: &mut toml_edit::Table) {
+    for (_, item) in providers.iter_mut() {
+        if let Some(table) = item.as_table_mut() {
+            let should_remove = table
+                .get("experimental_bearer_token")
+                .and_then(|item| item.as_str())
+                == Some(CODEX_PROXY_AUTH_PLACEHOLDER);
+            if should_remove {
+                table.remove("experimental_bearer_token");
+            }
+        } else if let Some(table) = item.as_inline_table_mut() {
+            let should_remove = table
+                .get("experimental_bearer_token")
+                .and_then(|value| value.as_str())
+                == Some(CODEX_PROXY_AUTH_PLACEHOLDER);
+            if should_remove {
+                table.remove("experimental_bearer_token");
+            }
+        }
+    }
+}
+
+/// Project the built-in Codex official provider through the local proxy while
+/// keeping authentication owned by Codex itself.
+///
+/// The resulting custom provider explicitly opts into OpenAI authentication,
+/// so Codex forwards its existing ChatGPT login to the local `/responses`
+/// endpoint.  No API key or bearer placeholder is written to `auth.json`.
+pub fn apply_codex_official_proxy_route(
+    config_text: &str,
+    proxy_base_url: &str,
+) -> Result<String, AppError> {
+    let mut doc = config_text
+        .parse::<DocumentMut>()
+        .map_err(|e| AppError::Message(format!("Invalid Codex config.toml: {e}")))?;
+
+    // A third-party takeover may have left the proxy placeholder in config.toml.
+    // The official route must use Codex's native OpenAI login instead.
+    doc.as_table_mut().remove("experimental_bearer_token");
+    doc["model_provider"] = toml_edit::value(CC_SWITCH_CODEX_OFFICIAL_PROXY_PROVIDER_ID);
+
+    let mut providers = match doc.as_table_mut().remove("model_providers") {
+        Some(item) => item.into_table().map_err(|_| {
+            AppError::Message(
+                "Invalid Codex config.toml: model_providers must be a table".to_string(),
+            )
+        })?,
+        None => {
+            let mut table = toml_edit::Table::new();
+            table.set_implicit(true);
+            table
+        }
+    };
+
+    // Clean only CC Switch's placeholder from every stale provider table. Real
+    // user bearer tokens are preserved, as are all unrelated provider fields.
+    remove_codex_proxy_placeholders_from_providers(&mut providers);
+
+    // The local proxy currently exposes HTTP/SSE, not Codex websocket routes.
+    let table = codex_official_provider_table(Some(proxy_base_url), false);
+
+    providers.insert(
+        CC_SWITCH_CODEX_OFFICIAL_PROXY_PROVIDER_ID,
+        toml_edit::Item::Table(table),
+    );
+    doc["model_providers"] = toml_edit::Item::Table(providers);
+    Ok(doc.to_string())
+}
+
+/// Whether a live Codex config is the official route projected by CC Switch.
+pub fn codex_config_has_official_proxy_route(config_text: &str) -> bool {
+    if !config_text.contains(CC_SWITCH_CODEX_OFFICIAL_PROXY_PROVIDER_ID) {
+        return false;
+    }
+    config_text
+        .parse::<DocumentMut>()
+        .ok()
+        .and_then(|doc| {
+            doc.get("model_provider")
+                .and_then(|item| item.as_str())
+                .map(str::to_string)
+        })
+        .as_deref()
+        == Some(CC_SWITCH_CODEX_OFFICIAL_PROXY_PROVIDER_ID)
+}
+
+/// Remove only the official takeover route owned by CC Switch. This is a
+/// last-resort crash cleanup when no live backup or provider SSOT is usable.
+pub fn remove_codex_official_proxy_route(config_text: &str) -> Result<String, AppError> {
+    let mut doc = config_text
+        .parse::<DocumentMut>()
+        .map_err(|e| AppError::Message(format!("Invalid Codex config.toml: {e}")))?;
+    if doc.get("model_provider").and_then(|item| item.as_str())
+        != Some(CC_SWITCH_CODEX_OFFICIAL_PROXY_PROVIDER_ID)
+    {
+        return Ok(config_text.to_string());
+    }
+
+    doc.as_table_mut().remove("model_provider");
+    if let Some(item) = doc.as_table_mut().remove("model_providers") {
+        let mut providers = item.into_table().map_err(|_| {
+            AppError::Message(
+                "Invalid Codex config.toml: model_providers must be a table".to_string(),
+            )
+        })?;
+        providers.remove(CC_SWITCH_CODEX_OFFICIAL_PROXY_PROVIDER_ID);
+        remove_codex_proxy_placeholders_from_providers(&mut providers);
+        if !providers.is_empty() {
+            doc["model_providers"] = toml_edit::Item::Table(providers);
+        }
+    }
+    Ok(doc.to_string())
+}
+
+fn table_matches_codex_unified_official_provider(table: &toml_edit::Table) -> bool {
+    table.len() == 4
+        && table.get("name").and_then(|item| item.as_str()) == Some("OpenAI")
+        && table
+            .get("requires_openai_auth")
+            .and_then(|item| item.as_bool())
+            == Some(true)
+        && table
+            .get("supports_websockets")
+            .and_then(|item| item.as_bool())
+            == Some(true)
+        && table.get("wire_api").and_then(|item| item.as_str()) == Some("responses")
+}
+
+/// 统一 Codex 会话历史：把官方供应商的 live 配置改写为以共享的
+/// `custom` model_provider 标识运行（认证仍走 `auth.json` 的 ChatGPT 登录），
+/// 使开关开启后创建的官方会话与第三方会话共用同一个 resume 历史桶。
+///
+/// 两种情况拒绝注入、原样返回：
+/// - 配置已有显式 `model_provider`：用户手工指定的路由不被覆盖；
+/// - 配置已有形态不同的 `[model_providers.custom]` 表：设置 `model_provider`
+///   会激活这张我们不认识的表（可能带第三方 base_url/token，会把 ChatGPT
+///   OAuth 流量路由到错误后端），宁可让开关对该配置不生效。
+pub fn inject_codex_unified_session_bucket(config_text: &str) -> Result<String, AppError> {
+    let mut doc = config_text
+        .parse::<DocumentMut>()
+        .map_err(|e| AppError::Message(format!("Invalid Codex config.toml: {e}")))?;
+
+    if doc.get("model_provider").is_some() {
+        return Ok(config_text.to_string());
+    }
+
+    let existing_custom_conflicts = doc
+        .get("model_providers")
+        .and_then(|item| item.as_table())
+        .and_then(|providers| providers.get(CC_SWITCH_CODEX_MODEL_PROVIDER_ID))
+        .and_then(|item| item.as_table())
+        .is_some_and(|table| !table_matches_codex_unified_official_provider(table));
+    if existing_custom_conflicts {
+        log::warn!(
+            "官方 Codex 配置已存在自定义 [model_providers.custom]，跳过统一会话路由注入以避免激活未知路由"
+        );
+        return Ok(config_text.to_string());
+    }
+
+    doc["model_provider"] = toml_edit::value(CC_SWITCH_CODEX_MODEL_PROVIDER_ID);
+
+    if doc.get("model_providers").is_none() {
+        let mut parent = toml_edit::Table::new();
+        parent.set_implicit(true);
+        doc["model_providers"] = toml_edit::Item::Table(parent);
+    }
+    if let Some(providers) = doc["model_providers"].as_table_mut() {
+        if !providers.contains_key(CC_SWITCH_CODEX_MODEL_PROVIDER_ID) {
+            providers.insert(
+                CC_SWITCH_CODEX_MODEL_PROVIDER_ID,
+                toml_edit::Item::Table(codex_unified_official_provider_table()),
+            );
+        }
+    }
+    Ok(doc.to_string())
+}
+
+/// `inject_codex_unified_session_bucket` 的反向操作：从配置文本里剥掉注入的
+/// 统一会话路由，保证切换回填不会把它带进数据库的存储配置（关闭开关后
+/// 切换即可完全还原）。仅当形态与注入产物完全一致时才剥离；第三方模板和
+/// 用户自定义的 `custom` 条目（带 base_url 等差异字段）原样保留。
+pub fn strip_codex_unified_session_bucket(config_text: &str) -> Result<String, AppError> {
+    if !config_text.contains("model_provider") {
+        return Ok(config_text.to_string());
+    }
+    let mut doc = config_text
+        .parse::<DocumentMut>()
+        .map_err(|e| AppError::Message(format!("Invalid Codex config.toml: {e}")))?;
+
+    if doc.get("model_provider").and_then(|item| item.as_str())
+        != Some(CC_SWITCH_CODEX_MODEL_PROVIDER_ID)
+    {
+        return Ok(config_text.to_string());
+    }
+    let matches_injected = doc
+        .get("model_providers")
+        .and_then(|item| item.as_table())
+        .and_then(|providers| providers.get(CC_SWITCH_CODEX_MODEL_PROVIDER_ID))
+        .and_then(|item| item.as_table())
+        .is_some_and(table_matches_codex_unified_official_provider);
+    if !matches_injected {
+        return Ok(config_text.to_string());
+    }
+
+    doc.as_table_mut().remove("model_provider");
+    let providers_empty = doc["model_providers"]
+        .as_table_mut()
+        .map(|providers| {
+            providers.remove(CC_SWITCH_CODEX_MODEL_PROVIDER_ID);
+            providers.is_empty()
+        })
+        .unwrap_or(false);
+    if providers_empty {
+        doc.as_table_mut().remove("model_providers");
+    }
+    Ok(doc.to_string())
+}
+
+/// 统一会话开关开启时，把官方供应商 `{ auth, config }` 设置对象中的
+/// config 文本注入共享 custom 路由；开关关闭或非官方供应商时不做改动。
+///
+/// 普通 live 写入（`write_codex_live_for_provider`）与代理接管备份
+/// （`update_live_backup_from_provider`）两条落盘路径共用：接管期间
+/// live 归代理所有，注入必须进备份，接管释放恢复的 live 才带统一路由。
+pub fn apply_codex_unified_session_bucket_to_settings(
+    category: Option<&str>,
+    settings: &mut Value,
+) -> Result<(), AppError> {
+    if category != Some("official") || !false
+    /* daemon: unified session history is desktop-only */
+    {
+        return Ok(());
+    }
+    let config_text = settings
+        .get("config")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .to_string();
+    let injected = inject_codex_unified_session_bucket(&config_text)?;
+    if injected != config_text {
+        if let Some(obj) = settings.as_object_mut() {
+            obj.insert("config".to_string(), Value::String(injected));
+        }
+    }
+    Ok(())
+}
+
+/// Backfill helper: strip the unified-session injection from a live
+/// `{ auth, config }` settings object before it is stored back to the DB.
+pub fn strip_codex_unified_session_bucket_from_settings(
+    settings: &mut Value,
+) -> Result<(), AppError> {
+    let Some(config_text) = settings
+        .get("config")
+        .and_then(|value| value.as_str())
+        .map(str::to_string)
+    else {
+        return Ok(());
+    };
+    let stripped = strip_codex_unified_session_bucket(&config_text)?;
+    if stripped != config_text {
+        if let Some(obj) = settings.as_object_mut() {
+            obj.insert("config".to_string(), Value::String(stripped));
+        }
+    }
+    Ok(())
+}
+
+/// Backfill helper: strip `[mcp_servers]` from a live `{ auth, config }`
+/// settings object before it is stored back to the DB.
+///
+/// MCP 服务器的 SSOT 是 DB 的 mcp_servers 表，live `config.toml` 里的
+/// `[mcp_servers]` 只是每次写 live 之后由 MCP 同步重新投影的产物。若回填时
+/// 烙进供应商存储配置，已在应用里删除的服务器会随下次激活该供应商被写回
+/// live，而逐条 reconcile 只认识 DB 现存条目、永远清不掉这种孤儿。
+pub fn strip_codex_mcp_servers_from_settings(settings: &mut Value) -> Result<(), AppError> {
+    let Some(config_text) = settings
+        .get("config")
+        .and_then(|value| value.as_str())
+        .map(str::to_string)
+    else {
+        return Ok(());
+    };
+    if !config_text.contains("mcp") {
+        return Ok(());
+    }
+    let mut doc = config_text
+        .parse::<DocumentMut>()
+        .map_err(|e| AppError::Message(format!("Invalid Codex config.toml: {e}")))?;
+    let mut changed = doc.as_table_mut().remove("mcp_servers").is_some();
+    // 历史错误格式 [mcp.servers] 一并清理（live 侧 MCP 同步也做同样迁移）
+    if let Some(mcp_tbl) = doc.get_mut("mcp").and_then(|item| item.as_table_like_mut()) {
+        if mcp_tbl.remove("servers").is_some() {
+            changed = true;
+        }
+        if mcp_tbl.is_empty() {
+            doc.as_table_mut().remove("mcp");
+        }
+    }
+    if changed {
+        if let Some(obj) = settings.as_object_mut() {
+            obj.insert("config".to_string(), Value::String(doc.to_string()));
+        }
+    }
+    Ok(())
 }

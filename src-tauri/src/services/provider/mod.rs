@@ -508,7 +508,7 @@ mod tests {
                 Some("https://api.a.example/v1/")
             );
             assert_eq!(
-                saved.resolve_usage_credentials(&AppType::Codex),
+                saved.resolve_usage_credentials(&cc_switch_shared::app_config::AppType::Codex),
                 ("https://api.b.example/v1".to_string(), "sk-b".to_string())
             );
         });
@@ -563,7 +563,8 @@ mod tests {
             assert_eq!(script_after_update.api_key, None);
             assert_eq!(script_after_update.base_url, None);
             assert_eq!(
-                saved_after_update.resolve_usage_credentials(&AppType::Codex),
+                saved_after_update
+                    .resolve_usage_credentials(&cc_switch_shared::app_config::AppType::Codex),
                 ("https://api.b.example/v1".to_string(), "sk-b".to_string())
             );
         });
@@ -2458,7 +2459,11 @@ impl ProviderService {
     }
 
     fn normalize_usage_script_credential_overrides(app_type: &AppType, provider: &mut Provider) {
-        let current_credentials = provider.resolve_usage_credentials(app_type);
+        let current_credentials = app_type
+            .as_str()
+            .parse::<cc_switch_shared::app_config::AppType>()
+            .map(|shared| provider.resolve_usage_credentials(&shared))
+            .unwrap_or_default();
 
         let Some(usage_script) = provider
             .meta
