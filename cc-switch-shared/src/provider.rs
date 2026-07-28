@@ -1,3 +1,4 @@
+use http::header::{HeaderValue, InvalidHeaderValue};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -70,6 +71,10 @@ impl Provider {
         self.provider_type() == Some("codex_oauth")
     }
 
+    pub fn is_xai_oauth(&self) -> bool {
+        self.provider_type() == Some("xai_oauth")
+    }
+
     pub fn is_github_copilot(&self) -> bool {
         self.provider_type() == Some("github_copilot")
             || self.claude_base_url_contains("githubcopilot.com")
@@ -86,6 +91,7 @@ impl Provider {
         has_managed_binding
             || self.is_github_copilot()
             || self.is_codex_oauth()
+            || self.is_xai_oauth()
             || self.claude_base_url_contains("chatgpt.com/backend-api/codex")
     }
 
@@ -194,6 +200,60 @@ impl Provider {
                 let api_key = first_non_empty(env, &["GEMINI_API_KEY", "GOOGLE_API_KEY"]);
                 (base_url, api_key)
             }
+            // Grok Build keeps credentials in a TOML `config` string: [models]
+            // selects the default profile, [model.<profile>] holds base_url and
+            // api_key (or env_key pointing at an environment variable).
+            AppType::GrokBuild => {
+                let config_text = settings.get("config").and_then(|v| v.as_str());
+                let selected = config_text
+                    .and_then(|config| toml::from_str::<toml::Value>(config).ok())
+                    .and_then(|parsed| {
+                        let default_model = parsed
+                            .get("models")?
+                            .as_table()?
+                            .get("default")?
+                            .as_str()?
+                            .trim();
+                        parsed
+                            .get("model")?
+                            .as_table()?
+                            .get(default_model)?
+                            .as_table()
+                            .cloned()
+                    });
+                let base_url = selected
+                    .as_ref()
+                    .and_then(|model| model.get("base_url"))
+                    .and_then(|v| v.as_str())
+                    .map(|v| v.trim_end_matches('/'))
+                    .unwrap_or("")
+                    .to_string();
+                let api_key = selected
+                    .as_ref()
+                    .and_then(|model| {
+                        model
+                            .get("api_key")
+                            .and_then(|v| v.as_str())
+                            .filter(|v| !v.trim().is_empty())
+                            .map(ToString::to_string)
+                            .or_else(|| {
+                                model
+                                    .get("env_key")
+                                    .and_then(|v| v.as_str())
+                                    .and_then(|key| std::env::var(key).ok())
+                                    .map(|v| v.trim().to_string())
+                                    .filter(|v| !v.is_empty())
+                            })
+                    })
+                    .or_else(|| {
+                        std::env::var("XAI_API_KEY")
+                            .ok()
+                            .map(|v| v.trim().to_string())
+                            .filter(|v| !v.is_empty())
+                    })
+                    .unwrap_or_default();
+                (base_url, api_key)
+            }
             AppType::Hermes => (
                 str_at(settings.get("base_url")),
                 str_at(settings.get("api_key")),
@@ -272,6 +332,22 @@ pub struct UsageScript {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "codingPlanProvider")]
     pub coding_plan_provider: Option<String>,
+    /// 火山方舟控制面 OpenAPI 的 AccessKey ID（用量查询签名用，与推理 Key 是两套凭据）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "accessKeyId")]
+    pub access_key_id: Option<String>,
+    /// 火山方舟控制面 OpenAPI 的 SecretAccessKey（同上）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "secretAccessKey")]
+    pub secret_access_key: Option<String>,
+    /// 智谱团队套餐（Team Plan）的组织 ID（用量查询请求头 bigmodel-organization）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "teamOrganizationId")]
+    pub team_organization_id: Option<String>,
+    /// 智谱团队套餐（Team Plan）的项目 ID（用量查询请求头 bigmodel-project）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "teamProjectId")]
+    pub team_project_id: Option<String>,
 }
 
 /// 用量数据
@@ -375,7 +451,8 @@ pub struct ClaudeDesktopModelRoute {
     pub supports_1m: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+/// Codex Responses -> Chat Completions 的 reasoning 能力描述。
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct CodexChatReasoningConfig {
     #[serde(rename = "supportsThinking", skip_serializing_if = "Option::is_none")]
     pub supports_thinking: Option<bool>,
@@ -389,6 +466,21 @@ pub struct CodexChatReasoningConfig {
     pub effort_value_mode: Option<String>,
     #[serde(rename = "outputFormat", skip_serializing_if = "Option::is_none")]
     pub output_format: Option<String>,
+}
+
+/// Local proxy request overrides applied after route/protocol transforms.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct LocalProxyRequestOverrides {
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub headers: HashMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body: Option<serde_json::Value>,
+}
+
+impl LocalProxyRequestOverrides {
+    pub fn is_empty(&self) -> bool {
+        self.headers.is_empty() && self.body.is_none()
+    }
 }
 
 /// 供应商元数据
@@ -466,12 +558,45 @@ pub struct ProviderMeta {
     /// conversions fall back to provider ID.
     #[serde(rename = "promptCacheKey", skip_serializing_if = "Option::is_none")]
     pub prompt_cache_key: Option<String>,
+    /// Session-based prompt-cache routing for Codex Responses -> Chat conversions.
+    /// "auto" enables known-compatible upstreams; "enabled" / "disabled" are overrides.
+    #[serde(rename = "promptCacheRouting", skip_serializing_if = "Option::is_none")]
+    pub prompt_cache_routing: Option<String>,
     /// Codex OAuth FAST mode: inject `service_tier = "priority"` for ChatGPT Codex requests.
     #[serde(rename = "codexFastMode", skip_serializing_if = "Option::is_none")]
     pub codex_fast_mode: Option<bool>,
     /// Codex Responses -> Chat Completions reasoning capability metadata.
     #[serde(rename = "codexChatReasoning", skip_serializing_if = "Option::is_none")]
     pub codex_chat_reasoning: Option<CodexChatReasoningConfig>,
+    /// Codex → Anthropic path: whether to emulate the Claude Code client
+    /// (User-Agent / anthropic-beta / x-app + injecting the Claude Code system
+    /// prompt first line). Disabled by default; only an explicit `true` enables it.
+    #[serde(
+        rename = "impersonateClaudeCode",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub impersonate_claude_code: Option<bool>,
+    /// Codex → Anthropic path: override the Anthropic `max_tokens` (output ceiling).
+    ///
+    /// Codex does not forward its `model_max_output_tokens` in the Responses
+    /// request body, so without this the path falls back to a conservative
+    /// default (8192), which truncates long or thinking-heavy responses
+    /// (`stop_reason=max_tokens`). When set (>0), this value is injected as the
+    /// request's `max_output_tokens` before conversion, taking precedence over
+    /// both any request-supplied value and the default. Kept per-provider on
+    /// purpose: a global large default would hard-400 on low-output-ceiling
+    /// models/gateways (and that error is non-retryable).
+    #[serde(rename = "maxOutputTokens", skip_serializing_if = "Option::is_none")]
+    pub max_output_tokens: Option<u64>,
+    /// Custom User-Agent for local proxy routing.
+    #[serde(rename = "customUserAgent", skip_serializing_if = "Option::is_none")]
+    pub custom_user_agent: Option<String>,
+    /// Local proxy request overrides applied to the transformed upstream request.
+    #[serde(
+        rename = "localProxyRequestOverrides",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub local_proxy_request_overrides: Option<LocalProxyRequestOverrides>,
     /// 累加模式应用中，该 provider 是否已写入 live config。
     /// `None` 表示旧数据/未知状态，`Some(false)` 表示明确仅存在于数据库中。
     #[serde(rename = "liveConfigManaged", skip_serializing_if = "Option::is_none")]
@@ -486,11 +611,40 @@ pub struct ProviderMeta {
     pub github_account_id: Option<String>,
 }
 
+/// 解析 Provider 级自定义 User-Agent 字符串（单一真理来源）。
+///
+/// 转发（forwarder）、流式检测（stream_check）、获取模型列表（model_fetch）三条路径
+/// 共用同一口径，避免出现"某条路径用了 UA、另一条没用 / 报错"的不一致。
+///
+/// 合法性由 `http::HeaderValue::from_str` 按**字节**判定（`b >= 32 && b != 127 || b == '\t'`），
+/// 与前端 `src/lib/userAgent.ts::isValidUserAgentHeader` 严格一致：
+/// - `Ok(None)`：未设置或纯空白（trim 后为空）。
+/// - `Ok(Some(hv))`：合法。制表符、可见 ASCII（0x20–0x7E）、以及任意非 ASCII 字符
+///   （UTF-8 字节均 ≥ 0x80）都合法。
+/// - `Err(_)`：仅含控制字符时——除 `\t` 外的 0x00–0x1F（含换行）与 0x7F（DEL）。
+///
+/// 非法值的处理：三条运行时路径**均静默忽略**（`.ok().flatten()`，绝不让某条路径报错而
+/// 另一条放行）；前端在输入框处给出非阻断提示。当前**不在保存时阻断**——deeplink 导入等
+/// 非表单路径应宽容，运行时静默忽略即为安全网。
+pub fn parse_custom_user_agent(
+    raw: Option<&str>,
+) -> Result<Option<HeaderValue>, InvalidHeaderValue> {
+    match raw.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(ua) => HeaderValue::from_str(ua).map(Some),
+        None => Ok(None),
+    }
+}
+
 impl ProviderMeta {
     /// Codex OAuth FAST mode 是否启用。默认关闭，因为 `service_tier="priority"`
     /// 会按更高速率消耗 ChatGPT 订阅配额，用户需显式开启以换取更低延迟。
     pub fn codex_fast_mode_enabled(&self) -> bool {
         self.codex_fast_mode.unwrap_or(false)
+    }
+
+    /// 经校验的 Provider 级自定义 User-Agent。见 [`parse_custom_user_agent`]。
+    pub fn custom_user_agent_header(&self) -> Result<Option<HeaderValue>, InvalidHeaderValue> {
+        parse_custom_user_agent(self.custom_user_agent.as_deref())
     }
 
     /// 解析指定托管认证供应商绑定的账号 ID。

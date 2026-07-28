@@ -78,3 +78,16 @@ impl Default for SkillStore {
         }
     }
 }
+
+/// Stub: Skill sync manages desktop app config dirs; the daemon's reused
+/// provider services call it after provider switches, so provide a no-op.
+pub struct SkillService;
+
+impl SkillService {
+    pub fn sync_to_app(
+        _db: &std::sync::Arc<crate::database::Database>,
+        _app: &crate::app_config::AppType,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+}

@@ -57,6 +57,8 @@ base64 = "0.22"
 url = "2.5"
 uuid = { version = "1.11", features = ["v4"] }
 sha2 = "0.10"
+hmac = "0.12"
+zstd = "0.13"
 json5 = "0.4"
 json-five = "0.3.1"
 indexmap = { version = "2", features = ["serde"] }

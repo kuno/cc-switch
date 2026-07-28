@@ -446,6 +446,7 @@ name = "cc-switch-shared"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "http",
  "indexmap",
  "once_cell",
  "rusqlite",
@@ -1827,6 +1828,7 @@ dependencies = [
  "env_logger",
  "flate2",
  "futures",
+ "hmac",
  "http",
  "http-body",
  "http-body-util",
@@ -1864,6 +1866,7 @@ dependencies = [
  "uuid",
  "webpki-roots 0.26.11",
  "zip",
+ "zstd",
 ]
 
 [[package]]

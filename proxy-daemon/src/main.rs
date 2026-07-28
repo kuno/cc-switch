@@ -15,7 +15,12 @@ mod codex_config;
 mod config;
 mod error;
 mod gemini_config;
+#[path = "../../src-tauri/src/grok_config.rs"]
+mod grok_config;
 mod hermes_config;
+mod log_redact;
+#[path = "../../src-tauri/src/model_capabilities.rs"]
+mod model_capabilities;
 mod openclaw_config;
 mod opencode_config;
 mod openwrt_admin;
@@ -33,7 +38,36 @@ mod usage_script;
 mod version;
 
 mod services;
+pub(crate) use log_redact::*;
 pub use shared_core::*;
+
+/// Shim for the desktop crate's `commands` module: path-included src-tauri
+/// modules reference the OAuth state types as `crate::commands::*State`.
+/// The daemon only needs the state wrappers, not the Tauri commands.
+/// Shim: session_usage_grokbuild only needs the grokbuild session roots;
+/// the full desktop session_manager tree is not reused on the daemon.
+pub mod session_manager {
+    pub mod providers {
+        pub mod grokbuild {
+            pub fn session_roots() -> Vec<std::path::PathBuf> {
+                let config_dir = crate::grok_config::get_grok_config_dir();
+                vec![
+                    config_dir.join("sessions"),
+                    config_dir.join("archived_sessions"),
+                ]
+            }
+        }
+    }
+}
+
+pub mod commands {
+    pub use crate::shared_core::proxy::auth_state::{CodexOAuthState, CopilotAuthState};
+    use crate::shared_core::proxy::providers::xai_oauth_auth::XaiOAuthManager;
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
+
+    pub struct XaiOAuthState(pub Arc<RwLock<XaiOAuthManager>>);
+}
 
 use std::io::Read;
 use std::str::FromStr;

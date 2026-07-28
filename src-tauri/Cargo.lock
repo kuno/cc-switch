@@ -888,6 +888,7 @@ name = "cc-switch-shared"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "http",
  "indexmap 2.13.0",
  "once_cell",
  "rusqlite",

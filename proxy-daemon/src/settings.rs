@@ -55,6 +55,7 @@ impl VisibleApps {
             AppType::OpenClaw => self.openclaw,
             AppType::Hermes => false,
             AppType::ClaudeDesktop => false,
+            AppType::GrokBuild => false,
         }
     }
 }
@@ -607,6 +608,7 @@ pub fn get_current_provider(app_type: &AppType) -> Option<String> {
         AppType::OpenClaw => settings.current_provider_openclaw.clone(),
         AppType::Hermes => None,
         AppType::ClaudeDesktop => None,
+        AppType::GrokBuild => None,
     }
 }
 
@@ -624,6 +626,7 @@ pub fn set_current_provider(app_type: &AppType, id: Option<&str>) -> Result<(), 
         AppType::OpenClaw => settings.current_provider_openclaw = id_owned.clone(),
         AppType::Hermes => {}
         AppType::ClaudeDesktop => {}
+        AppType::GrokBuild => {}
     })
 }
 
@@ -892,4 +895,10 @@ pub fn update_webdav_sync_status(status: WebDavSyncStatus) -> Result<(), AppErro
             sync.status = status;
         }
     })
+}
+
+/// Stub: Grok config dir override is a desktop-only setting; the daemon always
+/// uses the default grok config dir.
+pub fn get_grok_override_dir() -> Option<std::path::PathBuf> {
+    None
 }

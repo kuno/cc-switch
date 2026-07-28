@@ -424,7 +424,8 @@ pub(super) async fn refresh_third_party_coding_plan_snapshots(state: &ProxyState
     refresh_third_party_coding_plan_snapshots_with_query(
         state,
         |base_url: String, api_key: String| async move {
-            coding_plan::get_coding_plan_quota(&base_url, &api_key).await
+            coding_plan::get_coding_plan_quota(&base_url, &api_key, None, None, None, None, None)
+                .await
         },
     )
     .await;

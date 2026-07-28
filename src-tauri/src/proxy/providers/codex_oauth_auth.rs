@@ -16,7 +16,6 @@
 //! - 本地账号 ID 用于绑定和缓存；chatgpt_account_id 仅表示上游 workspace
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
