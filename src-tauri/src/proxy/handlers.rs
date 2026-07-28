@@ -130,10 +130,7 @@ pub async fn health_check() -> (StatusCode, Json<Value>) {
 ///
 /// OpenWrt uses this to satisfy Claude clients that probe `GET /v1/models`.
 pub async fn get_claude_models() -> (StatusCode, Json<Value>) {
-    (
-        StatusCode::OK,
-        Json(claude_models_json()),
-    )
+    (StatusCode::OK, Json(claude_models_json()))
 }
 
 fn claude_models_json() -> Value {
@@ -4185,13 +4182,11 @@ async fn log_usage(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_api_status_response, build_provider_quota, get_api_status,
-        body_looks_like_sse, chat_sse_to_response_value, classify_body_for_diagnostics,
-        codex_proxy_error_json, is_claude_oauth_provider, is_codex_oauth_provider,
-        is_gemini_oauth_provider, is_github_copilot_provider,
-        live_quota_refresh_call_count,
-        normalize_claude_gateway_endpoint,
-        refresh_claude_quota_snapshots_with_query,
+        body_looks_like_sse, build_api_status_response, build_provider_quota,
+        chat_sse_to_response_value, classify_body_for_diagnostics, codex_proxy_error_json,
+        get_api_status, is_claude_oauth_provider, is_codex_oauth_provider,
+        is_gemini_oauth_provider, is_github_copilot_provider, live_quota_refresh_call_count,
+        normalize_claude_gateway_endpoint, refresh_claude_quota_snapshots_with_query,
         refresh_claude_quota_snapshots_with_query_and_refresher,
         refresh_codex_quota_snapshots_with_query_and_refresher,
         refresh_copilot_quota_snapshots_with_query, refresh_gemini_quota_snapshots_with_query,
