@@ -4070,7 +4070,7 @@ mod tests {
             )?;
         }
 
-        let stats = db.get_provider_stats(None, None, Some("claude"))?;
+        let stats = db.get_provider_stats(None, None, Some("claude"), None, None)?;
         let ids: Vec<&str> = stats.iter().map(|s| s.provider_id.as_str()).collect();
         assert!(ids.contains(&"p1"), "configured provider must appear");
         assert!(

@@ -29,6 +29,7 @@ impl McpApps {
             AppType::OpenClaw => false,
             AppType::Hermes => self.hermes,
             AppType::ClaudeDesktop => false,
+            AppType::GrokBuild => false,
         }
     }
 
@@ -41,6 +42,7 @@ impl McpApps {
             AppType::OpenClaw => {}
             AppType::Hermes => self.hermes = enabled,
             AppType::ClaudeDesktop => {}
+            AppType::GrokBuild => {}
         }
     }
 
@@ -94,6 +96,7 @@ impl SkillApps {
             AppType::OpenClaw => false,
             AppType::Hermes => self.hermes,
             AppType::ClaudeDesktop => false,
+            AppType::GrokBuild => false,
         }
     }
 
@@ -106,6 +109,7 @@ impl SkillApps {
             AppType::OpenClaw => {}
             AppType::Hermes => self.hermes = enabled,
             AppType::ClaudeDesktop => {}
+            AppType::GrokBuild => {}
         }
     }
 
@@ -251,6 +255,7 @@ pub enum AppType {
     Claude,
     Codex,
     Gemini,
+    GrokBuild,
     OpenCode,
     OpenClaw,
     Hermes,
@@ -264,6 +269,7 @@ impl AppType {
             AppType::Claude => "claude",
             AppType::Codex => "codex",
             AppType::Gemini => "gemini",
+            AppType::GrokBuild => "grokbuild",
             AppType::OpenCode => "opencode",
             AppType::OpenClaw => "openclaw",
             AppType::Hermes => "hermes",
@@ -283,6 +289,7 @@ impl AppType {
             AppType::Claude,
             AppType::Codex,
             AppType::Gemini,
+            AppType::GrokBuild,
             AppType::OpenCode,
             AppType::OpenClaw,
             AppType::Hermes,
@@ -301,6 +308,7 @@ impl FromStr for AppType {
             "claude" => Ok(AppType::Claude),
             "codex" => Ok(AppType::Codex),
             "gemini" => Ok(AppType::Gemini),
+            "grokbuild" | "grok-build" | "grok_build" | "grok" => Ok(AppType::GrokBuild),
             "opencode" => Ok(AppType::OpenCode),
             "openclaw" => Ok(AppType::OpenClaw),
             "hermes" => Ok(AppType::Hermes),
@@ -344,6 +352,7 @@ impl CommonConfigSnippets {
             AppType::OpenClaw => self.openclaw.as_ref(),
             AppType::Hermes => self.hermes.as_ref(),
             AppType::ClaudeDesktop => None,
+            AppType::GrokBuild => None,
         }
     }
 
@@ -356,6 +365,7 @@ impl CommonConfigSnippets {
             AppType::OpenClaw => self.openclaw = snippet,
             AppType::Hermes => self.hermes = snippet,
             AppType::ClaudeDesktop => {}
+            AppType::GrokBuild => {}
         }
     }
 }

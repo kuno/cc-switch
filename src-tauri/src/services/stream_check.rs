@@ -361,7 +361,7 @@ impl StreamCheckService {
                 )
                 .await
             }
-            AppType::Codex => {
+            AppType::Codex | AppType::GrokBuild => {
                 Self::check_codex_stream(
                     &client,
                     &base_url,
@@ -1574,6 +1574,11 @@ impl StreamCheckService {
             AppType::Codex => {
                 Self::extract_codex_model(provider).unwrap_or_else(|| config.codex_model.clone())
             }
+            AppType::GrokBuild => {
+                // Grok Build keeps the model id in its TOML `config`:
+                // [models] selects the profile, [model.<profile>].model is the id.
+                Self::extract_grokbuild_model(provider).unwrap_or_else(|| "grok-4".to_string())
+            }
             AppType::Gemini => Self::extract_env_model(provider, "GEMINI_MODEL")
                 .unwrap_or_else(|| config.gemini_model.clone()),
             AppType::OpenCode => {
@@ -1637,6 +1642,29 @@ impl StreamCheckService {
         table
             .get("model")
             .and_then(|v| v.as_str())
+            .map(|s| s.trim().to_string())
+            .filter(|value| !value.is_empty())
+    }
+
+    fn extract_grokbuild_model(provider: &Provider) -> Option<String> {
+        let config_text = provider
+            .settings_config
+            .get("config")
+            .and_then(|value| value.as_str())?;
+        let parsed = toml::from_str::<toml::Value>(config_text).ok()?;
+        let default_model = parsed
+            .get("models")?
+            .as_table()?
+            .get("default")?
+            .as_str()?
+            .trim();
+        parsed
+            .get("model")?
+            .as_table()?
+            .get(default_model)?
+            .as_table()?
+            .get("model")?
+            .as_str()
             .map(|s| s.trim().to_string())
             .filter(|value| !value.is_empty())
     }

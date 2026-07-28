@@ -1561,7 +1561,7 @@ pub async fn get_app_runtime_status(
 pub fn get_usage_summary(db: &Database, app_type: &AppType) -> anyhow::Result<UsageSummary> {
     let profile = openwrt_app_profile(app_type)?;
 
-    db.get_usage_summary(None, None, Some(profile.app_id))
+    db.get_usage_summary(None, None, Some(profile.app_id), None, None)
         .map_err(|e| anyhow!("failed to read {} usage summary: {e}", profile.app_id))
 }
 
@@ -1571,7 +1571,7 @@ pub fn get_provider_stats(
 ) -> anyhow::Result<OpenWrtProviderStatsView> {
     let profile = openwrt_app_profile(app_type)?;
     let providers = db
-        .get_provider_stats(None, None, Some(profile.app_id))
+        .get_provider_stats(None, None, Some(profile.app_id), None, None)
         .map_err(|e| anyhow!("failed to read {} provider stats: {e}", profile.app_id))?;
 
     Ok(OpenWrtProviderStatsView { providers })
@@ -2277,7 +2277,7 @@ fn openwrt_app_profile(app_type: &AppType) -> anyhow::Result<OpenWrtAppProfile> 
             icon: "gemini",
             icon_color: "#4285F4",
         }),
-        AppType::Hermes | AppType::ClaudeDesktop => Err(anyhow!(
+        AppType::Hermes | AppType::ClaudeDesktop | AppType::GrokBuild => Err(anyhow!(
             "{} is not supported in proxy-daemon",
             app_type.as_str()
         )),
@@ -3279,7 +3279,7 @@ fn build_provider(
         AppType::Claude => build_claude_provider(profile, existing, provider_id, payload),
         AppType::Codex => build_codex_provider(profile, existing, provider_id, payload),
         AppType::Gemini => build_gemini_provider(profile, existing, provider_id, payload),
-        AppType::Hermes | AppType::ClaudeDesktop => Err(anyhow!(
+        AppType::Hermes | AppType::ClaudeDesktop | AppType::GrokBuild => Err(anyhow!(
             "{} is not supported in proxy-daemon",
             app_type.as_str()
         )),
