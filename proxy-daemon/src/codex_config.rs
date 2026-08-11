@@ -15,6 +15,7 @@ pub const CC_SWITCH_CODEX_MODEL_PROVIDER_ID: &str = "custom";
 pub const CC_SWITCH_CODEX_MODEL_CATALOG_FILENAME: &str = "cc-switch-model-catalog.json";
 const CODEX_MODEL_CATALOG_TEMPLATE_SLUG: &str = "gpt-5.5";
 const CODEX_PROXY_AUTH_PLACEHOLDER: &str = "PROXY_MANAGED";
+const MAX_CODEX_CATALOG_BYTES: u64 = 32 * 1024 * 1024;
 
 /// Reserved built-in provider IDs from OpenAI Codex's config/model-provider
 /// catalog. Keep in sync with Codex `RESERVED_MODEL_PROVIDER_IDS` and legacy
@@ -49,6 +50,19 @@ pub fn get_codex_config_path() -> PathBuf {
 
 pub fn get_codex_model_catalog_path() -> PathBuf {
     get_codex_config_dir().join(CC_SWITCH_CODEX_MODEL_CATALOG_FILENAME)
+}
+
+/// Read the cc-switch Codex model catalog file with a size cap.
+pub(crate) fn read_codex_model_catalog_text(path: &Path) -> Result<String, AppError> {
+    let metadata = fs::metadata(path).map_err(|error| AppError::io(path, error))?;
+    if metadata.len() > MAX_CODEX_CATALOG_BYTES {
+        return Err(AppError::Config(format!(
+            "文件 {} 超过大小上限 {} 字节",
+            path.display(),
+            MAX_CODEX_CATALOG_BYTES
+        )));
+    }
+    fs::read_to_string(path).map_err(|error| AppError::io(path, error))
 }
 
 /// 获取 Codex 供应商配置文件路径
@@ -254,6 +268,75 @@ pub fn codex_auth_has_login_material(auth: &Value) -> bool {
             _ => true,
         }
     })
+}
+
+pub fn codex_auth_has_credential_login_material(auth: &Value) -> bool {
+    let Some(obj) = auth.as_object() else {
+        return false;
+    };
+
+    let value_present = |value: &Value| match value {
+        Value::Null => false,
+        Value::String(text) => !text.trim().is_empty(),
+        Value::Array(items) => !items.is_empty(),
+        Value::Object(map) => !map.is_empty(),
+        _ => true,
+    };
+
+    if ["personal_access_token", "agent_identity", "bedrock_api_key"]
+        .iter()
+        .any(|key| obj.get(*key).is_some_and(value_present))
+    {
+        return true;
+    }
+
+    obj.get("tokens")
+        .and_then(Value::as_object)
+        .is_some_and(|tokens| {
+            ["id_token", "access_token", "refresh_token"]
+                .iter()
+                .any(|key| tokens.get(*key).is_some_and(value_present))
+        })
+}
+
+/// True when live `auth.json` is the shape a preserve-off third-party switch
+/// leaves behind: an `OPENAI_API_KEY` (possibly alongside metadata like
+/// `auth_mode` / `last_refresh`) with no real login credential next to it.
+pub fn codex_live_auth_is_stale_third_party_residue(live_auth: &Value) -> bool {
+    if codex_auth_has_credential_login_material(live_auth) {
+        return false;
+    }
+    live_auth
+        .get("OPENAI_API_KEY")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .is_some_and(|key| !key.is_empty())
+}
+
+/// After a normal switch to an official provider that carries no login
+/// material of its own, delete a live `auth.json` that only holds a stale
+/// third-party API key, so Codex shows its login screen instead of sending
+/// the wrong key to the official endpoint (401 with no way to re-login).
+///
+/// Returns Ok(true) when the file was deleted.
+pub fn clear_stale_codex_live_auth_after_official_switch(
+    db_auth: &Value,
+) -> Result<bool, AppError> {
+    if codex_auth_has_login_material(db_auth) {
+        // A material-carrying official provider gets a full auth write;
+        // nothing stale can remain.
+        return Ok(false);
+    }
+    let auth_path = get_codex_auth_path();
+    if !auth_path.exists() {
+        return Ok(false);
+    }
+    let live_auth: Value = read_json_file(&auth_path)?;
+    if !codex_live_auth_is_stale_third_party_residue(&live_auth) {
+        return Ok(false);
+    }
+    delete_file(&auth_path)?;
+    Ok(true)
 }
 
 pub fn codex_auth_has_oauth_login_material(auth: &Value) -> bool {

@@ -7,6 +7,9 @@ pub mod omo;
 #[path = "../../../src-tauri/src/services/model_fetch.rs"]
 pub mod model_fetch;
 
+#[path = "../../../src-tauri/src/services/model_pricing.rs"]
+pub mod model_pricing;
+
 #[path = "../../../src-tauri/src/services/oauth_refresh/mod.rs"]
 pub mod oauth_refresh;
 
