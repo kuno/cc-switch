@@ -189,6 +189,92 @@ pub fn write_gemini_env_atomic(map: &HashMap<String, String>) -> Result<(), AppE
     Ok(())
 }
 
+/// 从 `content` 中删除「键=值」完全匹配的行，保留其余行的原始顺序与格式。
+///
+/// 返回 `Some(cleaned)` 仅当确实删掉了至少一行；否则返回 `None`。
+pub fn remove_env_entries_preserving_layout(
+    content: &str,
+    doomed: &HashMap<String, String>,
+) -> Option<String> {
+    let mut removed = false;
+    let mut kept: Vec<&str> = Vec::new();
+
+    for line in content.split('\n') {
+        let trimmed = line.trim();
+        let hit = !trimmed.is_empty()
+            && !trimmed.starts_with('#')
+            && trimmed.split_once('=').is_some_and(|(key, value)| {
+                doomed
+                    .get(key.trim())
+                    .is_some_and(|doomed_value| doomed_value == value.trim())
+            });
+
+        if hit {
+            removed = true;
+        } else {
+            kept.push(line);
+        }
+    }
+
+    removed.then(|| kept.join("\n"))
+}
+
+/// 从 `~/.gemini/.env` 中定向删除「键=值」完全匹配的行，返回是否真的改了文件
+pub fn remove_gemini_env_entries(doomed: &HashMap<String, String>) -> Result<bool, AppError> {
+    let path = get_gemini_env_path();
+    if !path.exists() {
+        return Ok(false);
+    }
+
+    let content = fs::read_to_string(&path).map_err(|e| AppError::io(&path, e))?;
+    match remove_env_entries_preserving_layout(&content, doomed) {
+        Some(cleaned) => {
+            write_gemini_env_text_atomic(&cleaned)?;
+            Ok(true)
+        }
+        None => Ok(false),
+    }
+}
+
+/// 写入 Gemini .env 文件（原子操作，内容逐字落盘）
+///
+/// 与 `write_gemini_env_atomic` 共用目录/文件权限处理，区别只在于内容不经
+/// `serialize_env_file` 归一化——供保序的定向删除使用。
+pub fn write_gemini_env_text_atomic(content: &str) -> Result<(), AppError> {
+    let path = get_gemini_env_path();
+
+    // 确保目录存在
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| AppError::io(parent, e))?;
+
+        // 设置目录权限为 700（仅所有者可读写执行）
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = fs::metadata(parent)
+                .map_err(|e| AppError::io(parent, e))?
+                .permissions();
+            perms.set_mode(0o700);
+            fs::set_permissions(parent, perms).map_err(|e| AppError::io(parent, e))?;
+        }
+    }
+
+    write_text_file(&path, content)?;
+
+    // 设置文件权限为 600（仅所有者可读写）
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&path)
+            .map_err(|e| AppError::io(&path, e))?
+            .permissions();
+        perms.set_mode(0o600);
+        fs::set_permissions(&path, perms).map_err(|e| AppError::io(&path, e))?;
+    }
+
+    Ok(())
+}
+
 /// 从 .env 格式转换为 Provider.settings_config (JSON Value)
 pub fn env_to_json(env_map: &HashMap<String, String>) -> Value {
     let mut json_map = serde_json::Map::new();
