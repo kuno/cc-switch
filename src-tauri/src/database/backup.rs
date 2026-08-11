@@ -1077,7 +1077,6 @@ mod tests {
     use crate::settings::{get_settings, update_settings, AppSettings};
     use rusqlite::Connection;
     use serial_test::serial;
-    use std::path::PathBuf;
 
     const LEGACY_SCHEMA_V1_SQL: &str = r#"
         CREATE TABLE providers (
@@ -1145,35 +1144,6 @@ mod tests {
         );
     "#;
 
-    struct TestHomeGuard {
-        old_test_home: Option<std::ffi::OsString>,
-        path: PathBuf,
-    }
-
-    impl TestHomeGuard {
-        fn new(name: &str) -> Self {
-            let old_test_home = std::env::var_os("CC_SWITCH_TEST_HOME");
-            let path = std::env::temp_dir().join(name);
-            let _ = std::fs::remove_dir_all(&path);
-            std::fs::create_dir_all(&path).expect("create test home");
-            std::env::set_var("CC_SWITCH_TEST_HOME", &path);
-            Self {
-                old_test_home,
-                path,
-            }
-        }
-    }
-
-    impl Drop for TestHomeGuard {
-        fn drop(&mut self) {
-            match self.old_test_home.as_ref() {
-                Some(value) => std::env::set_var("CC_SWITCH_TEST_HOME", value),
-                None => std::env::remove_var("CC_SWITCH_TEST_HOME"),
-            }
-            let _ = std::fs::remove_dir_all(&self.path);
-        }
-    }
-
     struct SettingsGuard {
         old_settings: AppSettings,
     }
@@ -1228,7 +1198,8 @@ mod tests {
 
     struct TestHomeGuard {
         previous_test_home: Option<std::ffi::OsString>,
-        temp_dir: tempfile::TempDir,
+        path: std::path::PathBuf,
+        temp_dir: Option<tempfile::TempDir>,
     }
 
     impl TestHomeGuard {
@@ -1236,28 +1207,43 @@ mod tests {
             let temp_dir = tempfile::tempdir().expect("create isolated test home");
             let previous_test_home = std::env::var_os("CC_SWITCH_TEST_HOME");
             std::env::set_var("CC_SWITCH_TEST_HOME", temp_dir.path());
+            let path = temp_dir.path().to_path_buf();
             // Prevent the Windows legacy-HOME fallback without mutating HOME:
             // an existing default DB keeps get_app_config_dir() anchored under
             // CC_SWITCH_TEST_HOME and makes import exercise its safety backup.
-            let config_dir = temp_dir.path().join(".cc-switch");
+            let config_dir = path.join(".cc-switch");
             std::fs::create_dir_all(&config_dir).expect("create isolated config directory");
             std::fs::File::create(config_dir.join("cc-switch.db"))
                 .expect("create isolated database sentinel");
             let guard = Self {
                 previous_test_home,
-                temp_dir,
+                path,
+                temp_dir: Some(temp_dir),
             };
             let resolved = crate::config::get_app_config_dir();
             assert!(
-                resolved.starts_with(guard.temp_dir.path()),
+                resolved.starts_with(&guard.path),
                 "isolated test home resolved outside its temp directory: {}",
                 resolved.display()
             );
             guard
         }
 
+        fn new_named(name: &str) -> Self {
+            let previous_test_home = std::env::var_os("CC_SWITCH_TEST_HOME");
+            let path = std::env::temp_dir().join(name);
+            let _ = std::fs::remove_dir_all(&path);
+            std::fs::create_dir_all(&path).expect("create named test home");
+            std::env::set_var("CC_SWITCH_TEST_HOME", &path);
+            Self {
+                previous_test_home,
+                path,
+                temp_dir: None,
+            }
+        }
+
         fn path(&self) -> &std::path::Path {
-            self.temp_dir.path()
+            &self.path
         }
     }
 
@@ -1266,6 +1252,9 @@ mod tests {
             match self.previous_test_home.as_ref() {
                 Some(previous) => std::env::set_var("CC_SWITCH_TEST_HOME", previous),
                 None => std::env::remove_var("CC_SWITCH_TEST_HOME"),
+            }
+            if self.temp_dir.is_none() {
+                let _ = std::fs::remove_dir_all(&self.path);
             }
         }
     }
@@ -1444,7 +1433,7 @@ mod tests {
              VALUES ('claude:legacy-skill', 1, 1700000000);
              COMMIT;\nPRAGMA foreign_keys=ON;\n",
             super::CC_SWITCH_SQL_EXPORT_HEADER,
-            crate::database::tests::V3_8_SCHEMA_V1_SQL,
+            LEGACY_SCHEMA_V1_SQL,
         );
 
         let target = Database::memory()?;
@@ -2319,7 +2308,7 @@ mod tests {
     #[test]
     #[serial]
     fn managed_backup_lifecycle_includes_metadata_and_safety_restore() -> Result<(), AppError> {
-        let _home = TestHomeGuard::new("cc-switch-managed-backup-lifecycle-test");
+        let _home = TestHomeGuard::new_named("cc-switch-managed-backup-lifecycle-test");
         let db = Database::init()?;
 
         {
@@ -2397,7 +2386,7 @@ mod tests {
     #[test]
     #[serial]
     fn restore_preserves_selected_older_backup_when_retention_is_reached() -> Result<(), AppError> {
-        let _home = TestHomeGuard::new("cc-switch-restore-preserve-selected-backup-test");
+        let _home = TestHomeGuard::new_named("cc-switch-restore-preserve-selected-backup-test");
         let _settings = SettingsGuard::update(|settings| {
             settings.backup_retain_count = Some(2);
         });
@@ -2459,7 +2448,7 @@ mod tests {
     #[test]
     #[serial]
     fn managed_backup_import_and_restore_reject_non_cc_switch_sqlite_db() -> Result<(), AppError> {
-        let _home = TestHomeGuard::new("cc-switch-managed-backup-schema-validation-test");
+        let _home = TestHomeGuard::new_named("cc-switch-managed-backup-schema-validation-test");
         let db = Database::init()?;
         let backup_dir = crate::config::get_app_config_dir().join("backups");
         std::fs::create_dir_all(&backup_dir).expect("create backup dir");
@@ -2500,7 +2489,7 @@ mod tests {
     #[serial]
     fn managed_backup_import_and_restore_accept_v3_8_schema_v1_cc_switch_db() -> Result<(), AppError>
     {
-        let _home = TestHomeGuard::new("cc-switch-managed-backup-legacy-v1-validation-test");
+        let _home = TestHomeGuard::new_named("cc-switch-managed-backup-legacy-v1-validation-test");
         let db = Database::init()?;
         let bytes = legacy_v1_backup_bytes();
 
@@ -2554,7 +2543,7 @@ mod tests {
     #[test]
     #[serial]
     fn managed_backup_rejects_path_traversal_inputs() -> Result<(), AppError> {
-        let _home = TestHomeGuard::new("cc-switch-managed-backup-path-safety-test");
+        let _home = TestHomeGuard::new_named("cc-switch-managed-backup-path-safety-test");
         let _db = Database::init()?;
 
         assert!(Database::read_backup_file("../escape.db").is_err());
