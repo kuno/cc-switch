@@ -4,7 +4,7 @@ use crate::provider::OpenCodeProviderConfig;
 use crate::settings::get_opencode_override_dir;
 use indexmap::IndexMap;
 use serde_json::{json, Map, Value};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 const STANDARD_OMO_PLUGIN_PREFIXES: [&str; 2] = ["oh-my-openagent", "oh-my-opencode"];
 const SLIM_OMO_PLUGIN_PREFIXES: [&str; 1] = ["oh-my-opencode-slim"];
@@ -53,7 +53,10 @@ pub fn get_opencode_env_path() -> PathBuf {
 
 pub fn read_opencode_config() -> Result<Value, AppError> {
     let path = get_opencode_config_path();
+    read_opencode_config_from_path(&path)
+}
 
+fn read_opencode_config_from_path(path: &Path) -> Result<Value, AppError> {
     if !path.exists() {
         return Ok(json!({
             "$schema": "https://opencode.ai/config.json"
@@ -71,10 +74,14 @@ pub fn read_opencode_config() -> Result<Value, AppError> {
 
 pub fn write_opencode_config(config: &Value) -> Result<(), AppError> {
     let path = get_opencode_config_path();
-    write_json_file(&path, config)?;
+    write_opencode_config_to_path(&path, config)?;
 
     log::debug!("OpenCode config written to {path:?}");
     Ok(())
+}
+
+fn write_opencode_config_to_path(path: &Path, config: &Value) -> Result<(), AppError> {
+    write_json_file(path, config)
 }
 
 pub fn get_providers() -> Result<Map<String, Value>, AppError> {
@@ -169,67 +176,83 @@ pub fn remove_mcp_server(id: &str) -> Result<(), AppError> {
     write_opencode_config(&config)
 }
 
-pub fn add_plugin(plugin_name: &str) -> Result<(), AppError> {
-    let mut config = read_opencode_config()?;
+pub fn add_plugin(path: &Path, plugin_name: &str) -> Result<(), AppError> {
+    let mut config = read_opencode_config_from_path(path)?;
     let normalized_plugin_name = canonicalize_plugin_name(plugin_name);
+    let target_is_omo =
+        matches_any_plugin_prefix(&normalized_plugin_name, &STANDARD_OMO_PLUGIN_PREFIXES)
+            || matches_any_plugin_prefix(&normalized_plugin_name, &SLIM_OMO_PLUGIN_PREFIXES);
+    let mut changed = false;
 
     let plugins = config.get_mut("plugin").and_then(|v| v.as_array_mut());
 
     match plugins {
         Some(arr) => {
-            // Mutual exclusion: standard OMO and OMO Slim cannot coexist as plugins
-            if matches_any_plugin_prefix(&normalized_plugin_name, &STANDARD_OMO_PLUGIN_PREFIXES) {
-                arr.retain(|v| {
-                    v.as_str()
-                        .map(|s| {
-                            !matches_any_plugin_prefix(s, &STANDARD_OMO_PLUGIN_PREFIXES)
-                                && !matches_any_plugin_prefix(s, &SLIM_OMO_PLUGIN_PREFIXES)
-                        })
-                        .unwrap_or(true)
-                });
-            } else if matches_any_plugin_prefix(&normalized_plugin_name, &SLIM_OMO_PLUGIN_PREFIXES)
-            {
-                arr.retain(|v| {
-                    v.as_str()
-                        .map(|s| {
-                            !matches_any_plugin_prefix(s, &STANDARD_OMO_PLUGIN_PREFIXES)
-                                && !matches_any_plugin_prefix(s, &SLIM_OMO_PLUGIN_PREFIXES)
-                        })
-                        .unwrap_or(true)
-                });
-            }
+            let mut found_target = false;
+            arr.retain(|value| {
+                let Some(existing_name) = value.as_str() else {
+                    return true;
+                };
+                if existing_name == normalized_plugin_name {
+                    if found_target {
+                        changed = true;
+                        return false;
+                    }
+                    found_target = true;
+                    return true;
+                }
+                if target_is_omo
+                    && (matches_any_plugin_prefix(existing_name, &STANDARD_OMO_PLUGIN_PREFIXES)
+                        || matches_any_plugin_prefix(existing_name, &SLIM_OMO_PLUGIN_PREFIXES))
+                {
+                    changed = true;
+                    return false;
+                }
+                true
+            });
 
-            let already_exists = arr
-                .iter()
-                .any(|v| v.as_str() == Some(normalized_plugin_name.as_str()));
-            if !already_exists {
+            if !found_target {
                 arr.push(Value::String(normalized_plugin_name));
+                changed = true;
             }
         }
         None => {
             config["plugin"] = json!([normalized_plugin_name]);
+            changed = true;
         }
     }
 
-    write_opencode_config(&config)
+    if !changed {
+        return Ok(());
+    }
+
+    write_opencode_config_to_path(path, &config)
 }
 
-pub fn remove_plugins_by_prefixes(prefixes: &[&str]) -> Result<(), AppError> {
-    let mut config = read_opencode_config()?;
+pub fn remove_plugins_by_prefixes(path: &Path, prefixes: &[&str]) -> Result<bool, AppError> {
+    let mut config = read_opencode_config_from_path(path)?;
 
+    let mut changed = false;
     if let Some(arr) = config.get_mut("plugin").and_then(|v| v.as_array_mut()) {
+        let previous_len = arr.len();
         arr.retain(|v| {
             v.as_str()
                 .map(|s| !matches_any_plugin_prefix(s, prefixes))
                 .unwrap_or(true)
         });
+        changed = arr.len() != previous_len;
 
-        if arr.is_empty() {
+        if changed && arr.is_empty() {
             config.as_object_mut().map(|obj| obj.remove("plugin"));
         }
     }
 
-    write_opencode_config(&config)
+    if !changed {
+        return Ok(false);
+    }
+
+    write_opencode_config_to_path(path, &config)?;
+    Ok(true)
 }
 
 fn get_opencode_data_dir() -> PathBuf {
