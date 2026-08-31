@@ -227,4 +227,3 @@ This phase is complete when:
 - `Credentials` is real without new secret/schema regressions
 - `Failover` is either real against supported backend contracts or visually present but clearly gated behind only the supported subset
 - light and dark theme both render coherently
-
