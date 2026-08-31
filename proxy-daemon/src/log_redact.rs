@@ -51,6 +51,10 @@ fn redact_known_secrets(text: &str, known_secrets: &[String]) -> String {
     output
 }
 
+pub(crate) fn redact_known_secrets_strict(text: &str, known_secrets: &[String]) -> String {
+    redact_known_secrets(text, known_secrets)
+}
+
 /// 无 scheme 的裸 authority 形态(如 `user:pass@host/path`)剥掉 userinfo：
 /// 仅当 `@` 出现在第一个 `/` 之前时才视为凭据。
 fn strip_bare_userinfo(input: &str) -> &str {

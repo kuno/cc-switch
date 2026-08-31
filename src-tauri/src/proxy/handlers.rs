@@ -2383,6 +2383,7 @@ async fn handle_codex_standalone_passthrough(
         &state,
         &CODEX_PARSER_CONFIG,
         connection_guard,
+        false,
     )
     .await
 }
@@ -4206,8 +4207,8 @@ mod tests {
         refresh_codex_quota_snapshots_with_query_and_refresher,
         refresh_copilot_quota_snapshots_with_query, refresh_gemini_quota_snapshots_with_query,
         reset_live_quota_refresh_call_count, responses_sse_stream_to_anthropic_message,
-        responses_sse_to_response_value,
-        should_use_claude_transform_streaming, transform, upstream_body_parse_error,
+        responses_sse_to_response_value, should_use_claude_transform_streaming, transform,
+        upstream_body_parse_error,
     };
     use crate::app_config::AppType;
     use crate::database::Database;

@@ -419,7 +419,7 @@ impl ProxyService {
     ) -> Self {
         Self {
             db,
-            codex_oauth_manager,
+            codex_oauth_manager: codex_oauth_manager.clone(),
             server: Arc::new(RwLock::new(None)),
             copilot_auth: Arc::new(RwLock::new(None)),
             codex_oauth_auth: Arc::new(RwLock::new(Some(codex_oauth_manager.clone()))),

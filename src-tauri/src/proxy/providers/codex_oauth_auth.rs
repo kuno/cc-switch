@@ -2089,9 +2089,7 @@ pub(crate) async fn refresh_codex_tokens_with_client_at_url(
             || matches!(
                 refresh_error_code.as_deref(),
                 Some(
-                    "refresh_token_expired"
-                        | "refresh_token_reused"
-                        | "refresh_token_invalidated"
+                    "refresh_token_expired" | "refresh_token_reused" | "refresh_token_invalidated"
                 )
             )
         {

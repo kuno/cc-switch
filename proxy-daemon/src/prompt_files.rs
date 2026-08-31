@@ -24,7 +24,7 @@ pub fn prompt_file_path(app: &AppType) -> Result<PathBuf, AppError> {
         AppType::Gemini => get_gemini_dir(),
         AppType::OpenCode => get_opencode_dir(),
         AppType::OpenClaw => get_openclaw_dir(),
-        AppType::Hermes | AppType::ClaudeDesktop | AppType::GrokBuild => {
+        AppType::Hermes | AppType::ClaudeDesktop | AppType::GrokBuild | AppType::Pi => {
             return Err(unsupported_prompt_error(app.as_str()));
         }
     };
@@ -35,7 +35,7 @@ pub fn prompt_file_path(app: &AppType) -> Result<PathBuf, AppError> {
         AppType::Gemini => "GEMINI.md",
         AppType::OpenCode => "AGENTS.md",
         AppType::OpenClaw => "AGENTS.md", // OpenClaw uses AGENTS.md for agent instructions
-        AppType::Hermes | AppType::ClaudeDesktop | AppType::GrokBuild => {
+        AppType::Hermes | AppType::ClaudeDesktop | AppType::GrokBuild | AppType::Pi => {
             return Err(unsupported_prompt_error(app.as_str()));
         }
     };

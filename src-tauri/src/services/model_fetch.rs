@@ -83,7 +83,17 @@ pub async fn fetch_models_with_timeout(
     is_full_url: bool,
     timeout: Duration,
 ) -> Result<Vec<FetchedModel>, String> {
-    fetch_models_with_options(base_url, api_key, is_full_url, None, None, None, None, timeout).await
+    fetch_models_with_options(
+        base_url,
+        api_key,
+        is_full_url,
+        None,
+        None,
+        None,
+        None,
+        timeout,
+    )
+    .await
 }
 
 async fn fetch_models_with_options(
@@ -111,10 +121,7 @@ async fn fetch_models_with_options(
             "[ModelFetch] Trying endpoint: {}",
             crate::url_for_log_with_secrets(url, &known_secrets)
         );
-        let request = client
-            .get(url)
-            .headers(headers.clone())
-            .timeout(timeout);
+        let request = client.get(url).headers(headers.clone()).timeout(timeout);
         let response = match request.send().await {
             Ok(r) => r,
             Err(e) => {
