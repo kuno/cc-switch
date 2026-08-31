@@ -3,6 +3,7 @@
 //! 使用流式 API 进行快速健康检查，只需接收首个 chunk 即判定成功。
 
 use futures::StreamExt;
+use reqwest::header::HeaderValue;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -325,7 +326,12 @@ impl StreamCheckService {
         let adapter: Box<dyn ProviderAdapter> = if matches!(app_type, AppType::ClaudeDesktop) {
             Box::new(ClaudeAdapter::new())
         } else {
-            get_adapter(app_type)
+            get_adapter(app_type).ok_or_else(|| {
+                AppError::InvalidInput(format!(
+                    "{} does not support proxy adapters",
+                    app_type.as_str()
+                ))
+            })?
         };
 
         let base_url = match base_url_override {
@@ -385,9 +391,9 @@ impl StreamCheckService {
                 )
                 .await
             }
-            AppType::OpenCode | AppType::OpenClaw | AppType::Hermes => {
+            AppType::OpenCode | AppType::OpenClaw | AppType::Hermes | AppType::Pi => {
                 // Already handled via early dispatch above
-                unreachable!("OpenCode/OpenClaw/Hermes 已通过 check_once_without_adapter 处理")
+                unreachable!("OpenCode/OpenClaw/Hermes/Pi 已通过 check_once_without_adapter 处理")
             }
         };
 
@@ -1589,6 +1595,9 @@ impl StreamCheckService {
             AppType::OpenClaw | AppType::Hermes => {
                 // OpenClaw/Hermes use models array in settings_config
                 // Try to extract first model from the models array
+                Self::extract_openclaw_model(provider).unwrap_or_else(|| "gpt-4o".to_string())
+            }
+            AppType::Pi => {
                 Self::extract_openclaw_model(provider).unwrap_or_else(|| "gpt-4o".to_string())
             }
         }

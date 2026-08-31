@@ -56,6 +56,7 @@ impl VisibleApps {
             AppType::Hermes => false,
             AppType::ClaudeDesktop => false,
             AppType::GrokBuild => false,
+            AppType::Pi => false,
         }
     }
 }
@@ -465,7 +466,7 @@ pub(crate) fn test_env_lock() -> &'static std::sync::Mutex<()> {
     LOCK.get_or_init(|| std::sync::Mutex::new(()))
 }
 
-fn resolve_override_path(raw: &str) -> PathBuf {
+pub(crate) fn resolve_override_path(raw: &str) -> PathBuf {
     if raw == "~" {
         if let Some(home) = dirs::home_dir() {
             return home;
@@ -592,6 +593,10 @@ pub fn get_openclaw_override_dir() -> Option<PathBuf> {
         .map(|p| resolve_override_path(p))
 }
 
+pub fn get_pi_override_dir() -> Option<PathBuf> {
+    None
+}
+
 // ===== 当前供应商管理函数 =====
 
 /// 获取指定应用类型的当前供应商 ID（从本地 settings 读取）
@@ -609,6 +614,7 @@ pub fn get_current_provider(app_type: &AppType) -> Option<String> {
         AppType::Hermes => None,
         AppType::ClaudeDesktop => None,
         AppType::GrokBuild => None,
+        AppType::Pi => None,
     }
 }
 
@@ -627,6 +633,7 @@ pub fn set_current_provider(app_type: &AppType, id: Option<&str>) -> Result<(), 
         AppType::Hermes => {}
         AppType::ClaudeDesktop => {}
         AppType::GrokBuild => {}
+        AppType::Pi => {}
     })
 }
 

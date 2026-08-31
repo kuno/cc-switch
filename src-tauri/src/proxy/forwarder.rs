@@ -1521,36 +1521,54 @@ impl RequestForwarder {
             && super::providers::is_codex_official_provider(provider);
 
         if codex_official_auth_passthrough {
-            let (expected_chatgpt_account_id, managed_session_matches) = match provider
+            let (expected_chatgpt_account_id, managed_session_matches): (
+                Option<String>,
+                Option<bool>,
+            ) = match provider
                 .meta
                 .as_ref()
                 .and_then(|meta| meta.managed_account_id_for("codex_oauth"))
             {
                 Some(local_account_id) => {
-                    let app_handle = self.app_handle.as_ref().ok_or_else(|| {
-                        ProxyError::AuthError("Codex OAuth 认证不可用（无 AppHandle）".to_string())
-                    })?;
-                    let codex_state = app_handle.state::<CodexOAuthState>();
-                    let chatgpt_account_id = codex_state
-                        .0
-                        .chatgpt_account_id_for_account(&local_account_id)
-                        .await
-                        .map_err(|error| {
-                            ProxyError::AuthError(format!("Codex OAuth 账号解析失败: {error}"))
-                        })?;
-                    let session_matches = match codex_bearer_access_token(headers) {
-                        Some(access_token) => {
-                            crate::codex_config::codex_live_auth_matches_managed_request(
-                                &local_account_id,
-                                access_token,
+                    #[cfg(not(feature = "tauri-desktop"))]
+                    {
+                        let _ = local_account_id;
+                        return Err(ProxyError::AuthError(
+                            "Codex OAuth managed passthrough requires desktop auth state"
+                                .to_string(),
+                        ));
+                    }
+                    #[cfg(feature = "tauri-desktop")]
+                    {
+                        let app_handle = self.app_handle.as_ref().ok_or_else(|| {
+                            ProxyError::AuthError(
+                                "Codex OAuth 认证不可用（无 AppHandle）".to_string(),
                             )
+                        })?;
+                        let codex_state = app_handle.state::<CodexOAuthState>();
+                        let chatgpt_account_id = codex_state
+                            .0
+                            .chatgpt_account_id_for_account(&local_account_id)
+                            .await
                             .map_err(|error| {
-                                ProxyError::AuthError(format!("Codex OAuth 会话校验失败: {error}"))
-                            })?
-                        }
-                        None => false,
-                    };
-                    (Some(chatgpt_account_id), Some(session_matches))
+                                ProxyError::AuthError(format!("Codex OAuth 账号解析失败: {error}"))
+                            })?;
+                        let session_matches = match codex_bearer_access_token(headers) {
+                            Some(access_token) => {
+                                crate::codex_config::codex_live_auth_matches_managed_request(
+                                    &local_account_id,
+                                    access_token,
+                                )
+                                .map_err(|error| {
+                                    ProxyError::AuthError(format!(
+                                        "Codex OAuth 会话校验失败: {error}"
+                                    ))
+                                })?
+                            }
+                            None => false,
+                        };
+                        (Some(chatgpt_account_id), Some(session_matches))
+                    }
                 }
                 None => (None, None),
             };

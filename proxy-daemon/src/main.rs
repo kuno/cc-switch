@@ -26,6 +26,8 @@ mod opencode_config;
 mod openwrt_admin;
 mod openwrt_backup_restore;
 mod openwrt_http;
+#[path = "../../src-tauri/src/pi_config/mod.rs"]
+mod pi_config;
 mod prompt;
 mod prompt_files;
 mod provider;
@@ -55,6 +57,19 @@ pub mod session_manager {
                     config_dir.join("sessions"),
                     config_dir.join("archived_sessions"),
                 ]
+            }
+        }
+
+        pub mod pi {
+            pub const MAX_SESSION_BYTES: u64 = 32 * 1024 * 1024;
+            pub const MAX_TREE_ENTRIES: usize = 50_000;
+
+            pub fn session_files() -> Result<Vec<std::path::PathBuf>, crate::error::AppError> {
+                Ok(Vec::new())
+            }
+
+            pub fn is_valid_tree_id(id: &str) -> bool {
+                !id.trim().is_empty()
             }
         }
     }
@@ -687,9 +702,9 @@ async fn run_daemon() -> anyhow::Result<()> {
     let copilot_auth = Arc::new(RwLock::new(
         proxy::providers::copilot_auth::CopilotAuthManager::new(config_dir.clone()),
     ));
-    let codex_oauth_auth = Arc::new(
-        proxy::providers::codex_oauth_auth::CodexOAuthManager::new(config_dir.clone()),
-    );
+    let codex_oauth_auth = Arc::new(proxy::providers::codex_oauth_auth::CodexOAuthManager::new(
+        config_dir.clone(),
+    ));
 
     // Initialize proxy service
     let proxy_service = services::ProxyService::new(db.clone());

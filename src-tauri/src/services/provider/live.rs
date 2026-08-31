@@ -873,7 +873,7 @@ fn get_codex_managed_oauth_live_auth_value(
     account_id: String,
 ) -> Result<Value, AppError> {
     std::thread::spawn(move || {
-        tauri::async_runtime::block_on(async move {
+        futures::executor::block_on(async move {
             manager
                 .ensure_account_exists(&account_id)
                 .await
@@ -918,7 +918,7 @@ pub(crate) fn prepare_codex_managed_oauth_live_auth_switch_away(
     account_id: String,
 ) -> Result<CodexLiveAuthSwitchGuard, AppError> {
     std::thread::spawn(move || {
-        tauri::async_runtime::block_on(async move {
+        futures::executor::block_on(async move {
             manager
                 .prepare_live_auth_for_account_switch_away(&account_id)
                 .await

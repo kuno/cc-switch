@@ -477,6 +477,9 @@ pub struct CodexChatReasoningConfig {
     pub effort_value_mode: Option<String>,
     #[serde(rename = "outputFormat", skip_serializing_if = "Option::is_none")]
     pub output_format: Option<String>,
+    /// Runtime-only effort levels resolved from provider model catalogs.
+    #[serde(skip)]
+    pub effort_levels: Option<Vec<String>>,
 }
 
 /// Local proxy request overrides applied after route/protocol transforms.
