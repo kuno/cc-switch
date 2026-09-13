@@ -28,6 +28,7 @@ impl McpApps {
             AppType::OpenCode => self.opencode,
             AppType::OpenClaw => false,
             AppType::Hermes => self.hermes,
+            AppType::Pi => false,
             AppType::ClaudeDesktop => false,
             AppType::GrokBuild => false,
         }
@@ -41,6 +42,7 @@ impl McpApps {
             AppType::OpenCode => self.opencode = enabled,
             AppType::OpenClaw => {}
             AppType::Hermes => self.hermes = enabled,
+            AppType::Pi => {}
             AppType::ClaudeDesktop => {}
             AppType::GrokBuild => {}
         }
@@ -95,6 +97,7 @@ impl SkillApps {
             AppType::OpenCode => self.opencode,
             AppType::OpenClaw => false,
             AppType::Hermes => self.hermes,
+            AppType::Pi => false,
             AppType::ClaudeDesktop => false,
             AppType::GrokBuild => false,
         }
@@ -108,6 +111,7 @@ impl SkillApps {
             AppType::OpenCode => self.opencode = enabled,
             AppType::OpenClaw => {}
             AppType::Hermes => self.hermes = enabled,
+            AppType::Pi => {}
             AppType::ClaudeDesktop => {}
             AppType::GrokBuild => {}
         }
@@ -259,6 +263,7 @@ pub enum AppType {
     OpenCode,
     OpenClaw,
     Hermes,
+    Pi,
     #[serde(rename = "claude-desktop")]
     ClaudeDesktop,
 }
@@ -273,6 +278,7 @@ impl AppType {
             AppType::OpenCode => "opencode",
             AppType::OpenClaw => "openclaw",
             AppType::Hermes => "hermes",
+            AppType::Pi => "pi",
             AppType::ClaudeDesktop => "claude-desktop",
         }
     }
@@ -280,7 +286,7 @@ impl AppType {
     pub fn is_additive_mode(&self) -> bool {
         matches!(
             self,
-            AppType::OpenCode | AppType::OpenClaw | AppType::Hermes
+            AppType::OpenCode | AppType::OpenClaw | AppType::Hermes | AppType::Pi
         )
     }
 
@@ -293,6 +299,7 @@ impl AppType {
             AppType::OpenCode,
             AppType::OpenClaw,
             AppType::Hermes,
+            AppType::Pi,
             AppType::ClaudeDesktop,
         ]
         .into_iter()
@@ -351,6 +358,7 @@ impl CommonConfigSnippets {
             AppType::OpenCode => self.opencode.as_ref(),
             AppType::OpenClaw => self.openclaw.as_ref(),
             AppType::Hermes => self.hermes.as_ref(),
+            AppType::Pi => None,
             AppType::ClaudeDesktop => None,
             AppType::GrokBuild => None,
         }
@@ -364,6 +372,7 @@ impl CommonConfigSnippets {
             AppType::OpenCode => self.opencode = snippet,
             AppType::OpenClaw => self.openclaw = snippet,
             AppType::Hermes => self.hermes = snippet,
+            AppType::Pi => {}
             AppType::ClaudeDesktop => {}
             AppType::GrokBuild => {}
         }

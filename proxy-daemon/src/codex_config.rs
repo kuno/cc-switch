@@ -31,6 +31,37 @@ const CODEX_RESERVED_MODEL_PROVIDER_IDS: &[&str] = &[
     "ollama-chat",
 ];
 
+/// Host component of a base URL (or a bare host), lowercased, without scheme,
+/// userinfo, port, path or query. Tolerates loose provider-form input such as
+/// `example.com` or `https://user@Example.com:8443/v1`.
+pub(crate) fn codex_url_host(url_or_host: &str) -> String {
+    let trimmed = url_or_host.trim();
+    let rest = trimmed
+        .split_once("://")
+        .map_or(trimmed, |(_scheme, rest)| rest);
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let host_port = authority.rsplit('@').next().unwrap_or(authority);
+    let host = if let Some(ipv6) = host_port.strip_prefix('[') {
+        ipv6.split(']').next().unwrap_or(ipv6)
+    } else {
+        host_port.split(':').next().unwrap_or(host_port)
+    };
+    host.trim_end_matches('.').to_ascii_lowercase()
+}
+
+/// Whether the URL's host is one of `hosts` or a subdomain of it, matched on
+/// DNS label boundaries.
+pub(crate) fn codex_url_host_matches_any(url_or_host: &str, hosts: &[&str]) -> bool {
+    let host = codex_url_host(url_or_host);
+    if host.is_empty() {
+        return false;
+    }
+    hosts.iter().any(|candidate| {
+        let candidate = candidate.trim_start_matches('.').to_ascii_lowercase();
+        host == candidate || host.ends_with(&format!(".{candidate}"))
+    })
+}
+
 /// 获取 Codex 配置目录路径
 pub fn get_codex_config_dir() -> PathBuf {
     if let Some(custom) = crate::settings::get_codex_override_dir() {
@@ -800,6 +831,126 @@ pub fn codex_auth_has_oauth_login_material(auth: &Value) -> bool {
             _ => true,
         }
     })
+}
+
+/// Codex's resolved auth mode for an auth.json object. An explicit `auth_mode`
+/// wins; otherwise credential presence decides in Codex order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CodexResolvedAuthMode {
+    ApiKey,
+    Chatgpt,
+    ChatgptAuthTokens,
+    Headers,
+    AgentIdentity,
+    PersonalAccessToken,
+    BedrockApiKey,
+    BedrockAccessKeys,
+    Unrecognized,
+}
+
+fn codex_auth_resolved_mode(auth: &serde_json::Map<String, Value>) -> CodexResolvedAuthMode {
+    if let Some(mode) = auth.get("auth_mode").filter(|value| !value.is_null()) {
+        return match mode.as_str() {
+            Some("apikey") => CodexResolvedAuthMode::ApiKey,
+            Some("chatgpt") => CodexResolvedAuthMode::Chatgpt,
+            Some("chatgptAuthTokens") => CodexResolvedAuthMode::ChatgptAuthTokens,
+            Some("headers") => CodexResolvedAuthMode::Headers,
+            Some("agentIdentity") => CodexResolvedAuthMode::AgentIdentity,
+            Some("personalAccessToken") => CodexResolvedAuthMode::PersonalAccessToken,
+            Some("bedrockApiKey") => CodexResolvedAuthMode::BedrockApiKey,
+            Some("bedrockAccessKeys") => CodexResolvedAuthMode::BedrockAccessKeys,
+            _ => CodexResolvedAuthMode::Unrecognized,
+        };
+    }
+
+    let present = |key: &str| auth.get(key).is_some_and(|value| !value.is_null());
+    if present("personal_access_token") {
+        return CodexResolvedAuthMode::PersonalAccessToken;
+    }
+    if present("bedrock_api_key") {
+        return CodexResolvedAuthMode::BedrockApiKey;
+    }
+    if present("aws_access_key_id") || present("aws_secret_access_key") {
+        return CodexResolvedAuthMode::BedrockAccessKeys;
+    }
+    if present("agent_identity") {
+        return CodexResolvedAuthMode::AgentIdentity;
+    }
+    if present("tokens") {
+        return CodexResolvedAuthMode::ChatgptAuthTokens;
+    }
+    if present("headers") {
+        return CodexResolvedAuthMode::Headers;
+    }
+    if present("OPENAI_API_KEY") {
+        return CodexResolvedAuthMode::ApiKey;
+    }
+    CodexResolvedAuthMode::Chatgpt
+}
+
+/// True when Codex would load `auth` as a signed-in OpenAI account for a
+/// `requires_openai_auth` provider.
+pub fn codex_auth_has_openai_account_material(auth: &Value) -> bool {
+    let Some(obj) = auth.as_object() else {
+        return false;
+    };
+
+    let value_present = |value: &Value| match value {
+        Value::Null => false,
+        Value::String(text) => !text.trim().is_empty(),
+        Value::Array(items) => !items.is_empty(),
+        Value::Object(map) => !map.is_empty(),
+        _ => true,
+    };
+    let has = |key: &str| obj.get(key).is_some_and(value_present);
+
+    match codex_auth_resolved_mode(obj) {
+        CodexResolvedAuthMode::ApiKey => extract_codex_auth_api_key(auth).is_some(),
+        CodexResolvedAuthMode::PersonalAccessToken => has("personal_access_token"),
+        CodexResolvedAuthMode::AgentIdentity => has("agent_identity"),
+        CodexResolvedAuthMode::Chatgpt | CodexResolvedAuthMode::ChatgptAuthTokens => obj
+            .get("tokens")
+            .and_then(Value::as_object)
+            .is_some_and(|tokens| {
+                ["id_token", "access_token", "refresh_token"]
+                    .iter()
+                    .any(|key| tokens.get(*key).is_some_and(value_present))
+            }),
+        CodexResolvedAuthMode::Headers
+        | CodexResolvedAuthMode::BedrockApiKey
+        | CodexResolvedAuthMode::BedrockAccessKeys
+        | CodexResolvedAuthMode::Unrecognized => false,
+    }
+}
+
+/// Where Codex keeps CLI auth, per `cli_auth_credentials_store`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CodexAuthStoreMode {
+    File,
+    Keyring,
+    Auto,
+    Ephemeral,
+    Unknown,
+}
+
+pub(crate) fn codex_config_auth_store_mode(config_text: &str) -> CodexAuthStoreMode {
+    if !config_text.contains("cli_auth_credentials_store") {
+        return CodexAuthStoreMode::File;
+    }
+    let Ok(doc) = config_text.parse::<DocumentMut>() else {
+        return CodexAuthStoreMode::Unknown;
+    };
+    match doc
+        .get("cli_auth_credentials_store")
+        .and_then(|item| item.as_str())
+    {
+        None => CodexAuthStoreMode::File,
+        Some("file") => CodexAuthStoreMode::File,
+        Some("keyring") => CodexAuthStoreMode::Keyring,
+        Some("auto") => CodexAuthStoreMode::Auto,
+        Some("ephemeral") => CodexAuthStoreMode::Ephemeral,
+        Some(_) => CodexAuthStoreMode::Unknown,
+    }
 }
 
 pub fn should_restore_codex_provider_token_for_backfill(
@@ -1691,6 +1842,80 @@ pub fn prepare_codex_provider_live_config(
         Some(token) => set_codex_experimental_bearer_token(config_text, &token)?,
         None => config_text.to_string(),
     })
+}
+
+/// Proxy-managed OAuth cards are keyless by design: the local proxy injects the
+/// real token per request. If their stored Codex provider table inherited
+/// `requires_openai_auth = true`, neutralize it so Codex does not fall back to
+/// an unrelated official login.
+pub fn neutralize_codex_official_auth_fallback_for_proxy_oauth(
+    config_text: &str,
+) -> Option<String> {
+    let mut doc = config_text.parse::<DocumentMut>().ok()?;
+    let provider_id = active_codex_model_provider_id(&doc)?;
+    if !is_custom_codex_model_provider_id(&provider_id) {
+        return None;
+    }
+    let provider_table = doc
+        .get_mut("model_providers")
+        .and_then(|item| item.as_table_like_mut())
+        .and_then(|table| table.get_mut(provider_id.as_str()))
+        .and_then(|item| item.as_table_like_mut())?;
+    if provider_table
+        .get("requires_openai_auth")
+        .and_then(|item| item.as_bool())
+        != Some(true)
+    {
+        return None;
+    }
+    provider_table.insert("requires_openai_auth", toml_edit::value(false));
+    Some(doc.to_string())
+}
+
+/// Align the active custom provider table's `requires_openai_auth` flag with
+/// whether the preserved official login is available. Only tables with a
+/// request-auth short circuit are touched.
+pub(crate) fn align_codex_requires_openai_auth_with_login_preservation(
+    config_text: &str,
+    preserve_official_login: bool,
+) -> Result<String, AppError> {
+    if !config_text.contains("model_providers") {
+        return Ok(config_text.to_string());
+    }
+    let mut doc = config_text
+        .parse::<DocumentMut>()
+        .map_err(|e| AppError::Message(format!("Invalid Codex config.toml: {e}")))?;
+    let Some(provider_id) = active_codex_model_provider_id(&doc) else {
+        return Ok(config_text.to_string());
+    };
+    if !is_custom_codex_model_provider_id(&provider_id) {
+        return Ok(config_text.to_string());
+    }
+    let Some(provider_table) = doc
+        .get_mut("model_providers")
+        .and_then(|item| item.as_table_like_mut())
+        .and_then(|table| table.get_mut(provider_id.as_str()))
+        .and_then(|item| item.as_table_like_mut())
+    else {
+        return Ok(config_text.to_string());
+    };
+    let short_circuits_request_auth = provider_table.get("experimental_bearer_token").is_some()
+        || provider_table.get("env_key").is_some();
+    if !short_circuits_request_auth {
+        return Ok(config_text.to_string());
+    }
+    if provider_table
+        .get("requires_openai_auth")
+        .and_then(|item| item.as_bool())
+        == Some(preserve_official_login)
+    {
+        return Ok(config_text.to_string());
+    }
+    provider_table.insert(
+        "requires_openai_auth",
+        toml_edit::value(preserve_official_login),
+    );
+    Ok(doc.to_string())
 }
 
 /// During DB backfill, lift a live `experimental_bearer_token` back into
