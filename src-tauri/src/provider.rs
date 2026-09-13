@@ -144,9 +144,9 @@ impl Provider {
     /// in `UsageScriptModal.tsx`.
     pub fn resolve_usage_credentials(
         &self,
-        app_type: &crate::app_config::AppType,
+        app_type: &cc_switch_shared::app_config::AppType,
     ) -> (String, String) {
-        use crate::app_config::AppType;
+        use cc_switch_shared::app_config::AppType;
 
         let settings = &self.settings_config;
         let str_at =
@@ -351,6 +351,32 @@ pub struct UsageResult {
     pub error: Option<String>,
 }
 
+/// 供应商单独的模型测试配置
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ProviderTestConfig {
+    /// 是否启用单独配置（false 时使用全局配置）
+    #[serde(default)]
+    pub enabled: bool,
+    /// 测试用的模型名称（覆盖全局配置）
+    #[serde(rename = "testModel", skip_serializing_if = "Option::is_none")]
+    pub test_model: Option<String>,
+    /// 超时时间（秒）
+    #[serde(rename = "timeoutSecs", skip_serializing_if = "Option::is_none")]
+    pub timeout_secs: Option<u64>,
+    /// 测试提示词
+    #[serde(rename = "testPrompt", skip_serializing_if = "Option::is_none")]
+    pub test_prompt: Option<String>,
+    /// 降级阈值（毫秒）
+    #[serde(
+        rename = "degradedThresholdMs",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub degraded_threshold_ms: Option<u64>,
+    /// 最大重试次数
+    #[serde(rename = "maxRetries", skip_serializing_if = "Option::is_none")]
+    pub max_retries: Option<u32>,
+}
+
 /// 认证绑定来源
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
@@ -488,6 +514,9 @@ pub struct ProviderMeta {
     /// 每月消费限额（USD）
     #[serde(rename = "limitMonthlyUsd", skip_serializing_if = "Option::is_none")]
     pub limit_monthly_usd: Option<String>,
+    /// 供应商单独的模型测试配置
+    #[serde(rename = "testConfig", skip_serializing_if = "Option::is_none")]
+    pub test_config: Option<ProviderTestConfig>,
     /// Claude API 格式（仅 Claude 供应商使用）
     /// - "anthropic": 原生 Anthropic Messages API，直接透传
     /// - "openai_chat": OpenAI Chat Completions 格式，需要转换
@@ -1446,7 +1475,7 @@ mod tests {
 
     // ── resolve_usage_credentials (per-app credential extraction) ──
 
-    use crate::app_config::AppType;
+    use cc_switch_shared::app_config::AppType;
 
     fn provider_with(settings_config: serde_json::Value) -> Provider {
         Provider::with_id("p".to_string(), "P".to_string(), settings_config, None)

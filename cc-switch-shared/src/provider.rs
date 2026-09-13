@@ -95,6 +95,16 @@ impl Provider {
             || self.claude_base_url_contains("chatgpt.com/backend-api/codex")
     }
 
+    /// Third-party managed OAuth (xai_oauth, github_copilot, ...): the real
+    /// credential is injected per-request by the local proxy, so the card is
+    /// keyless by design and its stored config is only an upstream snapshot.
+    /// `codex_oauth` is deliberately excluded: the official ChatGPT login in
+    /// auth.json is its credential, so `requires_openai_auth = true` is its
+    /// correct shape.
+    pub fn uses_proxy_injected_oauth(&self) -> bool {
+        self.is_xai_oauth() || self.is_github_copilot()
+    }
+
     /// Whether the provider form's auth field was explicitly set to
     /// ANTHROPIC_API_KEY. Missing metadata means the default
     /// ANTHROPIC_AUTH_TOKEN field is used.
@@ -273,6 +283,17 @@ impl Provider {
                 str_at(settings.get("baseUrl")),
                 str_at(settings.get("apiKey")),
             ),
+            AppType::Pi => {
+                let base_url = settings
+                    .get("models")
+                    .and_then(Value::as_array)
+                    .and_then(|models| models.first())
+                    .and_then(|model| model.get("baseUrl"))
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string();
+                (base_url, str_at(settings.get("apiKey")))
+            }
             AppType::OpenCode => {
                 let options = settings.get("options");
                 (
