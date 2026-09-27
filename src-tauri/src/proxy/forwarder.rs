@@ -2075,6 +2075,11 @@ impl RequestForwarder {
             || codex_responses_to_chat
             || codex_responses_to_anthropic
             || request_is_streaming;
+        let strip_codex_responses_lite_header = codex_official_auth_passthrough
+            && is_codex_native_responses_endpoint(&effective_endpoint)
+            && codex_official_model_rejects_responses_lite_header(
+                filtered_body.get("model").and_then(Value::as_str),
+            );
 
         // Codex OAuth 需要注入的 ChatGPT-Account-Id（在动态 token 获取期间填充）
         let mut codex_oauth_account_id: Option<String> = None;
@@ -2547,6 +2552,15 @@ impl RequestForwarder {
             // The full set lives in `is_codex_client_fingerprint_header` so it stays in one
             // place. (HeaderName is lowercased by the http crate, so a direct match is safe.)
             if codex_responses_to_anthropic && is_codex_client_fingerprint_header(key_str) {
+                continue;
+            }
+
+            // OpenAI rejects some newer official Codex models when the client sends
+            // the private Responses-Lite contract header. Keep passthrough intact for
+            // all other models/endpoints; only strip the known incompatible marker.
+            if strip_codex_responses_lite_header
+                && key_str.eq_ignore_ascii_case("x-openai-internal-codex-responses-lite")
+            {
                 continue;
             }
 
@@ -3509,6 +3523,30 @@ fn is_codex_client_fingerprint_header(key_str: &str) -> bool {
             | "openai-project"
     ) || key_str.starts_with("x-stainless-")
         || key_str.starts_with("x-codex-")
+}
+
+fn is_codex_native_responses_endpoint(endpoint: &str) -> bool {
+    let path = endpoint
+        .split_once('?')
+        .map_or(endpoint, |(path, _query)| path)
+        .trim_end_matches('/');
+    matches!(path, "/responses" | "/v1/responses")
+}
+
+fn codex_official_model_rejects_responses_lite_header(model: Option<&str>) -> bool {
+    let Some(model) = model else {
+        return false;
+    };
+    let normalized =
+        super::model_mapper::strip_one_m_suffix_for_upstream(model).to_ascii_lowercase();
+    let model = normalized
+        .split(['@', '#'])
+        .next()
+        .unwrap_or(normalized.as_str());
+    model == "gpt-5.6"
+        || model.starts_with("gpt-5.6-")
+        || model == "gpt-6"
+        || model.starts_with("gpt-6-")
 }
 
 fn codex_anthropic_error_envelope_message(body: &[u8]) -> Option<String> {
@@ -5316,6 +5354,38 @@ mod tests {
                 "{header} must be preserved while impersonating Claude Code"
             );
         }
+    }
+
+    #[test]
+    fn codex_responses_lite_header_workaround_is_limited_to_affected_official_models() {
+        for endpoint in ["/responses", "/v1/responses", "/responses?stream=true"] {
+            assert!(is_codex_native_responses_endpoint(endpoint));
+        }
+        for endpoint in ["/responses/compact", "/v1/chat/completions", "/v1/models"] {
+            assert!(!is_codex_native_responses_endpoint(endpoint));
+        }
+
+        for model in [
+            "gpt-5.6",
+            "gpt-5.6-luna",
+            "gpt-5.6-sol@high",
+            "gpt-6",
+            "gpt-6-astra",
+            "gpt-6-luna[1M]",
+        ] {
+            assert!(
+                codex_official_model_rejects_responses_lite_header(Some(model)),
+                "expected {model} to drop Responses-Lite"
+            );
+        }
+
+        for model in ["gpt-5.5", "gpt-5.4", "o4-mini", "claude-sonnet-4-5"] {
+            assert!(
+                !codex_official_model_rejects_responses_lite_header(Some(model)),
+                "expected {model} to preserve Responses-Lite"
+            );
+        }
+        assert!(!codex_official_model_rejects_responses_lite_header(None));
     }
 
     #[test]
