@@ -2076,7 +2076,9 @@ impl RequestForwarder {
             || codex_responses_to_anthropic
             || request_is_streaming;
         let strip_codex_responses_lite_header = codex_official_auth_passthrough
-            && is_codex_native_responses_endpoint(&effective_endpoint)
+            && (is_codex_native_responses_endpoint(endpoint)
+                || is_codex_native_responses_endpoint(&effective_endpoint)
+                || is_codex_native_responses_endpoint(&url))
             && codex_official_model_rejects_responses_lite_header(
                 filtered_body.get("model").and_then(Value::as_str),
             );
@@ -3527,11 +3529,23 @@ fn is_codex_client_fingerprint_header(key_str: &str) -> bool {
 }
 
 fn is_codex_native_responses_endpoint(endpoint: &str) -> bool {
-    let path = endpoint
+    let raw_path = endpoint
         .split_once('?')
         .map_or(endpoint, |(path, _query)| path)
         .trim_end_matches('/');
-    matches!(path, "/responses" | "/v1/responses")
+    let parsed_path;
+    let path = if raw_path.starts_with("http://") || raw_path.starts_with("https://") {
+        match url::Url::parse(raw_path) {
+            Ok(url) => {
+                parsed_path = url.path().trim_end_matches('/').to_string();
+                parsed_path.as_str()
+            }
+            Err(_) => raw_path,
+        }
+    } else {
+        raw_path
+    };
+    matches!(path, "/responses" | "/v1/responses") || path == "/backend-api/codex/responses"
 }
 
 fn codex_official_model_rejects_responses_lite_header(model: Option<&str>) -> bool {
@@ -5360,6 +5374,12 @@ mod tests {
     #[test]
     fn codex_responses_lite_header_workaround_is_limited_to_affected_official_models() {
         for endpoint in ["/responses", "/v1/responses", "/responses?stream=true"] {
+            assert!(is_codex_native_responses_endpoint(endpoint));
+        }
+        for endpoint in [
+            "/backend-api/codex/responses",
+            "https://chatgpt.com/backend-api/codex/responses?client_version=0.153.0",
+        ] {
             assert!(is_codex_native_responses_endpoint(endpoint));
         }
         for endpoint in ["/responses/compact", "/v1/chat/completions", "/v1/models"] {
