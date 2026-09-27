@@ -294,7 +294,7 @@ impl Provider {
                     .to_string();
                 (base_url, str_at(settings.get("apiKey")))
             }
-            AppType::OpenCode => {
+            AppType::OpenCode | AppType::Mcode => {
                 let options = settings.get("options");
                 (
                     str_at(options.and_then(|o| o.get("baseURL"))),

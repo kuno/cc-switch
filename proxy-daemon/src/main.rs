@@ -19,6 +19,8 @@ mod gemini_config;
 mod grok_config;
 mod hermes_config;
 mod log_redact;
+#[path = "../../src-tauri/src/mcode_config.rs"]
+mod mcode_config;
 #[path = "../../src-tauri/src/model_capabilities.rs"]
 mod model_capabilities;
 mod openclaw_config;
@@ -71,6 +73,55 @@ pub mod session_manager {
             pub fn is_valid_tree_id(id: &str) -> bool {
                 !id.trim().is_empty()
             }
+        }
+
+        pub mod mcode {
+            use rusqlite::{Connection, OpenFlags};
+            use std::path::PathBuf;
+
+            pub(crate) fn database_path() -> PathBuf {
+                crate::mcode_config::data_dir().join("v2/sqlite/runtime-state.sqlite")
+            }
+
+            pub(crate) fn open_database() -> rusqlite::Result<Connection> {
+                Connection::open_with_flags(database_path(), OpenFlags::SQLITE_OPEN_READ_ONLY)
+            }
+        }
+    }
+
+    #[derive(Debug, Clone, serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct SessionMeta {
+        pub provider_id: String,
+        pub session_id: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub title: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub summary: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub project_dir: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub created_at: Option<i64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub last_active_at: Option<i64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub source_path: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub resume_command: Option<String>,
+    }
+
+    #[derive(Debug, Clone, serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct SessionMessage {
+        pub role: String,
+        pub content: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub ts: Option<i64>,
+    }
+
+    pub mod terminal {
+        pub(crate) fn shell_escape(value: &str) -> String {
+            format!("'{}'", value.replace('\'', r"'\''"))
         }
     }
 }

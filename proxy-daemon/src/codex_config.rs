@@ -366,6 +366,30 @@ pub fn codex_live_auth_is_managed_chatgpt_login(auth: &Value, account_id: &str) 
     codex_auth_matches_recorded_managed_oauth(auth, account_id).unwrap_or(false)
 }
 
+pub(crate) fn clear_codex_managed_oauth_live_auth_marker_for_account(
+    account_id: &str,
+) -> Result<(), AppError> {
+    let marker_path = get_codex_managed_oauth_live_auth_marker_path();
+    if !marker_path.exists() {
+        return Ok(());
+    }
+    let marker: CodexManagedOAuthLiveAuthMarker = match read_json_file(&marker_path) {
+        Ok(marker) => marker,
+        Err(error) => {
+            log::warn!(
+                "Failed to read Codex managed OAuth auth marker at {} while cleaning account {}: {error}",
+                marker_path.display(),
+                account_id
+            );
+            return delete_file(&marker_path);
+        }
+    };
+    if marker.account_id == account_id.trim() {
+        delete_file(&marker_path)?;
+    }
+    Ok(())
+}
+
 pub fn clear_codex_live_auth_for_managed_account(account_id: &str) -> Result<(), AppError> {
     clear_codex_live_auth_for_managed_account_if_unchanged(account_id, None)
 }

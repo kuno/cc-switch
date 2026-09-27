@@ -54,6 +54,9 @@ pub mod session_usage_grokbuild;
 #[path = "../../../src-tauri/src/services/session_usage_pi.rs"]
 pub mod session_usage_pi;
 
+#[path = "../../../src-tauri/src/services/session_usage_mcode.rs"]
+pub mod session_usage_mcode;
+
 #[path = "../../../src-tauri/src/services/session_usage_opencode.rs"]
 pub mod session_usage_opencode;
 

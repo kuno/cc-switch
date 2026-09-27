@@ -2277,9 +2277,14 @@ fn openwrt_app_profile(app_type: &AppType) -> anyhow::Result<OpenWrtAppProfile> 
             icon: "gemini",
             icon_color: "#4285F4",
         }),
-        AppType::Hermes | AppType::ClaudeDesktop | AppType::GrokBuild | AppType::Pi => Err(
-            anyhow!("{} is not supported in proxy-daemon", app_type.as_str()),
-        ),
+        AppType::Hermes
+        | AppType::ClaudeDesktop
+        | AppType::GrokBuild
+        | AppType::Pi
+        | AppType::Mcode => Err(anyhow!(
+            "{} is not supported in proxy-daemon",
+            app_type.as_str()
+        )),
         AppType::OpenCode | AppType::OpenClaw => Err(anyhow!(
             "OpenWrt provider management is not implemented for {} yet",
             app_type.as_str()
@@ -3278,9 +3283,14 @@ fn build_provider(
         AppType::Claude => build_claude_provider(profile, existing, provider_id, payload),
         AppType::Codex => build_codex_provider(profile, existing, provider_id, payload),
         AppType::Gemini => build_gemini_provider(profile, existing, provider_id, payload),
-        AppType::Hermes | AppType::ClaudeDesktop | AppType::GrokBuild | AppType::Pi => Err(
-            anyhow!("{} is not supported in proxy-daemon", app_type.as_str()),
-        ),
+        AppType::Hermes
+        | AppType::ClaudeDesktop
+        | AppType::GrokBuild
+        | AppType::Pi
+        | AppType::Mcode => Err(anyhow!(
+            "{} is not supported in proxy-daemon",
+            app_type.as_str()
+        )),
         AppType::OpenCode | AppType::OpenClaw => Err(anyhow!(
             "OpenWrt provider management is not implemented for {} yet",
             app_type.as_str()

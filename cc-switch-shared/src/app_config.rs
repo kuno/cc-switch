@@ -8,6 +8,8 @@ use crate::error::AppError;
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct McpApps {
     #[serde(default)]
+    pub mcode: bool,
+    #[serde(default)]
     pub claude: bool,
     #[serde(default)]
     pub codex: bool,
@@ -28,6 +30,7 @@ impl McpApps {
             AppType::OpenCode => self.opencode,
             AppType::OpenClaw => false,
             AppType::Hermes => self.hermes,
+            AppType::Mcode => self.mcode,
             AppType::Pi => false,
             AppType::ClaudeDesktop => false,
             AppType::GrokBuild => false,
@@ -42,6 +45,7 @@ impl McpApps {
             AppType::OpenCode => self.opencode = enabled,
             AppType::OpenClaw => {}
             AppType::Hermes => self.hermes = enabled,
+            AppType::Mcode => self.mcode = enabled,
             AppType::Pi => {}
             AppType::ClaudeDesktop => {}
             AppType::GrokBuild => {}
@@ -62,6 +66,9 @@ impl McpApps {
         if self.opencode {
             apps.push(AppType::OpenCode);
         }
+        if self.mcode {
+            apps.push(AppType::Mcode);
+        }
         if self.hermes {
             apps.push(AppType::Hermes);
         }
@@ -69,13 +76,20 @@ impl McpApps {
     }
 
     pub fn is_empty(&self) -> bool {
-        !self.claude && !self.codex && !self.gemini && !self.opencode && !self.hermes
+        !self.claude
+            && !self.codex
+            && !self.gemini
+            && !self.opencode
+            && !self.hermes
+            && !self.mcode
     }
 }
 
 /// Skill app enablement flags.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct SkillApps {
+    #[serde(default)]
+    pub mcode: bool,
     #[serde(default)]
     pub claude: bool,
     #[serde(default)]
@@ -97,6 +111,7 @@ impl SkillApps {
             AppType::OpenCode => self.opencode,
             AppType::OpenClaw => false,
             AppType::Hermes => self.hermes,
+            AppType::Mcode => self.mcode,
             AppType::Pi => false,
             AppType::ClaudeDesktop => false,
             AppType::GrokBuild => false,
@@ -111,6 +126,7 @@ impl SkillApps {
             AppType::OpenCode => self.opencode = enabled,
             AppType::OpenClaw => {}
             AppType::Hermes => self.hermes = enabled,
+            AppType::Mcode => self.mcode = enabled,
             AppType::Pi => {}
             AppType::ClaudeDesktop => {}
             AppType::GrokBuild => {}
@@ -131,6 +147,9 @@ impl SkillApps {
         if self.opencode {
             apps.push(AppType::OpenCode);
         }
+        if self.mcode {
+            apps.push(AppType::Mcode);
+        }
         if self.hermes {
             apps.push(AppType::Hermes);
         }
@@ -138,7 +157,12 @@ impl SkillApps {
     }
 
     pub fn is_empty(&self) -> bool {
-        !self.claude && !self.codex && !self.gemini && !self.opencode && !self.hermes
+        !self.claude
+            && !self.codex
+            && !self.gemini
+            && !self.opencode
+            && !self.hermes
+            && !self.mcode
     }
 
     pub fn only(app: &AppType) -> Self {
@@ -264,6 +288,7 @@ pub enum AppType {
     OpenClaw,
     Hermes,
     Pi,
+    Mcode,
     #[serde(rename = "claude-desktop")]
     ClaudeDesktop,
 }
@@ -279,6 +304,7 @@ impl AppType {
             AppType::OpenClaw => "openclaw",
             AppType::Hermes => "hermes",
             AppType::Pi => "pi",
+            AppType::Mcode => "mcode",
             AppType::ClaudeDesktop => "claude-desktop",
         }
     }
@@ -286,7 +312,7 @@ impl AppType {
     pub fn is_additive_mode(&self) -> bool {
         matches!(
             self,
-            AppType::OpenCode | AppType::OpenClaw | AppType::Hermes | AppType::Pi
+            AppType::OpenCode | AppType::OpenClaw | AppType::Hermes | AppType::Pi | AppType::Mcode
         )
     }
 
@@ -300,6 +326,7 @@ impl AppType {
             AppType::OpenClaw,
             AppType::Hermes,
             AppType::Pi,
+            AppType::Mcode,
             AppType::ClaudeDesktop,
         ]
         .into_iter()
@@ -319,14 +346,16 @@ impl FromStr for AppType {
             "opencode" => Ok(AppType::OpenCode),
             "openclaw" => Ok(AppType::OpenClaw),
             "hermes" => Ok(AppType::Hermes),
+            "pi" => Ok(AppType::Pi),
+            "mcode" => Ok(AppType::Mcode),
             "claude-desktop" | "claude_desktop" | "claudedesktop" => Ok(AppType::ClaudeDesktop),
             other => Err(AppError::localized(
                 "unsupported_app",
                 format!(
-                    "不支持的应用标识: '{other}'。可选值: claude, codex, gemini, opencode, openclaw, hermes。"
+                    "不支持的应用标识: '{other}'。可选值: claude, codex, gemini, grokbuild, opencode, openclaw, hermes, pi, mcode, claude-desktop。"
                 ),
                 format!(
-                    "Unsupported app id: '{other}'. Allowed: claude, codex, gemini, opencode, openclaw, hermes."
+                    "Unsupported app id: '{other}'. Allowed: claude, codex, gemini, grokbuild, opencode, openclaw, hermes, pi, mcode, claude-desktop."
                 ),
             )),
         }
@@ -358,7 +387,7 @@ impl CommonConfigSnippets {
             AppType::OpenCode => self.opencode.as_ref(),
             AppType::OpenClaw => self.openclaw.as_ref(),
             AppType::Hermes => self.hermes.as_ref(),
-            AppType::Pi => None,
+            AppType::Pi | AppType::Mcode => None,
             AppType::ClaudeDesktop => None,
             AppType::GrokBuild => None,
         }
@@ -372,7 +401,7 @@ impl CommonConfigSnippets {
             AppType::OpenCode => self.opencode = snippet,
             AppType::OpenClaw => self.openclaw = snippet,
             AppType::Hermes => self.hermes = snippet,
-            AppType::Pi => {}
+            AppType::Pi | AppType::Mcode => {}
             AppType::ClaudeDesktop => {}
             AppType::GrokBuild => {}
         }

@@ -318,7 +318,7 @@ impl StreamCheckService {
         // 或 `npm` 字段显式指定。它们不走 get_adapter 路径，而是直接分发。
         if matches!(
             app_type,
-            AppType::OpenCode | AppType::OpenClaw | AppType::Hermes
+            AppType::OpenCode | AppType::OpenClaw | AppType::Hermes | AppType::Mcode
         ) {
             return Self::check_once_without_adapter(app_type, provider, config, start).await;
         }
@@ -391,9 +391,15 @@ impl StreamCheckService {
                 )
                 .await
             }
-            AppType::OpenCode | AppType::OpenClaw | AppType::Hermes | AppType::Pi => {
+            AppType::OpenCode
+            | AppType::OpenClaw
+            | AppType::Hermes
+            | AppType::Pi
+            | AppType::Mcode => {
                 // Already handled via early dispatch above
-                unreachable!("OpenCode/OpenClaw/Hermes/Pi 已通过 check_once_without_adapter 处理")
+                unreachable!(
+                    "OpenCode/OpenClaw/Hermes/Pi/MCode 已通过 check_once_without_adapter 处理"
+                )
             }
         };
 
@@ -426,6 +432,7 @@ impl StreamCheckService {
             AppType::OpenClaw => Self::extract_openclaw_base_url(provider),
             AppType::Hermes => Self::extract_hermes_base_url(provider),
             AppType::Pi => crate::pi_config::provider_base_url(&provider.settings_config),
+            AppType::Mcode => Self::extract_mcode_base_url(provider),
             AppType::ClaudeDesktop => ClaudeAdapter::new()
                 .extract_base_url(provider)
                 .map_err(|e| AppError::Message(format!("Failed to extract base_url: {e}"))),
@@ -929,6 +936,16 @@ impl StreamCheckService {
                 )
                 .await
             }
+            AppType::Mcode => {
+                Self::check_mcode_stream(
+                    &client,
+                    provider,
+                    &model_to_test,
+                    test_prompt,
+                    request_timeout,
+                )
+                .await
+            }
             _ => unreachable!("check_once_without_adapter 只处理 OpenCode/OpenClaw/Hermes"),
         };
 
@@ -1417,6 +1434,73 @@ impl StreamCheckService {
         }
     }
 
+    async fn check_mcode_stream(
+        client: &Client,
+        provider: &Provider,
+        model: &str,
+        test_prompt: &str,
+        timeout: std::time::Duration,
+    ) -> Result<(u16, String), AppError> {
+        let base_url = Self::extract_mcode_base_url(provider)?;
+        let api_key = Self::extract_mcode_api_key(provider)?;
+        let api = Self::extract_mcode_protocol(provider);
+        let extra_headers = Self::extract_opencode_headers(provider);
+
+        match api.as_deref().or(Some("anthropic-messages")) {
+            Some("openai-completions") => {
+                let auth = AuthInfo::new(api_key, AuthStrategy::Bearer);
+                Self::check_claude_stream(
+                    client,
+                    &base_url,
+                    &auth,
+                    model,
+                    test_prompt,
+                    timeout,
+                    provider,
+                    Some("openai_chat"),
+                    extra_headers,
+                )
+                .await
+            }
+            Some("openai-responses") => {
+                let auth = AuthInfo::new(api_key, AuthStrategy::Bearer);
+                Self::check_claude_stream(
+                    client,
+                    &base_url,
+                    &auth,
+                    model,
+                    test_prompt,
+                    timeout,
+                    provider,
+                    Some("openai_responses"),
+                    extra_headers,
+                )
+                .await
+            }
+            Some("anthropic-messages") => {
+                let auth = AuthInfo::new(api_key, AuthStrategy::ClaudeAuth);
+                Self::check_claude_stream(
+                    client,
+                    &base_url,
+                    &auth,
+                    model,
+                    test_prompt,
+                    timeout,
+                    provider,
+                    Some("anthropic"),
+                    extra_headers,
+                )
+                .await
+            }
+            Some(other) => Err(AppError::localized(
+                "mcode_protocol_not_yet_supported",
+                format!("MCode 暂不支持协议: {other}"),
+                format!("MCode protocol not yet supported: {other}"),
+            )),
+            None => unreachable!("default MCode protocol is always present"),
+        }
+    }
+
     /// 按 OpenCode 的实际 SDK 包特性确定 baseURL：
     /// - 用户显式填写的 `options.baseURL` 总是优先
     /// - 否则根据 `npm` 返回 AI SDK 包自带的默认端点
@@ -1493,6 +1577,42 @@ impl StreamCheckService {
         provider
             .settings_config
             .get("npm")
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+    }
+
+    fn extract_mcode_base_url(provider: &Provider) -> Result<String, AppError> {
+        Self::extract_opencode_base_url(provider).ok_or_else(|| {
+            AppError::localized(
+                "mcode_base_url_missing",
+                "MCode 供应商缺少 options.baseURL",
+                "MCode provider is missing `options.baseURL`",
+            )
+        })
+    }
+
+    fn extract_mcode_api_key(provider: &Provider) -> Result<String, AppError> {
+        provider
+            .settings_config
+            .get("options")
+            .and_then(|v| v.get("apiKey"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| {
+                AppError::localized(
+                    "mcode_api_key_missing",
+                    "MCode 供应商缺少 options.apiKey",
+                    "MCode provider is missing `options.apiKey`",
+                )
+            })
+    }
+
+    fn extract_mcode_protocol(provider: &Provider) -> Option<String> {
+        provider
+            .settings_config
+            .get("api")
             .and_then(|v| v.as_str())
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
@@ -1590,6 +1710,9 @@ impl StreamCheckService {
             AppType::OpenCode => {
                 // OpenCode uses models map in settings_config
                 // Try to extract first model from the models object
+                Self::extract_opencode_model(provider).unwrap_or_else(|| "gpt-4o".to_string())
+            }
+            AppType::Mcode => {
                 Self::extract_opencode_model(provider).unwrap_or_else(|| "gpt-4o".to_string())
             }
             AppType::OpenClaw | AppType::Hermes => {

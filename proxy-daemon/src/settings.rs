@@ -57,6 +57,7 @@ impl VisibleApps {
             AppType::ClaudeDesktop => false,
             AppType::GrokBuild => false,
             AppType::Pi => false,
+            AppType::Mcode => false,
         }
     }
 }
@@ -615,6 +616,7 @@ pub fn get_current_provider(app_type: &AppType) -> Option<String> {
         AppType::ClaudeDesktop => None,
         AppType::GrokBuild => None,
         AppType::Pi => None,
+        AppType::Mcode => None,
     }
 }
 
@@ -634,6 +636,7 @@ pub fn set_current_provider(app_type: &AppType, id: Option<&str>) -> Result<(), 
         AppType::ClaudeDesktop => {}
         AppType::GrokBuild => {}
         AppType::Pi => {}
+        AppType::Mcode => {}
     })
 }
 
