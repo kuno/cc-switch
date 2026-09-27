@@ -2555,9 +2555,10 @@ impl RequestForwarder {
                 continue;
             }
 
-            // OpenAI rejects some newer official Codex models when the client sends
-            // the private Responses-Lite contract header. Keep passthrough intact for
-            // all other models/endpoints; only strip the known incompatible marker.
+            // OpenWrt branch workaround: OpenAI rejects some newer official Codex
+            // models when the client sends the private Responses-Lite contract header.
+            // Keep this narrow and replace it with upstream's canonical fix once it
+            // lands.
             if strip_codex_responses_lite_header
                 && key_str.eq_ignore_ascii_case("x-openai-internal-codex-responses-lite")
             {
