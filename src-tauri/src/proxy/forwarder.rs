@@ -314,6 +314,20 @@ fn is_codex_oauth_upload_eligible(app_type_str: &str, provider: &Provider, base_
                 }))
 }
 
+fn is_codex_oauth_auth_mode(provider: &Provider) -> bool {
+    provider.id == CODEX_OFFICIAL_PROVIDER_ID
+        || provider
+            .settings_config
+            .get("auth_mode")
+            .and_then(|value| value.as_str())
+            .is_some_and(|value| {
+                matches!(
+                    value,
+                    CODEX_OAUTH_AUTH_MODE | CODEX_LEGACY_CLIENT_PASSTHROUGH_AUTH_MODE
+                )
+            })
+}
+
 fn apply_codex_oauth_body_contract(body: &mut Value) {
     let Some(obj) = body.as_object_mut() else {
         return;
@@ -2075,17 +2089,32 @@ impl RequestForwarder {
             || codex_responses_to_chat
             || codex_responses_to_anthropic
             || request_is_streaming;
-        let strip_codex_responses_lite_header = codex_official_auth_passthrough
-            && (is_codex_native_responses_endpoint(endpoint)
-                || is_codex_native_responses_endpoint(&effective_endpoint)
-                || is_codex_native_responses_endpoint(&url))
-            && [
-                body.get("model").and_then(Value::as_str),
-                filtered_body.get("model").and_then(Value::as_str),
-                outbound_model.as_deref(),
-            ]
-            .into_iter()
-            .any(codex_official_model_rejects_responses_lite_header);
+        let strip_codex_responses_lite_provider = codex_official_auth_passthrough
+            || (matches!(app_type, AppType::Codex) && is_codex_oauth_auth_mode(provider));
+        let strip_codex_responses_lite_endpoint = is_codex_native_responses_endpoint(endpoint)
+            || is_codex_native_responses_endpoint(&effective_endpoint)
+            || is_codex_native_responses_endpoint(&url);
+        let strip_codex_responses_lite_model = [
+            body.get("model").and_then(Value::as_str),
+            filtered_body.get("model").and_then(Value::as_str),
+            outbound_model.as_deref(),
+        ]
+        .into_iter()
+        .any(codex_official_model_rejects_responses_lite_header);
+        let strip_codex_responses_lite_header = strip_codex_responses_lite_provider
+            && strip_codex_responses_lite_endpoint
+            && strip_codex_responses_lite_model;
+        if strip_codex_responses_lite_header {
+            log::info!(
+                "[Codex] stripping Responses-Lite header for official OAuth model (provider={}, endpoint={}, model={})",
+                provider.id,
+                endpoint,
+                outbound_model.as_deref()
+                    .or_else(|| filtered_body.get("model").and_then(Value::as_str))
+                    .or_else(|| body.get("model").and_then(Value::as_str))
+                    .unwrap_or("<unknown>")
+            );
+        }
 
         // Codex OAuth 需要注入的 ChatGPT-Account-Id（在动态 token 获取期间填充）
         let mut codex_oauth_account_id: Option<String> = None;
