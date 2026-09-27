@@ -2079,9 +2079,13 @@ impl RequestForwarder {
             && (is_codex_native_responses_endpoint(endpoint)
                 || is_codex_native_responses_endpoint(&effective_endpoint)
                 || is_codex_native_responses_endpoint(&url))
-            && codex_official_model_rejects_responses_lite_header(
+            && [
+                body.get("model").and_then(Value::as_str),
                 filtered_body.get("model").and_then(Value::as_str),
-            );
+                outbound_model.as_deref(),
+            ]
+            .into_iter()
+            .any(codex_official_model_rejects_responses_lite_header);
 
         // Codex OAuth 需要注入的 ChatGPT-Account-Id（在动态 token 获取期间填充）
         let mut codex_oauth_account_id: Option<String> = None;
@@ -2707,7 +2711,20 @@ impl RequestForwarder {
         // Codex OAuth 反代尽量对齐官方 Codex CLI 的会话路由信号。
         // 只发送客户端提供的 session_id；生成的 UUID 每次不同，反而会破坏前缀缓存。
         for (name, value) in codex_oauth_session_headers {
+            if strip_codex_responses_lite_header
+                && name
+                    .as_str()
+                    .eq_ignore_ascii_case("x-openai-internal-codex-responses-lite")
+            {
+                continue;
+            }
             ordered_headers.insert(name, value);
+        }
+        // Final guard for the OpenWrt branch workaround: auth/session injection
+        // happens after the inbound copy loop, so strip the header from the final
+        // outbound map as well.
+        if strip_codex_responses_lite_header {
+            ordered_headers.remove("x-openai-internal-codex-responses-lite");
         }
 
         // 序列化请求体。GET/HEAD 是 idempotent/safe 方法，按 HTTP 语义不应携带 body；
