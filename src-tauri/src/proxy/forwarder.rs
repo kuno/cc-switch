@@ -1898,11 +1898,12 @@ impl RequestForwarder {
             && !codex_responses_to_chat
             && !codex_responses_to_anthropic
         {
-            let repaired = super::providers::transform_codex_chat::normalize_legacy_message_ids(
-                &mut mapped_body,
-            );
-            if repaired > 0 {
-                log::debug!("[Codex] Repaired {repaired} legacy Responses message ID(s)");
+            let normalized =
+                super::providers::transform_codex_chat::normalize_legacy_chat_converted_items(
+                    &mut mapped_body,
+                );
+            if normalized > 0 {
+                log::debug!("[Codex] Normalized {normalized} legacy Chat-to-Responses item(s)");
             }
         }
 

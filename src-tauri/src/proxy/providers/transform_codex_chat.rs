@@ -2068,26 +2068,39 @@ pub(crate) fn message_id_from_response_id(response_id: &str) -> String {
     )
 }
 
-/// Repair message IDs emitted by older Chat → Responses conversions when a
-/// conversation switches to a native Responses upstream.
-pub(crate) fn normalize_legacy_message_ids(body: &mut Value) -> usize {
+/// Normalize items emitted by Chat → Responses conversions when a conversation
+/// switches to a native Responses upstream.
+pub(crate) fn normalize_legacy_chat_converted_items(body: &mut Value) -> usize {
     let Some(items) = body.get_mut("input").and_then(Value::as_array_mut) else {
         return 0;
     };
     let mut repaired = 0;
-    for item in items {
+    items.retain_mut(|item| {
+        if item.get("type").and_then(Value::as_str) == Some("reasoning") {
+            let synthetic_chat_reasoning = item
+                .get("id")
+                .and_then(Value::as_str)
+                .is_some_and(|id| id.starts_with("rs_resp_"));
+            let has_openai_encrypted_reasoning = item.get("encrypted_content").is_some();
+            if synthetic_chat_reasoning && !has_openai_encrypted_reasoning {
+                repaired += 1;
+                return false;
+            }
+        }
+
         if item.get("type").and_then(Value::as_str) != Some("message") {
-            continue;
+            return true;
         }
         let Some(id) = item.get("id").and_then(Value::as_str) else {
-            continue;
+            return true;
         };
         let Some(response_id) = id.strip_suffix("_msg").filter(|id| id.starts_with("resp_")) else {
-            continue;
+            return true;
         };
         item["id"] = json!(message_id_from_response_id(response_id));
         repaired += 1;
-    }
+        true
+    });
     repaired
 }
 
@@ -4770,21 +4783,24 @@ mod tests {
     }
 
     #[test]
-    fn repairs_only_legacy_chat_converted_message_ids() {
+    fn normalizes_legacy_chat_converted_items_only() {
         let mut request = json!({
             "input": [
                 {"type": "message", "role": "assistant", "id": "resp_chatcmpl-old_msg", "content": []},
                 {"type": "message", "role": "assistant", "id": "msg_official", "content": []},
                 {"type": "reasoning", "id": "rs_resp_chatcmpl-old", "summary": []},
+                {"type": "reasoning", "id": "rs_native", "encrypted_content": "opaque", "summary": []},
+                {"type": "reasoning", "id": "rs_stored", "summary": []},
                 {"type": "function_call", "id": "resp_chatcmpl-old_msg", "call_id": "call_1"}
             ]
         });
 
-        assert_eq!(normalize_legacy_message_ids(&mut request), 1);
+        assert_eq!(normalize_legacy_chat_converted_items(&mut request), 2);
         assert_eq!(request["input"][0]["id"], "msg_chatcmpl-old");
         assert_eq!(request["input"][1]["id"], "msg_official");
-        assert_eq!(request["input"][2]["id"], "rs_resp_chatcmpl-old");
-        assert_eq!(request["input"][3]["id"], "resp_chatcmpl-old_msg");
+        assert_eq!(request["input"][2]["id"], "rs_native");
+        assert_eq!(request["input"][3]["id"], "rs_stored");
+        assert_eq!(request["input"][4]["id"], "resp_chatcmpl-old_msg");
     }
 
     #[test]
