@@ -1712,7 +1712,7 @@ fn chat_message_to_response_output_item(message: &Value, response_id: &str) -> O
     }
 
     Some(json!({
-        "id": format!("{response_id}_msg"),
+        "id": message_id_from_response_id(response_id),
         "type": "message",
         "status": "completed",
         "role": "assistant",
@@ -2059,6 +2059,36 @@ pub(crate) fn response_id_from_chat_id(id: Option<&str>) -> String {
     } else {
         format!("resp_{id}")
     }
+}
+
+pub(crate) fn message_id_from_response_id(response_id: &str) -> String {
+    format!(
+        "msg_{}",
+        response_id.strip_prefix("resp_").unwrap_or(response_id)
+    )
+}
+
+/// Repair message IDs emitted by older Chat → Responses conversions when a
+/// conversation switches to a native Responses upstream.
+pub(crate) fn normalize_legacy_message_ids(body: &mut Value) -> usize {
+    let Some(items) = body.get_mut("input").and_then(Value::as_array_mut) else {
+        return 0;
+    };
+    let mut repaired = 0;
+    for item in items {
+        if item.get("type").and_then(Value::as_str) != Some("message") {
+            continue;
+        }
+        let Some(id) = item.get("id").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(response_id) = id.strip_suffix("_msg").filter(|id| id.starts_with("resp_")) else {
+            continue;
+        };
+        item["id"] = json!(message_id_from_response_id(response_id));
+        repaired += 1;
+    }
+    repaired
 }
 
 pub(crate) fn response_status_from_finish_reason(finish_reason: Option<&str>) -> &'static str {
@@ -4722,6 +4752,7 @@ mod tests {
             "I should check the weather before answering."
         );
         assert_eq!(result["output"][1]["type"], "message");
+        assert_eq!(result["output"][1]["id"], "msg_chatcmpl_1");
         assert_eq!(result["output"][1]["content"][0]["text"], "Let me check.");
         assert_eq!(result["output"][2]["type"], "function_call");
         assert_eq!(result["output"][2]["call_id"], "call_1");
@@ -4736,6 +4767,24 @@ mod tests {
             result["usage"]["input_tokens_details"]["cache_write_tokens"],
             2
         );
+    }
+
+    #[test]
+    fn repairs_only_legacy_chat_converted_message_ids() {
+        let mut request = json!({
+            "input": [
+                {"type": "message", "role": "assistant", "id": "resp_chatcmpl-old_msg", "content": []},
+                {"type": "message", "role": "assistant", "id": "msg_official", "content": []},
+                {"type": "reasoning", "id": "rs_resp_chatcmpl-old", "summary": []},
+                {"type": "function_call", "id": "resp_chatcmpl-old_msg", "call_id": "call_1"}
+            ]
+        });
+
+        assert_eq!(normalize_legacy_message_ids(&mut request), 1);
+        assert_eq!(request["input"][0]["id"], "msg_chatcmpl-old");
+        assert_eq!(request["input"][1]["id"], "msg_official");
+        assert_eq!(request["input"][2]["id"], "rs_resp_chatcmpl-old");
+        assert_eq!(request["input"][3]["id"], "resp_chatcmpl-old_msg");
     }
 
     #[test]

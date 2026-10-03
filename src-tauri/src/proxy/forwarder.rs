@@ -1892,6 +1892,20 @@ impl RequestForwarder {
         // suffix and add the context-1m beta header.
         let mut codex_anthropic_one_m = false;
 
+        // Older Chat → Responses conversions emitted message IDs beginning
+        // with resp_, which native Responses upstreams reject on later turns.
+        if matches!(app_type, AppType::Codex | AppType::GrokBuild)
+            && !codex_responses_to_chat
+            && !codex_responses_to_anthropic
+        {
+            let repaired = super::providers::transform_codex_chat::normalize_legacy_message_ids(
+                &mut mapped_body,
+            );
+            if repaired > 0 {
+                log::debug!("[Codex] Repaired {repaired} legacy Responses message ID(s)");
+            }
+        }
+
         // 转换请求体（如果需要）
         let mut request_body = if codex_responses_to_chat {
             let mut mapped_body = mapped_body;
